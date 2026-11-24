@@ -1,8 +1,9 @@
 // Help: a panel (More → Help, or "?") explaining every button, grouped the way
 // they appear on screen. Toggle it on and off; it scrolls and fits any screen.
 
+import { render as mount } from 'preact';
+import { useEffect } from 'preact/hooks';
 import { icons, type IconName } from './icons';
-import { el } from './ui';
 
 interface Entry {
   icon: IconName;
@@ -122,45 +123,65 @@ const SECTIONS: { title: string; intro?: string; items: Entry[] }[] = [
   }
 ];
 
+interface HelpViewProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+function HelpView({ isOpen, onClose }: HelpViewProps) {
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => event.key === 'Escape' && isOpen && onClose();
+    window.addEventListener('keydown', handleKey);
+
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, onClose]);
+
+  return (
+    // Clicks inside don't reach the model.
+    <div class="help-panel" hidden={!isOpen} onPointerDown={event => event.stopPropagation()}>
+      <div class="help-head">
+        <h2>How superGeometry.app works</h2>
+        <button class="icon-btn help-close" title="Close help" onClick={onClose} dangerouslySetInnerHTML={{ __html: icons.close }} />
+      </div>
+      <div class="help-body">
+        {SECTIONS.map(section => (
+          <>
+            <h3>{section.title}</h3>
+            {section.intro && <p class="help-intro">{section.intro}</p>}
+            <ul class="help-list">
+              {section.items.map(item => (
+                <li key={item.name}>
+                  <span class="help-icon" dangerouslySetInnerHTML={{ __html: icons[item.icon] ?? '' }} />
+                  <div>
+                    <b>{item.name}</b>
+                    <span>{` - ${item.text}`}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        ))}
+        <p class="help-intro">More: the README on GitHub (More → About) walks through a first project step by step.</p>
+      </div>
+    </div>
+  );
+}
+
 export class HelpPanel {
-  private el = el('div', 'help-panel');
+  private host = document.createElement('div');
+  private isOpen = false;
 
   constructor() {
-    this.el.hidden = true;
-    const head = el('div', 'help-head');
-    head.append(el('h2', '', 'How superGeometry.app works'));
-    const close = el('button', 'icon-btn help-close');
-    close.innerHTML = icons.close;
-    close.title = 'Close help';
-    close.addEventListener('click', () => this.toggle(false));
-    head.append(close);
-    const body = el('div', 'help-body');
-    for (const sec of SECTIONS) {
-      body.append(el('h3', '', sec.title));
-      if (sec.intro) {
-        body.append(el('p', 'help-intro', sec.intro));
-      }
-      const list = el('ul', 'help-list');
-      for (const it of sec.items) {
-        const li = el('li', '');
-        const ic = el('span', 'help-icon');
-        ic.innerHTML = icons[it.icon] ?? '';
-        const txt = el('div', '');
-        txt.append(el('b', '', it.name), el('span', '', ` - ${it.text}`));
-        li.append(ic, txt);
-        list.append(li);
-      }
-      body.append(list);
-    }
-    body.append(el('p', 'help-intro', 'More: the README on GitHub (More → About) walks through a first project step by step.'));
-    this.el.append(head, body);
-    // Clicks inside don't reach the model.
-    this.el.addEventListener('pointerdown', e => e.stopPropagation());
-    document.body.append(this.el);
-    window.addEventListener('keydown', e => e.key === 'Escape' && !this.el.hidden && this.toggle(false));
+    document.body.append(this.host);
+    this.paint();
   }
 
-  toggle(open = this.el.hidden): void {
-    this.el.hidden = !open;
+  toggle(open = !this.isOpen): void {
+    this.isOpen = open;
+    this.paint();
+  }
+
+  private paint(): void {
+    mount(<HelpView isOpen={this.isOpen} onClose={() => this.toggle(false)} />, this.host);
   }
 }

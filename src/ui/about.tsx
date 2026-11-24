@@ -1,9 +1,10 @@
 // More → About: the README (the one on GitHub), shown in the app. Built into
 // the app (it's the same file), less the lines that only make sense on GitHub.
 
+import { render as mount } from 'preact';
+import { useEffect, useRef } from 'preact/hooks';
 import readme from '../../README.md?raw';
 import { icons } from './icons';
-import { el } from './ui';
 
 const REPO = 'https://github.com/superGeometry/supergeometry.app';
 
@@ -119,41 +120,54 @@ function render(md: string): string {
   return out.join('\n');
 }
 
-export function showAbout(): void {
-  const back = el('div', 'dialog-back');
-  const box = el('div', 'dialog about');
-  const head = el('div', 'library-head');
-  head.append(el('div', 'panel-title', 'About'));
-  const closeBtn = el('button', 'icon-btn library-close');
-  closeBtn.type = 'button';
-  closeBtn.title = 'Close';
-  closeBtn.innerHTML = icons.close;
-  head.append(closeBtn);
-  const body = el('div', 'about-body');
-  body.innerHTML = render(aboutText());
-  // The Contents links scroll within the window.
-  body.addEventListener('click', (e) => {
-    const a = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[data-anchor]');
-    if (!a) {
+interface AboutDialogProps {
+  onClose: () => void;
+}
+
+function AboutDialog({ onClose }: AboutDialogProps) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+      event.stopPropagation();
+    };
+    window.addEventListener('keydown', handleKey, true);
+
+    return () => window.removeEventListener('keydown', handleKey, true);
+  }, [onClose]);
+
+  const handleBodyClick = (event: MouseEvent) => {
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[data-anchor]');
+    if (!link) {
       return;
     }
-    e.preventDefault();
-    body.querySelector(`#${CSS.escape(a.dataset.anchor!)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-  box.append(head, body);
-  back.append(box);
+    event.preventDefault();
+    bodyRef.current?.querySelector(`#${CSS.escape(link.dataset.anchor!)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return (
+    <div class="dialog-back" onPointerDown={event => event.target === event.currentTarget && onClose()}>
+      <div class="dialog about">
+        <div class="library-head">
+          <div class="panel-title">About</div>
+          <button type="button" class="icon-btn library-close" title="Close" onClick={onClose} dangerouslySetInnerHTML={{ __html: icons.close }} />
+        </div>
+        <div class="about-body" ref={bodyRef} onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: render(aboutText()) }} />
+      </div>
+    </div>
+  );
+}
+
+export function showAbout(): void {
+  const host = document.createElement('div');
   const close = () => {
-    back.remove();
-    window.removeEventListener('keydown', onKey, true);
+    mount(null, host);
+    host.remove();
   };
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      (e.preventDefault(), close());
-    }
-    e.stopPropagation();
-  };
-  closeBtn.addEventListener('click', close);
-  back.addEventListener('pointerdown', ev => ev.target === back && close());
-  window.addEventListener('keydown', onKey, true);
-  document.body.append(back);
+  document.body.append(host);
+  mount(<AboutDialog onClose={close} />, host);
 }

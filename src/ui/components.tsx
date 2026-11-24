@@ -1,0 +1,86 @@
+import { useEffect, useRef } from 'preact/hooks';
+import { textField, type TextField as TextFieldElement } from './textField';
+import { twoTap } from './ui';
+
+interface TextButtonProps {
+  label: string;
+  /** Shown only where a mouse points. */
+  keyHint?: string;
+  isPrimary?: boolean;
+  isDisabled?: boolean;
+  onClick: () => void;
+}
+
+export function TextButton({ label, keyHint, isPrimary, isDisabled, onClick }: TextButtonProps) {
+  const shouldShowHint = !!keyHint && matchMedia('(pointer: fine)').matches;
+
+  return (
+    <button type="button" class={isPrimary ? 'text-btn primary' : 'text-btn'} disabled={isDisabled} onClick={onClick}>
+      {label}
+      {shouldShowHint && <kbd>{keyHint}</kbd>}
+    </button>
+  );
+}
+
+interface TextFieldProps {
+  className?: string;
+  isMultiline?: boolean;
+  placeholder?: string;
+  maxLength?: number;
+  onInput?: (value: string) => void;
+  onReady?: (field: TextFieldElement) => void;
+}
+
+/** The app's typing box (see textField.ts) as a component. */
+export function TextField({ className, isMultiline, placeholder, maxLength, onInput, onReady }: TextFieldProps) {
+  const hostRef = useRef<HTMLSpanElement>(null);
+  const fieldRef = useRef<TextFieldElement | undefined>(undefined);
+  const onInputRef = useRef(onInput);
+  onInputRef.current = onInput;
+
+  useEffect(() => {
+    const field = textField(className, { multiline: isMultiline });
+    fieldRef.current = field;
+    field.addEventListener('input', () => onInputRef.current?.(field.value));
+    hostRef.current!.append(field);
+    onReady?.(field);
+
+    return () => field.remove();
+  }, []);
+
+  useEffect(() => {
+    if (fieldRef.current) {
+      fieldRef.current.placeholder = placeholder ?? '';
+    }
+  }, [placeholder]);
+
+  useEffect(() => {
+    if (fieldRef.current) {
+      fieldRef.current.maxLength = maxLength ?? 0;
+    }
+  }, [maxLength]);
+
+  return <span ref={hostRef} style={{ display: 'contents' }} />;
+}
+
+interface TwoTapButtonProps {
+  /** Which button is armed (see twoTap in ui.ts). */
+  armKey: string;
+  title: string;
+  class: string;
+  html: string;
+  onConfirm: () => void;
+}
+
+/** A button that needs two taps (the first arms it). */
+export function TwoTapButton({ armKey, title, class: className, html, onConfirm }: TwoTapButtonProps) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
+
+  useEffect(() => {
+    twoTap(buttonRef.current!, armKey, () => onConfirmRef.current());
+  }, [armKey]);
+
+  return <button ref={buttonRef} type="button" class={className} title={title} dangerouslySetInnerHTML={{ __html: html }} />;
+}

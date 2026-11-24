@@ -4,8 +4,8 @@
 // Safari it's done from the Share menu, so the notice says how. Saying "Not
 // now" keeps it quiet for a month; More → Install app is always there.
 
+import { render as mount } from 'preact';
 import { isTouchDevice } from '../device';
-import { el } from './ui';
 
 interface InstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -25,14 +25,41 @@ function isIOS(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+interface InstallBannerProps {
+  /** null: hidden. */
+  mode: 'ios' | 'install' | null;
+  onAccept: () => void;
+  onLater: () => void;
+}
+
+function InstallBanner({ mode, onAccept, onLater }: InstallBannerProps) {
+  const isIosMode = mode === 'ios';
+
+  return (
+    <div class="update-banner install-banner" hidden={!mode} onPointerDown={event => event.stopPropagation()}>
+      <span>
+        {isIosMode
+          ? 'Add superGeometry.app to your Home Screen: tap Share (the square with the arrow), then “Add to Home Screen”.'
+          : 'Install superGeometry.app on this device? It opens like an app, full screen.'}
+      </span>
+      <button class="text-btn primary" onClick={onAccept}>
+        {isIosMode ? 'Got it' : 'Install'}
+      </button>
+      <button class="text-btn" onClick={onLater}>
+        Not now
+      </button>
+    </div>
+  );
+}
+
 export class Install {
   private deferred: InstallPromptEvent | null = null;
-  private banner = el('div', 'update-banner install-banner');
+  private host = document.createElement('div');
+  private mode: InstallBannerProps['mode'] = null;
 
   constructor(private toast: (t: string) => void) {
-    this.banner.hidden = true;
-    this.banner.addEventListener('pointerdown', e => e.stopPropagation());
-    document.body.append(this.banner);
+    document.body.append(this.host);
+    this.paint();
     window.addEventListener('beforeinstallprompt', (e) => {
       // Keep the browser's own mini bar away: we ask at a better moment.
       e.preventDefault();
@@ -40,7 +67,7 @@ export class Install {
     });
     window.addEventListener('appinstalled', () => {
       this.deferred = null;
-      this.banner.hidden = true;
+      this.show(null);
     });
     // Phones and tablets, a little after starting (not over the first look around).
     if (isTouchDevice && !isInstalled() && !this.quiet()) {
@@ -69,7 +96,17 @@ export class Install {
     } catch {
       // private mode: it may ask again next time
     }
-    this.banner.hidden = true;
+    this.show(null);
+  }
+
+  private show(mode: InstallBannerProps['mode']): void {
+    this.mode = mode;
+    this.paint();
+  }
+
+  private paint(): void {
+    const isIosMode = this.mode === 'ios';
+    mount(<InstallBanner mode={this.mode} onAccept={() => this.accept(isIosMode)} onLater={() => this.later()} />, this.host);
   }
 
   /** The notice: Install / Not now (or, on iOS, how to do it). */
@@ -77,7 +114,6 @@ export class Install {
     if (isInstalled()) {
       return void (fromMenu && this.toast('superGeometry.app is already installed on this device'));
     }
-    this.banner.innerHTML = '';
     const ios = isIOS() && !this.deferred;
     if (!ios && !this.deferred) {
       // Nothing to show yet (the browser hasn't offered it, or doesn't do installs).
@@ -87,23 +123,11 @@ export class Install {
 
       return;
     }
-    const text = el(
-      'span',
-      '',
-      ios
-        ? 'Add superGeometry.app to your Home Screen: tap Share (the square with the arrow), then “Add to Home Screen”.'
-        : 'Install superGeometry.app on this device? It opens like an app, full screen.'
-    );
-    const yes = el('button', 'text-btn primary', ios ? 'Got it' : 'Install');
-    yes.addEventListener('click', () => void this.accept(ios));
-    const no = el('button', 'text-btn', 'Not now');
-    no.addEventListener('click', () => this.later());
-    this.banner.append(text, yes, no);
-    this.banner.hidden = false;
+    this.show(ios ? 'ios' : 'install');
   }
 
   private async accept(ios: boolean): Promise<void> {
-    this.banner.hidden = true;
+    this.show(null);
     if (ios || !this.deferred) {
       return this.later();
     }

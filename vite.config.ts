@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import preact from '@preact/preset-vite';
 import { defineConfig, type Plugin } from 'vite';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
@@ -87,5 +88,5 @@ export default defineConfig({
   worker: { format: 'es' },
   optimizeDeps: { exclude: ['replicad-opencascadejs'] },
   build: { target: 'es2022', chunkSizeWarningLimit: 4000 },
-  plugins: [offlineFiles(), versionFile()]
+  plugins: [preact(), offlineFiles(), versionFile()]
 });
