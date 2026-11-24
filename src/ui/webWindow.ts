@@ -8,7 +8,7 @@
 // be shown inside another page: for those the window says so and opens them
 // in a tab of their own instead of showing an empty box.
 
-import { icons } from "./icons";
+import { icons } from './icons';
 
 interface Saved {
   url: string;
@@ -20,7 +20,7 @@ interface Saved {
   open: boolean;
 }
 
-const KEY = "sg-browser";
+const KEY = 'sg-browser';
 const BAR = 34;
 const MIN_W = 220;
 const MIN_H = 160;
@@ -28,18 +28,22 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 /** Sites known to refuse being shown inside another page (by the end of their host name). */
 const REFUSE = [
-  "youtube.com", "google.com", "facebook.com", "instagram.com", "x.com", "twitter.com", "tiktok.com", "reddit.com",
-  "linkedin.com", "amazon.com", "github.com", "netflix.com", "twitch.tv", "pinterest.com", "bing.com", "duckduckgo.com",
-  "chatgpt.com", "openai.com", "apple.com", "microsoft.com", "whatsapp.com", "spotify.com", "ebay.com",
+  'youtube.com', 'google.com', 'facebook.com', 'instagram.com', 'x.com', 'twitter.com', 'tiktok.com', 'reddit.com',
+  'linkedin.com', 'amazon.com', 'github.com', 'netflix.com', 'twitch.tv', 'pinterest.com', 'bing.com', 'duckduckgo.com',
+  'chatgpt.com', 'openai.com', 'apple.com', 'microsoft.com', 'whatsapp.com', 'spotify.com', 'ebay.com'
 ];
 
 /** What the window shows for what was typed: a page, or why it can't (and what to do instead). */
-export function pageFor(text: string): { src: string; shown: string; video?: "youtube" | "vimeo" } | { refuse: string; shown: string; open?: string } {
+export function pageFor(text: string): { src: string; shown: string; video?: 'youtube' | 'vimeo' } | { refuse: string; shown: string; open?: string } {
   let t = text.trim();
-  if (!t) return { refuse: "Type a page's address, or paste a video's link (YouTube, Vimeo).", shown: "" };
+  if (!t) {
+    return { refuse: "Type a page's address, or paste a video's link (YouTube, Vimeo).", shown: '' };
+  }
   if (!/^[a-z][a-z0-9+.-]*:/i.test(t)) {
     // Words, not an address: nothing here can search (search sites refuse to be shown inside a page).
-    if (/\s/.test(t) || !/\.[a-z]{2,}/i.test(t)) return { refuse: "Type a page's address (like wikipedia.org), or paste a video's link.", shown: t };
+    if (/\s/.test(t) || !/\.[a-z]{2,}/i.test(t)) {
+      return { refuse: "Type a page's address (like wikipedia.org), or paste a video's link.", shown: t };
+    }
     t = `https://${t}`;
   }
   let u: URL;
@@ -48,36 +52,46 @@ export function pageFor(text: string): { src: string; shown: string; video?: "yo
   } catch {
     return { refuse: "That isn't an address this can open.", shown: text };
   }
-  if (u.protocol !== "https:" && u.protocol !== "http:") return { refuse: "Only web pages (http, https) open here.", shown: text };
-  const host = u.hostname.replace(/^(www|m|music)\./, "");
-  // A YouTube video (watch, youtu.be, shorts, live, embed): its own player, which may be shown in a page.
-  const yt =
-    host === "youtu.be" ? u.pathname.slice(1).split("/")[0] : host.endsWith("youtube.com") ? (u.searchParams.get("v") ?? u.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{6,})/)?.[1] ?? null) : null;
-  if (yt && /^[\w-]{6,}$/.test(yt)) {
-    const start = parseInt(u.searchParams.get("t") ?? u.searchParams.get("start") ?? "", 10);
-    const list = u.searchParams.get("list");
-    const q = new URLSearchParams({ autoplay: "1", rel: "0", ...(start > 0 ? { start: String(start) } : {}), ...(list ? { list } : {}) });
-    return { src: `https://www.youtube.com/embed/${yt}?${q}`, shown: u.href, video: "youtube" };
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+    return { refuse: 'Only web pages (http, https) open here.', shown: text };
   }
-  if (host.endsWith("youtube.com"))
+  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  // A YouTube video (watch, youtu.be, shorts, live, embed): its own player, which may be shown in a page.
+  const yt
+    = host === 'youtu.be' ? u.pathname.slice(1).split('/')[0] : host.endsWith('youtube.com') ? (u.searchParams.get('v') ?? u.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{6,})/)?.[1] ?? null) : null;
+  if (yt && /^[\w-]{6,}$/.test(yt)) {
+    const start = parseInt(u.searchParams.get('t') ?? u.searchParams.get('start') ?? '', 10);
+    const list = u.searchParams.get('list');
+    const q = new URLSearchParams({ autoplay: '1', rel: '0', ...(start > 0 ? { start: String(start) } : {}), ...(list ? { list } : {}) });
+
+    return { src: `https://www.youtube.com/embed/${yt}?${q}`, shown: u.href, video: 'youtube' };
+  }
+  if (host.endsWith('youtube.com')) {
     return {
       refuse: "YouTube won't show its pages inside another page. Find the video in a tab of its own, then copy its link (Share › Copy) and paste it here: it plays in this window, full screen too.",
       shown: u.href,
-      open: u.href,
+      open: u.href
     };
-  const vimeo = host === "vimeo.com" ? u.pathname.match(/^\/(\d+)/)?.[1] : null;
-  if (vimeo) return { src: `https://player.vimeo.com/video/${vimeo}?autoplay=1`, shown: u.href, video: "vimeo" };
-  if (REFUSE.some((h) => host === h || host.endsWith(`.${h}`))) return { refuse: `${host} won't show its pages inside another page.`, shown: u.href, open: u.href };
+  }
+  const vimeo = host === 'vimeo.com' ? u.pathname.match(/^\/(\d+)/)?.[1] : null;
+  if (vimeo) {
+    return { src: `https://player.vimeo.com/video/${vimeo}?autoplay=1`, shown: u.href, video: 'vimeo' };
+  }
+  if (REFUSE.some(h => host === h || host.endsWith(`.${h}`))) {
+    return { refuse: `${host} won't show its pages inside another page.`, shown: u.href, open: u.href };
+  }
+
   return { src: u.href, shown: u.href };
 }
 
 const button = (icon: string, title: string) => {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.className = "ref-btn";
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'ref-btn';
   b.innerHTML = icon;
   b.title = title;
-  b.setAttribute("aria-label", title);
+  b.setAttribute('aria-label', title);
+
   return b;
 };
 
@@ -90,7 +104,7 @@ export class WebWindow {
   /** Over the page: a press held (or dragged) there moves the window - the page itself never tells this one what the pointer does. */
   private grab!: HTMLElement;
   private wired = false;
-  private s: Saved = { url: "", x: 0, y: 0, w: 0, h: 0, min: false, open: false };
+  private s: Saved = { url: '', x: 0, y: 0, w: 0, h: 0, min: false, open: false };
 
   constructor() {
     try {
@@ -104,8 +118,10 @@ export class WebWindow {
       // nothing kept
     }
     // Open when the page was left: open again, where it was.
-    if (this.s.open) setTimeout(() => this.open(), 0);
-    window.addEventListener("resize", () => this.el && this.fit(true));
+    if (this.s.open) {
+      setTimeout(() => this.open(), 0);
+    }
+    window.addEventListener('resize', () => this.el && this.fit(true));
   }
 
   get isOpen(): boolean {
@@ -114,12 +130,17 @@ export class WebWindow {
 
   /** The window up (made if it isn't), in front, its address box ready to type into when it is empty. */
   open(url?: string): void {
-    if (!this.el) this.make();
+    if (!this.el) {
+      this.make();
+    }
     this.s.open = true;
     this.s.min = false;
     this.draw();
-    if (url !== undefined) this.go(url);
-    else if (!this.s.url) setTimeout(() => this.address.focus(), 0);
+    if (url !== undefined) {
+      this.go(url);
+    } else if (!this.s.url) {
+      setTimeout(() => this.address.focus(), 0);
+    }
     this.save();
   }
 
@@ -131,68 +152,70 @@ export class WebWindow {
   }
 
   private make(): void {
-    const layer = document.getElementById("ref-layer") ?? document.body;
-    const el = document.createElement("div");
-    el.className = "ref-win web-win";
-    const bar = document.createElement("div");
-    bar.className = "ref-bar web-bar";
-    const form = document.createElement("form");
-    form.className = "web-go";
-    const address = document.createElement("input");
-    address.type = "text";
-    address.inputMode = "url";
-    address.autocomplete = "off";
+    const layer = document.getElementById('ref-layer') ?? document.body;
+    const el = document.createElement('div');
+    el.className = 'ref-win web-win';
+    const bar = document.createElement('div');
+    bar.className = 'ref-bar web-bar';
+    const form = document.createElement('form');
+    form.className = 'web-go';
+    const address = document.createElement('input');
+    address.type = 'text';
+    address.inputMode = 'url';
+    address.autocomplete = 'off';
     address.spellcheck = false;
-    address.placeholder = "Address or video link";
-    address.setAttribute("aria-label", "Address");
+    address.placeholder = 'Address or video link';
+    address.setAttribute('aria-label', 'Address');
     form.append(address);
-    form.addEventListener("submit", (e) => {
+    form.addEventListener('submit', (e) => {
       e.preventDefault();
       this.go(address.value);
       address.blur();
     });
     // (Typed in: everything selected, to type over.)
-    address.addEventListener("focus", () => address.select());
-    const reload = button(icons.reload, "Reload");
-    const out = button(icons.share, "Open in a new tab");
-    const fold = button(icons.minimize, "Minimize");
-    const close = button(icons.close, "Close");
+    address.addEventListener('focus', () => address.select());
+    const reload = button(icons.reload, 'Reload');
+    const out = button(icons.share, 'Open in a new tab');
+    const fold = button(icons.minimize, 'Minimize');
+    const close = button(icons.close, 'Close');
     bar.append(form, reload, out, fold, close);
-    const body = document.createElement("div");
-    body.className = "web-body";
-    const frame = document.createElement("iframe");
-    frame.title = "Browser";
+    const body = document.createElement('div');
+    body.className = 'web-body';
+    const frame = document.createElement('iframe');
+    frame.title = 'Browser';
     // (Video players need these to play and to go full screen; the page can't take this one's place.)
-    frame.allow = "fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write; web-share";
+    frame.allow = 'fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-write; web-share';
     frame.allowFullscreen = true;
-    frame.referrerPolicy = "strict-origin-when-cross-origin";
-    frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation");
-    const note = document.createElement("div");
-    note.className = "web-note";
-    const grab = document.createElement("div");
-    grab.className = "web-grab";
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation');
+    const note = document.createElement('div');
+    note.className = 'web-note';
+    const grab = document.createElement('div');
+    grab.className = 'web-grab';
     body.append(frame, grab, note);
-    const grip = document.createElement("div");
-    grip.className = "ref-grip";
+    const grip = document.createElement('div');
+    grip.className = 'ref-grip';
     el.append(bar, body, grip);
     layer.append(el);
     Object.assign(this, { el, frame, note, address, fold, grab });
     this.holdToMove(grab);
 
-    el.addEventListener("pointerdown", () => el.style.setProperty("--z", "999"), true);
-    reload.addEventListener("click", () => this.s.url && this.go(this.s.url));
-    out.addEventListener("click", () => {
+    el.addEventListener('pointerdown', () => el.style.setProperty('--z', '999'), true);
+    reload.addEventListener('click', () => this.s.url && this.go(this.s.url));
+    out.addEventListener('click', () => {
       const p = pageFor(this.address.value || this.s.url);
-      const href = "src" in p ? p.shown : p.open;
-      if (href) window.open(href, "_blank", "noopener");
+      const href = 'src' in p ? p.shown : p.open;
+      if (href) {
+        window.open(href, '_blank', 'noopener');
+      }
     });
-    fold.addEventListener("click", () => {
+    fold.addEventListener('click', () => {
       this.s.min = !this.s.min;
       this.draw();
       this.save();
     });
-    close.addEventListener("click", () => this.close());
-    bar.addEventListener("dblclick", (e) => !(e.target as HTMLElement).closest("button, input") && fold.click());
+    close.addEventListener('click', () => this.close());
+    bar.addEventListener('dblclick', e => !(e.target as HTMLElement).closest('button, input') && fold.click());
     this.dragBy(bar);
     this.resizeBy(grip);
 
@@ -208,10 +231,12 @@ export class WebWindow {
 
   /** What was typed, shown: the page, or a note saying why it can't be (and a button to open it in a tab). */
   private go(text: string): void {
-    if (!this.el) return;
+    if (!this.el) {
+      return;
+    }
     const p = pageFor(text);
     this.address.value = p.shown;
-    if ("src" in p) {
+    if ('src' in p) {
       this.s.url = p.shown;
       this.note.hidden = true;
       this.frame.hidden = false;
@@ -219,39 +244,45 @@ export class WebWindow {
       this.arm(true);
     } else {
       this.frame.hidden = true;
-      this.frame.removeAttribute("src");
+      this.frame.removeAttribute('src');
       this.note.replaceChildren();
-      const say = document.createElement("p");
+      const say = document.createElement('p');
       say.textContent = p.refuse;
       this.note.append(say);
       if (p.open) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "web-open";
-        b.textContent = "Open it in a new tab";
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'web-open';
+        b.textContent = 'Open it in a new tab';
         const href = p.open;
-        b.addEventListener("click", () => window.open(href, "_blank", "noopener"));
+        b.addEventListener('click', () => window.open(href, '_blank', 'noopener'));
         this.note.append(b);
       }
       this.note.hidden = false;
-      if (p.shown) this.s.url = p.shown;
+      if (p.shown) {
+        this.s.url = p.shown;
+      }
     }
     this.save();
   }
 
   private draw(): void {
-    if (!this.el) return;
-    this.el.classList.toggle("min", this.s.min);
+    if (!this.el) {
+      return;
+    }
+    this.el.classList.toggle('min', this.s.min);
     this.fold.innerHTML = this.s.min ? icons.restore : icons.minimize;
-    this.fold.title = this.fold.ariaLabel = this.s.min ? "Restore" : "Minimize";
-    this.el.style.setProperty("--z", "999");
+    this.fold.title = this.fold.ariaLabel = this.s.min ? 'Restore' : 'Minimize';
+    this.el.style.setProperty('--z', '999');
     this.fit();
   }
 
   /** Kept on the screen (some of its bar always within reach); `whole` brings it all in. */
   private fit(whole = false): void {
     const s = this.s;
-    if (!this.el) return;
+    if (!this.el) {
+      return;
+    }
     s.w = clamp(s.w, MIN_W, Math.max(MIN_W, innerWidth - 16));
     s.h = clamp(s.h, MIN_H, Math.max(MIN_H, innerHeight - 16));
     if (whole) {
@@ -264,7 +295,7 @@ export class WebWindow {
     st.left = `${Math.round(s.x)}px`;
     st.top = `${Math.round(s.y)}px`;
     st.width = `${Math.round(s.w)}px`;
-    st.height = s.min ? "" : `${Math.round(s.h)}px`;
+    st.height = s.min ? '' : `${Math.round(s.h)}px`;
   }
 
   /**
@@ -274,8 +305,10 @@ export class WebWindow {
    * is back on the model or anything else here.
    */
   private holdToMove(grab: HTMLElement): void {
-    grab.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+    grab.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) {
+        return;
+      }
       e.preventDefault();
       const start = { x: e.clientX, y: e.clientY, dx: e.clientX - this.s.x, dy: e.clientY - this.s.y };
       try {
@@ -285,13 +318,17 @@ export class WebWindow {
       }
       let moving = false;
       const lift = () => {
-        if (moving) return;
+        if (moving) {
+          return;
+        }
         moving = true;
-        this.el?.classList.add("moving", "lifted");
+        this.el?.classList.add('moving', 'lifted');
       };
       const hold = window.setTimeout(lift, 350);
       const move = (m: PointerEvent) => {
-        if (!moving && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 8) return;
+        if (!moving && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 8) {
+          return;
+        }
         lift();
         this.s.x = m.clientX - start.dx;
         this.s.y = m.clientY - start.dy;
@@ -299,86 +336,100 @@ export class WebWindow {
       };
       const up = (u: PointerEvent) => {
         clearTimeout(hold);
-        grab.removeEventListener("pointermove", move);
-        grab.removeEventListener("pointerup", up);
-        grab.removeEventListener("pointercancel", up);
-        this.el?.classList.remove("moving", "lifted");
-        if (moving) return this.save();
-        if (u.type !== "pointerup") return;
+        grab.removeEventListener('pointermove', move);
+        grab.removeEventListener('pointerup', up);
+        grab.removeEventListener('pointercancel', up);
+        this.el?.classList.remove('moving', 'lifted');
+        if (moving) {
+          return this.save();
+        }
+        if (u.type !== 'pointerup') {
+          return;
+        }
         // A tap: the page (or the video, with its own controls - volume, seek, full screen) is yours to use.
         this.arm(false);
       };
-      grab.addEventListener("pointermove", move);
-      grab.addEventListener("pointerup", up);
-      grab.addEventListener("pointercancel", up);
+      grab.addEventListener('pointermove', move);
+      grab.addEventListener('pointerup', up);
+      grab.addEventListener('pointercancel', up);
     });
     // (The page-wide listeners once, however often the window is opened again.)
-    if (this.wired) return;
+    if (this.wired) {
+      return;
+    }
     this.wired = true;
     // Back on anything else here (the model, a button, the window's bar): the layer is back over the page.
     const back = (e: Event) => {
-      if (!this.el || this.grab.classList.contains("on")) return;
-      if (!this.el.querySelector(".web-body")!.contains(e.target as Node)) this.arm(true);
+      if (!this.el || this.grab.classList.contains('on')) {
+        return;
+      }
+      if (!this.el.querySelector('.web-body')!.contains(e.target as Node)) {
+        this.arm(true);
+      }
     };
-    window.addEventListener("pointerdown", back, true);
-    window.addEventListener("pointermove", back, true);
+    window.addEventListener('pointerdown', back, true);
+    window.addEventListener('pointermove', back, true);
   }
 
   /** The layer over the page on (a hold or a drag there moves the window), or stepped aside (taps go to the page). */
   private arm(on: boolean): void {
-    this.grab.classList.toggle("on", on);
+    this.grab.classList.toggle('on', on);
   }
 
   /** Moved with a press on the bar (not on its box or buttons). While moving, the page doesn't take the pointer. */
   private dragBy(bar: HTMLElement): void {
-    bar.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || (e.target as HTMLElement).closest("button, input")) return;
+    bar.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || (e.target as HTMLElement).closest('button, input')) {
+        return;
+      }
       e.preventDefault();
       const dx = e.clientX - this.s.x;
       const dy = e.clientY - this.s.y;
       bar.setPointerCapture(e.pointerId);
-      this.el?.classList.add("moving");
+      this.el?.classList.add('moving');
       const move = (m: PointerEvent) => {
         this.s.x = m.clientX - dx;
         this.s.y = m.clientY - dy;
         this.fit();
       };
       const up = () => {
-        bar.removeEventListener("pointermove", move);
-        bar.removeEventListener("pointerup", up);
-        bar.removeEventListener("pointercancel", up);
-        this.el?.classList.remove("moving");
+        bar.removeEventListener('pointermove', move);
+        bar.removeEventListener('pointerup', up);
+        bar.removeEventListener('pointercancel', up);
+        this.el?.classList.remove('moving');
         this.save();
       };
-      bar.addEventListener("pointermove", move);
-      bar.addEventListener("pointerup", up);
-      bar.addEventListener("pointercancel", up);
+      bar.addEventListener('pointermove', move);
+      bar.addEventListener('pointerup', up);
+      bar.addEventListener('pointercancel', up);
     });
   }
 
   private resizeBy(grip: HTMLElement): void {
-    grip.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       const from = { x: e.clientX, y: e.clientY, w: this.s.w, h: this.s.h };
       grip.setPointerCapture(e.pointerId);
-      this.el?.classList.add("moving");
+      this.el?.classList.add('moving');
       const move = (m: PointerEvent) => {
         this.s.w = from.w + m.clientX - from.x;
         this.s.h = from.h + m.clientY - from.y;
         this.fit();
       };
       const up = () => {
-        grip.removeEventListener("pointermove", move);
-        grip.removeEventListener("pointerup", up);
-        grip.removeEventListener("pointercancel", up);
-        this.el?.classList.remove("moving");
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        this.el?.classList.remove('moving');
         this.save();
       };
-      grip.addEventListener("pointermove", move);
-      grip.addEventListener("pointerup", up);
-      grip.addEventListener("pointercancel", up);
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
     });
   }
 

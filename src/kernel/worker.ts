@@ -1,11 +1,11 @@
 /// <reference lib="webworker" />
 // Web Worker entry: loads OpenCascade and serves engine.ts over postMessage.
 
-import opencascade from "replicad-opencascadejs";
-import wasmUrl from "replicad-opencascadejs/wasm?url";
-import { setOC } from "replicad";
-import { bodyHealth, bodyProperties, projectViews, errorText, exportBodies, regenerate, resetKernel, withFreshKernel } from "./engine";
-import type { BodyMesh, Envelope, Request, Response } from "./protocol";
+import opencascade from 'replicad-opencascadejs';
+import wasmUrl from 'replicad-opencascadejs/wasm?url';
+import { setOC } from 'replicad';
+import { bodyHealth, bodyProperties, projectViews, errorText, exportBodies, regenerate, resetKernel, withFreshKernel } from './engine';
+import type { BodyMesh, Envelope, Request, Response } from './protocol';
 
 /**
  * The meshes the page has (it keeps the last answer's): those go back as their
@@ -40,11 +40,11 @@ async function handle(e: MessageEvent<Envelope<Request>>): Promise<void> {
   const reply = (r: Response) => (self as DedicatedWorkerGlobalScope).postMessage({ id, msg: r } satisfies Envelope<Response>);
   try {
     switch (msg.type) {
-      case "init":
+      case 'init':
         await load();
-        reply({ type: "ready" });
+        reply({ type: 'ready' });
         break;
-      case "regenerate": {
+      case 'regenerate': {
         // The engine's memory only grows (and some steps leak tens of MB a
         // rebuild: a long drag of a fillet's size). The page swaps in a spare
         // engine when it can; if it didn't get to, a fresh one here, before
@@ -54,26 +54,26 @@ async function handle(e: MessageEvent<Envelope<Request>>): Promise<void> {
           resetKernel();
         }
         const result = await withFreshKernel(load, () => regenerate(msg.features, msg.saved));
-        const bodies = result.bodies.map((b) => (sent.has(b.key) ? ({ id: b.id, name: b.name, key: b.key, same: true } as unknown as BodyMesh) : b));
-        sent = new Set(result.bodies.map((b) => b.key));
-        reply({ type: "regenerated", result: { ...result, bodies, memoryMB: (oc.wasmMemory?.buffer.byteLength ?? 0) / 2 ** 20 } });
+        const bodies = result.bodies.map(b => (sent.has(b.key) ? ({ id: b.id, name: b.name, key: b.key, same: true } as unknown as BodyMesh) : b));
+        sent = new Set(result.bodies.map(b => b.key));
+        reply({ type: 'regenerated', result: { ...result, bodies, memoryMB: (oc.wasmMemory?.buffer.byteLength ?? 0) / 2 ** 20 } });
         break;
       }
-      case "export":
-        reply({ type: "exported", blob: await withFreshKernel(load, () => exportBodies(msg.features, msg.format, msg.bodies)) });
+      case 'export':
+        reply({ type: 'exported', blob: await withFreshKernel(load, () => exportBodies(msg.features, msg.format, msg.bodies)) });
         break;
-      case "drawing":
-        reply({ type: "drawing", views: await withFreshKernel(load, () => projectViews(msg.features, msg.views, msg.bodies)) });
+      case 'drawing':
+        reply({ type: 'drawing', views: await withFreshKernel(load, () => projectViews(msg.features, msg.views, msg.bodies)) });
         break;
-      case "properties":
-        reply({ type: "properties", bodies: await withFreshKernel(load, () => bodyProperties(msg.features)) });
+      case 'properties':
+        reply({ type: 'properties', bodies: await withFreshKernel(load, () => bodyProperties(msg.features)) });
         break;
-      case "health":
-        reply({ type: "health", bodies: await withFreshKernel(load, () => bodyHealth(msg.features)) });
+      case 'health':
+        reply({ type: 'health', bodies: await withFreshKernel(load, () => bodyHealth(msg.features)) });
         break;
     }
   } catch (err) {
     console.error(err);
-    reply({ type: "error", message: errorText(err) });
+    reply({ type: 'error', message: errorText(err) });
   }
 }

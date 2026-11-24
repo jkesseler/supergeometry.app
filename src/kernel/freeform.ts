@@ -2,24 +2,28 @@
 // bicubic B-spline face interpolating its grid of points; faces are sewn and,
 // when the cage is closed, made into a solid.
 
-import { cast, getOC, type Shape3D } from "replicad";
-import { quickVolume } from "./ocFree";
-import { subShapes } from "./health";
-import { cubicKnots, interpolateGrid } from "../freeform/bspline";
-import { isClosed, limitPoints, subdivide, type Cage, type Subdivided } from "../freeform/cage";
+import { cast, getOC, type Shape3D } from 'replicad';
+import { cubicKnots, interpolateGrid } from '../freeform/bspline';
+import { isClosed, limitPoints, subdivide, type Cage, type Subdivided } from '../freeform/cage';
+import { quickVolume } from './ocFree';
+import { subShapes } from './health';
 
 export interface Thicken {
   thickness: number;
-  side: "up" | "down" | "both";
+  side: 'up' | 'down' | 'both';
 }
 
 /** `ready`: the cage already subdivided, its points on the smooth surface (else done here). */
 export function cageToShape(cage: Cage, levels = 3, thicken?: Thicken, ready?: Subdivided): Shape3D {
-  if (!cage.faces.length) throw new Error("The freeform has no faces");
+  if (!cage.faces.length) {
+    throw new Error('The freeform has no faces');
+  }
   const oc = getOC();
   const s = ready ?? subdivide(cage, levels);
   // Fitted through points on the smooth surface itself (see limitPoints).
-  if (!ready) s.points = limitPoints(s);
+  if (!ready) {
+    s.points = limitPoints(s);
+  }
   const N = s.n + 1;
   const tol = Math.max(1e-4, sizeOf(s.points) * 1e-5);
   const sewing = new oc.BRepBuilderAPI_Sewing(tol, true, true, true, false);
@@ -34,16 +38,17 @@ export function cageToShape(cage: Cage, levels = 3, thicken?: Thicken, ready?: S
   for (const g of s.grids) {
     // Our own uniform interpolation: patches with the same border points get
     // identical border curves, so they sew exactly.
-    const poles = interpolateGrid(g.map((row) => row.map((i) => s.points[i])));
+    const poles = interpolateGrid(g.map(row => row.map(i => s.points[i])));
     const arr = new oc.NCollection_Array2_gp_Pnt(1, N, 1, N);
     gc.push(arr);
-    for (let i = 0; i < N; i++)
+    for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
         const p = poles[i][j];
         const pt = new oc.gp_Pnt(p[0], p[1], p[2]);
         arr.SetValue(i + 1, j + 1, pt);
         pt.delete();
       }
+    }
     const surf = new oc.Geom_BSplineSurface(arr, uKnots, uKnots, uMults, uMults, 3, 3, false, false);
     const mk = new oc.BRepBuilderAPI_MakeFace(surf, 1e-6);
     gc.push(mk);
@@ -53,16 +58,24 @@ export function cageToShape(cage: Cage, levels = 3, thicken?: Thicken, ready?: S
   const sewed = sewing.SewedShape();
   try {
     if (isClosed(cage)) {
-      if (sewed.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_SHELL) throw new Error("The freeform surfaces didn't close up into one piece");
+      if (sewed.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_SHELL) {
+        throw new Error("The freeform surfaces didn't close up into one piece");
+      }
       const fix = new oc.ShapeFix_Solid();
       gc.push(fix);
       const solid = cast(fix.SolidFromShell(oc.TopoDS.Shell(sewed)));
+
       return solid as Shape3D;
     }
-    if (thicken && thicken.thickness > 0) return thickenSheet(sewed, thicken);
+    if (thicken && thicken.thickness > 0) {
+      return thickenSheet(sewed, thicken);
+    }
+
     return cast(sewed) as Shape3D;
   } finally {
-    for (const o of gc) o.delete();
+    for (const o of gc) {
+      o.delete();
+    }
   }
 }
 
@@ -77,33 +90,43 @@ function thickenSheet(sheet: unknown, { thickness: t, side }: Thicken): Shape3D 
       // Growing along the normals comes out inside-out, and marking the solid as reversed (as was done) measured
       // right but left its faces looking inwards: a rounding of its rim took every edge for a hollow one and came
       // out as rubbish - "would turn the body inside out". A solid made anew from its skin has them outwards.
-      const shells = subShapes(solid, "SHELL");
+      const shells = subShapes(solid, 'SHELL');
       if (shells.length === 1) {
         const fix = new oc.ShapeFix_Solid();
         try {
           const made = cast(fix.SolidFromShell(oc.TopoDS.Shell(shells[0]))) as Shape3D;
-          if (quickVolume(made) > 0) return made;
+          if (quickVolume(made) > 0) {
+            return made;
+          }
         } catch {
           // as it was, below
         } finally {
           fix.delete();
         }
       }
+
       return quickVolume(solid) < 0 ? (cast(solid.wrapped.Reversed()) as Shape3D) : solid;
     } finally {
       mk.delete();
     }
   };
-  if (side === "up") return thick(t);
-  if (side === "down") return thick(-t);
+  if (side === 'up') {
+    return thick(t);
+  }
+  if (side === 'down') {
+    return thick(-t);
+  }
   // Both ways: the sheet moved half the thickness back, then thickened the
   // whole way forward - one solid. (Two halves fused leaked ~50 MB of the
   // engine's memory on every rebuild: a phone ran out after a few dozen.)
   const mk = new oc.BRepOffsetAPI_MakeOffsetShape();
   try {
     mk.PerformBySimple(sheet as never, -t / 2);
-    if (!mk.IsDone()) throw new Error("offset");
-    return thickenSheet(mk.Shape(), { thickness: t, side: "up" });
+    if (!mk.IsDone()) {
+      throw new Error('offset');
+    }
+
+    return thickenSheet(mk.Shape(), { thickness: t, side: 'up' });
   } finally {
     mk.delete();
   }
@@ -116,5 +139,6 @@ function sizeOf(pts: number[][]): number {
     lo = lo.map((v, k) => Math.min(v, p[k]));
     hi = hi.map((v, k) => Math.max(v, p[k]));
   }
+
   return Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1;
 }

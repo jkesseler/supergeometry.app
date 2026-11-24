@@ -9,30 +9,30 @@
 // other tool the pick has (Shell among them); they are the very tools the line
 // at the bottom offers for the pick (the same ToolItems).
 
-import type { Vec3 } from "../doc/types";
-import { icons } from "../ui/icons";
-import type { ToolItem } from "../ui/ui";
-import type { Viewport } from "../view/viewport";
-import { clampToFree } from "./annotate";
+import { icons } from '../ui/icons';
+import { clampToFree } from './annotate';
+import type { Vec3 } from '../doc/types';
+import type { ToolItem } from '../ui/ui';
+import type { Viewport } from '../view/viewport';
 
 /** By kind of pick: the tools to offer, best first (the first two there are and can be used now). */
 export const QUICK = {
   // (A freeform surface's face: Edit Freeform first - shaping it again is what it is for.)
-  face: ["editFreeform", "thread", "sketch", "move", "fillet", "thicken"],
+  face: ['editFreeform', 'thread', 'sketch', 'move', 'fillet', 'thicken'],
   // (Fillet first, before Chamfer - asked for: "when I select an edge, I also want the fillet tool icon ... before
   // chamfer". Its dot is on the edge to drag as well.)
-  edge: ["fillet", "chamfer", "move", "thread", "connect"],
-  vertex: ["moveVertex", "delete"],
+  edge: ['fillet', 'chamfer', 'move', 'thread', 'connect'],
+  vertex: ['moveVertex', 'delete'],
   // (A body that is, or began as, a freeform: Edit Freeform first - asked for: "when I double click a freeform body,
   // I want the edit freeform button there".)
-  body: ["editFreeform", "fillet", "mirror"],
-  profile: ["extrude", "revolve"],
-  plane: ["sketch", "plane"],
-  axis: ["delete"],
-  image: ["scale", "delete"],
+  body: ['editFreeform', 'fillet', 'mirror'],
+  profile: ['extrude', 'revolve'],
+  plane: ['sketch', 'plane'],
+  axis: ['delete'],
+  image: ['scale', 'delete'],
   // In a sketch: its picked curves and points (the sketch tool's own buttons).
-  curve: ["construction", "delete"],
-  point: ["delete"],
+  curve: ['construction', 'delete'],
+  point: ['delete']
 } satisfies Record<string, string[]>;
 
 export type QuickKind = keyof typeof QUICK;
@@ -56,7 +56,7 @@ const MOST = 2;
 const MOST_OF: Partial<Record<QuickKind, number>> = { edge: 3 };
 
 export class QuickActions {
-  private readonly box = document.createElement("div");
+  private readonly box = document.createElement('div');
   private readonly hook = () => this.layout();
 
   /** `items`: what the pick offers (the wheel's own list, its kinds' items too); `at`: the point it is shown beside. */
@@ -64,30 +64,42 @@ export class QuickActions {
     const byId = new Map<string, ToolItem>();
     const walk = (its: ToolItem[]) => {
       for (const it of its) {
-        if (!byId.has(it.id)) byId.set(it.id, it);
-        if (it.children?.length) walk(it.children);
+        if (!byId.has(it.id)) {
+          byId.set(it.id, it);
+        }
+        if (it.children?.length) {
+          walk(it.children);
+        }
       }
     };
     walk(items);
-    const picked = (QUICK[kind] as readonly string[]).map((id) => byId.get(id)).filter((it): it is ToolItem => !!it && !it.disabled && !!it.run && (!it.beta || it.id === "editFreeform")).slice(0, MOST_OF[kind] ?? MOST);
-    if (!all) return picked.length ? new QuickActions(view, picked, at, place) : null;
+    const picked = (QUICK[kind] as readonly string[]).map(id => byId.get(id)).filter((it): it is ToolItem => !!it && !it.disabled && !!it.run && (!it.beta || it.id === 'editFreeform')).slice(0, MOST_OF[kind] ?? MOST);
+    if (!all) {
+      return picked.length ? new QuickActions(view, picked, at, place) : null;
+    }
     // On the model: Delete beside them, and a last button that opens every other tool the pick has (asked for: "I
     // also want to have other tools there that could be used on that element. And also delete"). The few most likely
     // stay the row; the rest come up under it only when asked for, so nothing is crowded.
     const usable = (it: ToolItem | undefined): it is ToolItem => !!it && !it.disabled && !!it.run;
-    const del = [byId.get("delete"), byId.get("deleteBody")].find(usable);
+    const del = [byId.get('delete'), byId.get('deleteBody')].find(usable);
     const row = del && !picked.includes(del) ? [...picked, del] : picked;
     const rest: ToolItem[] = [];
     // (Beside a corner, not Move/Rotate Body: it moves the whole body, which is not what a corner was picked for -
     // asked for: "it doesn't make sense to be there". It is still under Transform on the line.)
-    const skip = new Set(["deselect", "reveal", "color", "opacity", "material", "wholePattern", ...(kind === "vertex" ? ["move"] : [])]);
+    const skip = new Set(['deselect', 'reveal', 'color', 'opacity', 'material', 'wholePattern', ...(kind === 'vertex' ? ['move'] : [])]);
     const gather = (its: ToolItem[]) => {
       for (const it of its) {
-        if (!it.label || it.id.startsWith("---") || skip.has(it.id) || it.disabled) continue;
+        if (!it.label || it.id.startsWith('---') || skip.has(it.id) || it.disabled) {
+          continue;
+        }
         // (A tool that starts by itself is one button, its kinds a tap further inside it; a bare group is its tools.)
         if (it.run) {
-          if (!row.includes(it) && !rest.some((r) => r.label === it.label) && !row.some((r) => r.label === it.label)) rest.push(it);
-        } else if (it.children?.length) gather(it.children);
+          if (!row.includes(it) && !rest.some(r => r.label === it.label) && !row.some(r => r.label === it.label)) {
+            rest.push(it);
+          }
+        } else if (it.children?.length) {
+          gather(it.children);
+        }
       }
     };
     gather(items);
@@ -96,6 +108,7 @@ export class QuickActions {
       const one = rest.pop()!;
       row.splice(del && row.includes(del) ? row.indexOf(del) : row.length, 0, one);
     }
+
     return row.length || rest.length ? new QuickActions(view, row, at, place, rest) : null;
   }
 
@@ -111,49 +124,54 @@ export class QuickActions {
     items: ToolItem[],
     private readonly at: Vec3,
     private readonly place: QuickPlace,
-    rest: ToolItem[] = [],
+    rest: ToolItem[] = []
   ) {
     this.facing = place.facing;
-    this.box.className = "quick-actions";
+    this.box.className = 'quick-actions';
     const button = (it: ToolItem) => {
-      const b = document.createElement("button");
-      b.className = `quick-action${it.active ? " on" : ""}${it.id === "delete" || it.id === "deleteBody" ? " danger" : ""}`;
+      const b = document.createElement('button');
+      b.className = `quick-action${it.active ? ' on' : ''}${it.id === 'delete' || it.id === 'deleteBody' ? ' danger' : ''}`;
       b.title = it.shortcut ? `${it.label} (${it.shortcut})` : it.label;
-      b.setAttribute("aria-label", it.label);
+      b.setAttribute('aria-label', it.label);
       const icon = icons[it.icon as keyof typeof icons];
-      b.innerHTML = `${icon ?? ""}<span>${shortName(it.label)}</span>`;
-      b.addEventListener("click", (e) => {
+      b.innerHTML = `${icon ?? ''}<span>${shortName(it.label)}</span>`;
+      b.addEventListener('click', (e) => {
         e.stopPropagation();
         it.run?.();
       });
+
       return b;
     };
-    const row = document.createElement("div");
-    row.className = "quick-row";
-    for (const it of items) row.append(button(it));
+    const row = document.createElement('div');
+    row.className = 'quick-row';
+    for (const it of items) {
+      row.append(button(it));
+    }
     this.box.append(row);
     if (rest.length) {
       // The rest of what the pick offers: under the row, opened by its last button (and shut by it again).
-      const more = document.createElement("button");
-      more.className = "quick-action quick-more";
-      more.title = "Every other tool for this";
-      more.setAttribute("aria-label", "More tools for this");
-      more.innerHTML = `${icons.more ?? ""}<span>More</span>`;
-      const grid = document.createElement("div");
-      grid.className = "quick-rest";
+      const more = document.createElement('button');
+      more.className = 'quick-action quick-more';
+      more.title = 'Every other tool for this';
+      more.setAttribute('aria-label', 'More tools for this');
+      more.innerHTML = `${icons.more ?? ''}<span>More</span>`;
+      const grid = document.createElement('div');
+      grid.className = 'quick-rest';
       grid.hidden = true;
-      for (const it of rest) grid.append(button(it));
-      more.addEventListener("click", (e) => {
+      for (const it of rest) {
+        grid.append(button(it));
+      }
+      more.addEventListener('click', (e) => {
         e.stopPropagation();
         grid.hidden = !grid.hidden;
-        more.classList.toggle("on", !grid.hidden);
+        more.classList.toggle('on', !grid.hidden);
         this.layout();
       });
       row.append(more);
       this.box.append(grid);
     }
     // A press on them is theirs: never a pick on the model behind, nor the view turning.
-    this.box.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.box.addEventListener('pointerdown', e => e.stopPropagation());
     document.body.append(this.box);
     view.frameHooks.add(this.hook);
     this.layout();
@@ -165,10 +183,14 @@ export class QuickActions {
     let shown = !!s;
     if (s && this.facing && this.place.hideBack !== false) {
       const v = this.view.cam.viewDir();
-      if (v.x * this.facing[0] + v.y * this.facing[1] + v.z * this.facing[2] > 0.05) shown = false;
+      if (v.x * this.facing[0] + v.y * this.facing[1] + v.z * this.facing[2] > 0.05) {
+        shown = false;
+      }
     }
     this.box.hidden = !shown;
-    if (!s || !shown) return;
+    if (!s || !shown) {
+      return;
+    }
     const hw = this.box.offsetWidth / 2;
     const hh = this.box.offsetHeight / 2;
     // (A face's arrow points out along its normal: they go the other way on the screen, not under it.)
@@ -190,11 +212,11 @@ export class QuickActions {
       [s[0], s[1] + g + hh],
       [s[0], s[1] - g - hh],
       [s[0] - g - hw, s[1]],
-      [s[0] + g + hw, s[1]],
-    ].map((p) => clampToFree(p as [number, number], hw, hh));
+      [s[0] + g + hw, s[1]]
+    ].map(p => clampToFree(p as [number, number], hw, hh));
     // (Nor under a value box on the model - an extrude's distance, beside its arrow.)
-    const boxes = [...document.querySelectorAll<HTMLElement>(".dim-widget")].map((b) => b.getBoundingClientRect()).filter((r) => r.width > 0);
-    const clear = ([x, y]: [number, number]) => !boxes.some((r) => x + hw + 6 > r.left && x - hw - 6 < r.right && y + hh + 6 > r.top && y - hh - 6 < r.bottom);
+    const boxes = [...document.querySelectorAll<HTMLElement>('.dim-widget')].map(b => b.getBoundingClientRect()).filter(r => r.width > 0);
+    const clear = ([x, y]: [number, number]) => !boxes.some(r => x + hw + 6 > r.left && x - hw - 6 < r.right && y + hh + 6 > r.top && y - hh - 6 < r.bottom);
     const [x, y] = spots.find(clear) ?? spots[0];
     this.box.style.transform = `translate(${Math.round(x - hw)}px, ${Math.round(y - hh)}px)`;
   }
@@ -207,6 +229,7 @@ export class QuickActions {
 
 /** A short name under the icon ("Move/Rotate Edge" → "Move"). */
 function shortName(label: string): string {
-  const s = label.replace(/…$/, "").split(/[/ –]/)[0];
-  return s.length > 12 ? s.slice(0, 11) + "…" : s;
+  const s = label.replace(/…$/, '').split(/[/ –]/)[0];
+
+  return s.length > 12 ? s.slice(0, 11) + '…' : s;
 }

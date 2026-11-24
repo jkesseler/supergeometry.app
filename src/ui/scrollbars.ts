@@ -15,13 +15,13 @@ interface Bar {
 const bars = new WeakMap<HTMLElement, { v: Bar; h: Bar }>();
 
 function makeBar(target: HTMLElement, vertical: boolean): Bar {
-  const el = document.createElement("div");
-  el.className = `outer-scroll ${vertical ? "v" : "h"}`;
+  const el = document.createElement('div');
+  el.className = `outer-scroll ${vertical ? 'v' : 'h'}`;
   el.hidden = true;
   document.body.append(el);
   const bar: Bar = { el, timer: 0 };
   // Mouse: drag the bar to scroll.
-  el.addEventListener("pointerdown", (e) => {
+  el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
     el.setPointerCapture(e.pointerId);
@@ -32,18 +32,22 @@ function makeBar(target: HTMLElement, vertical: boolean): Bar {
     const content = vertical ? target.scrollHeight : target.scrollWidth;
     const move = (m: PointerEvent) => {
       const d = ((vertical ? m.clientY : m.clientX) - start) * (content / track);
-      if (vertical) target.scrollTop = s0 + d;
-      else target.scrollLeft = s0 + d;
+      if (vertical) {
+        target.scrollTop = s0 + d;
+      } else {
+        target.scrollLeft = s0 + d;
+      }
     };
     const up = () => {
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
     };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
   });
+
   return bar;
 }
 
@@ -80,10 +84,10 @@ function place(bar: Bar, x: number, y: number, w: number, h: number): void {
   s.width = `${Math.round(w)}px`;
   s.height = `${Math.round(h)}px`;
   bar.el.hidden = false;
-  bar.el.classList.add("on");
+  bar.el.classList.add('on');
   clearTimeout(bar.timer);
   bar.timer = window.setTimeout(() => {
-    bar.el.classList.remove("on");
+    bar.el.classList.remove('on');
     bar.timer = window.setTimeout(() => (bar.el.hidden = true), 250);
   }, HIDE_MS);
 }
@@ -91,12 +95,14 @@ function place(bar: Bar, x: number, y: number, w: number, h: number): void {
 /** Watch every scrolling window of the app (scroll events are caught on the way down). */
 export function outerScrollbars(): void {
   document.addEventListener(
-    "scroll",
+    'scroll',
     (e) => {
       const t = e.target;
       // (A window with a bar of its own, always in sight, needs no second one.)
-      if (t instanceof HTMLElement && t !== document.body && t !== document.documentElement && !("ownBar" in t.dataset)) show(t);
+      if (t instanceof HTMLElement && t !== document.body && t !== document.documentElement && !('ownBar' in t.dataset)) {
+        show(t);
+      }
     },
-    true,
+    true
   );
 }

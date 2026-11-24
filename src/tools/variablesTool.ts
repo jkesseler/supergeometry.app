@@ -2,8 +2,8 @@
 // card with New Variable and the whole list. Tapping the view leaves the card;
 // the tags stay until Variables is tapped again (or switched off in the card).
 
-import { createVariable, editVariables, renameVariables } from "../io/insert";
-import type { AppContext, Tool } from "./tool";
+import { createVariable, editVariables, renameVariables } from '../io/insert';
+import type { AppContext, Tool } from './tool';
 
 export interface VariablesHost extends AppContext {
   /** Variables off: the tags go, and this card. */
@@ -15,12 +15,12 @@ export interface VariablesHost extends AppContext {
 }
 
 export class VariablesTool implements Tool {
-  readonly id = "variables";
+  readonly id = 'variables';
 
   constructor(private app: VariablesHost) {}
 
   enter(): void {
-    this.app.ui.setTools([{ id: "exit", label: "Done", icon: "exit", shortcut: "Esc", run: () => this.leave() }]);
+    this.app.ui.setTools([{ id: 'exit', label: 'Done', icon: 'exit', shortcut: 'Esc', run: () => this.leave() }]);
     // The view tools stay, this one lit and pulsing (tap it again to close it).
     this.app.ui.setBottom(this.app.bottomTools());
     this.showCard();
@@ -28,18 +28,18 @@ export class VariablesTool implements Tool {
 
   private showCard(): void {
     const n = this.app.store.doc.variables.length;
-    this.app.ui.setHint(n ? "Tap a variable to change its value. Everything that uses it updates." : "No variables yet. Make one, then use it in any value box (ƒx).");
+    this.app.ui.setHint(n ? 'Tap a variable to change its value. Everything that uses it updates.' : 'No variables yet. Make one, then use it in any value box (ƒx).');
     this.app.ui.showPanel({
-      title: "Variables",
+      title: 'Variables',
       items: [
-        { type: "button", label: "New Variable", icon: "variableNew", primary: !n, onClick: () => void createVariable(this.app).then(() => this.showCard()) },
-        ...(n ? [{ type: "button" as const, label: `All Variables (${n})`, icon: "variable" as const, onClick: () => void editVariables(this.app).then(() => this.showCard()) }] : []),
-        ...(n ? [{ type: "button" as const, label: "Rename", icon: "variable" as const, onClick: () => void renameVariables(this.app).then(() => this.showCard()) }] : []),
+        { type: 'button', label: 'New Variable', icon: 'variableNew', primary: !n, onClick: () => void createVariable(this.app).then(() => this.showCard()) },
+        ...(n ? [{ type: 'button' as const, label: `All Variables (${n})`, icon: 'variable' as const, onClick: () => void editVariables(this.app).then(() => this.showCard()) }] : []),
+        ...(n ? [{ type: 'button' as const, label: 'Rename', icon: 'variable' as const, onClick: () => void renameVariables(this.app).then(() => this.showCard()) }] : []),
         // On / off a tap each way: the tags on the model go and come back, the card stays.
-        { type: "toggle", label: "Variables", value: this.app.varsOn, onChange: (v) => (this.app.showVariables(v), this.showCard()) },
+        { type: 'toggle', label: 'Variables', value: this.app.varsOn, onChange: v => (this.app.showVariables(v), this.showCard()) }
       ],
       actions: [],
-      onDone: () => this.leave(),
+      onDone: () => this.leave()
     });
   }
 
@@ -54,8 +54,11 @@ export class VariablesTool implements Tool {
    * over nothing - it's off then.
    */
   private leave(): void {
-    if (this.app.store.doc.variables.length && this.app.varsOn) this.app.setTool(null);
-    else this.app.variablesOff();
+    if (this.app.store.doc.variables.length && this.app.varsOn) {
+      this.app.setTool(null);
+    } else {
+      this.app.variablesOff();
+    }
   }
 
   tap(): void {
@@ -63,10 +66,12 @@ export class VariablesTool implements Tool {
   }
 
   key(e: KeyboardEvent): boolean {
-    if (e.key === "Escape" || e.key === "Enter") {
+    if (e.key === 'Escape' || e.key === 'Enter') {
       this.leave();
+
       return true;
     }
+
     return false;
   }
 }

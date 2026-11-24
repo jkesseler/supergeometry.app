@@ -13,7 +13,7 @@
 // id. A reference then looks only among faces from the same step, and when
 // there are none, says so instead of guessing.
 
-import { getOC, type Face, type Shape3D } from "replicad";
+import { getOC, type Face, type Shape3D } from 'replicad';
 
 interface Tagged {
   /** The step that made each face (in the order of shape.faces). */
@@ -42,9 +42,12 @@ type Moved = number[];
 function then(m: Moved, n: Moved): Moved {
   const out: number[] = [];
   for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) out.push(n[r * 4] * m[c] + n[r * 4 + 1] * m[4 + c] + n[r * 4 + 2] * m[8 + c]);
+    for (let c = 0; c < 3; c++) {
+      out.push(n[r * 4] * m[c] + n[r * 4 + 1] * m[4 + c] + n[r * 4 + 2] * m[8 + c]);
+    }
     out.push(n[r * 4] * m[3] + n[r * 4 + 1] * m[7] + n[r * 4 + 2] * m[11] + n[r * 4 + 3]);
   }
+
   return out;
 }
 
@@ -54,11 +57,15 @@ function backOf(m: Moved): Back {
   const [a, b, c, d, e, f, g, h, i] = [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]];
   const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
   // The matrix turned back (its inverse).
-  const inv = [e * i - f * h, c * h - b * i, b * f - c * e, f * g - d * i, a * i - c * g, c * d - a * f, d * h - e * g, b * g - a * h, a * e - b * d].map((x) => x / det);
+  const inv = [e * i - f * h, c * h - b * i, b * f - c * e, f * g - d * i, a * i - c * g, c * d - a * f, d * h - e * g, b * g - a * h, a * e - b * d].map(x => x / det);
+
   return (v, direction) => {
     // (The way a face looks goes back by the matrix laid on its side: the same thing for a move, a turn, a mirroring.)
-    if (direction) return [a * v[0] + d * v[1] + g * v[2], b * v[0] + e * v[1] + h * v[2], c * v[0] + f * v[1] + i * v[2]];
+    if (direction) {
+      return [a * v[0] + d * v[1] + g * v[2], b * v[0] + e * v[1] + h * v[2], c * v[0] + f * v[1] + i * v[2]];
+    }
     const q = [v[0] - m[3], v[1] - m[7], v[2] - m[11]];
+
     return [inv[0] * q[0] + inv[1] * q[1] + inv[2] * q[2], inv[3] * q[0] + inv[4] * q[1] + inv[5] * q[2], inv[6] * q[0] + inv[7] * q[1] + inv[8] * q[2]];
   };
 }
@@ -69,7 +76,8 @@ const oldEdgeTags = new WeakMap<Shape3D, string[][] | null>();
 
 const r4 = (v: number) => {
   const x = Math.round(v * 1e4) / 1e4;
-  return Object.is(x, -0) ? "0" : String(x);
+
+  return Object.is(x, -0) ? '0' : String(x);
 };
 
 /** A face's surface, the same however much of it the face covers (null: no key for this kind). */
@@ -82,13 +90,17 @@ function surfaceKey(face: Face): string | null {
     // A direction either way round (a face's orientation can flip in an edit).
     const dir = (d: { X(): number; Y(): number; Z(): number }) => {
       let v = [d.X(), d.Y(), d.Z()];
-      const k = v.findIndex((x) => Math.abs(x) > 1e-9);
-      if (k >= 0 && v[k] < 0) v = v.map((x) => -x);
+      const k = v.findIndex(x => Math.abs(x) > 1e-9);
+      if (k >= 0 && v[k] < 0) {
+        v = v.map(x => -x);
+      }
+
       return v;
     };
     // The point of a line through p along d nearest the origin.
     const foot = (p: number[], d: number[]) => {
       const t = p[0] * d[0] + p[1] * d[1] + p[2] * d[2];
+
       return [p[0] - t * d[0], p[1] - t * d[1], p[2] - t * d[2]];
     };
     const pt = (p: { X(): number; Y(): number; Z(): number }) => [p.X(), p.Y(), p.Z()];
@@ -96,27 +108,33 @@ function surfaceKey(face: Face): string | null {
       const pl = s.Plane();
       const n = dir(pl.Axis().Direction());
       const p = pt(pl.Location());
+
       return `P ${n.map(r4)} ${r4(n[0] * p[0] + n[1] * p[1] + n[2] * p[2])}`;
     }
     if (type === T.GeomAbs_Cylinder) {
       const cy = s.Cylinder();
       const d = dir(cy.Axis().Direction());
+
       return `C ${d.map(r4)} ${foot(pt(cy.Location()), d).map(r4)} ${r4(cy.Radius())}`;
     }
     if (type === T.GeomAbs_Sphere) {
       const sp = s.Sphere();
+
       return `S ${pt(sp.Location()).map(r4)} ${r4(sp.Radius())}`;
     }
     if (type === T.GeomAbs_Cone) {
       const co = s.Cone() as any;
       const d = dir(co.Axis().Direction());
+
       return `K ${d.map(r4)} ${pt(co.Apex()).map(r4)} ${r4(Math.abs(co.SemiAngle()))}`;
     }
     if (type === T.GeomAbs_Torus) {
       const to = s.Torus() as any;
       const d = dir(to.Axis().Direction());
+
       return `T ${d.map(r4)} ${pt(to.Location()).map(r4)} ${r4(to.MajorRadius())} ${r4(to.MinorRadius())}`;
     }
+
     return null;
   } catch {
     return null;
@@ -136,23 +154,30 @@ function surfaceKey(face: Face): string | null {
  * step's now; the old answer is kept beside it, for projects saved with it.
  */
 export function tagBody(shape: Shape3D, step: string, from: Shape3D[], others: Shape3D[] = []): void {
-  if (tags.has(shape)) return;
+  if (tags.has(shape)) {
+    return;
+  }
   const hashes = new Map<number, { face: Face; step: string; key: string | null; alias?: string; move?: Moved }[]>();
   const byKey = new Map<string, { step: string; alias?: string; move?: Moved }>();
   for (const s of from) {
     const t = tags.get(s);
-    if (!t || s === shape) continue;
-    for (const list of t.byHash.values())
+    if (!t || s === shape) {
+      continue;
+    }
+    for (const list of t.byHash.values()) {
       for (const { face, i } of list) {
         const h = face.hashCode;
         hashes.set(h, [...(hashes.get(h) ?? []), { face, step: t.steps[i], key: t.keys[i], alias: t.alias?.[i], move: t.moves?.[i] }]);
       }
+    }
     t.keys.forEach((k, i) => k && !byKey.has(k) && byKey.set(k, { step: t.steps[i], alias: t.alias?.[i], move: t.moves?.[i] }));
   }
   const oldKey = new Map<string, string>();
   for (const s of others) {
     const t = tags.get(s);
-    if (!t || s === shape || from.includes(s)) continue;
+    if (!t || s === shape || from.includes(s)) {
+      continue;
+    }
     t.keys.forEach((k, i) => k && !oldKey.has(k) && oldKey.set(k, t.alias?.[i] ?? t.steps[i]));
   }
   const faces = shape.faces;
@@ -162,12 +187,13 @@ export function tagBody(shape: Shape3D, step: string, from: Shape3D[], others: S
   faces.forEach((face, i) => {
     const h = face.hashCode;
     out.byHash.set(h, [...(out.byHash.get(h) ?? []), { face, i }]);
-    const same = hashes.get(h)?.find((x) => x.face.isSame(face));
+    const same = hashes.get(h)?.find(x => x.face.isSame(face));
     if (same) {
       out.steps.push(same.step);
       out.keys.push(same.key);
       alias.push(same.alias);
       moves.push(same.move);
+
       return;
     }
     const key = surfaceKey(face);
@@ -177,8 +203,12 @@ export function tagBody(shape: Shape3D, step: string, from: Shape3D[], others: S
     alias.push(kept ? kept.alias : key ? oldKey.get(key) : undefined);
     moves.push(kept?.move);
   });
-  if (alias.some((a) => a !== undefined)) out.alias = alias;
-  if (moves.some((m) => m !== undefined)) out.moves = moves;
+  if (alias.some(a => a !== undefined)) {
+    out.alias = alias;
+  }
+  if (moves.some(m => m !== undefined)) {
+    out.moves = moves;
+  }
   tags.set(shape, out);
 }
 
@@ -193,9 +223,13 @@ export function tagBody(shape: Shape3D, step: string, from: Shape3D[], others: S
  */
 export function movedTags(from: Shape3D, moved: Shape3D, step: string, m: number[]): void {
   const t = tags.get(from);
-  if (!t || tags.has(moved)) return;
+  if (!t || tags.has(moved)) {
+    return;
+  }
   const faces = moved.faces;
-  if (faces.length !== t.steps.length) return;
+  if (faces.length !== t.steps.length) {
+    return;
+  }
   const byHash = new Map<number, { face: Face; i: number }[]>();
   faces.forEach((face, i) => byHash.set(face.hashCode, [...(byHash.get(face.hashCode) ?? []), { face, i }]));
   tags.set(moved, {
@@ -203,7 +237,7 @@ export function movedTags(from: Shape3D, moved: Shape3D, step: string, m: number
     keys: faces.map(surfaceKey),
     byHash,
     alias: faces.map(() => step),
-    moves: faces.map((_, i) => (t.moves?.[i] ? then(t.moves[i]!, m) : m)),
+    moves: faces.map((_, i) => (t.moves?.[i] ? then(t.moves[i]!, m) : m))
   });
 }
 
@@ -220,21 +254,29 @@ export function faceSteps(shape: Shape3D): string[] | undefined {
 /** Edge steps as projects saved before faces were told apart from other bodies' name them (undefined: the same as edgeSteps). */
 export function oldEdgeSteps(shape: Shape3D): string[][] | undefined {
   const known = oldEdgeTags.get(shape);
-  if (known !== undefined) return known ?? undefined;
+  if (known !== undefined) {
+    return known ?? undefined;
+  }
   const t = tags.get(shape);
   const out = t?.alias ? stepsOfEdges(shape, t.steps.map((s, i) => t.alias![i] ?? s)) : null;
   oldEdgeTags.set(shape, out);
+
   return out ?? undefined;
 }
 
 /** For each edge of a body, the steps of the faces it lies between (sorted; one for a seam). */
 export function edgeSteps(shape: Shape3D): string[][] | undefined {
   const known = edgeTags.get(shape);
-  if (known) return known;
+  if (known) {
+    return known;
+  }
   const steps = faceSteps(shape);
-  if (!steps) return undefined;
+  if (!steps) {
+    return undefined;
+  }
   const out = stepsOfEdges(shape, steps);
   edgeTags.set(shape, out);
+
   return out;
 }
 
@@ -245,12 +287,17 @@ function stepsOfEdges(shape: Shape3D, steps: string[]): string[][] {
   shape.faces.forEach((f, fi) => {
     for (const fe of f.edges) {
       const list = buckets.get(fe.hashCode);
-      const m = list?.length === 1 ? list[0] : list?.find((x) => edges[x.i].isSame(fe));
+      const m = list?.length === 1 ? list[0] : list?.find(x => edges[x.i].isSame(fe));
       m?.s.add(steps[fi]);
     }
   });
   const out: string[][] = new Array(edges.length).fill(null).map(() => []);
-  for (const list of buckets.values()) for (const { i, s } of list) out[i] = [...s].sort();
+  for (const list of buckets.values()) {
+    for (const { i, s } of list) {
+      out[i] = [...s].sort();
+    }
+  }
+
   return out;
 }
 
@@ -269,13 +316,19 @@ const originTags = new WeakMap<Shape3D, (string | undefined)[]>();
 /** For each face of a body, which of its step's faces it is (undefined: can't be told). */
 export function faceOrigins(shape: Shape3D): (string | undefined)[] | undefined {
   const known = originTags.get(shape);
-  if (known) return known;
+  if (known) {
+    return known;
+  }
   const steps = faceSteps(shape);
-  if (!steps) return undefined;
+  if (!steps) {
+    return undefined;
+  }
   const moves = tags.get(shape)?.moves;
   const out = shape.faces.map((face, i) => {
     const of = originOf.get(steps[i]);
-    if (!of) return undefined;
+    if (!of) {
+      return undefined;
+    }
     try {
       // (Told where its step made it: a face moved since is taken back there.)
       return of(face, moves?.[i] ? backOf(moves[i]!) : undefined) ?? undefined;
@@ -284,6 +337,7 @@ export function faceOrigins(shape: Shape3D): (string | undefined)[] | undefined 
     }
   });
   originTags.set(shape, out);
+
   return out;
 }
 
@@ -291,25 +345,39 @@ const edgeOriginTags = new WeakMap<Shape3D, (string[] | undefined)[]>();
 /** For each edge, the faces it lies between as "step|origin" (sorted); undefined when one of them can't be told. */
 export function edgeOrigins(shape: Shape3D): (string[] | undefined)[] | undefined {
   const known = edgeOriginTags.get(shape);
-  if (known) return known;
+  if (known) {
+    return known;
+  }
   const steps = faceSteps(shape);
   const origins = faceOrigins(shape);
-  if (!steps || !origins) return undefined;
+  if (!steps || !origins) {
+    return undefined;
+  }
   const edges = shape.edges;
   const buckets = new Map<number, { i: number; s: Set<string>; all: boolean }[]>();
   edges.forEach((e, i) => buckets.set(e.hashCode, [...(buckets.get(e.hashCode) ?? []), { i, s: new Set<string>(), all: true }]));
   shape.faces.forEach((f, fi) => {
     for (const fe of f.edges) {
       const list = buckets.get(fe.hashCode);
-      const m = list?.length === 1 ? list[0] : list?.find((x) => edges[x.i].isSame(fe));
-      if (!m) continue;
-      if (origins[fi] === undefined) m.all = false;
-      else m.s.add(`${steps[fi]}|${origins[fi]}`);
+      const m = list?.length === 1 ? list[0] : list?.find(x => edges[x.i].isSame(fe));
+      if (!m) {
+        continue;
+      }
+      if (origins[fi] === undefined) {
+        m.all = false;
+      } else {
+        m.s.add(`${steps[fi]}|${origins[fi]}`);
+      }
     }
   });
   const out: (string[] | undefined)[] = new Array(edges.length).fill(undefined);
-  for (const list of buckets.values()) for (const { i, s, all } of list) out[i] = all && s.size ? [...s].sort() : undefined;
+  for (const list of buckets.values()) {
+    for (const { i, s, all } of list) {
+      out[i] = all && s.size ? [...s].sort() : undefined;
+    }
+  }
   edgeOriginTags.set(shape, out);
+
   return out;
 }
 
@@ -323,20 +391,27 @@ const seamTags = new WeakMap<Shape3D, boolean[]>();
  */
 export function seamEdges(shape: Shape3D): boolean[] {
   const known = seamTags.get(shape);
-  if (known) return known;
+  if (known) {
+    return known;
+  }
   const edges = shape.edges;
   const buckets = new Map<number, { i: number; faces: Set<number> }[]>();
   edges.forEach((e, i) => buckets.set(e.hashCode, [...(buckets.get(e.hashCode) ?? []), { i, faces: new Set<number>() }]));
   shape.faces.forEach((f, fi) => {
     for (const fe of f.edges) {
       const list = buckets.get(fe.hashCode);
-      const m = list?.length === 1 ? list[0] : list?.find((x) => edges[x.i].isSame(fe));
+      const m = list?.length === 1 ? list[0] : list?.find(x => edges[x.i].isSame(fe));
       m?.faces.add(fi);
     }
   });
   const out: boolean[] = new Array(edges.length).fill(false);
-  for (const list of buckets.values()) for (const { i, faces } of list) out[i] = faces.size === 1;
+  for (const list of buckets.values()) {
+    for (const { i, faces } of list) {
+      out[i] = faces.size === 1;
+    }
+  }
   seamTags.set(shape, out);
+
   return out;
 }
 
@@ -349,9 +424,13 @@ export function sameSteps(a: string[], b: string[]): boolean {
 /** A copy made face for face (same order): the same tags. */
 export function inheritTags(from: Shape3D, copy: Shape3D): void {
   const t = tags.get(from);
-  if (!t || tags.has(copy)) return;
+  if (!t || tags.has(copy)) {
+    return;
+  }
   const faces = copy.faces;
-  if (faces.length !== t.steps.length) return;
+  if (faces.length !== t.steps.length) {
+    return;
+  }
   const byHash = new Map<number, { face: Face; i: number }[]>();
   faces.forEach((face, i) => byHash.set(face.hashCode, [...(byHash.get(face.hashCode) ?? []), { face, i }]));
   tags.set(copy, { steps: t.steps, keys: t.keys, byHash, alias: t.alias, moves: t.moves });

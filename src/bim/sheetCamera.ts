@@ -23,6 +23,7 @@ export class SheetCamera {
   /** Pixels per mm with all of the sheet in view. */
   fitZoom(): number {
     const m = SheetCamera.MARGIN;
+
     return Math.max(1e-3, Math.min((this.vw - 2 * m) / this.W, (this.vh - 2 * m) / this.H));
   }
   /** How far it may go: a quarter of the whole sheet out, 60 times in (and at least 40 px a mm). */
@@ -45,13 +46,18 @@ export class SheetCamera {
   resize(vw: number, vh: number): void {
     this.vw = Math.max(1, vw);
     this.vh = Math.max(1, vh);
-    if (this.fitted) this.fit();
-    else this.clamp();
+    if (this.fitted) {
+      this.fit();
+    } else {
+      this.clamp();
+    }
   }
 
   /** Another sheet size (A3 to A4…): all of it. */
   setSheet(W: number, H: number): void {
-    if (W === this.W && H === this.H) return;
+    if (W === this.W && H === this.H) {
+      return;
+    }
     this.W = W;
     this.H = H;
     this.fit();
@@ -100,6 +106,7 @@ export class SheetCamera {
     const w = this.vw / this.z;
     const h = this.vh / this.z;
     const r = (v: number) => Math.round(v * 1e4) / 1e4;
+
     return `${r(this.cx - w / 2)} ${r(this.cy - h / 2)} ${r(w)} ${r(h)}`;
   }
 

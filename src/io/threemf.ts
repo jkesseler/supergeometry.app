@@ -10,26 +10,28 @@ export interface MeshBody {
   color?: string;
 }
 
-const esc = (s: string) => s.replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]!);
+const esc = (s: string) => s.replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]!);
 const num = (v: number) => (Math.round(v * 1e5) / 1e5).toString();
 
 function modelXml(bodies: MeshBody[], title: string): string {
-  const colors = [...new Set(bodies.map((b) => b.color).filter((c): c is string => !!c))];
+  const colors = [...new Set(bodies.map(b => b.color).filter((c): c is string => !!c))];
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
   out.push('<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">');
   out.push(`<metadata name="Title">${esc(title)}</metadata>`);
   out.push('<metadata name="Application">superGeometry.app</metadata>');
-  out.push("<resources>");
+  out.push('<resources>');
   if (colors.length) {
     out.push('<basematerials id="1">');
-    for (const c of colors) out.push(`<base name="${esc(c)}" displaycolor="${esc(c.toUpperCase())}FF"/>`);
-    out.push("</basematerials>");
+    for (const c of colors) {
+      out.push(`<base name="${esc(c)}" displaycolor="${esc(c.toUpperCase())}FF"/>`);
+    }
+    out.push('</basematerials>');
   }
   bodies.forEach((b, k) => {
     const id = k + 2;
     const ci = b.color ? colors.indexOf(b.color) : -1;
-    out.push(`<object id="${id}" type="model" name="${esc(b.name)}"${ci >= 0 ? ` pid="1" pindex="${ci}"` : ""}><mesh><vertices>`);
+    out.push(`<object id="${id}" type="model" name="${esc(b.name)}"${ci >= 0 ? ` pid="1" pindex="${ci}"` : ''}><mesh><vertices>`);
     // Shared corners once (the display mesh repeats them per face).
     const map = new Map<string, number>();
     const remap: number[] = [];
@@ -44,19 +46,22 @@ function modelXml(bodies: MeshBody[], title: string): string {
       }
       remap.push(v);
     }
-    out.push("</vertices><triangles>");
+    out.push('</vertices><triangles>');
     const ix = b.indices;
     for (let t = 0; t < ix.length; t += 3) {
       const [a, c, d] = [remap[ix[t]], remap[ix[t + 1]], remap[ix[t + 2]]];
-      if (a === c || c === d || a === d) continue; // collapsed by the shared corners
+      if (a === c || c === d || a === d) {
+        continue;
+      } // collapsed by the shared corners
       out.push(`<triangle v1="${a}" v2="${c}" v3="${d}"/>`);
     }
-    out.push("</triangles></mesh></object>");
+    out.push('</triangles></mesh></object>');
   });
-  out.push("</resources><build>");
+  out.push('</resources><build>');
   bodies.forEach((_, k) => out.push(`<item objectid="${k + 2}"/>`));
-  out.push("</build></model>");
-  return out.join("\n");
+  out.push('</build></model>');
+
+  return out.join('\n');
 }
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8"?>
@@ -74,11 +79,12 @@ const RELS = `<?xml version="1.0" encoding="UTF-8"?>
 
 export async function exportThreeMF(bodies: MeshBody[], title: string, step: Blob): Promise<Blob> {
   const enc = new TextEncoder();
+
   return zip([
-    { name: "[Content_Types].xml", data: enc.encode(CONTENT_TYPES) },
-    { name: "_rels/.rels", data: enc.encode(RELS) },
-    { name: "3D/3dmodel.model", data: enc.encode(modelXml(bodies, title)) },
-    { name: "Attachments/model.step", data: new Uint8Array(await step.arrayBuffer()) },
+    { name: '[Content_Types].xml', data: enc.encode(CONTENT_TYPES) },
+    { name: '_rels/.rels', data: enc.encode(RELS) },
+    { name: '3D/3dmodel.model', data: enc.encode(modelXml(bodies, title)) },
+    { name: 'Attachments/model.step', data: new Uint8Array(await step.arrayBuffer()) }
   ]);
 }
 
@@ -88,23 +94,32 @@ const CRC = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
     let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
     t[n] = c >>> 0;
   }
+
   return t;
 })();
 
 function crc32(d: Uint8Array): number {
   let c = 0xffffffff;
-  for (let i = 0; i < d.length; i++) c = CRC[(c ^ d[i]) & 0xff] ^ (c >>> 8);
+  for (let i = 0; i < d.length; i++) {
+    c = CRC[(c ^ d[i]) & 0xff] ^ (c >>> 8);
+  }
+
   return (c ^ 0xffffffff) >>> 0;
 }
 
 /** Deflate when the browser can (much smaller meshes), else store. */
 async function deflate(d: Uint8Array): Promise<Uint8Array | null> {
-  if (typeof CompressionStream === "undefined") return null;
+  if (typeof CompressionStream === 'undefined') {
+    return null;
+  }
   try {
-    const s = new Blob([d as BlobPart]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    const s = new Blob([d as BlobPart]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+
     return new Uint8Array(await new Response(s).arrayBuffer());
   } catch {
     return null;
@@ -152,5 +167,6 @@ export async function zip(files: { name: string; data: Uint8Array }[]): Promise<
   end.setUint16(10, files.length, true);
   end.setUint32(12, size, true);
   end.setUint32(16, offset, true);
-  return new Blob([...parts, ...central, new Uint8Array(end.buffer)] as BlobPart[], { type: "application/vnd.ms-package.3dmanufacturing-3dmodel+xml" });
+
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)] as BlobPart[], { type: 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml' });
 }

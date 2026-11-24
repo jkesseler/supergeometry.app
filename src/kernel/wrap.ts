@@ -2,11 +2,11 @@
 // faces they land on, the faces split along them) and Wrap & Emboss (a sketch's
 // shapes wrapped round a round face, raised from it or sunk into it).
 
-import { cast, draw, getOC, makeCompound, makeLine, makeVertex, type Drawing, type Edge, type Face, type Shape3D } from "replicad";
-import type { Vec3 } from "../doc/types";
-import { add, cross, dist, dot, len, norm, scale, sub } from "../geom";
-import { cylinderOf } from "./faceEdit";
-import { measureVolume, quickVolume } from "./ocFree";
+import { cast, draw, getOC, makeCompound, makeLine, makeVertex, type Drawing, type Edge, type Face, type Shape3D } from 'replicad';
+import { add, cross, dist, dot, len, norm, scale, sub } from '../geom';
+import { cylinderOf } from './faceEdit';
+import { measureVolume, quickVolume } from './ocFree';
+import type { Vec3 } from '../doc/types';
 
 const tup = (v: { toTuple(): number[] }) => v.toTuple() as Vec3;
 
@@ -16,6 +16,7 @@ type Src = { face: Face; normal: Vec3 }[];
 function sizeOf(body: Shape3D): { d: number; c: Vec3 } {
   const bb = body.boundingBox;
   const c = bb.center as unknown as number[];
+
   return { d: Math.hypot(bb.width, bb.height, bb.depth), c: [c[0], c[1], c[2]] };
 }
 
@@ -50,25 +51,34 @@ export function imprint(body: Shape3D, curves: Edge[], dir: Vec3, keep: (e: Edge
     sec.Init2(makeCompound(walls as never).wrapped);
     sec.Build(progress);
     const cut = cast(sec.Shape());
-    for (const e of "edges" in cut ? (cut.edges as Edge[]) : []) if (keep(e)) kept.push(e);
+    for (const e of 'edges' in cut ? (cut.edges as Edge[]) : []) {
+      if (keep(e)) {
+        kept.push(e);
+      }
+    }
   } finally {
     sec.delete();
     progress.delete();
   }
-  if (!kept.length) throw new Error("Nothing lands on the body's faces seen from there");
+  if (!kept.length) {
+    throw new Error("Nothing lands on the body's faces seen from there");
+  }
+
   return splitFaces(body, kept);
 }
 
 /** The lines seen from a sketch's plane (through o, square to n): not on the far side, nor behind other faces. */
 export function seenFrom(body: Shape3D, o: Vec3, n: Vec3): (e: Edge) => boolean {
   const eps = Math.max(1e-4, sizeOf(body).d * 1e-5);
-  return (e) => seen(e, o, norm(n), body, eps);
+
+  return e => seen(e, o, norm(n), body, eps);
 }
 
 /** The lines on one face. */
 export function onFace(body: Shape3D, F: Face): (e: Edge) => boolean {
   const oc = getOC();
   const eps = Math.max(1e-4, sizeOf(body).d * 1e-5);
+
   return (e) => {
     const ds = new oc.BRepExtrema_DistShapeShape(makeVertex(tup(e.pointAt(0.5))).wrapped, F.wrapped);
     try {
@@ -88,14 +98,18 @@ function seen(e: Edge, o: Vec3, n: Vec3, body: Shape3D, eps: number): boolean {
   const oc = getOC();
   const pm = tup(e.pointAt(0.5));
   const h = dot(sub(pm, o), n);
-  if (Math.abs(h) < 2 * eps) return true;
+  if (Math.abs(h) < 2 * eps) {
+    return true;
+  }
   const sg = Math.sign(h);
   const q = sub(pm, scale(n, sg * eps));
   const pp = sub(pm, scale(n, h - sg * eps));
   const seg = makeLine(q, pp);
   const ds = new oc.BRepExtrema_DistShapeShape(seg.wrapped, body.wrapped);
   try {
-    if (!(ds.IsDone() && ds.Value() > eps * 0.05)) return false;
+    if (!(ds.IsDone() && ds.Value() > eps * 0.05)) {
+      return false;
+    }
   } finally {
     ds.delete();
   }
@@ -108,6 +122,7 @@ function seen(e: Edge, o: Vec3, n: Vec3, body: Shape3D, eps: number): boolean {
     at.LoadS1(body.wrapped);
     at.LoadS2(mid.wrapped);
     at.Perform();
+
     return !(at.IsDone() && at.InnerSolution());
   } finally {
     at.delete();
@@ -128,10 +143,15 @@ function splitFaces(body: Shape3D, edges: Edge[]): Shape3D {
     sp.SetArguments(args);
     sp.SetTools(tools);
     sp.Build(progress);
-    if (!sp.IsDone()) throw new Error("The faces couldn't be split along the sketch");
+    if (!sp.IsDone()) {
+      throw new Error("The faces couldn't be split along the sketch");
+    }
     const out = cast(sp.Shape()) as Shape3D;
-    const solids = out.constructor.name === "Solid" ? [out] : ((out as unknown as { solids?: Shape3D[] }).solids ?? []);
-    if (solids.length !== 1) throw new Error("The faces couldn't be split along the sketch");
+    const solids = out.constructor.name === 'Solid' ? [out] : ((out as unknown as { solids?: Shape3D[] }).solids ?? []);
+    if (solids.length !== 1) {
+      throw new Error("The faces couldn't be split along the sketch");
+    }
+
     return solids[0];
   } finally {
     sp.delete();
@@ -149,9 +169,13 @@ function splitFaces(body: Shape3D, edges: Edge[]): Shape3D {
  * the plane is nearest the axis is where the wrap starts from.
  */
 export function wrapOnto(body: Shape3D, round: Face, src: Src, height: number): Shape3D {
-  if (Math.abs(height) < 1e-6) throw new Error("Height is zero");
+  if (Math.abs(height) < 1e-6) {
+    throw new Error('Height is zero');
+  }
   const cy = cylinderOf(round);
-  if (!cy) throw new Error("Wrap goes on a round face (a cylinder)");
+  if (!cy) {
+    throw new Error('Wrap goes on a round face (a cylinder)');
+  }
   const oc = getOC();
   const ad = new oc.BRepAdaptor_Surface(round.wrapped, true);
   const cyl = ad.Cylinder();
@@ -164,7 +188,9 @@ export function wrapOnto(body: Shape3D, round: Face, src: Src, height: number): 
   // The way the face's U goes round (replicad turns a left-handed one round).
   const Y = cross(Z, X);
   const n = norm(src[0].normal);
-  if (Math.abs(dot(n, Z)) > 1e-6) throw new Error("Draw the sketch on a plane along the round face's axis");
+  if (Math.abs(dot(n, Z)) > 1e-6) {
+    throw new Error("Draw the sketch on a plane along the round face's axis");
+  }
   const o = tup(src[0].face.center);
   // The plane's nearest point to the axis: where the wrap starts.
   let R0 = sub(o, Loc);
@@ -173,8 +199,11 @@ export function wrapOnto(body: Shape3D, round: Face, src: Src, height: number): 
   // the first shape, or a word centred on a mug's far side came out started
   // from its first letter's place, a quarter of the way round.)
   const side = dot(R0, n);
-  if (Math.abs(side) > 1e-9) R0 = scale(n, Math.sign(side));
-  else if (len(R0) < 1e-9) R0 = n;
+  if (Math.abs(side) > 1e-9) {
+    R0 = scale(n, Math.sign(side));
+  } else if (len(R0) < 1e-9) {
+    R0 = n;
+  }
   R0 = norm(R0);
   const T = cross(Z, R0);
   const theta0 = (Math.atan2(dot(R0, Y), dot(R0, X)) + 2 * Math.PI) % (2 * Math.PI);
@@ -186,24 +215,32 @@ export function wrapOnto(body: Shape3D, round: Face, src: Src, height: number): 
 
   const solids: Shape3D[] = [];
   for (const { face } of src) {
-    const loops = [face.clone().outerWire(), ...face.clone().innerWires()].map((w) => chain(w.edges as Edge[]));
-    const all = loops.flat().flatMap((e) => [0, 0.5, 1].map((t) => map(e.at(t))[0]));
+    const loops = [face.clone().outerWire(), ...face.clone().innerWires()].map(w => chain(w.edges as Edge[]));
+    const all = loops.flat().flatMap(e => [0, 0.5, 1].map(t => map(e.at(t))[0]));
     const [lo, hi] = [Math.min(...all), Math.max(...all)];
-    if (hi - lo > 2 * Math.PI * r - 1e-6) throw new Error("The sketch is longer than the way round the face");
+    if (hi - lo > 2 * Math.PI * r - 1e-6) {
+      throw new Error('The sketch is longer than the way round the face');
+    }
     const shift = lo < 0 ? 2 * Math.PI * r : 0;
     const m = (p: Vec3): [number, number] => {
       const q = map(p);
+
       return [q[0] + shift, q[1]];
     };
-    const drawings = loops.map((loop) => loopDrawing(loop, m));
+    const drawings = loops.map(loop => loopDrawing(loop, m));
     let dr = drawings[0];
-    for (const h of drawings.slice(1)) dr = dr.cut(h);
-    const sk = dr.sketchOnFace(round, "original") as unknown as { faces?: () => Face; face?: () => Face };
+    for (const h of drawings.slice(1)) {
+      dr = dr.cut(h);
+    }
+    const sk = dr.sketchOnFace(round, 'original') as unknown as { faces?: () => Face; face?: () => Face };
     const onFace = sk.faces ? sk.faces() : sk.face!();
     solids.push(thicken(onFace, height, cy));
   }
   let out = body;
-  for (const s of solids) out = (height > 0 ? out.fuse(s) : out.cut(s)) as Shape3D;
+  for (const s of solids) {
+    out = (height > 0 ? out.fuse(s) : out.cut(s)) as Shape3D;
+  }
+
   return out;
 }
 
@@ -211,7 +248,7 @@ type Run = { at: (t: number) => Vec3; kind: string };
 
 /** A wire's edges one after another, each the way the loop goes. */
 function chain(edges: Edge[]): Run[] {
-  const left = edges.map((e) => ({ e, a: tup(e.startPoint), b: tup(e.endPoint) }));
+  const left = edges.map(e => ({ e, a: tup(e.startPoint), b: tup(e.endPoint) }));
   const out: Run[] = [];
   let end: Vec3 | null = null;
   while (left.length) {
@@ -221,8 +258,12 @@ function chain(edges: Edge[]): Run[] {
       let best = Infinity;
       left.forEach((x, k) => {
         const [da, db] = [dist(x.a, end!), dist(x.b, end!)];
-        if (da < best) [best, i, flip] = [da, k, false];
-        if (db < best) [best, i, flip] = [db, k, true];
+        if (da < best) {
+          [best, i, flip] = [da, k, false];
+        }
+        if (db < best) {
+          [best, i, flip] = [db, k, true];
+        }
       });
     }
     const { e, a, b } = left.splice(i, 1)[0];
@@ -230,6 +271,7 @@ function chain(edges: Edge[]): Run[] {
     out.push({ at, kind: e.geomType });
     end = flip ? a : b;
   }
+
   return out;
 }
 
@@ -238,12 +280,21 @@ function loopDrawing(loop: Run[], m: (p: Vec3) => [number, number]): Drawing {
   let pen = draw(m(loop[0].at(0)));
   for (const run of loop) {
     const closed = dist(run.at(0), run.at(1)) < 1e-9;
-    if (run.kind === "LINE") pen = pen.lineTo(m(run.at(1)));
-    else if (run.kind === "CIRCLE") {
-      if (closed) pen = pen.threePointsArcTo(m(run.at(0.5)), m(run.at(0.25))).threePointsArcTo(m(run.at(1)), m(run.at(0.75)));
-      else pen = pen.threePointsArcTo(m(run.at(1)), m(run.at(0.5)));
-    } else for (let k = 1; k <= 32; k++) pen = pen.lineTo(m(run.at(k / 32)));
+    if (run.kind === 'LINE') {
+      pen = pen.lineTo(m(run.at(1)));
+    } else if (run.kind === 'CIRCLE') {
+      if (closed) {
+        pen = pen.threePointsArcTo(m(run.at(0.5)), m(run.at(0.25))).threePointsArcTo(m(run.at(1)), m(run.at(0.75)));
+      } else {
+        pen = pen.threePointsArcTo(m(run.at(1)), m(run.at(0.5)));
+      }
+    } else {
+      for (let k = 1; k <= 32; k++) {
+        pen = pen.lineTo(m(run.at(k / 32)));
+      }
+    }
   }
+
   return pen.close();
 }
 
@@ -256,9 +307,14 @@ function thicken(face: Face, height: number, cy: { s: number }): Shape3D {
     const th = new oc.BRepOffsetAPI_MakeThickSolid();
     try {
       th.MakeThickSolidBySimple(face.wrapped, k);
-      if (!th.IsDone()) return null;
+      if (!th.IsDone()) {
+        return null;
+      }
       let s = cast(th.Shape()) as Shape3D;
-      if (quickVolume(s) < 0) s = cast(s.wrapped.Reversed()) as Shape3D;
+      if (quickVolume(s) < 0) {
+        s = cast(s.wrapped.Reversed()) as Shape3D;
+      }
+
       return s;
     } catch {
       return null;
@@ -270,9 +326,10 @@ function thicken(face: Face, height: number, cy: { s: number }): Shape3D {
   // told by its centre of mass: a slab bent round an arc has that nearer the axis than it is.)
   const both = [make(Math.abs(height)), make(-Math.abs(height))];
   if (both[0] && both[1]) {
-    const [a, b] = both.map((s) => measureVolume(s!));
+    const [a, b] = both.map(s => measureVolume(s!));
     const outer = a > b ? both[0] : both[1];
     const inner = a > b ? both[1] : both[0];
+
     return want > 0 ? outer! : inner!;
   }
   throw new Error("The wrapped shape couldn't be made solid");

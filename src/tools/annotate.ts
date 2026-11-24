@@ -1,14 +1,14 @@
 // 3D dimension annotations: a dimension line with arrowheads, an optional
 // floating input (Total/Offset + value + pin), and the layer of pinned measurements.
 
-import { BufferGeometry, ConeGeometry, Group, Line, LineBasicMaterial, LineDashedMaterial, Mesh, MeshBasicMaterial, Vector3 } from "three";
-import { mergingCommits } from "../doc/store";
-import type { PinDef, Vec3 } from "../doc/types";
-import { el } from "../ui/ui";
-import { numpadInput, openNumpad, typingInto } from "../ui/numpad";
-import { settings } from "../settings";
-import { evaluate, toDisplay, trim, UNIT_LABEL, units } from "../units";
-import type { Viewport } from "../view/viewport";
+import { BufferGeometry, ConeGeometry, Group, Line, LineBasicMaterial, LineDashedMaterial, Mesh, MeshBasicMaterial, Vector3 } from 'three';
+import { mergingCommits } from '../doc/store';
+import { el } from '../ui/ui';
+import { numpadInput, openNumpad, typingInto } from '../ui/numpad';
+import { settings } from '../settings';
+import { evaluate, toDisplay, trim, UNIT_LABEL, units } from '../units';
+import type { PinDef, Vec3 } from '../doc/types';
+import type { Viewport } from '../view/viewport';
 
 const COLOR = 0xdfe6f3;
 
@@ -23,7 +23,7 @@ class DimLine {
   constructor(
     private view: Viewport,
     color = COLOR,
-    private solid = false,
+    private solid = false
   ) {
     const opts = { color, depthTest: false, transparent: true };
     this.line = new Line(new BufferGeometry(), solid ? new LineBasicMaterial(opts) : new LineDashedMaterial({ ...opts, dashSize: 1, gapSize: 1 }));
@@ -32,6 +32,7 @@ class DimLine {
     this.heads = [0, 1].map(() => {
       const m = new Mesh(new ConeGeometry(0.35, 1, 12), mat);
       m.renderOrder = 11;
+
       return m;
     });
     this.group.add(this.line, ...this.heads);
@@ -69,7 +70,7 @@ class DimLine {
 
   dispose(): void {
     this.line.geometry.dispose();
-    this.heads.forEach((h) => h.geometry.dispose());
+    this.heads.forEach(h => h.geometry.dispose());
   }
 }
 
@@ -94,7 +95,7 @@ export interface DimWidgetOptions {
    * the box to sit there, else back past its start a (a line just drawn:
    * the way it came from, not over its end, where the next point is tapped).
    */
-  boxAt?: "middle" | "side" | "beyond" | "clear";
+  boxAt?: 'middle' | 'side' | 'beyond' | 'clear';
   /** Extra screen distance past the end for "beyond" (e.g. to clear a drag arrow there). */
   boxGap?: number;
   /** Which way "beyond" goes when the dimension has no length yet (e.g. the arrow's direction). */
@@ -121,11 +122,11 @@ export interface DimWidgetOptions {
  */
 export class DimWidget {
   private line: DimLine;
-  private box = el("div", "dim-widget");
-  private input = document.createElement("input");
+  private box = el('div', 'dim-widget');
+  private input = document.createElement('input');
   private mid = new Vector3();
   private ends: [Vector3, Vector3] = [new Vector3(), new Vector3()];
-  private boxAt: "middle" | "side" | "beyond" | "clear";
+  private boxAt: 'middle' | 'side' | 'beyond' | 'clear';
   private boxGap: number;
   private dir?: Vec3;
   private facing?: Vec3;
@@ -133,28 +134,28 @@ export class DimWidget {
 
   constructor(
     private view: Viewport,
-    opts: DimWidgetOptions,
+    opts: DimWidgetOptions
   ) {
     this.line = opts.solidColor !== undefined ? new DimLine(view, opts.solidColor, true) : new DimLine(view);
-    this.boxAt = opts.boxAt ?? "middle";
+    this.boxAt = opts.boxAt ?? 'middle';
     this.boxGap = opts.boxGap ?? 0;
     this.dir = opts.dir;
     this.facing = opts.facing;
     view.overlay.add(this.line.group);
     if (opts.modes) {
-      const sel = document.createElement("select");
+      const sel = document.createElement('select');
       for (const m of opts.modes) {
-        const o = document.createElement("option");
+        const o = document.createElement('option');
         o.value = m.id;
         o.textContent = m.label;
         sel.append(o);
       }
       sel.value = opts.mode ?? opts.modes[0].id;
-      sel.addEventListener("change", () => opts.onMode?.(sel.value));
+      sel.addEventListener('change', () => opts.onMode?.(sel.value));
       this.box.append(sel);
       this.modeSel = sel;
     }
-    this.input.inputMode = "decimal";
+    this.input.inputMode = 'decimal';
     numpadInput(this.input);
     this.input.spellcheck = false;
     this.angle = !!opts.angle;
@@ -162,47 +163,55 @@ export class DimWidget {
     this.input.value = opts.typed ?? this.show(opts.value);
     this.input.readOnly = !opts.onInput;
     // A box you type into (the tool's other values attach under it as a list).
-    this.box.classList.toggle("editable", !!opts.onInput);
-    this.input.addEventListener("input", () => {
-      const v = evaluate(this.input.value, this.angle ? "angle" : "length");
-      this.input.classList.toggle("invalid", v === null);
+    this.box.classList.toggle('editable', !!opts.onInput);
+    this.input.addEventListener('input', () => {
+      const v = evaluate(this.input.value, this.angle ? 'angle' : 'length');
+      this.input.classList.toggle('invalid', v === null);
       // Key by key into this box: one undo step for the value typed.
-      if (v !== null) mergingCommits(this, () => opts.onInput?.(v, this.input.value));
+      if (v !== null) {
+        mergingCommits(this, () => opts.onInput?.(v, this.input.value));
+      }
     });
-    this.input.addEventListener("keydown", (e) => {
+    this.input.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") opts.onCommit?.();
-      if (e.key === "Escape") this.input.blur();
+      if (e.key === 'Enter') {
+        opts.onCommit?.();
+      }
+      if (e.key === 'Escape') {
+        this.input.blur();
+      }
     });
-    this.box.append(this.input, el("span", "dim-unit", this.angle ? "°" : UNIT_LABEL[units()]));
+    this.box.append(this.input, el('span', 'dim-unit', this.angle ? '°' : UNIT_LABEL[units()]));
     if (opts.onVariable && opts.variables?.length) {
       // ƒx: pick one of the project's variables for this value.
-      const sel = document.createElement("select");
-      sel.className = "dim-var";
-      sel.title = "Use a variable";
-      const head = document.createElement("option");
-      head.value = "";
-      head.textContent = "ƒx";
+      const sel = document.createElement('select');
+      sel.className = 'dim-var';
+      sel.title = 'Use a variable';
+      const head = document.createElement('option');
+      head.value = '';
+      head.textContent = 'ƒx';
       sel.append(head);
       for (const name of opts.variables) {
-        const o = document.createElement("option");
+        const o = document.createElement('option');
         o.value = name;
         o.textContent = name;
         sel.append(o);
       }
-      sel.addEventListener("change", () => {
-        if (sel.value) opts.onVariable!(sel.value);
+      sel.addEventListener('change', () => {
+        if (sel.value) {
+          opts.onVariable!(sel.value);
+        }
       });
       this.box.append(sel);
     }
     if (opts.onPin) {
-      const pin = el("button", "dim-pin", "📌");
-      pin.title = "Pin this measurement";
-      pin.addEventListener("click", () => opts.onPin!());
+      const pin = el('button', 'dim-pin', '📌');
+      pin.title = 'Pin this measurement';
+      pin.addEventListener('click', () => opts.onPin!());
       this.box.append(pin);
     }
     // Clicks on the widget must not reach the viewport.
-    this.box.addEventListener("pointerdown", (e) => e.stopPropagation());
+    this.box.addEventListener('pointerdown', e => e.stopPropagation());
     document.body.append(this.box);
     view.frameHooks.add(this.hook);
     view.helpers.add(this);
@@ -210,7 +219,9 @@ export class DimWidget {
       setTimeout(() => {
         // The numpad opens on it straight away (on touch screens focus alone may not happen) -
         // unless it opened because keys were typed: then the keyboard carries on in it.
-        if (settings.value.numpad && opts.typed === undefined) return openNumpad(this.input);
+        if (settings.value.numpad && opts.typed === undefined) {
+          return openNumpad(this.input);
+        }
         this.input.focus();
         const n = this.input.value.length;
         this.input.setSelectionRange(n, n);
@@ -240,12 +251,16 @@ export class DimWidget {
   private modeSel: HTMLSelectElement | null = null;
   /** Show another of its modes (the tool switched it). */
   setMode(id: string): void {
-    if (this.modeSel) this.modeSel.value = id;
+    if (this.modeSel) {
+      this.modeSel.value = id;
+    }
   }
 
   setValue(v: number): void {
-    if (!typingInto(this.input)) this.input.value = this.show(v);
-    this.box.classList.remove("typing", "invalid");
+    if (!typingInto(this.input)) {
+      this.input.value = this.show(v);
+    }
+    this.box.classList.remove('typing', 'invalid');
   }
 
   /** Start typing into the box with this first character (keys pressed elsewhere). */
@@ -253,20 +268,22 @@ export class DimWidget {
     this.input.value = ch;
     this.input.focus();
     this.input.setSelectionRange(1, 1);
-    this.input.dispatchEvent(new Event("input"));
+    this.input.dispatchEvent(new Event('input'));
   }
 
   /** Mark the value as not usable (e.g. a fillet radius too big for the lines). */
   markInvalid(bad: boolean): void {
-    this.box.classList.toggle("invalid", bad);
+    this.box.classList.toggle('invalid', bad);
   }
 
   /** Text typed elsewhere (keys while drawing), shown in the box with a caret. */
   setText(text: string, invalid = false): void {
-    if (document.activeElement === this.input) return;
+    if (document.activeElement === this.input) {
+      return;
+    }
     this.input.value = text;
-    this.box.classList.add("typing");
-    this.box.classList.toggle("invalid", invalid);
+    this.box.classList.add('typing');
+    this.box.classList.toggle('invalid', invalid);
   }
 
   private layout(): void {
@@ -274,29 +291,33 @@ export class DimWidget {
     let s = this.view.toScreen(this.mid);
     const sa = this.view.toScreen(this.ends[0]);
     const sb = this.view.toScreen(this.ends[1]);
-    if (s && sa && sb && this.boxAt !== "middle") {
+    if (s && sa && sb && this.boxAt !== 'middle') {
       let dx = sb[0] - sa[0];
       let dy = sb[1] - sa[1];
       // No length yet: use the given direction on screen.
       if (Math.hypot(dx, dy) < 2 && this.dir) {
         const e = this.view.toScreen(this.ends[1].clone().add(new Vector3(...this.dir).multiplyScalar(this.view.cam.worldPerPixel(this.view.height) * 50)));
-        if (e) [dx, dy] = [e[0] - sb[0], e[1] - sb[1]];
+        if (e) {
+          [dx, dy] = [e[0] - sb[0], e[1] - sb[1]];
+        }
       }
       const l = Math.hypot(dx, dy) || 1;
       const half = { w: this.box.offsetWidth / 2 + 10, h: this.box.offsetHeight / 2 + 10 };
       // Too short for the box beside it (it would cover both ends): behind the start.
-      const behind = this.boxAt === "clear" && l < 2 * Math.hypot(half.w, half.h) + 24;
+      const behind = this.boxAt === 'clear' && l < 2 * Math.hypot(half.w, half.h) + 24;
       if (behind) {
         const k = Math.abs((dx / l) * half.w) + Math.abs((dy / l) * half.h) + 6;
         s = [sa[0] - (dx / l) * k, sa[1] - (dy / l) * k];
-      } else if (this.boxAt === "beyond") {
+      } else if (this.boxAt === 'beyond') {
         // Past the end, far enough that the box's own size clears it.
         const k = Math.abs((dx / l) * half.w) + Math.abs((dy / l) * half.h) + this.boxGap;
         s = [sb[0] + (dx / l) * k, sb[1] + (dy / l) * k];
       } else {
         // Beside the middle, on the upper side of the line.
         let n: [number, number] = [-dy / l, dx / l];
-        if (n[1] > 0) n = [-n[0], -n[1]];
+        if (n[1] > 0) {
+          n = [-n[0], -n[1]];
+        }
         const k = Math.abs(n[0] * half.w) + Math.abs(n[1] * half.h);
         s = [s[0] + n[0] * k, s[1] + n[1] * k];
       }
@@ -308,14 +329,21 @@ export class DimWidget {
       const v = this.view.cam.viewDir();
       if (v.x * this.facing[0] + v.y * this.facing[1] + v.z * this.facing[2] > 0.05) {
         s = null;
-        if (this.input === document.activeElement) this.input.blur();
+        if (this.input === document.activeElement) {
+          this.input.blur();
+        }
       }
     }
     this.box.hidden = !s;
     // The dimension on screen (the tool's options card keeps off it).
-    if (sa && sb) this.box.dataset.seg = `${Math.round(sa[0])},${Math.round(sa[1])},${Math.round(sb[0])},${Math.round(sb[1])}`;
-    else delete this.box.dataset.seg;
-    if (s && this.input === document.activeElement && this.held) s = this.held;
+    if (sa && sb) {
+      this.box.dataset.seg = `${Math.round(sa[0])},${Math.round(sa[1])},${Math.round(sb[0])},${Math.round(sb[1])}`;
+    } else {
+      delete this.box.dataset.seg;
+    }
+    if (s && this.input === document.activeElement && this.held) {
+      s = this.held;
+    }
     if (s) {
       // Always where you can reach it: on screen, clear of the side panels.
       s = clampToFree(s, this.box.offsetWidth / 2, this.box.offsetHeight / 2);
@@ -342,24 +370,31 @@ export class DimWidget {
 let freeCache: { t: number; sides: DOMRect[]; panel: DOMRect | null; low: DOMRect[] } | null = null;
 function freeAreas(): { sides: DOMRect[]; panel: DOMRect | null; low: DOMRect[] } {
   const now = performance.now();
-  if (freeCache && now - freeCache.t < 120) return freeCache;
-  const sides: DOMRect[] = [];
-  for (const id of ["items", "history"]) {
-    const e = document.getElementById(id);
-    if (e && !e.hidden && e.offsetWidth) sides.push(e.getBoundingClientRect());
+  if (freeCache && now - freeCache.t < 120) {
+    return freeCache;
   }
-  const p = document.getElementById("panel");
-  const panel = document.documentElement.dataset.screen === "phone" && p && !p.hidden && p.offsetHeight ? p.getBoundingClientRect() : null;
+  const sides: DOMRect[] = [];
+  for (const id of ['items', 'history']) {
+    const e = document.getElementById(id);
+    if (e && !e.hidden && e.offsetWidth) {
+      sides.push(e.getBoundingClientRect());
+    }
+  }
+  const p = document.getElementById('panel');
+  const panel = document.documentElement.dataset.screen === 'phone' && p && !p.hidden && p.offsetHeight ? p.getBoundingClientRect() : null;
   // What sits along the bottom - the line with its tools, and on a phone undo and the guide text over it: a value
   // box stays above them (pulled down into a cut on a phone, the box sat on the guide text).
   const low: DOMRect[] = [];
-  for (const id of ["sentence", "undo-dock", "hint"]) {
+  for (const id of ['sentence', 'undo-dock', 'hint']) {
     const e = document.getElementById(id);
-    const r = e && !e.hidden && e.offsetHeight && getComputedStyle(e).visibility !== "hidden" ? e.getBoundingClientRect() : null;
-    if (r && r.top > window.innerHeight * 0.5) low.push(r);
+    const r = e && !e.hidden && e.offsetHeight && getComputedStyle(e).visibility !== 'hidden' ? e.getBoundingClientRect() : null;
+    if (r && r.top > window.innerHeight * 0.5) {
+      low.push(r);
+    }
   }
   low.sort((a, b) => b.top - a.top);
   freeCache = { t: now, sides, panel, low };
+
   return freeCache;
 }
 
@@ -368,19 +403,33 @@ export function clampToFree(s: [number, number], hw: number, hh: number): [numbe
   let right = window.innerWidth - 8;
   const free = freeAreas();
   for (const r of free.sides) {
-    if (r.width > window.innerWidth * 0.6) continue; // a phone sheet over everything: ignore
-    if (r.left < window.innerWidth / 2) left = Math.max(left, r.right + 8);
-    else right = Math.min(right, r.left - 8);
+    if (r.width > window.innerWidth * 0.6) {
+      continue;
+    } // a phone sheet over everything: ignore
+    if (r.left < window.innerWidth / 2) {
+      left = Math.max(left, r.right + 8);
+    } else {
+      right = Math.min(right, r.left - 8);
+    }
   }
-  if (right - left < hw * 2) [left, right] = [8, window.innerWidth - 8];
+  if (right - left < hw * 2) {
+    [left, right] = [8, window.innerWidth - 8];
+  }
   const x = Math.max(left + hw, Math.min(right - hw, s[0]));
   let y = Math.max(52 + hh, Math.min(window.innerHeight - 8 - hh, s[1]));
   // Phones: the tool's options card sits fixed along the bottom - the box stays above it.
   if (free.panel) {
     const r = free.panel;
-    if (x + hw > r.left - 6 && x - hw < r.right + 6 && y + hh > r.top - 6) y = Math.max(52 + hh, r.top - 8 - hh);
+    if (x + hw > r.left - 6 && x - hw < r.right + 6 && y + hh > r.top - 6) {
+      y = Math.max(52 + hh, r.top - 8 - hh);
+    }
   }
-  for (const r of free.low) if (x + hw > r.left - 6 && x - hw < r.right + 6 && y + hh > r.top - 6 && y - hh < r.bottom + 6) y = Math.max(52 + hh, r.top - 8 - hh);
+  for (const r of free.low) {
+    if (x + hw > r.left - 6 && x - hw < r.right + 6 && y + hh > r.top - 6 && y - hh < r.bottom + 6) {
+      y = Math.max(52 + hh, r.top - 8 - hh);
+    }
+  }
+
   return [x, y];
 }
 
@@ -391,7 +440,7 @@ export class PinLayer {
   private labels: HTMLElement[] = [];
   private pins: PinDef[] = [];
   private visible = true;
-  private host = document.getElementById("pins")!;
+  private host = document.getElementById('pins')!;
 
   constructor(private view: Viewport) {
     view.overlay.add(this.group);
@@ -399,8 +448,8 @@ export class PinLayer {
   }
 
   set(pins: PinDef[], visible: boolean): void {
-    this.lines.forEach((l) => (this.group.remove(l.group), l.dispose()));
-    this.labels.forEach((l) => l.remove());
+    this.lines.forEach(l => (this.group.remove(l.group), l.dispose()));
+    this.labels.forEach(l => l.remove());
     this.pins = pins;
     this.visible = visible;
     this.lines = [];
@@ -411,8 +460,9 @@ export class PinLayer {
         this.group.add(l.group);
         this.lines.push(l);
       }
-      const tag = el("div", "pin", p.text);
+      const tag = el('div', 'pin', p.text);
       this.host.append(tag);
+
       return tag;
     });
     this.group.visible = visible;
@@ -420,12 +470,14 @@ export class PinLayer {
   }
 
   private layout(): void {
-    this.lines.forEach((l) => l.layout());
+    this.lines.forEach(l => l.layout());
     this.pins.forEach((p, i) => {
       const s = this.view.toScreen(p.at);
       const tag = this.labels[i];
       tag.hidden = !this.visible || !s;
-      if (s) tag.style.transform = `translate(${Math.round(s[0])}px, ${Math.round(s[1])}px) translate(-50%, -50%)`;
+      if (s) {
+        tag.style.transform = `translate(${Math.round(s[0])}px, ${Math.round(s[1])}px) translate(-50%, -50%)`;
+      }
     });
   }
 }

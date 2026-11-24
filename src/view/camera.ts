@@ -1,5 +1,5 @@
-import { Box3, MathUtils, OrthographicCamera, PerspectiveCamera, Quaternion, Vector3, type Camera } from "three";
-import type { SavedView, Vec3 } from "../doc/types";
+import { Box3, MathUtils, OrthographicCamera, PerspectiveCamera, Quaternion, Vector3, type Camera } from 'three';
+import type { SavedView, Vec3 } from '../doc/types';
 
 const UP = new Vector3(0, 0, 1);
 const FOV = 40;
@@ -42,7 +42,9 @@ export class CameraController {
 
   setOrtho(on: boolean): void {
     this.ortho = on;
-    if (!on) this.flatForNow = false;
+    if (!on) {
+      this.flatForNow = false;
+    }
     this.update();
   }
 
@@ -52,13 +54,17 @@ export class CameraController {
    */
   flatForNow = false;
   flatUntilTurned(): void {
-    if (this.ortho && !this.flatForNow) return;
+    if (this.ortho && !this.flatForNow) {
+      return;
+    }
     this.flatForNow = true;
     this.setOrtho(true);
   }
   /** Back in perspective, if the view was only flat for a view asked for by name. */
   private endFlat(): void {
-    if (!this.flatForNow) return;
+    if (!this.flatForNow) {
+      return;
+    }
     this.flatForNow = false;
     this.ortho = false;
   }
@@ -101,7 +107,9 @@ export class CameraController {
     const newDist = MathUtils.clamp(this.distance * factor, 0.005, 5e6);
     // A point far off (the ground at the horizon, a bad hit) would fling the
     // target away: zoom straight in instead.
-    if (toward && (!Number.isFinite(toward.x + toward.y + toward.z) || toward.distanceTo(this.target) > this.distance * 20)) toward = undefined;
+    if (toward && (!Number.isFinite(toward.x + toward.y + toward.z) || toward.distanceTo(this.target) > this.distance * 20)) {
+      toward = undefined;
+    }
     if (toward) {
       const k = 1 - newDist / this.distance;
       if (this.ortho) {
@@ -134,7 +142,9 @@ export class CameraController {
   lookAlong(normal: Vec3, xDir?: Vec3, target?: Vec3): void {
     const n = new Vector3(...normal).normalize();
     const to = this.aim();
-    if (target) to.target = new Vector3(...target);
+    if (target) {
+      to.target = new Vector3(...target);
+    }
     to.elevation = MathUtils.clamp(Math.asin(n.z), -Math.PI / 2 + 1e-4, Math.PI / 2 - 1e-4);
     to.roll = 0;
     const x = new Vector3(...(xDir ?? [1, 0, 0]));
@@ -176,7 +186,9 @@ export class CameraController {
   fit(box: Box3, animate = true, free: Insets = NO_INSETS, noZoomIn = false): void {
     this.pivot = null;
     const finite = (v: Vector3) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
-    if (box.isEmpty() || !finite(box.min) || !finite(box.max)) box = new Box3(new Vector3(-50, -50, 0), new Vector3(50, 50, 20));
+    if (box.isEmpty() || !finite(box.min) || !finite(box.max)) {
+      box = new Box3(new Vector3(-50, -50, 0), new Vector3(50, 50, 20));
+    }
     const center = box.getCenter(new Vector3());
     const to = this.aim();
     const { right, up, back } = this.axes(to);
@@ -205,7 +217,7 @@ export class CameraController {
     const dest = { ...to, target, distance };
     // Perspective swells the near side of a deep model, and not about the
     // free area's centre: project the corners and correct, a few times over.
-    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
     const fx = free.left + fw / 2, fy = free.top + fh / 2;
     for (let it = 0; it < 10; it++) {
       const eye = dest.target.clone().addScaledVector(back, dest.distance);
@@ -220,13 +232,18 @@ export class CameraController {
       }
       const k = Math.max((x1 - x0) / (fw / 1.12), (y1 - y0) / (fh / 1.12), 1e-6, noZoomIn ? to.distance / dest.distance : 0);
       const dx = (x0 + x1) / 2 - fx, dy = (y0 + y1) / 2 - fy;
-      if (Math.abs(k - 1) < 0.01 && Math.abs(dx) < 0.002 && Math.abs(dy) < 0.002) break;
+      if (Math.abs(k - 1) < 0.01 && Math.abs(dx) < 0.002 && Math.abs(dy) < 0.002) {
+        break;
+      }
       // The extremes are mostly the near corners: they move by the shift over their own depth.
       dest.target.addScaledVector(right, dx * 2 * near * tanH).addScaledVector(up, -dy * 2 * near * tanV);
       dest.distance *= k;
     }
-    if (animate) this.go(dest);
-    else this.applyState(dest);
+    if (animate) {
+      this.go(dest);
+    } else {
+      this.applyState(dest);
+    }
   }
 
   /** The screen's right, up and towards-the-viewer directions for a view state. */
@@ -236,14 +253,19 @@ export class CameraController {
     const cam = this.scratch;
     cam.position.copy(dir);
     cam.up.copy(UP);
-    if (Math.abs(dir.z) > 0.99) cam.up.set(-Math.cos(s.azimuth) * Math.sign(dir.z), -Math.sin(s.azimuth) * Math.sign(dir.z), 0);
+    if (Math.abs(dir.z) > 0.99) {
+      cam.up.set(-Math.cos(s.azimuth) * Math.sign(dir.z), -Math.sin(s.azimuth) * Math.sign(dir.z), 0);
+    }
     cam.lookAt(0, 0, 0);
-    if (s.roll) cam.rotateZ(s.roll);
+    if (s.roll) {
+      cam.rotateZ(s.roll);
+    }
     cam.updateMatrixWorld();
+
     return {
       right: new Vector3().setFromMatrixColumn(cam.matrixWorld, 0),
       up: new Vector3().setFromMatrixColumn(cam.matrixWorld, 1),
-      back: new Vector3().setFromMatrixColumn(cam.matrixWorld, 2),
+      back: new Vector3().setFromMatrixColumn(cam.matrixWorld, 2)
     };
   }
   private scratch = new PerspectiveCamera();
@@ -281,7 +303,9 @@ export class CameraController {
 
   /** Advance animations; returns true while animating. */
   tick(now: number): boolean {
-    if (!this.animation) return false;
+    if (!this.animation) {
+      return false;
+    }
     const { from, to, t0 } = this.animation;
     const t = Math.min(1, (now - t0) / 380);
     const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -295,10 +319,13 @@ export class CameraController {
         distance: MathUtils.lerp(from.distance, to.distance, e),
         azimuth: from.azimuth + dAz * e,
         elevation: MathUtils.lerp(from.elevation, to.elevation, e),
-        roll: from.roll + dRoll * e,
-      },
+        roll: from.roll + dRoll * e
+      }
     );
-    if (t >= 1) this.animation = null;
+    if (t >= 1) {
+      this.animation = null;
+    }
+
     return true;
   }
 
@@ -317,12 +344,14 @@ export class CameraController {
    */
   private aim(): ViewState {
     const a = this.animation;
+
     return a ? { ...a.to, target: a.to.target.clone() } : this.state();
   }
 
   private go(to: ViewState): void {
     if (!this.animate) {
       this.applyState(to);
+
       return;
     }
     this.animation = { from: this.state(), to, t0: performance.now() };
@@ -331,7 +360,9 @@ export class CameraController {
   private applyState(s: ViewState): void {
     // Never take a broken view (NaN/Infinity would blank everything, grid included).
     const ok = [s.target.x, s.target.y, s.target.z, s.distance, s.azimuth, s.elevation, s.roll].every(Number.isFinite) && s.distance > 0;
-    if (!ok) return;
+    if (!ok) {
+      return;
+    }
     this.target.copy(s.target);
     this.distance = s.distance;
     this.azimuth = s.azimuth;
@@ -350,16 +381,22 @@ export class CameraController {
       this.target.copy(g.target);
       Object.assign(this, { distance: g.distance, azimuth: g.azimuth, elevation: g.elevation, roll: g.roll });
       this.animation = null;
-    } else this.good = this.state();
+    } else {
+      this.good = this.state();
+    }
     const ce = Math.cos(this.elevation);
     const dir = new Vector3(ce * Math.cos(this.azimuth), ce * Math.sin(this.azimuth), Math.sin(this.elevation));
     for (const cam of [this.persp, this.orthoCam] as Camera[]) {
       cam.position.copy(this.target).addScaledVector(dir, this.distance);
       cam.up.copy(UP);
       // Near the poles, derive "up" from the azimuth so the view doesn't spin.
-      if (Math.abs(dir.z) > 0.99) cam.up.set(-Math.cos(this.azimuth) * Math.sign(dir.z), -Math.sin(this.azimuth) * Math.sign(dir.z), 0);
+      if (Math.abs(dir.z) > 0.99) {
+        cam.up.set(-Math.cos(this.azimuth) * Math.sign(dir.z), -Math.sin(this.azimuth) * Math.sign(dir.z), 0);
+      }
       cam.lookAt(this.target);
-      if (this.roll) cam.rotateZ(this.roll);
+      if (this.roll) {
+        cam.rotateZ(this.roll);
+      }
     }
     this.persp.aspect = this.aspect;
     this.persp.near = Math.max(1e-4, this.distance / 2000);

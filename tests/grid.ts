@@ -5,12 +5,12 @@
 //   import { build, say, near, faceRef, edgeRefs } from "./grid";
 //   const g = await build([...steps]);
 //   say(!g.errors.length && !g.unsound.length && near(g.vol.A, 24000), "a block", `${g.errors} ${g.unsound} ${g.vol.A}`);
-import { after, bodies, check, health } from "./kit";
-import { measureArea, type Shape3D } from "replicad";
-import type { Feature, Vec3 } from "../src/doc/types";
+import { measureArea, type Shape3D } from 'replicad';
+import { after, bodies, check, health } from './kit';
+import type { Feature, Vec3 } from '../src/doc/types';
 
 /** One case: ok or FAIL, with what was found when it fails. */
-export const say = (ok: boolean, name: string, info: string) => check(name, ok, ok ? "" : info);
+export const say = (ok: boolean, name: string, info: string) => check(name, ok, ok ? '' : info);
 
 export interface Got {
   /** The steps' errors ("step: message"). */
@@ -31,11 +31,20 @@ export async function build(fs: Feature[], pieces: Record<string, number> = {}):
     const h = health(s);
     vol[id] = h.volume;
     const want = pieces[id] ?? 1;
-    if (!h.valid) unsound.push(`${id} invalid`);
-    if (want && h.solids !== want) unsound.push(`${id}: ${h.solids} solids`);
-    if (h.openEdges) unsound.push(`${id}: ${h.openEdges} open edges`);
-    if (h.thin) unsound.push(`${id}: ${h.thin} thin faces`);
+    if (!h.valid) {
+      unsound.push(`${id} invalid`);
+    }
+    if (want && h.solids !== want) {
+      unsound.push(`${id}: ${h.solids} solids`);
+    }
+    if (h.openEdges) {
+      unsound.push(`${id}: ${h.openEdges} open edges`);
+    }
+    if (h.thin) {
+      unsound.push(`${id}: ${h.thin} thin faces`);
+    }
   }
+
   return { errors, ids: [...bodies().keys()], vol, unsound };
 }
 
@@ -44,6 +53,7 @@ export const near = (a: number, b: number, rel = 1e-4, abs = 1e-6) => Math.abs(a
 
 const unit = (v: Vec3): Vec3 => {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
+
   return [v[0] / l, v[1] / l, v[2] / l];
 };
 
@@ -55,15 +65,19 @@ const unit = (v: Vec3): Vec3 => {
 export function faceRef(body: string, pick: (n: Vec3, c: Vec3, f: any) => boolean) {
   const s = bodies().get(body) as Shape3D;
   // (replicad's normalAt isn't a unit vector on round faces.)
-  const f = s.faces.find((x) => pick(unit(x.normalAt().toTuple() as Vec3), x.center.toTuple() as Vec3, x));
-  if (!f) throw new Error(`no such face on ${body}`);
+  const f = s.faces.find(x => pick(unit(x.normalAt().toTuple() as Vec3), x.center.toTuple() as Vec3, x));
+  if (!f) {
+    throw new Error(`no such face on ${body}`);
+  }
+
   return { body, center: f.center.toTuple() as Vec3, normal: unit(f.normalAt().toTuple() as Vec3), area: measureArea(f) };
 }
 
 /** Edges of a body, as the last build left it, by a test on their middle and direction. */
 export function edgeRefs(body: string, pick: (mid: Vec3, dir: Vec3, e: any) => boolean) {
   const s = bodies().get(body) as Shape3D;
+
   return s.edges
-    .filter((e) => pick(e.pointAt(0.5).toTuple() as Vec3, e.tangentAt(0.5).toTuple() as Vec3, e))
-    .map((e) => ({ body, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length as number }));
+    .filter(e => pick(e.pointAt(0.5).toTuple() as Vec3, e.tangentAt(0.5).toTuple() as Vec3, e))
+    .map(e => ({ body, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length as number }));
 }

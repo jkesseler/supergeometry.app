@@ -17,27 +17,27 @@ interface EntityBase {
   construction?: boolean;
 }
 
-export type SketchEntity = EntityBase &
-  (
-    | { kind: "line"; a: Vec2; b: Vec2 }
+export type SketchEntity = EntityBase
+  & (
+    | { kind: 'line'; a: Vec2; b: Vec2 }
     /** Arc through a (start), m (any point on it) and b (end). */
-    | { kind: "arc"; a: Vec2; m: Vec2; b: Vec2 }
-    | { kind: "circle"; center: Vec2; radius: number }
+    | { kind: 'arc'; a: Vec2; m: Vec2; b: Vec2 }
+    | { kind: 'circle'; center: Vec2; radius: number }
     /**
      * `sweep` given: a part of the ellipse, from the angle `a0` on it (0 is the
      * end of its rx axis) round by `sweep` (radians, + anticlockwise) - what a
      * round edge seen at a slant is, with two ends like the edge. Neither: whole.
      */
-    | { kind: "ellipse"; center: Vec2; rx: number; ry: number; rotation: number; a0?: number; sweep?: number }
+    | { kind: 'ellipse'; center: Vec2; rx: number; ry: number; rotation: number; a0?: number; sweep?: number }
     /**
      * `z`: how far each of its points is off the sketch's plane (mm along the plane's normal; missing, or not one
      * for each point: flat). The curve then runs through space - a path for a sweep, a guide for a loft. Everything
      * that works in the plane (shapes to extrude, constraints, snapping, DXF) goes by its shadow on the plane.
      */
-    | { kind: "spline"; points: Vec2[]; closed: boolean; mode: "fit" | "control"; z?: number[] }
-    | { kind: "rect"; center: Vec2; w: number; h: number; rotation: number }
-    | { kind: "polygon"; center: Vec2; radius: number; sides: number; angle: number }
-    | { kind: "polyline"; points: Vec2[]; closed: boolean }
+    | { kind: 'spline'; points: Vec2[]; closed: boolean; mode: 'fit' | 'control'; z?: number[] }
+    | { kind: 'rect'; center: Vec2; w: number; h: number; rotation: number }
+    | { kind: 'polygon'; center: Vec2; radius: number; sides: number; angle: number }
+    | { kind: 'polyline'; points: Vec2[]; closed: boolean }
   );
 
 /** A sketch region, referenced by where it is rather than an index (see regions.ts). */
@@ -89,8 +89,8 @@ export interface EdgeRef {
 
 
 export type ExtrudeSource =
-  | { kind: "profile"; sketch: string; regions: RegionRef[] }
-  | { kind: "face"; face: FaceRef };
+  | { kind: 'profile'; sketch: string; regions: RegionRef[] }
+  | { kind: 'face'; face: FaceRef };
 
 interface FeatureBase {
   id: string;
@@ -116,21 +116,21 @@ export interface PointRef {
 }
 
 export type ConstraintType =
-  | "coincident"
-  | "horizontal"
-  | "vertical"
-  | "parallel"
-  | "perpendicular"
-  | "equal"
-  | "tangent"
-  | "concentric"
-  | "midpoint"
-  | "symmetric"
-  | "fix"
-  | "distance"
-  | "dim"
-  | "pattern"
-  | "follow";
+  | 'coincident'
+  | 'horizontal'
+  | 'vertical'
+  | 'parallel'
+  | 'perpendicular'
+  | 'equal'
+  | 'tangent'
+  | 'concentric'
+  | 'midpoint'
+  | 'symmetric'
+  | 'fix'
+  | 'distance'
+  | 'dim'
+  | 'pattern'
+  | 'follow';
 
 /**
  * Sketch constraint. Geometry refs: `pts` (points) and `curves` (entity ids).
@@ -162,7 +162,7 @@ export interface SketchConstraint {
 }
 
 export interface SketchFeature extends FeatureBase {
-  type: "sketch";
+  type: 'sketch';
   plane: PlaneDef;
   /** When drawn on a body face, the sketch follows that face when it moves. */
   attachedTo?: FaceRef;
@@ -220,7 +220,7 @@ export interface SketchRepeat {
   id: string;
   /** The curves repeated. */
   src: string[];
-  kind: "linear" | "circular";
+  kind: 'linear' | 'circular';
   /** How many there are, the originals counted (worked out from `countExpr`). */
   count: number;
   countExpr: string;
@@ -236,7 +236,7 @@ export interface SketchFill {
   id: string;
   /** A point inside the shape it fills. */
   at: Vec2;
-  kind: "lines" | "cross" | "zigzag" | "waves" | "dots" | "hex" | "squares" | "diamonds";
+  kind: 'lines' | 'cross' | 'zigzag' | 'waves' | 'dots' | 'hex' | 'squares' | 'diamonds';
   /** Lines: how far apart. Shapes: the gap between one and the next (mm). */
   spacing: number;
   /** The pattern turned by this much (degrees). */
@@ -246,11 +246,11 @@ export interface SketchFill {
 }
 
 export interface ExtrudeFeature extends FeatureBase {
-  type: "extrude";
+  type: 'extrude';
   source: ExtrudeSource;
   distance: number;
   /** auto: join `target` when distance > 0, cut it when < 0; new body without a target. */
-  mode: "auto" | "new" | "join" | "cut" | "intersect";
+  mode: 'auto' | 'new' | 'join' | 'cut' | 'intersect';
   target?: string;
   /**
    * Auto by the way it goes (extrudes made since this was added): with no body
@@ -272,7 +272,7 @@ export interface ExtrudeFeature extends FeatureBase {
    * (`distance` only gives the way: its sign), or up to `to` - a face (flat or
    * round, followed as its body changes) or a plane.
    */
-  extent?: "distance" | "through" | "to";
+  extent?: 'distance' | 'through' | 'to';
   to?: { face?: FaceRef; plane?: PlaneDef };
   /** It starts this far from the shape, along its normal (missing: at the shape). */
   start?: number;
@@ -281,7 +281,7 @@ export interface ExtrudeFeature extends FeatureBase {
 }
 
 export interface EdgeFeature extends FeatureBase {
-  type: "fillet" | "chamfer";
+  type: 'fillet' | 'chamfer';
   edges: EdgeRef[];
   radius: number;
   /** Chamfer, Two-Distance: the second distance (along the other face); missing: equal distances. */
@@ -300,8 +300,8 @@ export interface EdgeFeature extends FeatureBase {
 }
 
 export interface BooleanFeature extends FeatureBase {
-  type: "boolean";
-  op: "union" | "subtract" | "intersect";
+  type: 'boolean';
+  op: 'union' | 'subtract' | 'intersect';
   target: string;
   tools: string[];
   /** Subtract / Intersect: the body changed stays as it was too (the result is a new body). */
@@ -315,7 +315,7 @@ export interface BooleanFeature extends FeatureBase {
    * the bodies it's subtracted with (each cut by the body, which stays), or
    * all of them (each cut by every other, half the gap each).
    */
-  cutFrom?: "body" | "tools" | "all";
+  cutFrom?: 'body' | 'tools' | 'all';
   /**
    * Patterns it used whole (`<pattern step>:<original body>`): the original and
    * every copy there was when it was made. They stay whole when the pattern's
@@ -325,7 +325,7 @@ export interface BooleanFeature extends FeatureBase {
 }
 
 export interface DeleteFeature extends FeatureBase {
-  type: "delete";
+  type: 'delete';
   bodies: string[];
   /**
    * Patterns it used whole (`<pattern step>:<original body>`): the original and
@@ -342,15 +342,15 @@ export interface DeleteFeature extends FeatureBase {
 export interface AxisRef {
   origin: Vec3;
   dir: Vec3;
-  ref?: { kind: "sketchLine"; sketch: string; entity: string } | { kind: "axis"; feature: string };
+  ref?: { kind: 'sketchLine'; sketch: string; entity: string } | { kind: 'axis'; feature: string };
 }
 
-export type PathRef = { kind: "sketch"; sketch: string; entities: string[] } | { kind: "edges"; edges: EdgeRef[] };
+export type PathRef = { kind: 'sketch'; sketch: string; entities: string[] } | { kind: 'edges'; edges: EdgeRef[] };
 
-type BodyMode = "auto" | "new" | "join" | "cut" | "intersect";
+type BodyMode = 'auto' | 'new' | 'join' | 'cut' | 'intersect';
 
 export interface RevolveFeature extends FeatureBase {
-  type: "revolve";
+  type: 'revolve';
   source: ExtrudeSource;
   axis: AxisRef;
   /** Degrees (more than 360 winds round again: with travel, a thread or spring). */
@@ -362,7 +362,7 @@ export interface RevolveFeature extends FeatureBase {
 }
 
 export interface SweepFeature extends FeatureBase {
-  type: "sweep";
+  type: 'sweep';
   source: ExtrudeSource;
   path: PathRef;
   mode: BodyMode;
@@ -372,15 +372,15 @@ export interface SweepFeature extends FeatureBase {
   /** Degrees the profile turns round the path from start to end, evenly along it (0 or missing: none). */
   twist?: number;
   /** Where the profile starts: where it is (auto), or moved onto the path's nearer end, square to it (start). */
-  position?: "auto" | "start";
+  position?: 'auto' | 'start';
   /** The profile turns with the path (normal, the default) or keeps facing the same way (parallel). */
-  orientation?: "normal" | "parallel";
+  orientation?: 'normal' | 'parallel';
   /** At a sharp corner of the path: rounded (the default) or mitred. */
-  corner?: "round" | "mitre";
+  corner?: 'round' | 'mitre';
 }
 
 export interface LoftFeature extends FeatureBase {
-  type: "loft";
+  type: 'loft';
   sections: ExtrudeSource[];
   ruled: boolean;
   mode: BodyMode;
@@ -394,15 +394,15 @@ export interface LoftFeature extends FeatureBase {
   /** Connection points: which point of each profile joins which (one point per profile, in `sections` order). */
   connections?: Vec3[][];
   /** How the body leaves the first profile and meets the last: straight out of it (G1, tangent) or smoother still (G2); missing: free. */
-  startContinuity?: "g1" | "g2";
-  endContinuity?: "g1" | "g2";
+  startContinuity?: 'g1' | 'g2';
+  endContinuity?: 'g1' | 'g2';
   /** How far that pull reaches (1: a quarter of the way to the next profile). */
   startWeight?: number;
   endWeight?: number;
 }
 
 export interface ShellFeature extends FeatureBase {
-  type: "shell";
+  type: 'shell';
   body: string;
   /** Faces to open (removed); may be empty for a hollow closed body. */
   faces: FaceRef[];
@@ -411,7 +411,7 @@ export interface ShellFeature extends FeatureBase {
 
 /** Move/rotate/scale/mirror/pattern bodies. With `copy`, the originals stay. */
 export interface TransformFeature extends FeatureBase {
-  type: "transform";
+  type: 'transform';
   bodies: string[];
   copy: boolean;
   /**
@@ -426,18 +426,18 @@ export interface TransformFeature extends FeatureBase {
    */
   hole?: FaceRef;
   op:
-    | { kind: "move"; translate: Vec3; rotate?: { origin: Vec3; axis: Vec3; angle: number } }
+    | { kind: 'move'; translate: Vec3; rotate?: { origin: Vec3; axis: Vec3; angle: number } }
     /** `ref`: scaled by reference - the two points picked (center is the first), the distance typed between them. */
-    | { kind: "scale"; center: Vec3; factor: number; ref?: [Vec3, Vec3] }
+    | { kind: 'scale'; center: Vec3; factor: number; ref?: [Vec3, Vec3] }
     /** Different factors along X, Y and Z (freeforms rebuilt from their cage, other bodies face by face). */
-    | { kind: "scaleXYZ"; center: Vec3; factors: Vec3 }
-    | { kind: "mirror"; plane: PlaneDef }
-    | { kind: "linear"; dir: Vec3; spacing: number; count: number }
-    | { kind: "circular"; axis: AxisRef; count: number; angle: number };
+    | { kind: 'scaleXYZ'; center: Vec3; factors: Vec3 }
+    | { kind: 'mirror'; plane: PlaneDef }
+    | { kind: 'linear'; dir: Vec3; spacing: number; count: number }
+    | { kind: 'circular'; axis: AxisRef; count: number; angle: number };
 }
 
 export interface SplitFeature extends FeatureBase {
-  type: "split";
+  type: 'split';
   body: string;
   plane: PlaneDef;
   /** More planes to cut along at once. */
@@ -450,10 +450,10 @@ export interface SplitFeature extends FeatureBase {
 
 /** Construction plane. Optionally follows a face (offset along its normal). */
 /** How a construction plane was made (its mark on screen says so). */
-export type PlaneKind = "offset" | "mid" | "3pt" | "curve" | "perp" | "angle" | "parallel";
+export type PlaneKind = 'offset' | 'mid' | '3pt' | 'curve' | 'perp' | 'angle' | 'parallel';
 
 export interface PlaneFeature extends FeatureBase {
-  type: "plane";
+  type: 'plane';
   plane: PlaneDef;
   face?: FaceRef;
   offset: number;
@@ -461,19 +461,19 @@ export interface PlaneFeature extends FeatureBase {
 }
 
 export interface AxisFeature extends FeatureBase {
-  type: "axis";
+  type: 'axis';
   origin: Vec3;
   dir: Vec3;
   /** What it was made from (its icon): square to a face, along an edge, a round face's middle, two points, two planes. */
   kind?: AxisKind;
 }
 
-export type AxisKind = "face" | "edge" | "round" | "2pt" | "planes";
+export type AxisKind = 'face' | 'edge' | 'round' | '2pt' | 'planes';
 
 /** A body imported from a file. The file content travels inside the project. */
 export interface ImportFeature extends FeatureBase {
-  type: "import";
-  format: "step" | "stl";
+  type: 'import';
+  format: 'step' | 'stl';
   fileName: string;
   /** Base64 of the file. */
   data: string;
@@ -486,7 +486,7 @@ export interface ImportFeature extends FeatureBase {
 
 /** A reference image placed on a plane (for tracing). */
 export interface ImageFeature extends FeatureBase {
-  type: "image";
+  type: 'image';
   plane: PlaneDef;
   /** data: URL */
   src: string;
@@ -500,7 +500,7 @@ export interface ImageFeature extends FeatureBase {
  * close the gap (fillets, chamfers, holes, imprinted edges).
  */
 export interface DeleteGeomFeature extends FeatureBase {
-  type: "deleteGeom";
+  type: 'deleteGeom';
   body: string;
   faces: FaceRef[];
   edges: EdgeRef[];
@@ -512,7 +512,7 @@ export interface DeleteGeomFeature extends FeatureBase {
  * faces turn to follow it). The neighbouring faces extend or trim.
  */
 export interface MoveFaceFeature extends FeatureBase {
-  type: "moveFace";
+  type: 'moveFace';
   face?: FaceRef;
   edge?: EdgeRef;
   /** One corner moves; the flat faces meeting there turn about their far edge to follow. */
@@ -526,14 +526,14 @@ export interface MoveFaceFeature extends FeatureBase {
  * becomes the body (a solid when the cage is closed, a surface otherwise).
  */
 export interface FreeformFeature extends FeatureBase {
-  type: "freeform";
+  type: 'freeform';
   cage: { verts: Vec3[]; faces: [number, number, number, number][]; creases?: [number, number][] };
   /** Made as an open surface on purpose (a sheet): no "not closed" warning. */
   surface?: boolean;
   /** An open freeform becomes a solid this thick (0 / missing: stays a surface). */
   thickness?: number;
   /** Which way the thickness goes from the surface (its normal side is "up"). */
-  thickSide?: "up" | "down" | "both";
+  thickSide?: 'up' | 'down' | 'both';
   /** Edited with symmetry across this plane (kept for the next edit, and shown). */
   symmetry?: { origin: Vec3; normal: Vec3 };
 }
@@ -545,10 +545,10 @@ export interface FreeformFeature extends FeatureBase {
  * shape is as it was before the edit.
  */
 export interface FreeformEditFeature extends FeatureBase {
-  type: "freeformEdit";
+  type: 'freeformEdit';
   /** The freeform / Freeform Face step it edits. */
   target: string;
-  patch: Partial<Pick<FreeformFeature, "cage" | "surface" | "thickness" | "thickSide" | "symmetry">> & { grid?: number; more?: FaceRef[] };
+  patch: Partial<Pick<FreeformFeature, 'cage' | 'surface' | 'thickness' | 'thickSide' | 'symmetry'>> & { grid?: number; more?: FaceRef[] };
 }
 
 /**
@@ -556,7 +556,7 @@ export interface FreeformEditFeature extends FeatureBase {
  * the flat faces around it tilt to follow its edges.
  */
 export interface ScaleFaceFeature extends FeatureBase {
-  type: "scaleFace";
+  type: 'scaleFace';
   face: FaceRef;
   /** The face's in-plane u axis (v = normal × u). */
   u: Vec3;
@@ -565,7 +565,7 @@ export interface ScaleFaceFeature extends FeatureBase {
 
 /** Move a flat face onto another plane / flat face (the neighbours follow). */
 export interface ReplaceFaceFeature extends FeatureBase {
-  type: "replaceFace";
+  type: 'replaceFace';
   face: FaceRef;
   plane: PlaneDef;
   /** Follow this face when it moves (else `plane` is used as is). */
@@ -578,7 +578,7 @@ export interface ReplaceFaceFeature extends FeatureBase {
  * bottom the surface's outline projected flat onto it.
  */
 export interface FillToPlaneFeature extends FeatureBase {
-  type: "fillToPlane";
+  type: 'fillToPlane';
   body: string;
   plane: PlaneDef;
 }
@@ -589,7 +589,7 @@ export interface FillToPlaneFeature extends FeatureBase {
  * (inside thread), over the face's whole length.
  */
 export interface ThreadFeature extends FeatureBase {
-  type: "thread";
+  type: 'thread';
   face: FaceRef;
   /** mm per turn. */
   pitch: number;
@@ -621,7 +621,7 @@ export interface ThreadFeature extends FeatureBase {
  * pulled out of it or pushed in.
  */
 export interface FaceFreeformFeature extends FeatureBase {
-  type: "faceFreeform";
+  type: 'faceFreeform';
   face: FaceRef;
   /**
    * More faces of the body, side by side with `face`, made one smooth
@@ -639,9 +639,9 @@ export interface FaceFreeformFeature extends FeatureBase {
 }
 
 export interface ConnectFeature extends FeatureBase {
-  type: "connect";
+  type: 'connect';
   faces: [FaceRef, FaceRef];
-  mode: "auto" | "new" | "join" | "cut";
+  mode: 'auto' | 'new' | 'join' | 'cut';
   /** How far the bridge bows out of each face (1: plain; 0: straight across). */
   bulge?: number;
   /** Its outline, as a fraction of the faces' (1: their own edges). */
@@ -651,7 +651,7 @@ export interface ConnectFeature extends FeatureBase {
 }
 
 export interface RepairFeature extends FeatureBase {
-  type: "repair";
+  type: 'repair';
   bodies: string[];
 }
 
@@ -661,7 +661,7 @@ export interface RepairFeature extends FeatureBase {
  * edges along a face's normal (onto that face).
  */
 export interface ImprintFeature extends FeatureBase {
-  type: "imprint";
+  type: 'imprint';
   body: string;
   source?: ExtrudeSource;
   edges?: EdgeRef[];
@@ -674,7 +674,7 @@ export interface ImprintFeature extends FeatureBase {
  * raised from it (height > 0) or sunk into it (height < 0).
  */
 export interface WrapFeature extends FeatureBase {
-  type: "wrap";
+  type: 'wrap';
   source: ExtrudeSource;
   face: FaceRef;
   height: number;
@@ -686,17 +686,17 @@ export interface WrapFeature extends FeatureBase {
  * it passes through.
  */
 export interface FillFeature extends FeatureBase {
-  type: "fill";
+  type: 'fill';
   boundary: PathRef[];
   guides?: PathRef[];
   /** Along body edges: just touching (G0), tangent to the face there (G1) or curving on with it (G2). Sketch curves are always G0. */
-  continuity?: "g0" | "g1" | "g2";
+  continuity?: 'g0' | 'g1' | 'g2';
   /** One edge's own continuity, by fillEdgeKey (missing: `continuity`). */
-  edgeContinuity?: Record<string, "g0" | "g1" | "g2">;
+  edgeContinuity?: Record<string, 'g0' | 'g1' | 'g2'>;
 }
 
 /** Which boundary edge of a Fill an edge continuity is for. */
-export const fillEdgeKey = (r: EdgeRef): string => `${r.body}@${r.mid.map((x) => x.toFixed(3)).join(",")}`;
+export const fillEdgeKey = (r: EdgeRef): string => `${r.body}@${r.mid.map(x => x.toFixed(3)).join(',')}`;
 
 export type Feature =
   | FillFeature
@@ -728,7 +728,7 @@ export type Feature =
   | AxisFeature
   | ImportFeature
   | ImageFeature;
-export type FeatureType = Feature["type"];
+export type FeatureType = Feature['type'];
 
 export interface Variable {
   name: string;
@@ -745,7 +745,7 @@ export interface SavedView {
   ortho: boolean;
 }
 
-export type Units = "mm" | "cm" | "m" | "in" | "ft";
+export type Units = 'mm' | 'cm' | 'm' | 'in' | 'ft';
 
 /** A measurement pinned in 3D: a label, optionally with a dimension line a→b. */
 export interface PinDef {
@@ -756,7 +756,7 @@ export interface PinDef {
 }
 
 export interface ProjectDoc {
-  format: "super";
+  format: 'super';
   version: 2;
   name: string;
   features: Feature[];
@@ -787,7 +787,7 @@ export interface ProjectDoc {
   /** BIM: the project's drawings, each its own sheet. */
   drawings?: DrawingOptions[];
   /** Assemblies: how the bodies are held together (see assembly/joints.ts). */
-  joints?: import("../assembly/joints").Joint[];
+  joints?: import('../assembly/joints').Joint[];
   /** Assemblies: the body that stands still (missing: the first of each group of joined bodies). */
   ground?: string;
   /** Assemblies: where the parts were left - each joint's value by its id (0, or missing: as modelled), and how far they are pulled apart (0 to 1). */
@@ -800,9 +800,9 @@ export interface DrawingOptions {
   id?: string;
   /** The sheet's title (missing: the project's name). */
   title?: string;
-  size?: "A4" | "A3" | "A2" | "A1" | "A0" | "ANSI A" | "ANSI B" | "ANSI C" | "ANSI D" | "ANSI E";
+  size?: 'A4' | 'A3' | 'A2' | 'A1' | 'A0' | 'ANSI A' | 'ANSI B' | 'ANSI C' | 'ANSI D' | 'ANSI E';
   portrait?: boolean;
-  angle?: "first" | "third";
+  angle?: 'first' | 'third';
   scale?: number;
   hidden?: boolean;
   /** Old projects: the isometric view on or off (now in `views`). */
@@ -812,11 +812,11 @@ export interface DrawingOptions {
   /** The bodies drawn (missing: every body shown). */
   bodies?: string[];
   /** simple / table (with the parts list) / block (with a revision table): a block in the corner; horizontal: a strip along the bottom; vertical: a column down the right, with a revision table. */
-  titleBlock?: "none" | "border" | "simple" | "table" | "block" | "horizontal" | "vertical";
+  titleBlock?: 'none' | 'border' | 'simple' | 'table' | 'block' | 'horizontal' | 'vertical';
   /** The revision table (Block and Vertical title blocks). */
   revisions?: DrawingRevision[];
-  dateFormat?: "iso" | "dmy" | "mdy";
-  units?: "mm" | "cm" | "m" | "in";
+  dateFormat?: 'iso' | 'dmy' | 'mdy';
+  units?: 'mm' | 'cm' | 'm' | 'in';
   /** Decimals shown in dimensions. */
   precision?: number;
   /** Decimals shown in angles. */
@@ -865,7 +865,7 @@ export interface DrawingSection {
 }
 
 /** Which way a base view looks at the model: a side, or an isometric corner (front/back, right/left). */
-export type ViewOrient = "front" | "back" | "top" | "bottom" | "left" | "right" | "iso-fr" | "iso-fl" | "iso-br" | "iso-bl";
+export type ViewOrient = 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' | 'iso-fr' | 'iso-fl' | 'iso-br' | 'iso-bl';
 
 /**
  * A view added by hand: a base view (seen from any side or corner, put
@@ -916,7 +916,7 @@ export interface DrawingMark {
   id: string;
   view: string;
   /** cross: an intersection mark - where two edges would meet (a corner rounded off), `c`, from the near ends `a` and `b`. */
-  kind: "center" | "line" | "cross";
+  kind: 'center' | 'line' | 'cross';
   c?: [number, number];
   r?: number;
   a?: [number, number];
@@ -936,7 +936,7 @@ export interface DimText {
   prefix?: string;
   suffix?: string;
   /** Symmetrical (± up), deviation (+up / -down), limits (the largest and smallest sizes), basic (boxed). */
-  tol?: { kind: "sym" | "dev" | "limits" | "basic"; up?: number; down?: number };
+  tol?: { kind: 'sym' | 'dev' | 'limits' | 'basic'; up?: number; down?: number };
 }
 
 /**
@@ -947,7 +947,7 @@ export interface DrawingDim extends DimText {
   id: string;
   view: string;
   /** Angle: from ray c→a to ray c→b, its arc `offset` mm (on the paper) from c. */
-  kind: "length" | "distance" | "radius" | "diameter" | "angle";
+  kind: 'length' | 'distance' | 'radius' | 'diameter' | 'angle';
   a: [number, number];
   b?: [number, number];
   /** Circle (radius, diameter): its centre and radius. */
@@ -1029,29 +1029,29 @@ export interface MaterialDef {
 }
 
 /** The body colours offered by the Color tool: seven, Custom the eighth (no Grey - a body is grey until given one; a tap on its lit colour makes it grey again). Bodies given another before keep it (shown as Custom). */
-export const DEFAULT_BODY_COLOR = "#b9bec7";
+export const DEFAULT_BODY_COLOR = '#b9bec7';
 export const BODY_COLORS: { name: string; hex: string }[] = [
   // Soft, muted tones (easy on the eyes, still easy to tell apart).
-  { name: "Red", hex: "#b9726b" },
-  { name: "Orange", hex: "#c29069" },
-  { name: "Yellow", hex: "#c4b277" },
-  { name: "Green", hex: "#83a67f" },
-  { name: "Teal", hex: "#71a39c" },
-  { name: "Blue", hex: "#7c98c2" },
-  { name: "Violet", hex: "#9a8bc0" },
+  { name: 'Red', hex: '#b9726b' },
+  { name: 'Orange', hex: '#c29069' },
+  { name: 'Yellow', hex: '#c4b277' },
+  { name: 'Green', hex: '#83a67f' },
+  { name: 'Teal', hex: '#71a39c' },
+  { name: 'Blue', hex: '#7c98c2' },
+  { name: 'Violet', hex: '#9a8bc0' }
 ];
 
 /** The first, brighter palette → its softer version (projects saved before keep their choice). */
 const OLD_COLORS: Record<string, string> = {
-  "#e05a4f": "#b9726b",
-  "#f08c3a": "#c29069",
-  "#e8c547": "#c4b277",
-  "#5fbf5a": "#83a67f",
-  "#3fb6a8": "#71a39c",
-  "#4f8ce0": "#7c98c2",
-  "#8a6be0": "#9a8bc0",
-  "#e06bb5": "#bb8aa9",
-  "#9a7454": "#93806e",
+  '#e05a4f': '#b9726b',
+  '#f08c3a': '#c29069',
+  '#e8c547': '#c4b277',
+  '#5fbf5a': '#83a67f',
+  '#3fb6a8': '#71a39c',
+  '#4f8ce0': '#7c98c2',
+  '#8a6be0': '#9a8bc0',
+  '#e06bb5': '#bb8aa9',
+  '#9a7454': '#93806e'
 };
 
 /** A saved body colour as it is shown now. */
@@ -1062,10 +1062,10 @@ export function bodyColor(hex: string | undefined): string | undefined {
 /** The see-through levels offered next to Color (1 = solid). */
 export const BODY_OPACITY: { name: string; value: number }[] = [
   // (Named by how see-through, as the Transparency list says: 25% lets a little through.)
-  { name: "Solid", value: 1 },
-  { name: "25%", value: 0.75 },
-  { name: "50%", value: 0.5 },
-  { name: "75%", value: 0.25 },
+  { name: 'Solid', value: 1 },
+  { name: '25%', value: 0.75 },
+  { name: '50%', value: 0.5 },
+  { name: '75%', value: 0.25 }
 ];
 
 export interface HistoryGroup {
@@ -1085,7 +1085,7 @@ export interface ItemFolder {
 }
 
 export function emptyDoc(): ProjectDoc {
-  return { format: "super", version: 2, name: "Untitled", features: [], variables: [], views: [], units: "mm", hidden: [], pins: [], names: {} };
+  return { format: 'super', version: 2, name: 'Untitled', features: [], variables: [], views: [], units: 'mm', hidden: [], pins: [], names: {} };
 }
 
 /** A sketch curve that follows a body's edge (see SketchFeature.links). */

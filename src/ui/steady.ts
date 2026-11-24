@@ -10,9 +10,15 @@
 export function keepPageSteady(): void {
   const root = document.documentElement;
   const settle = () => {
-    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
-    if (root.scrollTop || root.scrollLeft) (root.scrollTop = 0), (root.scrollLeft = 0);
-    if (document.body.scrollTop || document.body.scrollLeft) (document.body.scrollTop = 0), (document.body.scrollLeft = 0);
+    if (window.scrollX || window.scrollY) {
+      window.scrollTo(0, 0);
+    }
+    if (root.scrollTop || root.scrollLeft) {
+      (root.scrollTop = 0), (root.scrollLeft = 0);
+    }
+    if (document.body.scrollTop || document.body.scrollLeft) {
+      (document.body.scrollTop = 0), (document.body.scrollLeft = 0);
+    }
   };
   // (Now, once drawn, and once any sliding the browser does has ended.)
   const soon = () => {
@@ -21,9 +27,9 @@ export function keepPageSteady(): void {
     setTimeout(settle, 120);
     setTimeout(settle, 400);
   };
-  window.addEventListener("scroll", settle, { passive: true });
-  window.visualViewport?.addEventListener("scroll", settle);
-  window.visualViewport?.addEventListener("resize", soon);
-  document.addEventListener("focusin", soon);
-  document.addEventListener("focusout", soon);
+  window.addEventListener('scroll', settle, { passive: true });
+  window.visualViewport?.addEventListener('scroll', settle);
+  window.visualViewport?.addEventListener('resize', soon);
+  document.addEventListener('focusin', soon);
+  document.addEventListener('focusout', soon);
 }

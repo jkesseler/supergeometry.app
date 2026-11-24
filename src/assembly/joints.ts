@@ -7,9 +7,9 @@
 //
 // Kinematics only: no weight, no forces. A joint can follow another by a ratio (a gear turning its neighbour).
 
-import type { FaceRef, Vec3 } from "../doc/types";
+import type { FaceRef, Vec3 } from '../doc/types';
 
-export type JointType = "fixed" | "hinge" | "slide" | "screw";
+export type JointType = 'fixed' | 'hinge' | 'slide' | 'screw';
 
 export interface Joint {
   id: string;
@@ -40,7 +40,12 @@ export const IDENTITY: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 export function mul(a: Mat4, b: Mat4): Mat4 {
   const o = new Array<number>(16);
-  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+    }
+  }
+
   return o;
 }
 
@@ -59,6 +64,7 @@ export function turn(m: Mat4, d: Vec3): Vec3 {
 
 const unit = (v: Vec3): Vec3 => {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
+
   return [v[0] / l, v[1] / l, v[2] / l];
 };
 
@@ -72,14 +78,22 @@ export function about(origin: Vec3, axis: Vec3, deg: number, along = 0): Mat4 {
   // Rodrigues, column by column.
   const r = [c + x * x * k, y * x * k + z * s, z * x * k - y * s, x * y * k - z * s, c + y * y * k, z * y * k + x * s, x * z * k + y * s, y * z * k - x * s, c + z * z * k];
   const ro: Vec3 = [r[0] * origin[0] + r[3] * origin[1] + r[6] * origin[2], r[1] * origin[0] + r[4] * origin[1] + r[7] * origin[2], r[2] * origin[0] + r[5] * origin[1] + r[8] * origin[2]];
+
   return [r[0], r[1], r[2], 0, r[3], r[4], r[5], 0, r[6], r[7], r[8], 0, origin[0] - ro[0] + x * along, origin[1] - ro[1] + y * along, origin[2] - ro[2] + z * along, 1];
 }
 
 /** What a joint does to its `b` at a value: the move from home. */
 export function motion(j: Joint, value: number): Mat4 {
-  if (j.type === "hinge") return about(j.origin, j.axis, value);
-  if (j.type === "slide") return about(j.origin, j.axis, 0, value);
-  if (j.type === "screw") return about(j.origin, j.axis, value, ((j.pitch ?? 1) * value) / 360);
+  if (j.type === 'hinge') {
+    return about(j.origin, j.axis, value);
+  }
+  if (j.type === 'slide') {
+    return about(j.origin, j.axis, 0, value);
+  }
+  if (j.type === 'screw') {
+    return about(j.origin, j.axis, value, ((j.pitch ?? 1) * value) / 360);
+  }
+
   return IDENTITY;
 }
 
@@ -87,29 +101,38 @@ const clamp = (j: Joint, v: number): number => Math.min(j.max ?? Infinity, Math.
 
 /** Each joint's value as it is: its own, kept in its limits - or what the joint it follows gives it. */
 export function effective(joints: Joint[], values: Record<string, number>): Record<string, number> {
-  const by = new Map(joints.map((j) => [j.id, j]));
+  const by = new Map(joints.map(j => [j.id, j]));
   const out: Record<string, number> = {};
   const of = (j: Joint, depth: number): number => {
-    if (j.id in out) return out[j.id];
+    if (j.id in out) {
+      return out[j.id];
+    }
     const d = j.drive && depth < 32 ? by.get(j.drive.joint) : undefined;
-    const v = j.type === "fixed" ? 0 : d && d.id !== j.id ? of(d, depth + 1) * j.drive!.ratio : clamp(j, values[j.id] ?? 0);
+    const v = j.type === 'fixed' ? 0 : d && d.id !== j.id ? of(d, depth + 1) * j.drive!.ratio : clamp(j, values[j.id] ?? 0);
+
     return (out[j.id] = v);
   };
-  for (const j of joints) of(j, 0);
+  for (const j of joints) {
+    of(j, 0);
+  }
+
   return out;
 }
 
 /** The joint whose own value sets this one's (itself, when it follows no other), and by how much. */
 export function driverOf(joints: Joint[], id: string): { joint: Joint; ratio: number } | null {
-  const by = new Map(joints.map((j) => [j.id, j]));
+  const by = new Map(joints.map(j => [j.id, j]));
   let j = by.get(id);
   let ratio = 1;
   for (let i = 0; j && i < 32; i++) {
     const d = j.drive ? by.get(j.drive.joint) : undefined;
-    if (!d || d.id === j.id) return { joint: j, ratio };
+    if (!d || d.id === j.id) {
+      return { joint: j, ratio };
+    }
     ratio *= j.drive!.ratio;
     j = d;
   }
+
   return null;
 }
 
@@ -126,13 +149,15 @@ export interface Tree {
  */
 export function tree(joints: Joint[], bodies: string[], ground?: string): Tree {
   const have = new Set(bodies);
-  const live = joints.filter((j) => have.has(j.a) && have.has(j.b) && j.a !== j.b);
-  const up: Tree["up"] = new Map();
+  const live = joints.filter(j => have.has(j.a) && have.has(j.b) && j.a !== j.b);
+  const up: Tree['up'] = new Map();
   const seen = new Set<string>();
   const roots: string[] = [];
-  const order = ground && have.has(ground) ? [ground, ...bodies.filter((b) => b !== ground)] : bodies;
+  const order = ground && have.has(ground) ? [ground, ...bodies.filter(b => b !== ground)] : bodies;
   for (const root of order) {
-    if (seen.has(root) || !live.some((j) => j.a === root || j.b === root)) continue;
+    if (seen.has(root) || !live.some(j => j.a === root || j.b === root)) {
+      continue;
+    }
     roots.push(root);
     seen.add(root);
     const queue = [root];
@@ -141,13 +166,16 @@ export function tree(joints: Joint[], bodies: string[], ground?: string): Tree {
       const depth = (up.get(p)?.depth ?? 0) + 1;
       for (const j of live) {
         const c = j.a === p ? j.b : j.b === p ? j.a : null;
-        if (!c || seen.has(c)) continue;
+        if (!c || seen.has(c)) {
+          continue;
+        }
         seen.add(c);
         up.set(c, { joint: j, parent: p, depth });
         queue.push(c);
       }
     }
   }
+
   return { up, roots };
 }
 
@@ -168,25 +196,35 @@ export function solve(joints: Joint[], bodies: string[], values: Record<string, 
   const v = effective(joints, values);
   const out = new Map<string, Mat4>();
   const push = new Map<string, Vec3>();
-  for (const r of t.roots) out.set(r, IDENTITY);
+  for (const r of t.roots) {
+    out.set(r, IDENTITY);
+  }
   // (Parents before children: by how far from the ground they are.)
   const order = [...t.up.entries()].sort((p, q) => p[1].depth - q[1].depth);
   for (const [body, { joint, parent }] of order) {
     const m = motion(joint, joint.b === body ? v[joint.id] : -v[joint.id]);
     out.set(body, mul(out.get(parent) ?? IDENTITY, m));
-    if (!explode || !(explode.factor > 0)) continue;
+    if (!explode || !(explode.factor > 0)) {
+      continue;
+    }
     const cp = explode.centers[parent];
     const cc = explode.centers[body];
     const between: Vec3 = cp && cc ? [cc[0] - cp[0], cc[1] - cp[1], cc[2] - cp[2]] : [0, 0, 0];
     let dir = unit(joint.axis);
     const side = dir[0] * between[0] + dir[1] * between[1] + dir[2] * between[2];
-    if (joint.type === "fixed" && Math.hypot(...between) > 1e-9) dir = unit(between);
-    else if (side < 0) dir = [-dir[0], -dir[1], -dir[2]];
+    if (joint.type === 'fixed' && Math.hypot(...between) > 1e-9) {
+      dir = unit(between);
+    } else if (side < 0) {
+      dir = [-dir[0], -dir[1], -dir[2]];
+    }
     const far = explode.factor * ((explode.sizes[parent] ?? 0) + (explode.sizes[body] ?? 0));
     const base = push.get(parent) ?? [0, 0, 0];
     push.set(body, [base[0] + dir[0] * far, base[1] + dir[1] * far, base[2] + dir[2] * far]);
   }
-  for (const [body, p] of push) out.set(body, mul(translation(p), out.get(body)!));
+  for (const [body, p] of push) {
+    out.set(body, mul(translation(p), out.get(body)!));
+  }
+
   return out;
 }
 
@@ -207,21 +245,30 @@ export interface PickLine {
 export function propose(a: PickLine | null, b: PickLine | null, pitch?: number): { type: JointType; origin: Vec3; axis: Vec3; pitch?: number } {
   // (The joint's line is the first pick's - or the second's, where only that one is known exactly.)
   const line = a && b && a.rough && !b.rough ? b : (a ?? b);
-  if (!line) return { type: "fixed", origin: [0, 0, 0], axis: [0, 0, 1] };
+  if (!line) {
+    return { type: 'fixed', origin: [0, 0, 0], axis: [0, 0, 1] };
+  }
   const axis = unit(line.dir);
   const base = { origin: line.origin, axis };
-  if (!a || !b) return { type: "fixed", ...base };
+  if (!a || !b) {
+    return { type: 'fixed', ...base };
+  }
   const da = unit(a.dir);
   const d = unit(b.dir);
   const parallel = Math.abs(da[0] * d[0] + da[1] * d[1] + da[2] * d[2]) > (a.rough || b.rough ? 0.995 : 0.999);
-  if (!parallel) return { type: "fixed", ...base };
+  if (!parallel) {
+    return { type: 'fixed', ...base };
+  }
   const w: Vec3 = [b.origin[0] - a.origin[0], b.origin[1] - a.origin[1], b.origin[2] - a.origin[2]];
   const along = w[0] * axis[0] + w[1] * axis[1] + w[2] * axis[2];
   const off = Math.hypot(w[0] - axis[0] * along, w[1] - axis[1] * along, w[2] - axis[2] * along);
   const size = Math.max(1, Math.hypot(...w));
   // (To a hundredth of a millimetre and a thousandth of how far apart they are: faces are found by their drawn points.)
-  if (off < 1e-3 * size + (a.rough || b.rough ? 0.15 : 1e-2)) return pitch ? { type: "screw", ...base, pitch } : { type: "hinge", ...base };
-  return a.round || b.round ? { type: "fixed", ...base } : { type: "slide", ...base };
+  if (off < 1e-3 * size + (a.rough || b.rough ? 0.15 : 1e-2)) {
+    return pitch ? { type: 'screw', ...base, pitch } : { type: 'hinge', ...base };
+  }
+
+  return a.round || b.round ? { type: 'fixed', ...base } : { type: 'slide', ...base };
 }
 
 /**
@@ -232,16 +279,30 @@ export function propose(a: PickLine | null, b: PickLine | null, pitch?: number):
  */
 export function turnAxis(points: Vec3[], normals: Vec3[]): { origin: Vec3; dir: Vec3 } | null {
   const n = Math.min(points.length, normals.length);
-  if (n < 6) return null;
+  if (n < 6) {
+    return null;
+  }
   const mean: Vec3 = [0, 0, 0];
-  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) mean[k] += normals[i][k] / n;
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < 3; k++) {
+      mean[k] += normals[i][k] / n;
+    }
+  }
   // How the normals spread, as a symmetric 3 x 3; its axes by Jacobi turns.
   const a = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  for (let i = 0; i < n; i++) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) a[r][c] += ((normals[i][r] - mean[r]) * (normals[i][c] - mean[c])) / n;
+  for (let i = 0; i < n; i++) {
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        a[r][c] += ((normals[i][r] - mean[r]) * (normals[i][c] - mean[c])) / n;
+      }
+    }
+  }
   const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
   for (let sweep = 0; sweep < 24; sweep++) {
     for (const [p, q] of [[0, 1], [0, 2], [1, 2]] as const) {
-      if (Math.abs(a[p][q]) < 1e-15) continue;
+      if (Math.abs(a[p][q]) < 1e-15) {
+        continue;
+      }
       const th = (a[q][q] - a[p][p]) / (2 * a[p][q]);
       const tt = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1));
       const c = 1 / Math.sqrt(tt * tt + 1);
@@ -271,7 +332,9 @@ export function turnAxis(points: Vec3[], normals: Vec3[]): { origin: Vec3; dir: 
   const hi = Math.max(...ev);
   const mid = ev.filter((_, i) => i !== lo).reduce((p, q) => Math.min(p, q));
   // Round a line: no spread along it, and a spread both ways across it (a face that only bends one way has none).
-  if (!(hi > 1e-6) || ev[lo] > 0.02 * hi || mid < 0.05 * hi) return null;
+  if (!(hi > 1e-6) || ev[lo] > 0.02 * hi || mid < 0.05 * hi) {
+    return null;
+  }
   const dir = unit([v[0][lo], v[1][lo], v[2][lo]]);
   // Across the line: each normal's part there points along a line through the axis. Where those lines meet.
   const x = unit(Math.abs(dir[0]) < 0.9 ? [0, -dir[2], dir[1]] : [-dir[2], 0, dir[0]]);
@@ -287,7 +350,9 @@ export function turnAxis(points: Vec3[], normals: Vec3[]): { origin: Vec3; dir: 
     const nx = d3(normals[i], x);
     const ny = d3(normals[i], y);
     const l = Math.hypot(nx, ny);
-    if (l < 0.2) continue;
+    if (l < 0.2) {
+      continue;
+    }
     // (The line through the point along its normal: every point c of it has u.c = u.p, u across the normal.)
     const ux = -ny / l;
     const uy = nx / l;
@@ -300,13 +365,18 @@ export function turnAxis(points: Vec3[], normals: Vec3[]): { origin: Vec3; dir: 
     used++;
   }
   const det = m00 * m11 - m01 * m01;
-  if (used < 6 || Math.abs(det) < 1e-9 * used * used) return null;
+  if (used < 6 || Math.abs(det) < 1e-9 * used * used) {
+    return null;
+  }
   const cx = (b0 * m11 - b1 * m01) / det;
   const cy = (m00 * b1 - m01 * b0) / det;
   // (A point of the line, level with the face's points.)
   let along = 0;
-  for (let i = 0; i < n; i++) along += d3(points[i], dir) / n;
+  for (let i = 0; i < n; i++) {
+    along += d3(points[i], dir) / n;
+  }
+
   return { origin: [x[0] * cx + y[0] * cy + dir[0] * along, x[1] * cx + y[1] * cy + dir[1] * along, x[2] * cx + y[2] * cy + dir[2] * along], dir };
 }
 
-export const JOINT_NAMES: Record<JointType, string> = { fixed: "Fixed", hinge: "Hinge", slide: "Slide", screw: "Screw" };
+export const JOINT_NAMES: Record<JointType, string> = { fixed: 'Fixed', hinge: 'Hinge', slide: 'Slide', screw: 'Screw' };

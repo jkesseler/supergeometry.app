@@ -1,16 +1,16 @@
-import "./style.css";
-import { App } from "./app";
-import { outerScrollbars } from "./ui/scrollbars";
-import { installDebug } from "./debug";
-import { keepPageSteady } from "./ui/steady";
+import './style.css';
+import { App } from './app';
+import { outerScrollbars } from './ui/scrollbars';
+import { installDebug } from './debug';
+import { keepPageSteady } from './ui/steady';
 
 // Update reloads with ?v=<time> so no stored copy is used; once loaded, the
 // address is plain again (it's what people copy to share the app).
 {
   const url = new URL(location.href);
-  if (url.searchParams.has("v")) {
-    url.searchParams.delete("v");
-    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  if (url.searchParams.has('v')) {
+    url.searchParams.delete('v');
+    history.replaceState(history.state, '', url.pathname + url.search + url.hash);
   }
 }
 
@@ -20,7 +20,7 @@ keepPageSteady();
 // Scroll bars outside the windows, only while scrolling.
 outerScrollbars();
 
-const app = new App(document.getElementById("view") as HTMLCanvasElement);
+const app = new App(document.getElementById('view') as HTMLCanvasElement);
 // Handy for debugging from the console.
 (window as unknown as { supergeometry: App }).supergeometry = app;
 // And sg: read and work the app from the console (sg.help()).

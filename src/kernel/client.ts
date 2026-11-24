@@ -1,5 +1,5 @@
-import type { Feature } from "../doc/types";
-import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewSpec, Envelope, ExportFormat, RegenResult, Request, Response } from "./protocol";
+import type { Feature } from '../doc/types';
+import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewSpec, Envelope, ExportFormat, RegenResult, Request, Response } from './protocol';
 
 /**
  * The steps as the engine needs them: a reference image without its picture
@@ -8,7 +8,7 @@ import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewSpec, Envelope
  * the same steps each time.
  */
 function lean(features: Feature[]): Feature[] {
-  return features.some((f) => f.type === "image" && f.src) ? features.map((f) => (f.type === "image" ? { ...f, src: "" } : f)) : features;
+  return features.some(f => f.type === 'image' && f.src) ? features.map(f => (f.type === 'image' ? { ...f, src: '' } : f)) : features;
 }
 
 /** Promise-based wrapper around the kernel worker. */
@@ -64,26 +64,32 @@ export class KernelClient {
   private start(): void {
     // A fresh worker sends every mesh again.
     this.meshes = new Map();
-    this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = this.handler;
     // The engine died without an answer (out of memory, a fault outside any step): what waits on it would wait for
     // ever, and "Working…" with it. Everything waiting ends, and a fresh engine is started.
     const worker = this.worker;
     worker.onerror = (e) => {
-      if (worker !== this.worker) return;
-      console.error("The geometry engine stopped:", e.message);
+      if (worker !== this.worker) {
+        return;
+      }
+      console.error('The geometry engine stopped:', e.message);
       this.stop();
       this.onLost?.();
     };
-    this.ready = this.call({ type: "init" }).then((r) => {
-      if (r.type === "error") throw new Error(r.message);
+    this.ready = this.call({ type: 'init' }).then((r) => {
+      if (r.type === 'error') {
+        throw new Error(r.message);
+      }
     });
   }
 
   /** A spare engine, given the last saved project (and the last preview): it's ready to take over. */
   private warmSpare(): void {
-    if (this.spare) return;
-    const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    if (this.spare) {
+      return;
+    }
+    const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     const spare: { worker: Worker; bodies: BodyMesh[] | null } = { worker, bodies: null };
     this.spare = spare;
     let n = 0;
@@ -96,37 +102,52 @@ export class KernelClient {
       });
     const { features, saved } = this.last;
     (async () => {
-      if ((await ask({ type: "init" })).type !== "ready") throw new Error("init");
+      if ((await ask({ type: 'init' })).type !== 'ready') {
+        throw new Error('init');
+      }
       const got = new Map<number, BodyMesh>();
       const regen = async (fs: Feature[], asSaved: boolean) => {
-        const r = await ask({ type: "regenerate", features: lean(fs), saved: asSaved });
-        if (r.type !== "regenerated") throw new Error("regenerate");
-        const bodies = r.result.bodies.map((b) => ((b as { same?: boolean }).same ? got.get(b.key)! : b));
-        for (const b of bodies) got.set(b.key, b);
+        const r = await ask({ type: 'regenerate', features: lean(fs), saved: asSaved });
+        if (r.type !== 'regenerated') {
+          throw new Error('regenerate');
+        }
+        const bodies = r.result.bodies.map(b => ((b as { same?: boolean }).same ? got.get(b.key)! : b));
+        for (const b of bodies) {
+          got.set(b.key, b);
+        }
+
         return bodies;
       };
       let bodies = saved ? await regen(saved, true) : [];
-      if (!saved || features !== saved) bodies = await regen(features, false);
-      if (this.spare !== spare) throw new Error("stopped");
+      if (!saved || features !== saved) {
+        bodies = await regen(features, false);
+      }
+      if (this.spare !== spare) {
+        throw new Error('stopped');
+      }
       spare.bodies = bodies;
       this.swapIfIdle();
     })().catch(() => {
       worker.terminate();
-      if (this.spare === spare) this.spare = null;
+      if (this.spare === spare) {
+        this.spare = null;
+      }
     });
   }
 
   /** The spare engine takes over, if it's ready and nothing is running. */
   private swapIfIdle(): void {
     const s = this.spare;
-    if (!s?.bodies || this.regenRunning || this.pending.size) return;
+    if (!s?.bodies || this.regenRunning || this.pending.size) {
+      return;
+    }
     this.spare = null;
     this.worker.terminate();
     this.worker = s.worker;
     this.worker.onmessage = this.handler;
     this.ready = Promise.resolve();
     // It sends meshes it already sent (to us, while warming) as keys only.
-    this.meshes = new Map(s.bodies.map((b) => [b.key, b]));
+    this.meshes = new Map(s.bodies.map(b => [b.key, b]));
   }
 
   /**
@@ -141,7 +162,9 @@ export class KernelClient {
     this.pending.clear();
     this.regenQueued?.resolve(null);
     this.regenQueued = null;
-    for (const cb of waiting) cb({ type: "error", message: "Stopped" } as Response);
+    for (const cb of waiting) {
+      cb({ type: 'error', message: 'Stopped' } as Response);
+    }
     this.regenRunning = false;
     this.running = null;
     this.start();
@@ -159,11 +182,16 @@ export class KernelClient {
 
   private call(msg: Request): Promise<Response> {
     const id = this.nextId++;
-    if (this.pending.size === 0) this.onBusy?.(true);
+    if (this.pending.size === 0) {
+      this.onBusy?.(true);
+    }
+
     return new Promise((resolve) => {
       this.pending.set(id, (r) => {
         resolve(r);
-        if (this.pending.size === 0 && !this.regenQueued) this.onBusy?.(false);
+        if (this.pending.size === 0 && !this.regenQueued) {
+          this.onBusy?.(false);
+        }
       });
       this.worker.postMessage({ id, msg } satisfies Envelope<Request>);
     });
@@ -178,6 +206,7 @@ export class KernelClient {
       if (this.regenRunning) {
         this.regenQueued?.resolve(null);
         this.regenQueued = { features, saved, resolve };
+
         return;
       }
       this.runRegen(features, saved, resolve);
@@ -191,16 +220,22 @@ export class KernelClient {
     this.running = features;
     this.last = { features, saved: saved ? features : this.last.saved };
     const worker = this.worker;
-    const r = await this.call({ type: "regenerate", features: lean(features), saved });
+    const r = await this.call({ type: 'regenerate', features: lean(features), saved });
     // Stopped meanwhile: the fresh worker has its own queue.
-    if (worker !== this.worker) return resolve(null);
+    if (worker !== this.worker) {
+      return resolve(null);
+    }
     this.running = null;
-    resolve(r.type === "regenerated" ? this.withMeshes(r.result) : null);
-    if (r.type === "error") console.error(r.message);
-    if (r.type === "regenerated" && r.result.memoryMB !== undefined) {
+    resolve(r.type === 'regenerated' ? this.withMeshes(r.result) : null);
+    if (r.type === 'error') {
+      console.error(r.message);
+    }
+    if (r.type === 'regenerated' && r.result.memoryMB !== undefined) {
       // (A fresh engine starts small again: that isn't a rebuild giving memory back.)
       const cost = this.memoryMB ? Math.max(0, r.result.memoryMB - this.memoryMB) : 0;
-      if (r.result.memoryMB < this.memoryMB) this.costMB = 0;
+      if (r.result.memoryMB < this.memoryMB) {
+        this.costMB = 0;
+      }
       this.memoryMB = r.result.memoryMB;
       this.costMB = this.costMB * 0.7 + cost * 0.3;
       this.restUntil = performance.now() + KernelClient.restFor(this.costMB);
@@ -208,59 +243,77 @@ export class KernelClient {
     // A preview waiting its turn rests first (whatever is asked meanwhile takes its place).
     const rest = this.restUntil - performance.now();
     if (this.regenQueued && !this.regenQueued.saved && rest > 0) {
-      await new Promise((done) => setTimeout(done, rest));
-      if (worker !== this.worker) return;
+      await new Promise(done => setTimeout(done, rest));
+      if (worker !== this.worker) {
+        return;
+      }
     }
     this.regenRunning = false;
     // A big engine: a spare is got ready (also in the middle of a drag, where
     // it used to wait for the drag to end), and takes over between two rebuilds.
-    if (r.type === "regenerated" && (r.result.memoryMB ?? 0) > KernelClient.RECYCLE_MB) this.warmSpare();
+    if (r.type === 'regenerated' && (r.result.memoryMB ?? 0) > KernelClient.RECYCLE_MB) {
+      this.warmSpare();
+    }
     this.swapIfIdle();
     const q = this.regenQueued;
     this.regenQueued = null;
-    if (q) this.runRegen(q.features, q.saved, q.resolve);
+    if (q) {
+      this.runRegen(q.features, q.saved, q.resolve);
+    }
   }
 
   /** Meshes sent as their key only (unchanged bodies): the ones the page has. */
   private withMeshes(result: RegenResult): RegenResult {
     const bodies = result.bodies.map((b) => {
-      if (!(b as { same?: boolean }).same) return b;
+      if (!(b as { same?: boolean }).same) {
+        return b;
+      }
       const had = this.meshes.get(b.key)!;
+
       // (The same object when nothing about it changed: the view keeps what it drew.)
       return had.id === b.id && had.name === b.name ? had : { ...had, id: b.id, name: b.name };
     });
-    this.meshes = new Map(bodies.map((b) => [b.key, b]));
+    this.meshes = new Map(bodies.map(b => [b.key, b]));
+
     return { ...result, bodies };
   }
 
   /** The bodies drawn in views, hidden lines found (for BIM drawings). */
   async drawing(features: Feature[], views: ViewSpec[], bodies?: string[]): Promise<ProjectedView[]> {
     await this.ready;
-    const r = await this.call({ type: "drawing", features: lean(features), views, bodies });
-    if (r.type === "drawing") return r.views;
-    throw new Error(r.type === "error" ? r.message : "Could not draw the views");
+    const r = await this.call({ type: 'drawing', features: lean(features), views, bodies });
+    if (r.type === 'drawing') {
+      return r.views;
+    }
+    throw new Error(r.type === 'error' ? r.message : 'Could not draw the views');
   }
 
   /** Each body's volume, area, centre of mass and box (for BIM). */
   async properties(features: Feature[]): Promise<BodyProps[]> {
     await this.ready;
-    const r = await this.call({ type: "properties", features: lean(features) });
-    if (r.type === "properties") return r.bodies;
-    throw new Error(r.type === "error" ? r.message : "Could not measure the bodies");
+    const r = await this.call({ type: 'properties', features: lean(features) });
+    if (r.type === 'properties') {
+      return r.bodies;
+    }
+    throw new Error(r.type === 'error' ? r.message : 'Could not measure the bodies');
   }
 
   /** Each body's health: valid, closed, solids, faces, volume (the console's sg.health()). */
   async health(features: Feature[]): Promise<BodyHealth[]> {
     await this.ready;
-    const r = await this.call({ type: "health", features: lean(features) });
-    if (r.type === "health") return r.bodies;
-    throw new Error(r.type === "error" ? r.message : "Could not check the bodies");
+    const r = await this.call({ type: 'health', features: lean(features) });
+    if (r.type === 'health') {
+      return r.bodies;
+    }
+    throw new Error(r.type === 'error' ? r.message : 'Could not check the bodies');
   }
 
   async export(features: Feature[], format: ExportFormat, bodies?: string[]): Promise<Blob> {
     await this.ready;
-    const r = await this.call({ type: "export", features: lean(features), format, bodies });
-    if (r.type === "exported") return r.blob;
-    throw new Error(r.type === "error" ? r.message : "Export failed");
+    const r = await this.call({ type: 'export', features: lean(features), format, bodies });
+    if (r.type === 'exported') {
+      return r.blob;
+    }
+    throw new Error(r.type === 'error' ? r.message : 'Export failed');
   }
 }

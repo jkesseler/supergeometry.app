@@ -5,13 +5,13 @@
 // intersect with the same operations run non-destructively (the inputs are
 // left exactly as they were), with the same tidying of same-surface faces.
 
-import { _3DShape, Edge, Face, HASH_CODE_MAX, Shape, cast, getOC, isShape3D } from "replicad";
+import { _3DShape, Edge, Face, HASH_CODE_MAX, Shape, cast, getOC, isShape3D } from 'replicad';
 
-type Opts = { optimisation?: "none" | "commonFace" | "sameFace"; simplify?: boolean };
+type Opts = { optimisation?: 'none' | 'commonFace' | 'sameFace'; simplify?: boolean };
 
-function run(kind: "fuse" | "cut" | "common", a: { wrapped: unknown }, b: { wrapped: unknown }, opts: Opts = {}) {
+function run(kind: 'fuse' | 'cut' | 'common', a: { wrapped: unknown }, b: { wrapped: unknown }, opts: Opts = {}) {
   const oc = getOC();
-  const algo = kind === "fuse" ? new oc.BRepAlgoAPI_Fuse() : kind === "cut" ? new oc.BRepAlgoAPI_Cut() : new oc.BRepAlgoAPI_Common();
+  const algo = kind === 'fuse' ? new oc.BRepAlgoAPI_Fuse() : kind === 'cut' ? new oc.BRepAlgoAPI_Cut() : new oc.BRepAlgoAPI_Common();
   const args = new oc.NCollection_List_TopoDS_Shape();
   const tools = new oc.NCollection_List_TopoDS_Shape();
   const progress = new oc.Message_ProgressRange();
@@ -21,15 +21,24 @@ function run(kind: "fuse" | "cut" | "common", a: { wrapped: unknown }, b: { wrap
     algo.SetArguments(args);
     algo.SetTools(tools);
     algo.SetNonDestructive(true);
-    if (opts.optimisation === "commonFace") algo.SetGlue(oc.BOPAlgo_GlueEnum.BOPAlgo_GlueShift);
-    if (opts.optimisation === "sameFace") algo.SetGlue(oc.BOPAlgo_GlueEnum.BOPAlgo_GlueFull);
+    if (opts.optimisation === 'commonFace') {
+      algo.SetGlue(oc.BOPAlgo_GlueEnum.BOPAlgo_GlueShift);
+    }
+    if (opts.optimisation === 'sameFace') {
+      algo.SetGlue(oc.BOPAlgo_GlueEnum.BOPAlgo_GlueFull);
+    }
     algo.Build(progress);
-    if (opts.simplify !== false) algo.SimplifyResult(true, true, 0.001);
+    if (opts.simplify !== false) {
+      algo.SimplifyResult(true, true, 0.001);
+    }
     // (The kernel's handle to what it made is given back once the body has its own: release.ts.)
     const made = algo.Shape();
     try {
       const out = cast(withoutInternals(made));
-      if (!isShape3D(out)) throw new Error(`Could not ${kind} as a 3d shape`);
+      if (!isShape3D(out)) {
+        throw new Error(`Could not ${kind} as a 3d shape`);
+      }
+
       return out;
     } finally {
       made.delete();
@@ -61,47 +70,59 @@ export function withoutInternals<T>(wrapped: T): T {
         const item = ex.Current();
         const inside = item.Orientation() === INTERNAL;
         item.delete();
-        if (inside) return true;
+        if (inside) {
+          return true;
+        }
       }
+
       return false;
     } finally {
       ex.delete();
     }
   };
   try {
-    if ((wrapped as { IsNull?: () => boolean } | null)?.IsNull?.() !== false) return wrapped;
-    if (has(oc.TopAbs_ShapeEnum.TopAbs_EDGE) || has(oc.TopAbs_ShapeEnum.TopAbs_VERTEX)) oc.BRepTools.RemoveInternals(wrapped as never, false);
+    if ((wrapped as { IsNull?: () => boolean } | null)?.IsNull?.() !== false) {
+      return wrapped;
+    }
+    if (has(oc.TopAbs_ShapeEnum.TopAbs_EDGE) || has(oc.TopAbs_ShapeEnum.TopAbs_VERTEX)) {
+      oc.BRepTools.RemoveInternals(wrapped as never, false);
+    }
   } catch {
     // As it came: the usual checks speak for it.
   }
+
   return wrapped;
 }
 
 let done = false;
 export function useSafeBooleans(): void {
-  if (done) return;
+  if (done) {
+    return;
+  }
   done = true;
   const p = _3DShape.prototype as unknown as Record<string, unknown>;
   p.fuse = function (this: { wrapped: unknown }, other: { wrapped: unknown }, opts?: Opts) {
-    return run("fuse", this, other, opts);
+    return run('fuse', this, other, opts);
   };
   p.cut = function (this: { wrapped: unknown }, tool: { wrapped: unknown }, opts?: Opts) {
-    return run("cut", this, tool, opts);
+    return run('cut', this, tool, opts);
   };
   p.intersect = function (this: { wrapped: unknown }, tool: { wrapped: unknown }, opts?: Opts) {
-    return run("common", this, tool, opts);
+    return run('common', this, tool, opts);
   };
   // A shape's edges and faces, each once, in the order found: replicad checks
   // every new one against all found so far (quadratic - 22 s for the 11 000
   // edges of a ruler with its scale engraved). Same result, by hash first.
   const q = Shape.prototype as unknown as object;
-  Object.defineProperty(q, "edges", { configurable: true, get(this: { wrapped: unknown }) {
+  Object.defineProperty(q, 'edges', { configurable: true, get(this: { wrapped: unknown }) {
     const oc = getOC();
-    return unique(this.wrapped, oc.TopAbs_ShapeEnum.TopAbs_EDGE, (x) => new Edge(oc.TopoDS.Edge(x as never)));
+
+    return unique(this.wrapped, oc.TopAbs_ShapeEnum.TopAbs_EDGE, x => new Edge(oc.TopoDS.Edge(x as never)));
   } });
-  Object.defineProperty(q, "faces", { configurable: true, get(this: { wrapped: unknown }) {
+  Object.defineProperty(q, 'faces', { configurable: true, get(this: { wrapped: unknown }) {
     const oc = getOC();
-    return unique(this.wrapped, oc.TopAbs_ShapeEnum.TopAbs_FACE, (x) => new Face(oc.TopoDS.Face(x as never)));
+
+    return unique(this.wrapped, oc.TopAbs_ShapeEnum.TopAbs_FACE, x => new Face(oc.TopoDS.Face(x as never)));
   } });
 }
 
@@ -121,17 +142,23 @@ function unique<T>(shape: unknown, kind: unknown, wrap: (item: unknown) => T): T
       const item = ex.Current();
       const h = oc.ReplicadShapeHasher.HashCode(item, HASH_CODE_MAX);
       const b = buckets.get(h);
-      if (b?.some((x) => x.IsSame(item))) {
+      if (b?.some(x => x.IsSame(item))) {
         item.delete();
         continue;
       }
-      if (b) b.push(item);
-      else buckets.set(h, [item]);
+      if (b) {
+        b.push(item);
+      } else {
+        buckets.set(h, [item]);
+      }
       found.push(item);
     }
+
     return found.map(wrap);
   } finally {
-    for (const item of found) item.delete();
+    for (const item of found) {
+      item.delete();
+    }
     ex.delete();
   }
 }

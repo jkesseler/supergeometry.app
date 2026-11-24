@@ -3,7 +3,7 @@
 // face straight out of it): the bridge starts and ends exactly on the faces,
 // so joined to them it leaves no step.
 
-import type { Vec3 } from "../doc/types";
+import type { Vec3 } from '../doc/types';
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -22,14 +22,18 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0
 export function guideCurve(pts: Vec3[], ca: Vec3, cb: Vec3, da0?: Vec3, db0?: Vec3, ease = 0): (t: number) => Vec3 {
   const p = oriented(pts, ca, cb);
   const acc = [0];
-  for (let i = 1; i < p.length; i++) acc.push(acc[i - 1] + len(sub(p[i], p[i - 1])));
+  for (let i = 1; i < p.length; i++) {
+    acc.push(acc[i - 1] + len(sub(p[i], p[i - 1])));
+  }
   const total = acc[acc.length - 1] || 1;
   const da = sub(ca, p[0]);
   const db = sub(cb, p[p.length - 1]);
   const on = (t: number) => {
     const want = Math.max(0, Math.min(1, t)) * total;
     let i = 1;
-    while (i < p.length - 1 && acc[i] < want) i++;
+    while (i < p.length - 1 && acc[i] < want) {
+      i++;
+    }
     const f = Math.max(0, Math.min(1, acc[i] > acc[i - 1] ? (want - acc[i - 1]) / (acc[i] - acc[i - 1]) : 0));
     // Smoothly through the points (Catmull-Rom), not straight from one to the
     // next: the corners between straight pieces read as turns far too tight.
@@ -41,9 +45,12 @@ export function guideCurve(pts: Vec3[], ca: Vec3, cb: Vec3, da0?: Vec3, db0?: Ve
     const f3 = f2 * f;
     const q = mul(add(add(mul(P1, 2), mul(sub(P2, P0), f)), add(mul(add(sub(mul(P0, 2), mul(P1, 5)), sub(mul(P2, 4), P3)), f2), mul(add(sub(mul(P1, 3), P0), sub(P3, mul(P2, 3))), f3))), 0.5);
     const s = want / total;
+
     return add(q, add(mul(da, 1 - s), mul(db, s)));
   };
-  if (!da0 || !db0 || !(ease > 0)) return on;
+  if (!da0 || !db0 || !(ease > 0)) {
+    return on;
+  }
   // Near each end, a smooth curve from straight out of the face onto the
   // guide (meeting it going its way): the bridge leaves the face square, with no kink.
   const w = Math.min(0.45, ease / total);
@@ -54,6 +61,7 @@ export function guideCurve(pts: Vec3[], ca: Vec3, cb: Vec3, da0?: Vec3, db0?: Ve
   const tb = slope(1 - w);
   const startA = hermite(ca, mul(unit(da0), len(ta)), on(w), ta);
   const intoB = hermite(on(1 - w), tb, cb, mul(unit(db0), -len(tb)));
+
   return (t: number) => (t < w ? startA(t / w) : t > 1 - w ? intoB((t - (1 - w)) / w) : on(t));
 }
 
@@ -95,6 +103,7 @@ function carried(c: (t: number) => Vec3, n: number): { P: Vec3[]; F: Frame[] } {
     r = unit(sub(next, mul(t, dot(next, t))));
     F.push({ r, s: cross(t, r), t });
   }
+
   return { P, F };
 }
 
@@ -120,14 +129,19 @@ export function gentle(c: (t: number) => Vec3, rings: Rings, spare = 1.1): boole
     const v = mul(sub(P[i + 1], P[i - 1]), 1 / (2 * h));
     const a = mul(add(sub(P[i + 1], mul(P[i], 2)), P[i - 1]), 1 / (h * h));
     const k = len(cross(v, a));
-    if (k < 1e-12) continue;
+    if (k < 1e-12) {
+      continue;
+    }
     // Towards the middle of the turn: the part of `a` across the curve.
     const n = unit(sub(a, mul(v, dot(v, a) / dot(v, v))));
     const f = F[i];
     const nl: Vec3 = [dot(n, f.r), dot(n, f.s), dot(n, f.t)];
-    const [ra, rb] = ends.map((ring) => ring.reduce((m, p) => Math.max(m, dot(p, nl)), 0));
-    if (len(v) ** 3 / k < spare * (ra + (rb - ra) * (i / N))) return false;
+    const [ra, rb] = ends.map(ring => ring.reduce((m, p) => Math.max(m, dot(p, nl)), 0));
+    if (len(v) ** 3 / k < spare * (ra + (rb - ra) * (i / N))) {
+      return false;
+    }
   }
+
   return true;
 }
 
@@ -135,11 +149,13 @@ export function gentle(c: (t: number) => Vec3, rings: Rings, spare = 1.1): boole
 function hermite(ca: Vec3, na: Vec3, cb: Vec3, nb: Vec3, lead: number): (t: number) => Vec3 {
   const T0 = mul(unit(na), lead);
   const T1 = mul(unit(nb), -lead);
+
   return (t: number) => {
     const h00 = 2 * t ** 3 - 3 * t ** 2 + 1;
     const h10 = t ** 3 - 2 * t ** 2 + t;
     const h01 = -2 * t ** 3 + 3 * t ** 2;
     const h11 = t ** 3 - t ** 2;
+
     return add(add(mul(ca, h00), mul(T0, h10)), add(mul(cb, h01), mul(T1, h11)));
   };
 }
@@ -156,11 +172,15 @@ export function plainSpine(ca: Vec3, na: Vec3, cb: Vec3, nb: Vec3, bulge: number
   const gap = len(sub(cb, ca)) || 1;
   // The bulge asked for, else the nearest to it (more, or less) that turns gently enough.
   const want = gap * Math.max(0.05, bulge);
-  for (let k = 0; k < 40; k++)
+  for (let k = 0; k < 40; k++) {
     for (const lead of k ? [want * 1.06 ** k, want / 1.06 ** k] : [want]) {
       const c = hermite(ca, na, cb, nb, lead);
-      if (gentle(c, rings)) return { along: c, gentle: true };
+      if (gentle(c, rings)) {
+        return { along: c, gentle: true };
+      }
     }
+  }
+
   return { along: hermite(ca, na, cb, nb, want), gentle: false };
 }
 
@@ -176,17 +196,25 @@ export function arcSpine(ca: Vec3, na: Vec3, cb: Vec3, nb: Vec3): ((t: number) =
   const T1 = unit(mul(nb, -1));
   const v = sub(cb, ca);
   const vv = dot(v, v);
-  if (vv < 1e-18) return null;
+  if (vv < 1e-18) {
+    return null;
+  }
   // (Equal chords: the corner points ca + d T0 and cb - d T1 are d from the ends and 2d apart.)
   const q = 1 - dot(T0, T1);
   const vt = dot(v, add(T0, T1));
   let d: number;
   if (q < 1e-9) {
     const ahead = dot(v, T0);
-    if (ahead <= 1e-9) return null;
+    if (ahead <= 1e-9) {
+      return null;
+    }
     d = vv / (4 * ahead);
-  } else d = (-vt + Math.sqrt(vt * vt + 2 * q * vv)) / (2 * q);
-  if (!(d > 1e-9) || !Number.isFinite(d)) return null;
+  } else {
+    d = (-vt + Math.sqrt(vt * vt + 2 * q * vv)) / (2 * q);
+  }
+  if (!(d > 1e-9) || !Number.isFinite(d)) {
+    return null;
+  }
   const J = mul(add(add(ca, mul(T0, d)), sub(cb, mul(T1, d))), 0.5);
   // The arc from A, leaving along T, to B: its length, and the point `s` along it.
   const arc = (A: Vec3, T: Vec3, B: Vec3) => {
@@ -194,17 +222,24 @@ export function arcSpine(ca: Vec3, na: Vec3, cb: Vec3, nb: Vec3): ((t: number) =
     const ahead = dot(w, T);
     const side = sub(w, mul(T, ahead));
     const off = len(side);
-    if (off < 1e-9 * (len(w) || 1)) return { length: Math.abs(ahead), at: (s: number) => add(A, mul(T, s * Math.sign(ahead || 1))) };
+    if (off < 1e-9 * (len(w) || 1)) {
+      return { length: Math.abs(ahead), at: (s: number) => add(A, mul(T, s * Math.sign(ahead || 1))) };
+    }
     const n = mul(side, 1 / off);
     const r = dot(w, w) / (2 * off);
+
     return { length: r * 2 * Math.atan2(off, ahead), at: (s: number) => add(A, mul(add(mul(T, Math.sin(s / r)), mul(n, 1 - Math.cos(s / r))), r)) };
   };
   const out = arc(ca, T0, J);
   const back = arc(cb, mul(T1, -1), J);
   const total = out.length + back.length;
-  if (!(total > 0)) return null;
+  if (!(total > 0)) {
+    return null;
+  }
+
   return (t: number) => {
     const s = Math.max(0, Math.min(1, t)) * total;
+
     return s <= out.length ? out.at(s) : back.at(total - s);
   };
 }
@@ -222,18 +257,25 @@ export function slideAxis(c: (t: number) => Vec3, ta: Vec3, tb: Vec3, reach: num
   const a = unit(ta);
   const b = unit(tb);
   const cos = dot(a, b);
-  if (cos < 0.94) return null;
+  if (cos < 0.94) {
+    return null;
+  }
   const d = unit(add(a, b));
-  if (dot(sub(c(1), c(0)), d) < 2 * reach * Math.sqrt(Math.max(0, 1 - cos * cos))) return null;
+  if (dot(sub(c(1), c(0)), d) < 2 * reach * Math.sqrt(Math.max(0, 1 - cos * cos))) {
+    return null;
+  }
   const N = 200;
   let prev = c(0);
   for (let i = 1; i <= N; i++) {
     const p = c(i / N);
     const step = sub(p, prev);
     const L = len(step);
-    if (L > 1e-12 && dot(step, d) / L < least) return null;
+    if (L > 1e-12 && dot(step, d) / L < least) {
+      return null;
+    }
     prev = p;
   }
+
   return d;
 }
 
@@ -244,25 +286,35 @@ export function slidingSpine(ca: Vec3, na: Vec3, cb: Vec3, nb: Vec3, bulge: numb
   for (let k = 0; k < 40; k++) {
     const c = hermite(ca, na, cb, nb, want / 1.06 ** k);
     const axis = slideAxis(c, na, mul(nb, -1), reach);
-    if (axis) return { along: c, axis };
+    if (axis) {
+      return { along: c, axis };
+    }
   }
+
   return null;
 }
 
 /** `n` points evenly along a polyline (by length), its ends kept. */
 export function evenly(pts: Vec3[], n: number): Vec3[] {
   const acc = [0];
-  for (let i = 1; i < pts.length; i++) acc.push(acc[i - 1] + len(sub(pts[i], pts[i - 1])));
+  for (let i = 1; i < pts.length; i++) {
+    acc.push(acc[i - 1] + len(sub(pts[i], pts[i - 1])));
+  }
   const total = acc[acc.length - 1];
-  if (!(total > 0)) return pts;
+  if (!(total > 0)) {
+    return pts;
+  }
   const out: Vec3[] = [];
   let i = 1;
   for (let k = 0; k < n; k++) {
     const want = (total * k) / (n - 1);
-    while (i < pts.length - 1 && acc[i] < want) i++;
+    while (i < pts.length - 1 && acc[i] < want) {
+      i++;
+    }
     const f = acc[i] > acc[i - 1] ? Math.max(0, Math.min(1, (want - acc[i - 1]) / (acc[i] - acc[i - 1]))) : 0;
     out.push(add(pts[i - 1], mul(sub(pts[i], pts[i - 1]), f)));
   }
+
   return out;
 }
 
@@ -284,6 +336,9 @@ export function smoothed(pts: Vec3[], passes: number, da: Vec3, db: Vec3): Vec3[
   const after = Array.from({ length: n }, (_, k) => add(pts[n - 1], mul(unit(db), step * (k + 1))));
   let p = [...before, ...pts, ...after];
   const fixed = (i: number) => i <= n || i >= 2 * n - 1;
-  for (let k = 0; k < passes; k++) p = p.map((q, i) => (fixed(i) ? q : mul(add(add(p[i - 1], p[i + 1]), mul(q, 2)), 0.25)));
+  for (let k = 0; k < passes; k++) {
+    p = p.map((q, i) => (fixed(i) ? q : mul(add(add(p[i - 1], p[i + 1]), mul(q, 2)), 0.25)));
+  }
+
   return p.slice(n, 2 * n);
 }

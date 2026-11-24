@@ -6,13 +6,13 @@
 // then follows the moves and turns made later to the body it's on, so a tag
 // sits on the arm where the arm is now, not where it was sketched.
 
-import { add, cross, norm, scale, toWorld } from "../geom";
-import { arcFrom3 } from "../sketch/curves";
-import { applyAffine, stepAffine, type Affine } from "./freeformCopies";
-import { kindOfPath } from "./params";
-import type { Feature, PlaneDef, SketchConstraint, SketchEntity, Variable, Vec2, Vec3 } from "./types";
+import { add, cross, norm, scale, toWorld } from '../geom';
+import { arcFrom3 } from '../sketch/curves';
+import { applyAffine, stepAffine, type Affine } from './freeformCopies';
+import { kindOfPath } from './params';
+import type { Feature, PlaneDef, SketchConstraint, SketchEntity, Variable, Vec2, Vec3 } from './types';
 
-export type VarKind = "length" | "angle" | "number";
+export type VarKind = 'length' | 'angle' | 'number';
 
 export interface VarUse {
   /** The step (or sketch) that uses it. */
@@ -26,7 +26,8 @@ export interface VarUse {
 
 /** The use is the variable itself ("arm1", or "2*baseR" on a diameter), not a formula it's part of. */
 export function isDirect(u: VarUse, name: string): boolean {
-  const esc = name.replace(/[^a-z0-9_]/gi, "");
+  const esc = name.replace(/[^a-z0-9_]/gi, '');
+
   return new RegExp(`^\\s*(${esc}|2\\s*\\*\\s*${esc}|${esc}\\s*\\*\\s*2)\\s*$`).test(u.expr);
 }
 
@@ -37,7 +38,7 @@ export interface AnchorWorld {
   planes?: { id: string; plane: PlaneDef }[];
 }
 
-const UNIT_WORDS = new Set(["mm", "cm", "m", "in", "ft"]);
+const UNIT_WORDS = new Set(['mm', 'cm', 'm', 'in', 'ft']);
 
 /** The variable names in an expression ("2*kR + 3 mm" → kR). */
 export function namesIn(expr: string): string[] {
@@ -45,9 +46,14 @@ export function namesIn(expr: string): string[] {
   for (const m of expr.matchAll(/[a-z_][a-z0-9_]*/gi)) {
     // A unit after a number ("3 mm", "3mm") is no name.
     const before = expr.slice(0, m.index).trimEnd();
-    if (UNIT_WORDS.has(m[0].toLowerCase()) && /[\d.)]$/.test(before)) continue;
-    if (!out.includes(m[0])) out.push(m[0]);
+    if (UNIT_WORDS.has(m[0].toLowerCase()) && /[\d.)]$/.test(before)) {
+      continue;
+    }
+    if (!out.includes(m[0])) {
+      out.push(m[0]);
+    }
   }
+
   return out;
 }
 
@@ -60,14 +66,32 @@ export function usesOf(features: readonly Feature[]): Map<string, VarUse[]> {
     out.set(name, l);
   };
   for (const f of features) {
-    if (f.suppressed) continue;
-    for (const [path, expr] of Object.entries(f.exprs ?? {})) for (const n of namesIn(expr)) add1(n, { feature: f.id, where: path, kind: kindOfPath(path), expr });
-    if (f.type === "sketch")
-      for (const c of f.constraints ?? []) {
-        if (c.expr) for (const n of namesIn(c.expr)) add1(n, { feature: f.id, where: c.id, kind: c.prop === "angle" ? "angle" : "length", expr: c.expr! });
-        for (const x of c.atExpr ?? []) if (x) for (const n of namesIn(x)) add1(n, { feature: f.id, where: c.id, kind: "length", expr: x });
+    if (f.suppressed) {
+      continue;
+    }
+    for (const [path, expr] of Object.entries(f.exprs ?? {})) {
+      for (const n of namesIn(expr)) {
+        add1(n, { feature: f.id, where: path, kind: kindOfPath(path), expr });
       }
+    }
+    if (f.type === 'sketch') {
+      for (const c of f.constraints ?? []) {
+        if (c.expr) {
+          for (const n of namesIn(c.expr)) {
+            add1(n, { feature: f.id, where: c.id, kind: c.prop === 'angle' ? 'angle' : 'length', expr: c.expr! });
+          }
+        }
+        for (const x of c.atExpr ?? []) {
+          if (x) {
+            for (const n of namesIn(x)) {
+              add1(n, { feature: f.id, where: c.id, kind: 'length', expr: x });
+            }
+          }
+        }
+      }
+    }
   }
+
   return out;
 }
 
@@ -77,73 +101,99 @@ export function usesOf(features: readonly Feature[]): Map<string, VarUse[]> {
  */
 export function kindOfVariable(name: string, variables: readonly Variable[], uses: Map<string, VarUse[]>, seen = new Set<string>()): VarKind {
   // Its own unit first ("55 mm" is a length, even used in a ratio).
-  const v = variables.find((x) => x.name === name);
-  if (v && /\d\s*(mm|cm|m|in|ft|"|')(?![a-z])/i.test(v.expr)) return "length";
-  if (v && /°/.test(v.expr)) return "angle";
+  const v = variables.find(x => x.name === name);
+  if (v && /\d\s*(mm|cm|m|in|ft|"|')(?![a-z])/i.test(v.expr)) {
+    return 'length';
+  }
+  if (v && /°/.test(v.expr)) {
+    return 'angle';
+  }
   const u = uses.get(name);
   if (u?.length) {
-    const kinds = new Set(u.map((x) => x.kind));
-    return kinds.has("angle") && kinds.size === 1 ? "angle" : kinds.has("length") ? "length" : [...kinds][0];
+    const kinds = new Set(u.map(x => x.kind));
+
+    return kinds.has('angle') && kinds.size === 1 ? 'angle' : kinds.has('length') ? 'length' : [...kinds][0];
   }
-  if (!v) return "number";
+  if (!v) {
+    return 'number';
+  }
   seen.add(name);
-  for (const n of namesIn(v.expr)) if (!seen.has(n)) {
-    const k = kindOfVariable(n, variables, uses, seen);
-    if (k !== "number") return k;
+  for (const n of namesIn(v.expr)) {
+    if (!seen.has(n)) {
+      const k = kindOfVariable(n, variables, uses, seen);
+      if (k !== 'number') {
+        return k;
+      }
+    }
   }
-  return "number";
+
+  return 'number';
 }
 
 /** The variables a variable is made from (directly). */
 export function madeFrom(name: string, variables: readonly Variable[]): string[] {
-  const v = variables.find((x) => x.name === name);
-  return v ? namesIn(v.expr).filter((n) => variables.some((x) => x.name === n)) : [];
+  const v = variables.find(x => x.name === name);
+
+  return v ? namesIn(v.expr).filter(n => variables.some(x => x.name === n)) : [];
 }
 
 /** A sketch dimension's spot, in the sketch (like its label's). */
 function dimSpot(c: SketchConstraint, entities: readonly SketchEntity[]): Vec2 | null {
-  const e = entities.find((x) => x.id === c.curves?.[0]);
-  if (!e) return null;
+  const e = entities.find(x => x.id === c.curves?.[0]);
+  if (!e) {
+    return null;
+  }
   const turn = (center: Vec2, rot: number, off: Vec2): Vec2 => [center[0] + off[0] * Math.cos(rot) - off[1] * Math.sin(rot), center[1] + off[0] * Math.sin(rot) + off[1] * Math.cos(rot)];
   switch (e.kind) {
-    case "line":
+    case 'line':
       return [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2];
-    case "circle":
-    case "polygon":
+    case 'circle':
+    case 'polygon':
       return [e.center[0] + e.radius * Math.SQRT1_2, e.center[1] + e.radius * Math.SQRT1_2];
-    case "rect":
-      return turn(e.center, e.rotation, c.prop === "w" ? [0, -e.h / 2] : c.prop === "h" ? [e.w / 2, 0] : [0, 0]);
-    case "ellipse":
-      return turn(e.center, e.rotation, c.prop === "ry" ? [0, e.ry] : [e.rx, 0]);
-    case "arc":
+    case 'rect':
+      return turn(e.center, e.rotation, c.prop === 'w' ? [0, -e.h / 2] : c.prop === 'h' ? [e.w / 2, 0] : [0, 0]);
+    case 'ellipse':
+      return turn(e.center, e.rotation, c.prop === 'ry' ? [0, e.ry] : [e.rx, 0]);
+    case 'arc':
       return e.m;
     default:
-      return "points" in e ? (e.points[0] ?? null) : null;
+      return 'points' in e ? (e.points[0] ?? null) : null;
   }
 }
 
 /** A string body id a step works on, if it has one. */
 function bodyOf(f: Feature): string | null {
   const x = f as unknown as Record<string, unknown>;
-  if (typeof x.target === "string") return x.target;
-  if (typeof x.body === "string") return x.body;
-  if (Array.isArray(x.bodies) && typeof x.bodies[0] === "string") return x.bodies[0];
+  if (typeof x.target === 'string') {
+    return x.target;
+  }
+  if (typeof x.body === 'string') {
+    return x.body;
+  }
+  if (Array.isArray(x.bodies) && typeof x.bodies[0] === 'string') {
+    return x.bodies[0];
+  }
   const ref = (Array.isArray(x.edges) ? x.edges[0] : x.face) as { body?: string } | undefined;
+
   return ref?.body ?? null;
 }
 
 /** The middle of a body as it is now (its box). */
 function bodyMiddle(world: AnchorWorld, id: string): Vec3 | null {
-  const b = world.bodies.find((x) => x.id === id);
-  if (!b || b.positions.length < 3) return null;
+  const b = world.bodies.find(x => x.id === id);
+  if (!b || b.positions.length < 3) {
+    return null;
+  }
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < b.positions.length; i += 3)
+  for (let i = 0; i < b.positions.length; i += 3) {
     for (let k = 0; k < 3; k++) {
       lo[k] = Math.min(lo[k], b.positions[i + k]);
       hi[k] = Math.max(hi[k], b.positions[i + k]);
     }
-  return [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2) as Vec3;
+  }
+
+  return [0, 1, 2].map(k => (lo[k] + hi[k]) / 2) as Vec3;
 }
 
 /**
@@ -152,18 +202,27 @@ function bodyMiddle(world: AnchorWorld, id: string): Vec3 | null {
  * with that one from then on.
  */
 function carrier(body: string | null, features: readonly Feature[], from: number): (p: Vec3) => Vec3 {
-  if (!body) return (p) => p;
+  if (!body) {
+    return p => p;
+  }
   const on = new Set([body]);
   const steps: Affine[] = [];
   for (let i = from + 1; i < features.length; i++) {
     const g = features[i];
-    if (g.suppressed) continue;
-    if (g.type === "transform" && !g.copy && g.bodies.some((b) => on.has(b))) {
+    if (g.suppressed) {
+      continue;
+    }
+    if (g.type === 'transform' && !g.copy && g.bodies.some(b => on.has(b))) {
       const m = stepAffine(g.op);
-      if (m) steps.push(m);
-    } else if (g.type === "boolean" && g.tools.some((t) => on.has(t))) on.add(g.target);
+      if (m) {
+        steps.push(m);
+      }
+    } else if (g.type === 'boolean' && g.tools.some(t => on.has(t))) {
+      on.add(g.target);
+    }
   }
-  return (p) => steps.reduce<Vec3>((q, m) => applyAffine(m, q), p);
+
+  return p => steps.reduce<Vec3>((q, m) => applyAffine(m, q), p);
 }
 
 function carried(p: Vec3, body: string | null, features: readonly Feature[], from: number): Vec3 {
@@ -171,12 +230,13 @@ function carried(p: Vec3, body: string | null, features: readonly Feature[], fro
 }
 
 /** A sketch's points as they are now: on the body made from it (construction lines stay where drawn). */
-function sketchCarrier(f: Extract<Feature, { type: "sketch" }>, curve: string | undefined, features: readonly Feature[], world: AnchorWorld): (uv: Vec2) => Vec3 {
+function sketchCarrier(f: Extract<Feature, { type: 'sketch' }>, curve: string | undefined, features: readonly Feature[], world: AnchorWorld): (uv: Vec2) => Vec3 {
   const plane = world.sketchPlanes[f.id] ?? f.plane;
-  const j = features.findIndex((g) => "source" in g && (g.source as { sketch?: string }).sketch === f.id);
-  const keep = f.entities.find((e) => e.id === curve)?.construction || j < 0;
+  const j = features.findIndex(g => 'source' in g && (g.source as { sketch?: string }).sketch === f.id);
+  const keep = f.entities.find(e => e.id === curve)?.construction || j < 0;
   const move = keep ? (p: Vec3) => p : carrier(bodyOf(features[j]) ?? features[j].id, features, j);
-  return (uv) => move(toWorld(plane, uv));
+
+  return uv => move(toWorld(plane, uv));
 }
 
 /** Points along a circle round `axis` at `o`, starting toward `from` (a polyline). */
@@ -185,8 +245,10 @@ function arcPoints(o: Vec3, axis: Vec3, from: Vec3, deg: number, r: number): Vec
   const u = norm(from);
   const w = cross(k, u);
   const n = Math.max(6, Math.ceil(Math.abs(deg) / 6));
+
   return Array.from({ length: n + 1 }, (_, i) => {
     const t = ((deg * Math.PI) / 180) * (i / n);
+
     return add(o, add(scale(u, r * Math.cos(t)), scale(w, r * Math.sin(t))));
   });
 }
@@ -197,59 +259,73 @@ function arcPoints(o: Vec3, axis: Vec3, from: Vec3, deg: number, r: number): Vec
  * the arc of a turn, a pivot's height.
  */
 export function useMarks(u: VarUse, name: string, features: readonly Feature[], world: AnchorWorld): Vec3[][] {
-  const i = features.findIndex((f) => f.id === u.feature);
+  const i = features.findIndex(f => f.id === u.feature);
   const f = features[i];
-  if (!f) return [];
-  if (f.type === "sketch") {
-    const c = f.constraints?.find((x) => x.id === u.where);
-    const e = c && f.entities.find((x) => x.id === c.curves?.[0]);
-    if (!c || !e) return [];
+  if (!f) {
+    return [];
+  }
+  if (f.type === 'sketch') {
+    const c = f.constraints?.find(x => x.id === u.where);
+    const e = c && f.entities.find(x => x.id === c.curves?.[0]);
+    if (!c || !e) {
+      return [];
+    }
     const at = sketchCarrier(f, e.id, features, world);
     const line = (a: Vec2, b: Vec2) => [at(a), at(b)];
     const turn = (center: Vec2, rot: number, off: Vec2): Vec2 => [center[0] + off[0] * Math.cos(rot) - off[1] * Math.sin(rot), center[1] + off[0] * Math.sin(rot) + off[1] * Math.cos(rot)];
     // "2*baseR" on a diameter: baseR is the radius - that's what's shown.
-    const esc = name.replace(/[^a-z0-9_]/gi, "");
-    const half = new RegExp(`^\\s*(2\\s*\\*\\s*${esc}|${esc}\\s*\\*\\s*2)\\s*$`).test(c.expr ?? "");
+    const esc = name.replace(/[^a-z0-9_]/gi, '');
+    const half = new RegExp(`^\\s*(2\\s*\\*\\s*${esc}|${esc}\\s*\\*\\s*2)\\s*$`).test(c.expr ?? '');
     const round = (center: Vec2, r: number): Vec3[][] => {
       const d: Vec2 = [Math.SQRT1_2, Math.SQRT1_2];
       const rim: Vec2 = [center[0] + r * d[0], center[1] + r * d[1]];
-      if (c.prop === "radius" || half) return [line(center, rim)];
+      if (c.prop === 'radius' || half) {
+        return [line(center, rim)];
+      }
+
       return [line([center[0] - r * d[0], center[1] - r * d[1]], rim)];
     };
     switch (e.kind) {
-      case "line":
+      case 'line':
         return [line(e.a, e.b)];
-      case "circle":
-      case "polygon":
+      case 'circle':
+      case 'polygon':
         return round(e.center, e.radius);
-      case "arc": {
+      case 'arc': {
         const ac = arcFrom3(e.a, e.m, e.b);
+
         return ac ? round(ac.c, ac.r) : [];
       }
-      case "rect": {
+      case 'rect': {
         const [hw, hh] = [e.w / 2, e.h / 2];
         const p = (x: number, y: number) => turn(e.center, e.rotation, [x, y]);
-        return c.prop === "h" ? [line(p(hw, -hh), p(hw, hh))] : [line(p(-hw, -hh), p(hw, -hh))];
+
+        return c.prop === 'h' ? [line(p(hw, -hh), p(hw, hh))] : [line(p(-hw, -hh), p(hw, -hh))];
       }
-      case "ellipse":
-        return [line(e.center, turn(e.center, e.rotation, c.prop === "ry" ? [0, e.ry] : [e.rx, 0]))];
+      case 'ellipse':
+        return [line(e.center, turn(e.center, e.rotation, c.prop === 'ry' ? [0, e.ry] : [e.rx, 0]))];
       default:
         return [];
     }
   }
-  if (f.type === "extrude") {
+  if (f.type === 'extrude') {
     // From the sketch up to the far end: the height it makes.
     const top = useSpot(u, features, world);
     const src = f.source;
     let base: Vec3 | null = null;
-    if (src.kind === "profile") {
-      const pl = world.sketchPlanes[src.sketch] ?? (features.find((g) => g.id === src.sketch) as { plane?: PlaneDef } | undefined)?.plane;
+    if (src.kind === 'profile') {
+      const pl = world.sketchPlanes[src.sketch] ?? (features.find(g => g.id === src.sketch) as { plane?: PlaneDef } | undefined)?.plane;
       const r = src.regions[0];
-      if (pl && r) base = carried(toWorld(pl, r.c), f.target ?? f.id, features, i);
-    } else base = carried(src.face.center, f.target ?? f.id, features, i);
+      if (pl && r) {
+        base = carried(toWorld(pl, r.c), f.target ?? f.id, features, i);
+      }
+    } else {
+      base = carried(src.face.center, f.target ?? f.id, features, i);
+    }
+
     return base && top ? [[base, top]] : [];
   }
-  if (f.type === "transform" && f.op.kind === "move" && f.op.rotate) {
+  if (f.type === 'transform' && f.op.kind === 'move' && f.op.rotate) {
     const r = f.op.rotate;
     const move = carrier(f.bodies[0] ?? null, features, i);
     // The pivot's height (or X, Y): from where that is 0 to the pivot.
@@ -257,6 +333,7 @@ export function useMarks(u: VarUse, name: string, features: readonly Feature[], 
     if (k) {
       const foot = [...r.origin] as Vec3;
       foot[Number(k[1])] = 0;
+
       return [[move(foot), move(r.origin)]];
     }
     // The angle: an arc round the axis at the pivot, with its two arms.
@@ -264,56 +341,81 @@ export function useMarks(u: VarUse, name: string, features: readonly Feature[], 
     const ref = Math.abs(ax[2]) < 0.9 ? cross(ax, [0, 0, 1]) : cross(ax, [1, 0, 0]);
     const pts = arcPoints(r.origin, ax, ref, r.angle, 30).map(move);
     const o = move(r.origin);
+
     return [[o, pts[0]], pts, [o, pts[pts.length - 1]]];
   }
+
   return [];
 }
 
 /** Where one use is in the view now (null: nowhere to show it). */
 export function useSpot(u: VarUse, features: readonly Feature[], world: AnchorWorld): Vec3 | null {
-  const i = features.findIndex((f) => f.id === u.feature);
+  const i = features.findIndex(f => f.id === u.feature);
   const f = features[i];
-  if (!f) return null;
-  if (f.type === "sketch") {
-    const c = f.constraints?.find((x) => x.id === u.where);
+  if (!f) {
+    return null;
+  }
+  if (f.type === 'sketch') {
+    const c = f.constraints?.find(x => x.id === u.where);
     // (A point placed by it - X typed as "pcd / 2": at that point. It had no tag at all.)
-    const at = c && (dimSpot(c, f.entities) ?? (c.type === "fix" && c.at ? c.at : null));
-    if (!at) return null;
+    const at = c && (dimSpot(c, f.entities) ?? (c.type === 'fix' && c.at ? c.at : null));
+    if (!at) {
+      return null;
+    }
     const p = toWorld(world.sketchPlanes[f.id] ?? f.plane, at);
     // A construction line is no part of a body: it stays where it was drawn
     // (the post's height, up the post - not swung out with the arm).
-    if (f.entities.find((e) => e.id === c.curves?.[0])?.construction) return p;
+    if (f.entities.find(e => e.id === c.curves?.[0])?.construction) {
+      return p;
+    }
     // On the body made from this sketch (the first step that uses it), and with it from then on.
-    const j = features.findIndex((g) => "source" in g && (g.source as { sketch?: string }).sketch === f.id);
-    if (j < 0) return p;
+    const j = features.findIndex(g => 'source' in g && (g.source as { sketch?: string }).sketch === f.id);
+    if (j < 0) {
+      return p;
+    }
     const g = features[j];
+
     return carried(p, bodyOf(g) ?? g.id, features, j);
   }
-  if (f.type === "extrude") {
+  if (f.type === 'extrude') {
     const src = f.source;
     let base: Vec3 | null = null;
     let n: Vec3 | null = null;
-    if (src.kind === "profile") {
-      const pl = world.sketchPlanes[src.sketch] ?? (features.find((g) => g.id === src.sketch) as { plane?: PlaneDef } | undefined)?.plane;
+    if (src.kind === 'profile') {
+      const pl = world.sketchPlanes[src.sketch] ?? (features.find(g => g.id === src.sketch) as { plane?: PlaneDef } | undefined)?.plane;
       const r = src.regions[0];
-      if (pl && r) [base, n] = [toWorld(pl, r.c), pl.normal];
-    } else [base, n] = [src.face.center, src.face.normal];
-    if (!base || !n) return null;
+      if (pl && r) {
+        [base, n] = [toWorld(pl, r.c), pl.normal];
+      }
+    } else {
+      [base, n] = [src.face.center, src.face.normal];
+    }
+    if (!base || !n) {
+      return null;
+    }
+
     // At the far end (where the arrow is): that's what distance and taper size.
     return carried(add(base, scale(n, f.distance)), f.target ?? f.id, features, i);
   }
-  if (f.type === "transform" && f.op.kind === "move" && f.op.rotate) {
+  if (f.type === 'transform' && f.op.kind === 'move' && f.op.rotate) {
     // A turn: at its pivot (it turns about it, so the turn itself doesn't move it).
     return carried(f.op.rotate.origin, f.bodies[0] ?? null, features, i);
   }
-  const plane = world.planes?.find((x) => x.id === f.id);
-  if (plane) return plane.plane.origin;
+  const plane = world.planes?.find(x => x.id === f.id);
+  if (plane) {
+    return plane.plane.origin;
+  }
   const b = bodyOf(f);
   const mid = b ? bodyMiddle(world, b) : null;
-  if (mid) return mid;
+  if (mid) {
+    return mid;
+  }
   // A pattern whose copies have since gone into another body (holes cut with them): on what it turns about, or at
   // its first copy's place - the count of a ring of holes had no tag.
-  if (f.type === "transform" && f.op.kind === "circular") return f.op.axis.origin;
+  if (f.type === 'transform' && f.op.kind === 'circular') {
+    return f.op.axis.origin;
+  }
+
   return null;
 }
 
@@ -340,22 +442,30 @@ export function variableTags(variables: readonly Variable[], features: readonly 
     // step's value, then a dimension of the shape, then a construction line -
     // where it's the value itself before where it's part of a formula.
     const rank = (u: VarUse) => {
-      const f = features.find((g) => g.id === u.feature);
+      const f = features.find(g => g.id === u.feature);
       const part = isDirect(u, v.name) ? 0 : 10;
-      if (f?.type === "transform") return part;
-      if (f?.type !== "sketch") return part + 1;
-      const c = f.constraints?.find((x) => x.id === u.where);
-      return part + (f.entities.find((e) => e.id === c?.curves?.[0])?.construction ? 3 : 2);
+      if (f?.type === 'transform') {
+        return part;
+      }
+      if (f?.type !== 'sketch') {
+        return part + 1;
+      }
+      const c = f.constraints?.find(x => x.id === u.where);
+
+      return part + (f.entities.find(e => e.id === c?.curves?.[0])?.construction ? 3 : 2);
     };
     const ordered = [...(uses.get(v.name) ?? [])].sort((a, b) => rank(a) - rank(b));
-    const spots = ordered.map((u) => useSpot(u, features, world)).filter((p): p is Vec3 => !!p && p.every(Number.isFinite));
+    const spots = ordered.map(u => useSpot(u, features, world)).filter((p): p is Vec3 => !!p && p.every(Number.isFinite));
     // One thing shown (both sides of an arm the same length: one of them).
     let marks: Vec3[][] = [];
     for (const u of ordered) {
-      marks = useMarks(u, v.name, features, world).filter((m) => m.length > 1 && m.every((p) => p.every(Number.isFinite)));
-      if (marks.length) break;
+      marks = useMarks(u, v.name, features, world).filter(m => m.length > 1 && m.every(p => p.every(Number.isFinite)));
+      if (marks.length) {
+        break;
+      }
     }
-    const to = variables.filter((w) => madeFrom(w.name, variables).includes(v.name)).map((w) => w.name);
+    const to = variables.filter(w => madeFrom(w.name, variables).includes(v.name)).map(w => w.name);
+
     return { name: v.name, marks, to, kind: kindOfVariable(v.name, variables, uses), at: spots[0] ?? null, others: spots.slice(1), from: madeFrom(v.name, variables) };
   });
   // One that only other variables are made from (a wall that the hub's size is worked out from) has no place of its
@@ -363,11 +473,18 @@ export function variableTags(variables: readonly Variable[], features: readonly 
   for (let pass = 0; pass < tags.length; pass++) {
     let moved = false;
     for (const t of tags) {
-      if (t.at) continue;
-      const by = t.to.map((n) => tags.find((x) => x.name === n)).find((x) => x?.at);
-      if (by?.at) (t.at = by.at), (moved = true);
+      if (t.at) {
+        continue;
+      }
+      const by = t.to.map(n => tags.find(x => x.name === n)).find(x => x?.at);
+      if (by?.at) {
+        (t.at = by.at), (moved = true);
+      }
     }
-    if (!moved) break;
+    if (!moved) {
+      break;
+    }
   }
+
   return tags;
 }

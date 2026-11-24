@@ -1,74 +1,74 @@
-import { isTouchDevice } from "./device";
-import { circleAxis } from "./tools/slots";
-import { CurvePointPlaneOp, EdgeAnglePlaneOp, FacePointPlaneOp, ThreePointPlaneOp } from "./tools/planeOps";
-import { PlanesAxisOp, TwoPointAxisOp, surfaceAxis } from "./tools/axisOps";
-import { ImprintOp, WrapOp } from "./tools/wrapOps";
-import { DocStore, parseProject } from "./doc/store";
-import { SUPPORT, openSupport } from "./ui/support";
-import { currentProjectId, forgetProject, keepProject, libraryEntries, newProjectId, projectText, renameProject, setCurrentProject } from "./doc/library";
-import { showLibrary } from "./ui/library";
-import { showAbout } from "./ui/about";
-import { findAction, openCommandSearch, showShortcuts } from "./ui/commands";
-import type { EdgeFeature, EdgeRef, ExtrudeFeature, ExtrudeSource, Feature, FillToPlaneFeature, ImageFeature, LoftFeature, PathRef, PinDef, PlaneDef, PlaneFeature, ProjectDoc, RevolveFeature, ShellFeature, SketchEntity, SketchFeature, SplitFeature, SweepFeature, TransformFeature, Units, Vec3 } from "./doc/types";
-import { emptyDoc } from "./doc/types";
-import { editedStep } from "./doc/freeformEdits";
-import { createVariable, insertFile, insertImage, acceptFor } from "./io/insert";
-import { RefImages } from "./ui/refImages";
-import { WebWindow } from "./ui/webWindow";
-import { numpadVariables } from "./ui/numpad";
-import { variableTags } from "./doc/varAnchors";
-import { VariableTags } from "./tools/variableTags";
-import { VariablesTool } from "./tools/variablesTool";
-import { freeformBodies } from "./doc/freeformCopies";
-import { KernelClient } from "./kernel/client";
-import type { ExportFormat, RegenResult } from "./kernel/protocol";
-import { settings } from "./settings";
-import { PinLayer } from "./tools/annotate";
-import { MeasureTool } from "./tools/measure";
-import { BimTool } from "./bim/bimTool";
-import { openSheet } from "./bim/sheet";
-import { openDrawing } from "./bim/drawing";
-import { ItemsPanel } from "./ui/items";
-import { OffsetEdgeOp } from "./tools/offsetEdge";
-import { faceFreeformTool } from "./tools/faceFreeform";
-import { bodyCenter, AxisOp, ConnectOp, EdgeOp, ExtrudeOp, FillOp, FillToPlaneOp, ThreadOp, ImageOp, LoftOp, MidplaneOp, MoveFaceOp, PlaneOp, ReplaceFaceOp, ScaleFaceOp, ScaleOp, ScaleRefOp, RevolveOp, ShellOp, SplitOp, SweepOp, TransformOp } from "./tools/ops";
-import { add, dist, scale, xDirFor } from "./geom";
-import { entityWorldPolylines } from "./sketch/curves";
-import { FreeformTool } from "./tools/freeform";
-import { sectionPlane, SectionTool, type SectionState } from "./tools/section";
-import { SelectTool } from "./tools/select";
-import { BooleanOp } from "./tools/booleanOp";
-import { FeatureOp, sketchesUsed } from "./tools/featureOp";
-import { Vector3 } from "three";
-import { SketchTool, sketchSides, sketchVariant } from "./tools/sketch";
-import { Tutorial, type TutorialHost } from "./ui/tutorial";
-import { AssemblyTool } from "./assembly/assemblyTool";
-import { definedCurves } from "./sketch/constraints";
-import { keepSizes } from "./doc/unitChange";
-import { bodiesOf, edgeRefOf, edgesOfFace, faceRefOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from "./tools/tool";
-import { setupRightColumn } from "./ui/panels";
-import type { ToolItem } from "./ui/ui";
-import { el, UI } from "./ui/ui";
-import { Sentence } from "./ui/sentence";
-import { Ghost } from "./tools/ghost";
-import { arrangement, drawnRegions, materialRegions } from "./sketch/regions";
-import { evaluate, setUnits, setVariables, fmtLen } from "./units";
-import { InputRouter } from "./view/input";
-import { pickTolerance } from "./device";
-import { ViewCube } from "./view/viewcube";
-import { PivotButton } from "./ui/pivot";
-import { HelpPanel } from "./ui/help";
-import { icons } from "./ui/icons";
-import { Updates } from "./ui/update";
-import { Offline } from "./ui/offline";
-import { Install } from "./ui/install";
-import { exportThreeMF, zip } from "./io/threemf";
-import { glb } from "./io/formats";
-import { sketchToDXF } from "./io/dxf";
-import { sketchToSVG } from "./io/svg";
-import { isHeadset, screenClass } from "./device";
-import { Viewport } from "./view/viewport";
-import { VRMode, vrSupported } from "./view/xr";
+import { Vector3 } from 'three';
+import { FeatureOp, sketchesUsed } from './tools/featureOp';
+import { BooleanOp } from './tools/booleanOp';
+import { SelectTool } from './tools/select';
+import { sectionPlane, SectionTool, type SectionState } from './tools/section';
+import { FreeformTool } from './tools/freeform';
+import { entityWorldPolylines } from './sketch/curves';
+import { add, dist, scale, xDirFor } from './geom';
+import { bodyCenter, AxisOp, ConnectOp, EdgeOp, ExtrudeOp, FillOp, FillToPlaneOp, ThreadOp, ImageOp, LoftOp, MidplaneOp, MoveFaceOp, PlaneOp, ReplaceFaceOp, ScaleFaceOp, ScaleOp, ScaleRefOp, RevolveOp, ShellOp, SplitOp, SweepOp, TransformOp } from './tools/ops';
+import { faceFreeformTool } from './tools/faceFreeform';
+import { OffsetEdgeOp } from './tools/offsetEdge';
+import { ItemsPanel } from './ui/items';
+import { openDrawing } from './bim/drawing';
+import { openSheet } from './bim/sheet';
+import { BimTool } from './bim/bimTool';
+import { MeasureTool } from './tools/measure';
+import { PinLayer } from './tools/annotate';
+import { settings } from './settings';
+import { KernelClient } from './kernel/client';
+import { freeformBodies } from './doc/freeformCopies';
+import { VariablesTool } from './tools/variablesTool';
+import { VariableTags } from './tools/variableTags';
+import { variableTags } from './doc/varAnchors';
+import { numpadVariables } from './ui/numpad';
+import { WebWindow } from './ui/webWindow';
+import { RefImages } from './ui/refImages';
+import { createVariable, insertFile, insertImage, acceptFor } from './io/insert';
+import { editedStep } from './doc/freeformEdits';
+import { emptyDoc } from './doc/types';
+import { findAction, openCommandSearch, showShortcuts } from './ui/commands';
+import { showAbout } from './ui/about';
+import { showLibrary } from './ui/library';
+import { currentProjectId, forgetProject, keepProject, libraryEntries, newProjectId, projectText, renameProject, setCurrentProject } from './doc/library';
+import { SUPPORT, openSupport } from './ui/support';
+import { DocStore, parseProject } from './doc/store';
+import { ImprintOp, WrapOp } from './tools/wrapOps';
+import { PlanesAxisOp, TwoPointAxisOp, surfaceAxis } from './tools/axisOps';
+import { CurvePointPlaneOp, EdgeAnglePlaneOp, FacePointPlaneOp, ThreePointPlaneOp } from './tools/planeOps';
+import { circleAxis } from './tools/slots';
+import { isTouchDevice } from './device';
+import { SketchTool, sketchSides, sketchVariant } from './tools/sketch';
+import { Tutorial, type TutorialHost } from './ui/tutorial';
+import { AssemblyTool } from './assembly/assemblyTool';
+import { definedCurves } from './sketch/constraints';
+import { keepSizes } from './doc/unitChange';
+import { bodiesOf, edgeRefOf, edgesOfFace, faceRefOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from './tools/tool';
+import { setupRightColumn } from './ui/panels';
+import { el, UI } from './ui/ui';
+import { Sentence } from './ui/sentence';
+import { Ghost } from './tools/ghost';
+import { arrangement, drawnRegions, materialRegions } from './sketch/regions';
+import { evaluate, setUnits, setVariables, fmtLen } from './units';
+import { InputRouter } from './view/input';
+import { pickTolerance } from './device';
+import { ViewCube } from './view/viewcube';
+import { PivotButton } from './ui/pivot';
+import { HelpPanel } from './ui/help';
+import { icons } from './ui/icons';
+import { Updates } from './ui/update';
+import { Offline } from './ui/offline';
+import { Install } from './ui/install';
+import { exportThreeMF, zip } from './io/threemf';
+import { glb } from './io/formats';
+import { sketchToDXF } from './io/dxf';
+import { sketchToSVG } from './io/svg';
+import { isHeadset, screenClass } from './device';
+import { Viewport } from './view/viewport';
+import { VRMode, vrSupported } from './view/xr';
+import type { ToolItem } from './ui/ui';
+import type { ExportFormat, RegenResult } from './kernel/protocol';
+import type { EdgeFeature, EdgeRef, ExtrudeFeature, ExtrudeSource, Feature, FillToPlaneFeature, ImageFeature, LoftFeature, PathRef, PinDef, PlaneDef, PlaneFeature, ProjectDoc, RevolveFeature, ShellFeature, SketchEntity, SketchFeature, SplitFeature, SweepFeature, TransformFeature, Units, Vec3 } from './doc/types';
 
 /** The page's own title, from index.html (it names the app for search results). */
 const PAGE_TITLE = document.title;
@@ -84,7 +84,7 @@ export class App implements AppContext {
   /** The look ahead a tool under the pointer is showing on the model (see ghost.ts). */
   private peekGhost: Ghost | null = null;
   /** Where the view was last tapped (the sentence bar starts a sketch tool that acts where it is tapped right there). */
-  private lastTapAt: { x: number; y: number; type: "mouse" | "pen" | "touch" } | null = null;
+  private lastTapAt: { x: number; y: number; type: 'mouse' | 'pen' | 'touch' } | null = null;
   /** Pictures to look at while modelling, each in a window over the model (under the buttons). */
   readonly refImages = new RefImages((text, kind) => this.ui.toast(text, kind));
   readonly web = new WebWindow();
@@ -105,7 +105,7 @@ export class App implements AppContext {
   private startTutorial: () => void = () => {};
   /** The tutorial (for the debug handle: a test steps it by hand where the browser draws seldom). */
   tutorial: Tutorial | null = null;
-  private shownErrors = "";
+  private shownErrors = '';
   private pinLayer: PinLayer;
   private items: ItemsPanel;
 
@@ -120,75 +120,86 @@ export class App implements AppContext {
       view: this.view,
       mainTools: () => this.mainTools(),
       selection: () => this.selection,
-      mode: () => (this.tool === this.selectTool ? "model" : this.tool instanceof SketchTool ? "sketch" : this.tool instanceof FreeformTool ? "freeform" : "tool"),
+      mode: () => (this.tool === this.selectTool ? 'model' : this.tool instanceof SketchTool ? 'sketch' : this.tool instanceof FreeformTool ? 'freeform' : 'tool'),
       sketchPicked: () => (this.tool instanceof SketchTool ? this.tool.pickedCount : 0),
       waiting: () => (this.tool === this.selectTool ? this.selectTool.waiting : null),
       peek: (segs) => {
         this.peekGhost?.dispose();
         this.peekGhost = segs ? new Ghost(this.view, segs) : null;
       },
-      pick: (sel) => this.setSelection(sel),
+      pick: sel => this.setSelection(sel),
       adding: () => this.selectTool.adding,
-      setAdding: (on) => ((this.selectTool.adding = on), this.sentence.changed()),
+      setAdding: on => ((this.selectTool.adding = on), this.sentence.changed()),
       stopWaiting: () => this.selectTool.stopWaiting(),
       anchor: () => this.pickAnchor(),
       retap: () => {
         const p = this.lastTapAt;
-        if (p) this.tool.tap?.({ x: p.x, y: p.y, type: p.type, shift: false, tol: pickTolerance(p.type) }, 1);
-      },
+        if (p) {
+          this.tool.tap?.({ x: p.x, y: p.y, type: p.type, shift: false, tol: pickTolerance(p.type) }, 1);
+        }
+      }
     });
     canvas.addEventListener(
-      "pointerup",
+      'pointerup',
       (e) => {
         const r = canvas.getBoundingClientRect();
-        this.lastTapAt = { x: e.clientX - r.left, y: e.clientY - r.top, type: (e.pointerType || "mouse") as "mouse" | "pen" | "touch" };
+        this.lastTapAt = { x: e.clientX - r.left, y: e.clientY - r.top, type: (e.pointerType || 'mouse') as 'mouse' | 'pen' | 'touch' };
       },
-      true,
+      true
     );
     // Headsets: bigger targets everywhere (CSS) - aiming a controller is less precise than a mouse.
-    if (isHeadset) document.body.classList.add("headset");
+    if (isHeadset) {
+      document.body.classList.add('headset');
+    }
     // A spinner while the geometry engine works on something that takes a moment.
-    const busy = document.createElement("div");
-    busy.id = "busy";
+    const busy = document.createElement('div');
+    busy.id = 'busy';
     busy.hidden = true;
-    busy.innerHTML = `<span class="spinner"></span><span>Working…</span><button type="button" class="busy-stop" title="Stop - takes back the last change">Stop</button>`;
+    busy.innerHTML = '<span class="spinner"></span><span>Working…</span><button type="button" class="busy-stop" title="Stop - takes back the last change">Stop</button>';
     document.body.append(busy);
-    busy.querySelector(".busy-stop")!.addEventListener("click", () => this.stopWork());
+    busy.querySelector('.busy-stop')!.addEventListener('click', () => this.stopWork());
     let busyTimer = 0;
     let busyWatch = 0;
     this.kernel.onBusy = (on) => {
       clearTimeout(busyTimer);
       clearInterval(busyWatch);
       // Only for waits you would notice (not every quick preview while dragging).
-      if (on)
+      if (on) {
         busyTimer = window.setTimeout(() => {
-          if (!this.kernel.busy) return;
+          if (!this.kernel.busy) {
+            return;
+          }
           busy.hidden = false;
           // Shown only while there is work: looked at again as it stands, so it can never stay up over nothing
           // (asked for: "sometimes the working icon still is showing even if there's nothing to work on").
           busyWatch = window.setInterval(() => {
-            if (this.kernel.busy) return;
+            if (this.kernel.busy) {
+              return;
+            }
             busy.hidden = true;
             clearInterval(busyWatch);
           }, 400);
         }, 300);
-      else busy.hidden = true;
+      } else {
+        busy.hidden = true;
+      }
     };
     this.kernel.onLost = () => {
-      this.ui.toast("The geometry engine stopped and was started again - the last change may need doing again", "error");
+      this.ui.toast('The geometry engine stopped and was started again - the last change may need doing again', 'error');
       void this.regenerate();
     };
     const cube = new ViewCube(this.view);
-    document.getElementById("viewcube-host")!.append(cube.el);
+    document.getElementById('viewcube-host')!.append(cube.el);
     // The orbit centre button sits at the cube's bottom left (Views at its bottom right).
-    cube.el.append(new PivotButton(this.view, (t) => this.ui.toast(t)).el);
+    cube.el.append(new PivotButton(this.view, t => this.ui.toast(t)).el);
     // Screenshots name the isolated bodies and surfaces (when isolating).
     const isolatedNames = () =>
       (this.isolated ?? []).flatMap((id) => {
-        const b = this.view.bodyList.find((x) => x.id === id);
-        return b ? [this.store.doc.names?.[id] ?? b.name ?? "Body"] : [];
+        const b = this.view.bodyList.find(x => x.id === id);
+
+        return b ? [this.store.doc.names?.[id] ?? b.name ?? 'Body'] : [];
       });
-    setupRightColumn(this.ui, this.view, this.store, (u) => this.setUnits(u), isolatedNames);
+    setupRightColumn(this.ui, this.view, this.store, u => this.setUnits(u), isolatedNames);
     // VR only in a headset's own browser (never on a computer, headset connected or not). A viewer: the model as a real thing in your room.
     // On a phone or tablet it's AR: the model in the room through the camera.
     const handheld = isTouchDevice && !isHeadset;
@@ -198,118 +209,142 @@ export class App implements AppContext {
       scene: this.view.scene,
       bounds: () => this.view.modelBounds(),
       xray: () => {
-        const on = settings.value.shader !== "xray";
-        settings.set("shader", on ? "xray" : "shaded");
-        return on ? "X-Ray" : "Shaded";
+        const on = settings.value.shader !== 'xray';
+        settings.set('shader', on ? 'xray' : 'shaded');
+
+        return on ? 'X-Ray' : 'Shaded';
       },
       edges: () => {
         const on = !settings.value.showEdges;
-        settings.set("showEdges", on);
-        return on ? "Edges shown" : "Edges hidden";
+        settings.set('showEdges', on);
+
+        return on ? 'Edges shown' : 'Edges hidden';
       },
-      looks: () => ({ xray: settings.value.shader === "xray" ? "Shaded" : "X-Ray", edges: settings.value.showEdges ? "Hide Edges" : "Show Edges" }),
+      looks: () => ({ xray: settings.value.shader === 'xray' ? 'Shaded' : 'X-Ray', edges: settings.value.showEdges ? 'Hide Edges' : 'Show Edges' }),
       beforeFrame: () => this.view.xrFrame(),
       onEnter: () => {
         this.setTool(null);
         this.setSelection([]);
         this.view.xrMode(true);
       },
-      onExit: () => this.view.xrMode(false),
+      onExit: () => this.view.xrMode(false)
     }));
     // In the top bar, where it's seen, in a headset; under More on a phone or tablet (when its browser can show AR); never on a computer.
-    const vrBtn = document.getElementById("vr-btn")!;
+    const vrBtn = document.getElementById('vr-btn')!;
     if (handheld) {
-      vrBtn.textContent = "Enter AR";
-      vrBtn.title = "See the model in your room through the camera";
+      vrBtn.textContent = 'Enter AR';
+      vrBtn.title = 'See the model in your room through the camera';
       // A phone or tablet: under More (History has its place in the top bar).
-      vrBtn.className = "";
-      vrBtn.addEventListener("click", () => (document.getElementById("more-menu")!.hidden = true));
-      document.getElementById("more-menu")!.prepend(vrBtn);
+      vrBtn.className = '';
+      vrBtn.addEventListener('click', () => (document.getElementById('more-menu')!.hidden = true));
+      document.getElementById('more-menu')!.prepend(vrBtn);
     }
-    const checkVR = () => void vrSupported(handheld).then((ok) => (vrBtn.hidden = !isHeadset && !(handheld && ok)));
+    const checkVR = () => void vrSupported(handheld).then(ok => (vrBtn.hidden = !isHeadset && !(handheld && ok)));
     if (isTouchDevice) {
       checkVR();
-      (navigator as Navigator & { xr?: EventTarget }).xr?.addEventListener("devicechange", checkVR);
-    } else vrBtn.remove();
-    vrBtn.addEventListener("click", async () => {
-      if (!(await vrSupported(handheld))) return this.ui.toast(handheld ? "This browser can't show AR - try Chrome" : "This browser can't open VR here - open superGeometry.app in the headset's own browser");
-      vr.enter().catch((e: unknown) => this.ui.toast(`${handheld ? "AR" : "VR"} didn't start: ${e instanceof Error ? e.message : e}`));
+      (navigator as Navigator & { xr?: EventTarget }).xr?.addEventListener('devicechange', checkVR);
+    } else {
+      vrBtn.remove();
+    }
+    vrBtn.addEventListener('click', async () => {
+      if (!(await vrSupported(handheld))) {
+        return this.ui.toast(handheld ? "This browser can't show AR - try Chrome" : "This browser can't open VR here - open superGeometry.app in the headset's own browser");
+      }
+      vr.enter().catch((e: unknown) => this.ui.toast(`${handheld ? 'AR' : 'VR'} didn't start: ${e instanceof Error ? e.message : e}`));
     });
     this.pinLayer = new PinLayer(this.view);
     this.varTags = new VariableTags(this.view, {
       variables: () => this.store.doc.variables,
       check: (name, expr, kind) => {
         const list = this.store.doc.variables;
-        setVariables(list.map((v) => (v.name === name ? { name, expr } : v)));
+        setVariables(list.map(v => (v.name === name ? { name, expr } : v)));
         try {
-          return evaluate(expr, "number") === null ? null : evaluate(name, kind);
+          return evaluate(expr, 'number') === null ? null : evaluate(name, kind);
         } finally {
           setVariables(list);
         }
       },
       setVariable: (name, expr) => {
         const list = this.store.doc.variables;
-        const next = list.map((v) => (v.name === name ? { name, expr } : v));
+        const next = list.map(v => (v.name === name ? { name, expr } : v));
         setVariables(next);
-        const bad = next.some((v) => evaluate(v.expr) === null);
+        const bad = next.some(v => evaluate(v.expr) === null);
         setVariables(list);
-        if (bad) return false;
-        if (list.find((v) => v.name === name)?.expr !== expr) this.store.commit((d) => (d.variables = next));
+        if (bad) {
+          return false;
+        }
+        if (list.find(v => v.name === name)?.expr !== expr) {
+          this.store.commit(d => (d.variables = next));
+        }
+
         return true;
-      },
+      }
     });
     // ƒx buttons on number fields create named variables.
-    this.ui.variableFactory = (current) => createVariable(this, current);
-    this.ui.variableNames = () => this.store.doc.variables.map((v) => v.name);
-    numpadVariables({ names: () => this.store.doc.variables.map((v) => v.name), create: (value) => createVariable(this, value) });
+    this.ui.variableFactory = current => createVariable(this, current);
+    this.ui.variableNames = () => this.store.doc.variables.map(v => v.name);
+    numpadVariables({ names: () => this.store.doc.variables.map(v => v.name), create: value => createVariable(this, value) });
     settings.onChange(() => this.showPins());
     this.items = new ItemsPanel(this.store, {
       // A phone: like taps in the view, each body tapped in Items joins the
       // selection (tapped again, it leaves) - Subtract needs two bodies, and
       // the second one replaced the first.
       selectBody: (id) => {
-        if (this.tool === this.selectTool && this.selectTool.pickFromList({ kind: "body", body: id })) return;
+        if (this.tool === this.selectTool && this.selectTool.pickFromList({ kind: 'body', body: id })) {
+          return;
+        }
         // A pattern (mirror, move…) under way: the body joins it, or leaves it.
         // (After the first body the view's taps go to its direction: four
         // pockets to pattern across could only be had by starting again.)
-        if (this.tool instanceof TransformOp && this.tool.toggleBody(id)) return;
+        if (this.tool instanceof TransformOp && this.tool.toggleBody(id)) {
+          return;
+        }
         // Subtract, Shell… waiting for a body: it takes this one.
-        if (this.tool instanceof FeatureOp && this.tool.pickBody(id)) return;
-        this.togglePick({ kind: "body", body: id });
+        if (this.tool instanceof FeatureOp && this.tool.pickBody(id)) {
+          return;
+        }
+        this.togglePick({ kind: 'body', body: id });
       },
-      editSketch: (id) => this.setTool(new SketchTool(this, { sketchId: id })),
-      selectPlane: (id) => this.togglePick({ kind: "plane", id }),
-      deleteBody: (id) => this.store.add({ ...this.store.newIdentity("delete"), type: "delete", bodies: [id] }),
-      deleteFeature: (id) => this.store.remove(id),
-      selectImage: (id) => this.togglePick({ kind: "image", id }),
+      editSketch: id => this.setTool(new SketchTool(this, { sketchId: id })),
+      selectPlane: id => this.togglePick({ kind: 'plane', id }),
+      deleteBody: id => this.store.add({ ...this.store.newIdentity('delete'), type: 'delete', bodies: [id] }),
+      deleteFeature: id => this.store.remove(id),
+      selectImage: id => this.togglePick({ kind: 'image', id }),
       rename: async (id, current, isBody) => {
-        const v = await this.ui.dialog("Rename", [{ key: "name", label: "Name", value: current }]);
+        const v = await this.ui.dialog('Rename', [{ key: 'name', label: 'Name', value: current }]);
         const name = v?.name.trim();
-        if (!name) return;
-        if (isBody) this.store.commit((d) => (d.names = { ...(d.names ?? {}), [id]: name }));
-        else this.store.update(id, { name });
+        if (!name) {
+          return;
+        }
+        if (isBody) {
+          this.store.commit(d => (d.names = { ...(d.names ?? {}), [id]: name }));
+        } else {
+          this.store.update(id, { name });
+        }
       },
-      askName: async (title, current) => (await this.ui.dialog(title, [{ key: "name", label: "Name", value: current }]))?.name.trim() || null,
-      isolated: () => this.isolatedWithSketches(),
+      askName: async (title, current) => (await this.ui.dialog(title, [{ key: 'name', label: 'Name', value: current }]))?.name.trim() || null,
+      isolated: () => this.isolatedWithSketches()
     });
     // Computers and tablets start with Items open (phones: History only, there's no room for both).
     // (A phone on its side is wider than 720 px but only ~375 tall: Items would cover a third of it.)
-    if (screenClass() !== "phone") this.items.toggle(true);
+    if (screenClass() !== 'phone') {
+      this.items.toggle(true);
+    }
 
     this.store.onChange(() => this.docChanged());
-    window.addEventListener("keydown", (e) => this.onKey(e));
-    this.view.canvas.addEventListener("pointermove", (e) => {
+    window.addEventListener('keydown', e => this.onKey(e));
+    this.view.canvas.addEventListener('pointermove', (e) => {
       const r = this.view.canvas.getBoundingClientRect();
       this.pointerAt = [e.clientX - r.left, e.clientY - r.top];
     });
-    this.view.canvas.addEventListener("pointerleave", () => (this.pointerAt = null));
+    this.view.canvas.addEventListener('pointerleave', () => (this.pointerAt = null));
     // A phone may drop the page once it's in the background: save now, undo steps included.
-    document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && void this.store.flush());
-    window.addEventListener("pagehide", () => void this.store.flush());
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void this.store.flush());
+    window.addEventListener('pagehide', () => void this.store.flush());
     this.wireTopbar();
     this.tool.enter?.();
 
-    this.ui.setStatus("Loading geometry kernel…");
+    this.ui.setStatus('Loading geometry kernel…');
     const loaded = this.store.load().then(() => this.attachLibrary());
     // Every visit starts at the projects, with a welcome: shown as soon as the
     // projects are read, while the geometry kernel is still loading behind it.
@@ -322,21 +357,21 @@ export class App implements AppContext {
         // A project never pictured (kept before it was ever drawn) showed a
         // blank shape on its card: now that it's drawn, it gets its picture -
         // in the welcome window too, if that's still open.
-        const entry = (await libraryEntries()).find((e) => e.id === this.projectId);
+        const entry = (await libraryEntries()).find(e => e.id === this.projectId);
         if (entry && !entry.thumb && this.store.features.length) {
           await this.keepInLibrary(JSON.stringify(this.store.doc), true);
-          const thumb = (await libraryEntries()).find((e) => e.id === this.projectId)?.thumb;
-          const pic = document.querySelector<HTMLElement>(".library-card.current .library-pic");
-          if (thumb && pic && !pic.querySelector("img")) {
-            const img = document.createElement("img");
+          const thumb = (await libraryEntries()).find(e => e.id === this.projectId)?.thumb;
+          const pic = document.querySelector<HTMLElement>('.library-card.current .library-pic');
+          if (thumb && pic && !pic.querySelector('img')) {
+            const img = document.createElement('img');
             img.src = thumb;
-            img.alt = "";
+            img.alt = '';
             img.draggable = false;
-            pic.querySelector("svg")?.replaceWith(img);
+            pic.querySelector('svg')?.replaceWith(img);
           }
         }
       })
-      .catch((err) => this.ui.setStatus(`Could not start the geometry kernel: ${err.message ?? err}`));
+      .catch(err => this.ui.setStatus(`Could not start the geometry kernel: ${err.message ?? err}`));
   }
 
   // ------------------------------------------------------------ state
@@ -348,7 +383,9 @@ export class App implements AppContext {
    * original stance".)
    */
   private showPose(): void {
-    if (this.tool instanceof AssemblyTool) return;
+    if (this.tool instanceof AssemblyTool) {
+      return;
+    }
     this.view.setPoses(this.tool === this.selectTool && !this.selection.length ? AssemblyTool.posesOf(this) : null);
   }
 
@@ -357,12 +394,16 @@ export class App implements AppContext {
     this.showPose();
     this.refreshHighlights();
     // Selected bodies, planes, axes and images light up in Items too.
-    this.items?.markSelected(sel.flatMap((s) => (s.kind === "body" ? [s.body] : s.kind === "plane" || s.kind === "axis" || s.kind === "image" ? [s.id] : [])));
-    if (this.tool === this.selectTool) this.selectTool.refresh();
+    this.items?.markSelected(sel.flatMap(s => (s.kind === 'body' ? [s.body] : s.kind === 'plane' || s.kind === 'axis' || s.kind === 'image' ? [s.id] : [])));
+    if (this.tool === this.selectTool) {
+      this.selectTool.refresh();
+    }
   }
 
   setHover(h: Sel | null): void {
-    if (h === this.hover || (h && this.hover && sameSel(h, this.hover))) return;
+    if (h === this.hover || (h && this.hover && sameSel(h, this.hover))) {
+      return;
+    }
     this.hover = h;
     this.refreshHighlights();
   }
@@ -373,75 +414,86 @@ export class App implements AppContext {
    * File, under names a first-timer does not know.)
    */
   async printShare(): Promise<void> {
-    const back = document.createElement("div");
-    back.className = "dialog-back";
-    const box = document.createElement("div");
-    box.className = "dialog print-share";
-    const head = document.createElement("div");
-    head.className = "library-head";
-    const title = document.createElement("div");
-    title.className = "panel-title";
-    title.textContent = "Print / Share";
-    const x = document.createElement("button");
-    x.className = "icon-btn library-close";
-    x.title = "Close";
+    const back = document.createElement('div');
+    back.className = 'dialog-back';
+    const box = document.createElement('div');
+    box.className = 'dialog print-share';
+    const head = document.createElement('div');
+    head.className = 'library-head';
+    const title = document.createElement('div');
+    title.className = 'panel-title';
+    title.textContent = 'Print / Share';
+    const x = document.createElement('button');
+    x.className = 'icon-btn library-close';
+    x.title = 'Close';
     x.innerHTML = icons.close;
     const close = () => back.remove();
-    x.addEventListener("click", close);
+    x.addEventListener('click', close);
     head.append(title, x);
-    const check = document.createElement("div");
-    check.className = "print-check";
-    check.textContent = "Checking the model…";
-    const row = document.createElement("div");
-    row.className = "print-files";
+    const check = document.createElement('div');
+    check.className = 'print-check';
+    check.textContent = 'Checking the model…';
+    const row = document.createElement('div');
+    row.className = 'print-files';
     const file = (label: string, note: string, run: () => void) => {
-      const b = document.createElement("button");
-      b.className = "text-btn print-file";
-      b.type = "button";
-      const l = document.createElement("b");
+      const b = document.createElement('button');
+      b.className = 'text-btn print-file';
+      b.type = 'button';
+      const l = document.createElement('b');
       l.textContent = label;
-      const n = document.createElement("span");
+      const n = document.createElement('span');
       n.textContent = note;
       b.append(l, n);
-      b.addEventListener("click", () => (close(), run()));
+      b.addEventListener('click', () => (close(), run()));
       row.append(b);
     };
-    file("3MF", "For 3D printing (keeps sizes and colours)", () => void this.export3mf());
-    file("STL", "For 3D printing (every slicer opens it)", () => void this.export("stl"));
-    file("STEP", "For other CAD programs", () => void this.export("step"));
-    file("Picture", "A PNG of the view as it is now", () => this.ui.runRight("shot"));
+    file('3MF', 'For 3D printing (keeps sizes and colours)', () => void this.export3mf());
+    file('STL', 'For 3D printing (every slicer opens it)', () => void this.export('stl'));
+    file('STEP', 'For other CAD programs', () => void this.export('step'));
+    file('Picture', 'A PNG of the view as it is now', () => this.ui.runRight('shot'));
     box.append(head, check, row);
     back.append(box);
-    back.addEventListener("pointerdown", (e) => e.target === back && close());
-    box.addEventListener("keydown", (e) => e.key === "Escape" && close());
+    back.addEventListener('pointerdown', e => e.target === back && close());
+    box.addEventListener('keydown', e => e.key === 'Escape' && close());
     document.body.append(back);
     try {
       const health = await this.kernel.health(this.store.doc.features);
-      if (!back.isConnected) return;
+      if (!back.isConnected) {
+        return;
+      }
       const hidden = new Set(this.store.doc.hidden ?? []);
-      const bodies = health.filter((h) => !hidden.has(h.id));
-      const bad = bodies.filter((h) => !h.healthy);
+      const bodies = health.filter(h => !hidden.has(h.id));
+      const bad = bodies.filter(h => !h.healthy);
       check.replaceChildren();
       const line = (text: string, ok: boolean) => {
-        const d = document.createElement("div");
-        d.className = ok ? "print-ok" : "print-warn";
+        const d = document.createElement('div');
+        d.className = ok ? 'print-ok' : 'print-warn';
         d.textContent = text;
         check.append(d);
       };
-      if (!bodies.length) line("Nothing to print yet: there is no solid body.", false);
-      else if (!bad.length) line(bodies.length === 1 ? "Ready to print: the body is closed and solid." : `Ready to print: all ${bodies.length} bodies are closed and solid.`, true);
+      if (!bodies.length) {
+        line('Nothing to print yet: there is no solid body.', false);
+      } else if (!bad.length) {
+        line(bodies.length === 1 ? 'Ready to print: the body is closed and solid.' : `Ready to print: all ${bodies.length} bodies are closed and solid.`, true);
+      }
       for (const h of bad) {
-        const why = [h.openEdges ? "it is not closed (open edges)" : "", h.thin ? "it has hair-thin faces" : "", h.pinched ? "parts of it only touch along an edge" : "", h.solids > 1 ? `it is ${h.solids} separate pieces` : "", !h.valid ? "its shape has a fault" : ""].filter(Boolean);
-        line(`${h.name}: ${why.join(", ") || "it may not print as it is"}. Modify, Fix, Repair Body may mend it.`, false);
+        const why = [h.openEdges ? 'it is not closed (open edges)' : '', h.thin ? 'it has hair-thin faces' : '', h.pinched ? 'parts of it only touch along an edge' : '', h.solids > 1 ? `it is ${h.solids} separate pieces` : '', !h.valid ? 'its shape has a fault' : ''].filter(Boolean);
+        line(`${h.name}: ${why.join(', ') || 'it may not print as it is'}. Modify, Fix, Repair Body may mend it.`, false);
       }
       if (bodies.length) {
         const lo = [Infinity, Infinity, Infinity];
         const hi = [-Infinity, -Infinity, -Infinity];
-        for (const h of bodies) for (let k = 0; k < 3; k++) ((lo[k] = Math.min(lo[k], h.box[0][k])), (hi[k] = Math.max(hi[k], h.box[1][k])));
-        line(`Size: ${[0, 1, 2].map((k) => fmtLen(hi[k] - lo[k], 1)).join(" x ")}`, true);
+        for (const h of bodies) {
+          for (let k = 0; k < 3; k++) {
+            ((lo[k] = Math.min(lo[k], h.box[0][k])), (hi[k] = Math.max(hi[k], h.box[1][k])));
+          }
+        }
+        line(`Size: ${[0, 1, 2].map(k => fmtLen(hi[k] - lo[k], 1)).join(' x ')}`, true);
       }
     } catch {
-      if (back.isConnected) check.textContent = "The model could not be checked. The files can still be saved.";
+      if (back.isConnected) {
+        check.textContent = 'The model could not be checked. The files can still be saved.';
+      }
     }
   }
 
@@ -449,18 +501,34 @@ export class App implements AppContext {
   private pickAnchor(): Vec3 | null {
     const sel = this.selection;
     const s = sel[sel.length - 1];
-    if (!s) return null;
+    if (!s) {
+      return null;
+    }
     const view = this.view;
-    if (s.kind === "face") return view.body(s.body)?.faces[s.face]?.center ?? null;
-    if (s.kind === "edge") return view.body(s.body)?.edges[s.edge]?.mid ?? null;
-    if (s.kind === "vertex") return view.vertexOf(s.body, s.vertex) ?? null;
-    if (s.kind === "body") return bodyCenter(this, bodiesOf(sel));
-    if (s.kind === "profile") {
+    if (s.kind === 'face') {
+      return view.body(s.body)?.faces[s.face]?.center ?? null;
+    }
+    if (s.kind === 'edge') {
+      return view.body(s.body)?.edges[s.edge]?.mid ?? null;
+    }
+    if (s.kind === 'vertex') {
+      return view.vertexOf(s.body, s.vertex) ?? null;
+    }
+    if (s.kind === 'body') {
+      return bodyCenter(this, bodiesOf(sel));
+    }
+    if (s.kind === 'profile') {
       const src = sourcesOf(this, [s])[0];
+
       return src ? sourceFrame(this, src).base : null;
     }
-    if (s.kind === "plane") return view.planeShownAt(s.id) ?? view.planeOf(s.id)?.origin ?? null;
-    if (s.kind === "axis") return view.axisOf(s.id)?.plane.origin ?? null;
+    if (s.kind === 'plane') {
+      return view.planeShownAt(s.id) ?? view.planeOf(s.id)?.origin ?? null;
+    }
+    if (s.kind === 'axis') {
+      return view.axisOf(s.id)?.plane.origin ?? null;
+    }
+
     return null;
   }
 
@@ -479,14 +547,21 @@ export class App implements AppContext {
     // A phone: History and Items go, so the tool, its arrows and its value
     // boxes aren't drawn under them (they can be opened again while it runs).
     if (next !== this.selectTool && window.innerWidth <= 720) {
-      if (document.body.classList.contains("history-open")) this.ui.toggleHistory(false);
-      if (document.getElementById("items")?.classList.contains("open")) this.items.toggle(false);
+      if (document.body.classList.contains('history-open')) {
+        this.ui.toggleHistory(false);
+      }
+      if (document.getElementById('items')?.classList.contains('open')) {
+        this.items.toggle(false);
+      }
     }
     next.enter?.();
     this.updateUndo();
     // Leaving an operation drops its preview.
-    if (leavingOp && next === this.selectTool) void this.regenerate();
-    else this.refreshSketches();
+    if (leavingOp && next === this.selectTool) {
+      void this.regenerate();
+    } else {
+      this.refreshSketches();
+    }
     this.renderHistory();
     // Drawing goes straight on to 3D: the shape just closed is picked as the sketch is left, so its arrow is up
     // already - drag it, no tap on the shape first. (The last shape made of the sketch's curves: the one just drawn.)
@@ -498,14 +573,17 @@ export class App implements AppContext {
       const solid = mine.length ? mine : materialRegions(all);
       const region = all.regions.indexOf(solid[solid.length - 1]);
       if (region >= 0) {
-        this.setSelection([{ kind: "profile", sketch: closed, region }]);
+        this.setSelection([{ kind: 'profile', sketch: closed, region }]);
         // Seen straight on (as it was drawn), a pull has nowhere to show: the view swings round to see it rise.
         const pl = this.sketchPlane(closed);
         const dir = this.view.cam.viewDir();
         if (pl && Math.abs(dir.x * pl.normal[0] + dir.y * pl.normal[1] + dir.z * pl.normal[2]) > 0.95) {
           // (A floor sketch: the usual three-quarter view. Any other: from a little to its side and above.)
-          if (Math.abs(pl.normal[2]) > 0.9) this.view.cam.iso();
-          else this.view.cam.lookAlong([pl.normal[0] * 0.7 + pl.xDir[0] * 0.45, pl.normal[1] * 0.7 + pl.xDir[1] * 0.45, pl.normal[2] * 0.7 + pl.xDir[2] * 0.45 + 0.5]);
+          if (Math.abs(pl.normal[2]) > 0.9) {
+            this.view.cam.iso();
+          } else {
+            this.view.cam.lookAlong([pl.normal[0] * 0.7 + pl.xDir[0] * 0.45, pl.normal[1] * 0.7 + pl.xDir[1] * 0.45, pl.normal[2] * 0.7 + pl.xDir[2] * 0.45 + 0.5]);
+          }
         }
       }
     }
@@ -521,60 +599,80 @@ export class App implements AppContext {
   private toggleSection(): void {
     if (this.section) {
       const keep = this.section;
-      if (this.tool instanceof SectionTool) this.setTool(null);
+      if (this.tool instanceof SectionTool) {
+        this.setTool(null);
+      }
       this.setSection(null);
       this.lastSection = keep;
       this.refreshTools();
+
       return;
     }
     const s = this.selection[0];
-    const face = s?.kind === "face" ? this.view.body(s.body)?.faces[s.face] : undefined;
+    const face = s?.kind === 'face' ? this.view.body(s.body)?.faces[s.face] : undefined;
     if (face?.plane) {
       // Cut a hair inside the face so the face itself shows the cut.
       const inset = -this.view.cam.worldPerPixel(this.view.height);
       this.setSection({ plane: face.plane, offset: inset, flipped: false, inset });
-    } else if (this.lastSection) this.setSection(this.lastSection);
+    } else if (this.lastSection) {
+      this.setSection(this.lastSection);
+    }
     this.setTool(new SectionTool(this));
   }
 
   /** Re-draw the tool columns (e.g. after Section View changed). */
   private refreshTools(): void {
-    if (this.tool === this.selectTool) this.selectTool.refresh();
-    else this.ui.setBottom(this.bottomTools());
+    if (this.tool === this.selectTool) {
+      this.selectTool.refresh();
+    } else {
+      this.ui.setBottom(this.bottomTools());
+    }
   }
 
   /** Thread the selected round face (a shank or a hole). */
   startThread(): void {
     let s = this.selection[0];
     // A round edge (a hole's rim): the round face of the same radius it bounds.
-    if (s?.kind === "edge") {
+    if (s?.kind === 'edge') {
       const body = this.view.body(s.body);
       const e = body?.edges[s.edge];
-      if (body && e?.type === "CIRCLE") {
+      if (body && e?.type === 'CIRCLE') {
         const c = scale(add(e.start, e.mid), 0.5);
         const r = dist(e.start, e.mid) / 2;
         let best = -1;
         let bestD = Infinity;
         body.faces.forEach((f, i) => {
-          if (!f.round || Math.abs(f.round.r - r) > r * 1e-4) return;
+          if (!f.round || Math.abs(f.round.r - r) > r * 1e-4) {
+            return;
+          }
           const d = dist(f.center, c);
-          if (d < bestD) (bestD = d), (best = i);
+          if (d < bestD) {
+            (bestD = d), (best = i);
+          }
         });
-        if (best >= 0) s = { kind: "face", body: s.body, face: best };
+        if (best >= 0) {
+          s = { kind: 'face', body: s.body, face: best };
+        }
       }
     }
     // Any other edge (a revolved shank's seam runs right along its top): the
     // round face under the finger.
     const at = this.selectTool.tapPoint;
-    if (s?.kind === "edge" && at) {
+    if (s?.kind === 'edge' && at) {
       const body = s.body;
-      const under = this.view.facesAt(at.x, at.y).find((f) => f.kind === "face" && f.body === body && this.view.body(body)?.faces[f.face]?.round);
-      if (under?.kind === "face") s = { kind: "face", body, face: under.face };
+      const under = this.view.facesAt(at.x, at.y).find(f => f.kind === 'face' && f.body === body && this.view.body(body)?.faces[f.face]?.round);
+      if (under?.kind === 'face') {
+        s = { kind: 'face', body, face: under.face };
+      }
     }
-    if (s?.kind !== "face") return void this.ui.toast("Threads go on round faces: tap a shank or a hole");
+    if (s?.kind !== 'face') {
+      return void this.ui.toast('Threads go on round faces: tap a shank or a hole');
+    }
     const info = this.view.body(s.body)?.faces[s.face];
     const ref = faceRefOf(this, s);
-    if (!info?.round || !ref) return void this.ui.toast("Threads go on round faces: tap a shank or a hole");
+    if (!info?.round || !ref) {
+      return void this.ui.toast('Threads go on round faces: tap a shank or a hole');
+    }
     this.setSelection([s]);
     this.setTool(new ThreadOp(this, ref, info.round));
   }
@@ -582,9 +680,11 @@ export class App implements AppContext {
   setSection(s: SectionState | null): void {
     this.section = s;
     // A section on screen is the one to remember (a deleted one is forgotten).
-    if (s) this.lastSection = null;
+    if (s) {
+      this.lastSection = null;
+    }
     this.view.setSection(s ? sectionPlane(s) : null);
-    this.view.setSectionStyle(s?.flat ? "flat" : s?.only ? "only" : "normal");
+    this.view.setSectionStyle(s?.flat ? 'flat' : s?.only ? 'only' : 'normal');
   }
 
   get pins(): PinDef[] {
@@ -592,7 +692,7 @@ export class App implements AppContext {
   }
 
   setPins(p: PinDef[]): void {
-    this.store.commit((d) => (d.pins = p));
+    this.store.commit(d => (d.pins = p));
   }
 
   addPin(pin: PinDef): void {
@@ -616,19 +716,21 @@ export class App implements AppContext {
     // (Another tool's highlights aren't picks.)
     const had = this.tool === this.selectTool ? this.selection : [];
     this.setTool(null);
-    const i = had.findIndex((x) => sameSel(x, s));
+    const i = had.findIndex(x => sameSel(x, s));
     this.setSelection(i >= 0 ? had.filter((_, k) => k !== i) : [...had, s]);
   }
 
   isolate(bodies: string[] | null): void {
     this.isolated = bodies?.length ? [...bodies] : null;
     // What exists now; anything made from here on joins the isolated set.
-    this.known = new Set([...(this.result?.bodies ?? []).map((b) => b.id), ...this.store.doc.features.map((f) => f.id)]);
+    this.known = new Set([...(this.result?.bodies ?? []).map(b => b.id), ...this.store.doc.features.map(f => f.id)]);
     this.applyVisibility();
     // Isolated bodies are all there is: sketches, planes, axes and images step out too.
     this.refreshConstruction();
     this.refreshSketches();
-    if (this.tool === this.selectTool) this.selectTool.refresh();
+    if (this.tool === this.selectTool) {
+      this.selectTool.refresh();
+    }
     this.items.render(this.result);
   }
 
@@ -638,16 +740,25 @@ export class App implements AppContext {
    * so their shapes can be picked (extrude, offset…) like on any face.
    */
   isolatedWithSketches(): string[] | null {
-    if (!this.isolated) return null;
+    if (!this.isolated) {
+      return null;
+    }
     const iso = new Set(this.isolated);
-    const onIsolated = this.store.doc.features.filter((f) => f.type === "sketch" && !!f.attachedTo && iso.has(f.attachedTo.body) && !iso.has(f.id)).map((f) => f.id);
+    const onIsolated = this.store.doc.features.filter(f => f.type === 'sketch' && !!f.attachedTo && iso.has(f.attachedTo.body) && !iso.has(f.id)).map(f => f.id);
+
     return onIsolated.length ? [...this.isolated, ...onIsolated] : this.isolated;
   }
 
   /** Hidden (Items) + not isolated → invisible and unpickable. */
   private applyVisibility(): void {
     const hidden = new Set(this.store.doc.hidden);
-    if (this.isolated) for (const b of this.result?.bodies ?? []) if (!this.isolated.includes(b.id)) hidden.add(b.id);
+    if (this.isolated) {
+      for (const b of this.result?.bodies ?? []) {
+        if (!this.isolated.includes(b.id)) {
+          hidden.add(b.id);
+        }
+      }
+    }
     this.view.setHidden(hidden);
   }
 
@@ -668,15 +779,23 @@ export class App implements AppContext {
     const running = this.kernel.running;
     const committed = !running || running === this.store.doc.features;
     this.kernel.stop();
-    if (this.tool !== this.selectTool && !(this.tool instanceof SketchTool)) this.setTool(null);
-    if (committed && this.store.canUndo) this.store.undo();
-    else void this.regenerate();
-    this.ui.toast("Stopped - the last change was taken back");
+    if (this.tool !== this.selectTool && !(this.tool instanceof SketchTool)) {
+      this.setTool(null);
+    }
+    if (committed && this.store.canUndo) {
+      this.store.undo();
+    } else {
+      void this.regenerate();
+    }
+    this.ui.toast('Stopped - the last change was taken back');
   }
 
   async preview(features: Feature[]): Promise<RegenResult | null> {
     const r = await this.kernel.regenerate(features);
-    if (r) this.apply(r, features);
+    if (r) {
+      this.apply(r, features);
+    }
+
     return r;
   }
 
@@ -694,24 +813,30 @@ export class App implements AppContext {
     // the model there is. (Each of them went to the engine and back: a fifth of a second on a ten-step part.)
     const steps = JSON.stringify([this.store.doc.features, this.store.doc.variables]);
     // (Only the project's own model: one a tool is trying out is not the project's.)
-    if (this.result && this.result === this.made && !this.regenerating && steps === this.madeFor) return this.apply(this.result, this.store.doc.features);
+    if (this.result && this.result === this.made && !this.regenerating && steps === this.madeFor) {
+      return this.apply(this.result, this.store.doc.features);
+    }
     this.madeFor = steps;
     void this.regenerate();
   }
 
   /** The steps (and variables) the model on the screen was asked for, as text; and how many askings are under way. */
-  private madeFor = "";
+  private madeFor = '';
   private made: RegenResult | null = null;
   private regenerating = 0;
 
   /** The tags where the variables act on the model as it is now (Variables on). */
   private showVariableTags(): void {
-    if (this.varsOn && this.result) this.varTags.set(variableTags(this.store.doc.variables, this.store.doc.features, this.result));
+    if (this.varsOn && this.result) {
+      this.varTags.set(variableTags(this.store.doc.variables, this.store.doc.features, this.result));
+    }
   }
 
   /** The Variables button: on (tags and their card), or off. */
   private toggleVariables(): void {
-    if (this.varsOn) return this.variablesOff();
+    if (this.varsOn) {
+      return this.variablesOff();
+    }
     this.varsOn = true;
     this.showVariableTags();
     this.varTags.setVisible(true);
@@ -721,7 +846,9 @@ export class App implements AppContext {
   /** The tags on or off, the card staying (its On switch). */
   showVariables(on: boolean): void {
     this.varsOn = on;
-    if (on) this.showVariableTags();
+    if (on) {
+      this.showVariableTags();
+    }
     this.varTags.setVisible(on);
     this.refreshTools();
   }
@@ -729,7 +856,9 @@ export class App implements AppContext {
   variablesOff(): void {
     this.varsOn = false;
     this.varTags.setVisible(false);
-    if (this.tool instanceof VariablesTool) this.setTool(null);
+    if (this.tool instanceof VariablesTool) {
+      this.setTool(null);
+    }
     this.refreshTools();
   }
 
@@ -737,11 +866,14 @@ export class App implements AppContext {
     let kept = { changed: 0, lost: 0 };
     this.store.commit((d) => {
       // Every formula keeps the size it had: its plain lengths now say the unit they were typed in.
-      kept = keepSizes(d, d.units ?? "mm", u);
+      kept = keepSizes(d, d.units ?? 'mm', u);
       d.units = u;
     });
-    if (kept.lost) this.ui.toast(`${kept.lost} formula${kept.lost === 1 ? "" : "s"} could not be kept as ${kept.lost === 1 ? "it was" : "they were"}: check the sizes that use ${kept.lost === 1 ? "it" : "them"}`, "error");
-    else if (kept.changed) this.ui.toast(`Nothing changes size: the plain numbers in ${kept.changed === 1 ? "a formula" : `${kept.changed} formulas`} now say their unit`);
+    if (kept.lost) {
+      this.ui.toast(`${kept.lost} formula${kept.lost === 1 ? '' : 's'} could not be kept as ${kept.lost === 1 ? 'it was' : 'they were'}: check the sizes that use ${kept.lost === 1 ? 'it' : 'them'}`, 'error');
+    } else if (kept.changed) {
+      this.ui.toast(`Nothing changes size: the plain numbers in ${kept.changed === 1 ? 'a formula' : `${kept.changed} formulas`} now say their unit`);
+    }
   }
 
   private async regenerate(): Promise<void> {
@@ -753,9 +885,13 @@ export class App implements AppContext {
     } finally {
       this.regenerating--;
     }
-    if (r) ((this.made = r), this.apply(r, features));
+    if (r) {
+      ((this.made = r), this.apply(r, features));
+    }
     // (Not made - stopped, or overtaken: the next change asks again, whatever it is.)
-    else this.madeFor = "";
+    else {
+      this.madeFor = '';
+    }
   }
 
   /** Sketches the engine moved the curves of (they follow a body): those curves, by the sketch as it was sent. */
@@ -766,11 +902,19 @@ export class App implements AppContext {
     this.solved = new WeakMap();
     if (r.sketchEntities) {
       const moved = r.sketchEntities;
-      for (const f of features) if (moved[f.id]) this.solved.set(f, moved[f.id]);
+      for (const f of features) {
+        if (moved[f.id]) {
+          this.solved.set(f, moved[f.id]);
+        }
+      }
       // The project as it is (not a preview of a change): they are the sketch's curves from now on.
       if (features === this.store.doc.features) {
         this.store.adopt((d) => {
-          for (const f of d.features) if (f.type === "sketch" && moved[f.id]) f.entities = moved[f.id];
+          for (const f of d.features) {
+            if (f.type === 'sketch' && moved[f.id]) {
+              f.entities = moved[f.id];
+            }
+          }
         });
         features = this.store.doc.features;
       }
@@ -779,16 +923,28 @@ export class App implements AppContext {
     if (r.whole && features === this.store.doc.features) {
       const whole = r.whole;
       this.store.adopt((d) => {
-        for (const f of d.features) if ((f.type === "boolean" || f.type === "delete") && whole[f.id] && !f.whole) f.whole = whole[f.id];
+        for (const f of d.features) {
+          if ((f.type === 'boolean' || f.type === 'delete') && whole[f.id] && !f.whole) {
+            f.whole = whole[f.id];
+          }
+        }
       });
       features = this.store.doc.features;
     }
-    const now = new Set([...r.bodies.map((b) => b.id), ...features.map((f) => f.id)]);
+    const now = new Set([...r.bodies.map(b => b.id), ...features.map(f => f.id)]);
     if (this.isolated) {
       // Made while isolating (a copy, a new sketch or plane): it belongs with what's shown.
-      if (this.known) for (const id of now) if (!this.known.has(id)) this.isolated.push(id);
-      this.isolated = this.isolated.filter((id) => now.has(id));
-      if (!this.isolated.some((id) => r.bodies.some((b) => b.id === id))) this.isolated = null;
+      if (this.known) {
+        for (const id of now) {
+          if (!this.known.has(id)) {
+            this.isolated.push(id);
+          }
+        }
+      }
+      this.isolated = this.isolated.filter(id => now.has(id));
+      if (!this.isolated.some(id => r.bodies.some(b => b.id === id))) {
+        this.isolated = null;
+      }
     }
     this.known = now;
     this.view.setBodies(r.bodies);
@@ -797,15 +953,32 @@ export class App implements AppContext {
     this.refreshSketches(features);
     // Drop selections that point at geometry that no longer exists.
     this.selection = this.selection.filter((s) => {
-      if (s.kind === "profile" || s.kind === "curve" || s.kind === "point") return !!this.store.find(s.sketch) || features.some((f) => f.id === s.sketch);
-      if (s.kind === "plane" || s.kind === "axis") return !!this.view.planeOf(s.id) || !!this.view.axisOf(s.id);
-      if (s.kind === "image") return features.some((f) => f.id === s.id);
-      if (s.kind === "origin") return true;
+      if (s.kind === 'profile' || s.kind === 'curve' || s.kind === 'point') {
+        return !!this.store.find(s.sketch) || features.some(f => f.id === s.sketch);
+      }
+      if (s.kind === 'plane' || s.kind === 'axis') {
+        return !!this.view.planeOf(s.id) || !!this.view.axisOf(s.id);
+      }
+      if (s.kind === 'image') {
+        return features.some(f => f.id === s.id);
+      }
+      if (s.kind === 'origin') {
+        return true;
+      }
       const b = this.view.body(s.body);
-      if (!b) return false;
-      if (s.kind === "face") return s.face < b.faces.length;
-      if (s.kind === "edge") return s.edge < b.edges.length;
-      if (s.kind === "vertex") return !!this.view.vertexOf(s.body, s.vertex);
+      if (!b) {
+        return false;
+      }
+      if (s.kind === 'face') {
+        return s.face < b.faces.length;
+      }
+      if (s.kind === 'edge') {
+        return s.edge < b.edges.length;
+      }
+      if (s.kind === 'vertex') {
+        return !!this.view.vertexOf(s.body, s.vertex);
+      }
+
       return true;
     });
     this.refreshHighlights();
@@ -821,27 +994,29 @@ export class App implements AppContext {
         ? `⚠ ${open.length === 1 ? (this.store.doc.names?.[open[0].id] ?? open[0].name) : `${open.length} bodies`} not closed - ${open.reduce((s, b) => s + b.openEdges.length, 0)} open edge(s) shown in orange`
         : this.store.problems[0]
           ? `⚠ ${this.store.problems[0]}`
-          : null,
+          : null
     );
     // (Steps of the project only: one being tried - a Delete Face its
     // neighbours can't close - isn't in History, and says why itself.)
-    const ids = new Set(this.store.features.map((f) => f.id));
-    const failed = r.errors.filter((e) => ids.has(e.featureId));
-    const errs = failed.map((e) => e.featureId + e.message).join();
+    const ids = new Set(this.store.features.map(f => f.id));
+    const failed = r.errors.filter(e => ids.has(e.featureId));
+    const errs = failed.map(e => e.featureId + e.message).join();
     if (errs && errs !== this.shownErrors && this.tool === this.selectTool) {
-      this.ui.toast(`${failed.length} step${failed.length > 1 ? "s" : ""} failed to rebuild - see History`, "error");
+      this.ui.toast(`${failed.length} step${failed.length > 1 ? 's' : ''} failed to rebuild - see History`, 'error');
     }
     this.shownErrors = errs;
   }
 
   private refreshConstruction(features: readonly Feature[] = this.store.doc.features): void {
     const r = this.result;
-    if (!r) return;
+    if (!r) {
+      return;
+    }
     const hidden = new Set(this.store.doc.hidden);
     // Isolating: only what's isolated (or was made since) shows.
     const shown = (id: string) => !hidden.has(id) && (!this.isolated || this.isolated.includes(id));
-    this.view.setConstruction(r.planes.filter((p) => shown(p.id)), r.axes.filter((a) => shown(a.id)));
-    this.view.setImages(features.filter((f): f is ImageFeature => f.type === "image" && !f.suppressed && !f.rolledBack && shown(f.id)));
+    this.view.setConstruction(r.planes.filter(p => shown(p.id)), r.axes.filter(a => shown(a.id)));
+    this.view.setImages(features.filter((f): f is ImageFeature => f.type === 'image' && !f.suppressed && !f.rolledBack && shown(f.id)));
   }
 
   /** The sketch being edited: which curves its constraints hold completely (worked out once per change). */
@@ -849,12 +1024,17 @@ export class App implements AppContext {
 
   private definedOf(s: SketchFeature): Set<string> | undefined {
     const c = this.definedCache;
-    if (c && c.entities === s.entities && c.constraints === s.constraints) return c.defined;
+    if (c && c.entities === s.entities && c.constraints === s.constraints) {
+      return c.defined;
+    }
     const r = definedCurves(s.entities, s.constraints ?? []);
-    const all = !!r?.all && s.entities.some((e) => !e.construction);
+    const all = !!r?.all && s.entities.some(e => !e.construction);
     // Just became fully defined: say so (the curves have turned green).
-    if (all && c && !c.all) this.ui.toast("Sketch fully defined");
+    if (all && c && !c.all) {
+      this.ui.toast('Sketch fully defined');
+    }
     this.definedCache = { entities: s.entities, constraints: s.constraints, defined: r?.defined, all };
+
     return r?.defined;
   }
 
@@ -864,20 +1044,26 @@ export class App implements AppContext {
 
   private refreshSketches(features: readonly Feature[] = this.store.doc.features): void {
     const hidden = new Set(this.store.doc.hidden);
-    for (const id of this.wasHidden) if (!hidden.has(id)) this.revealed.add(id);
-    for (const id of hidden) this.revealed.delete(id);
+    for (const id of this.wasHidden) {
+      if (!hidden.has(id)) {
+        this.revealed.add(id);
+      }
+    }
+    for (const id of hidden) {
+      this.revealed.delete(id);
+    }
     this.wasHidden = hidden;
     const iso = this.isolatedWithSketches();
     const sketches = features
-      .filter((f): f is SketchFeature => f.type === "sketch" && !f.suppressed && !f.rolledBack && ((!hidden.has(f.id) && (!iso || iso.includes(f.id))) || f.id === this.tool.activeSketch))
-      .map((s) => ({ ...s, entities: this.solved.get(s) ?? s.entities, plane: this.result?.sketchPlanes[s.id] ?? s.plane, boundary: this.result?.sketchBoundaries[s.id] }))
-      .map((s) => (s.id === this.tool.activeSketch ? { ...s, defined: this.definedOf(s) } : s));
+      .filter((f): f is SketchFeature => f.type === 'sketch' && !f.suppressed && !f.rolledBack && ((!hidden.has(f.id) && (!iso || iso.includes(f.id))) || f.id === this.tool.activeSketch))
+      .map(s => ({ ...s, entities: this.solved.get(s) ?? s.entities, plane: this.result?.sketchPlanes[s.id] ?? s.plane, boundary: this.result?.sketchBoundaries[s.id] }))
+      .map(s => (s.id === this.tool.activeSketch ? { ...s, defined: this.definedOf(s) } : s));
     // Drawn but not made into anything yet: shown through bodies, and a tap on it finds it there
     // (a pocket sketched on a plane through the middle of a body is inside it). The same
     // for one used, hidden, and shown again in Items: the pocket's sketch shown to fill
     // the pocket with a core couldn't be tapped through the frame round it.
-    const used = new Set(features.filter((f) => !f.suppressed && !f.rolledBack).flatMap(sketchesUsed));
-    this.view.setSketches(sketches, this.tool.activeSketch, new Set(sketches.filter((s) => !used.has(s.id) || this.revealed.has(s.id)).map((s) => s.id)));
+    const used = new Set(features.filter(f => !f.suppressed && !f.rolledBack).flatMap(sketchesUsed));
+    this.view.setSketches(sketches, this.tool.activeSketch, new Set(sketches.filter(s => !used.has(s.id) || this.revealed.has(s.id)).map(s => s.id)));
   }
 
   private refreshHighlights(): void {
@@ -892,58 +1078,75 @@ export class App implements AppContext {
    */
   private openBodies(r: RegenResult | null) {
     return (r?.bodies ?? []).filter((b) => {
-      if (!b.openEdges?.length) return false;
+      if (!b.openEdges?.length) {
+        return false;
+      }
       // A surface on purpose (or a copy of one) isn't meant to be closed.
       const f = this.store.find(b.id);
-      const ff = f?.type === "freeform" ? editedStep<typeof f>(this.store.features, f.id) : freeformBodies(this.store.features).get(b.id)?.feature;
+      const ff = f?.type === 'freeform' ? editedStep<typeof f>(this.store.features, f.id) : freeformBodies(this.store.features).get(b.id)?.feature;
+
       return !(ff?.surface && !ff.thickness);
     });
   }
 
   /** What the History rows were last made from (everything a row shows). */
-  private historyShown = "";
+  private historyShown = '';
 
   private renderHistory(): void {
     const warnings = new Map<string, string>();
-    for (const b of this.openBodies(this.result)) warnings.set(b.id.split(":")[0], `${b.name}: not closed - ${b.openEdges.length} open edge(s)`);
-    for (const n of this.result?.notes ?? []) warnings.set(n.featureId, warnings.has(n.featureId) ? `${warnings.get(n.featureId)} ${n.message}` : n.message);
+    for (const b of this.openBodies(this.result)) {
+      warnings.set(b.id.split(':')[0], `${b.name}: not closed - ${b.openEdges.length} open edge(s)`);
+    }
+    for (const n of this.result?.notes ?? []) {
+      warnings.set(n.featureId, warnings.has(n.featureId) ? `${warnings.get(n.featureId)} ${n.message}` : n.message);
+    }
     // The same rows as are there: left as they are (every step of a drag's
     // preview rebuilt the whole list - 5 ms for 200 steps, far more on a phone).
     const doc = this.store.doc;
     const shown = JSON.stringify([
-      doc.features.map((f) => [f.id, f.name, f.type, f.suppressed ? 1 : 0, f.rolledBack ? 1 : 0, f.type === "sketch" ? (f.log ?? 0) : 0]),
+      doc.features.map(f => [f.id, f.name, f.type, f.suppressed ? 1 : 0, f.rolledBack ? 1 : 0, f.type === 'sketch' ? (f.log ?? 0) : 0]),
       this.result?.errors ?? [],
       this.tool.editingId ?? this.tool.activeSketch ?? null,
       [...warnings],
       doc.hidden,
-      doc.historyGroups ?? [],
+      doc.historyGroups ?? []
     ]);
-    if (shown === this.historyShown) return;
+    if (shown === this.historyShown) {
+      return;
+    }
     this.historyShown = shown;
     // The rows are rebuilt: a hover on an old row is over.
     this.view.setStepHover(null);
     this.ui.renderHistory(this.store.doc.features, this.result?.errors ?? [], this.tool.editingId ?? this.tool.activeSketch ?? null, {
       edit: (id, pick) => this.editFeature(id, pick),
-      hover: (id) => this.view.setStepHover(id ? this.stepTargets(id) : null),
+      hover: id => this.view.setStepHover(id ? this.stepTargets(id) : null),
       toggle: (id) => {
         const f = this.store.find(id);
-        if (f) this.store.update(id, { suppressed: !f.suppressed });
+        if (f) {
+          this.store.update(id, { suppressed: !f.suppressed });
+        }
       },
-      isHidden: (id) => this.store.doc.hidden.includes(id),
-      toggleHidden: (id) => this.store.commit((d) => (d.hidden = d.hidden.includes(id) ? d.hidden.filter((x) => x !== id) : [...d.hidden, id])),
+      isHidden: id => this.store.doc.hidden.includes(id),
+      toggleHidden: id => this.store.commit(d => (d.hidden = d.hidden.includes(id) ? d.hidden.filter(x => x !== id) : [...d.hidden, id])),
       remove: (id) => {
-        if (this.tool !== this.selectTool) this.setTool(null);
+        if (this.tool !== this.selectTool) {
+          this.setTool(null);
+        }
         this.store.remove(id);
       },
       groups: this.store.doc.historyGroups ?? [],
-      setGroups: (next) => this.store.commit((d) => (d.historyGroups = next.length ? next : undefined)),
+      setGroups: next => this.store.commit(d => (d.historyGroups = next.length ? next : undefined)),
       suppress: (ids, off) =>
         this.store.commit((d) => {
-          for (const f of d.features) if (ids.includes(f.id)) f.suppressed = off || undefined;
+          for (const f of d.features) {
+            if (ids.includes(f.id)) {
+              f.suppressed = off || undefined;
+            }
+          }
         }),
-      askName: async (title, current) => (await this.ui.dialog(title, [{ key: "name", label: "Name", value: current }]))?.name.trim() || null,
-      breakAfter: (id) => this.breakAfter(id),
-      merge: () => void this.mergeHistory(),
+      askName: async (title, current) => (await this.ui.dialog(title, [{ key: 'name', label: 'Name', value: current }]))?.name.trim() || null,
+      breakAfter: id => this.breakAfter(id),
+      merge: () => void this.mergeHistory()
     }, warnings);
   }
 
@@ -952,17 +1155,24 @@ export class App implements AppContext {
    * there) until it's removed (null). New steps go in at the breakpoint.
    */
   private breakAfter(id: string | null): void {
-    if (this.tool !== this.selectTool) this.setTool(null);
-    const at = id ? this.store.features.findIndex((f) => f.id === id) : Infinity;
+    if (this.tool !== this.selectTool) {
+      this.setTool(null);
+    }
+    const at = id ? this.store.features.findIndex(f => f.id === id) : Infinity;
     const later = id ? this.store.features.length - 1 - at : 0;
-    if (id && !later) return void this.ui.toast("It's the last step - there's nothing after it to roll back");
+    if (id && !later) {
+      return void this.ui.toast("It's the last step - there's nothing after it to roll back");
+    }
     this.store.commit((d) => {
       d.features.forEach((f, i) => {
-        if (i > at) f.rolledBack = true;
-        else delete f.rolledBack;
+        if (i > at) {
+          f.rolledBack = true;
+        } else {
+          delete f.rolledBack;
+        }
       });
     });
-    this.ui.toast(id ? `Rolled back to here: ${later} later step${later === 1 ? "" : "s"} off until you remove the breakpoint` : "Breakpoint removed: every step is on again");
+    this.ui.toast(id ? `Rolled back to here: ${later} later step${later === 1 ? '' : 's'} off until you remove the breakpoint` : 'Breakpoint removed: every step is on again');
   }
 
   /**
@@ -972,58 +1182,75 @@ export class App implements AppContext {
    */
   private async mergeHistory(): Promise<void> {
     const bodies = this.view.bodyList;
-    if (!bodies.length) return void this.ui.toast("There are no bodies yet - nothing to merge into");
-    const off = this.store.features.filter((f) => f.rolledBack || f.suppressed).length;
+    if (!bodies.length) {
+      return void this.ui.toast('There are no bodies yet - nothing to merge into');
+    }
+    const off = this.store.features.filter(f => f.rolledBack || f.suppressed).length;
     const v = await this.ui.dialog(
-      "Merge history",
+      'Merge history',
       [
-        { key: "sketches", label: "Keep the sketches", value: "1", check: true },
-        { key: "variables", label: "Keep the variables", value: "1", check: true },
+        { key: 'sketches', label: 'Keep the sketches', value: '1', check: true },
+        { key: 'variables', label: 'Keep the variables', value: '1', check: true }
       ],
-      `Every step becomes the bodies as they are now: they can't be edited by their steps any more.${off ? ` The ${off} step${off === 1 ? "" : "s"} switched off or after the breakpoint go too.` : ""} Undo takes it back.`,
+      `Every step becomes the bodies as they are now: they can't be edited by their steps any more.${off ? ` The ${off} step${off === 1 ? '' : 's'} switched off or after the breakpoint go too.` : ''} Undo takes it back.`
     );
-    if (!v) return;
-    if (this.tool !== this.selectTool) this.setTool(null);
-    const features = this.store.doc.features.filter((f) => !f.rolledBack);
+    if (!v) {
+      return;
+    }
+    if (this.tool !== this.selectTool) {
+      this.setTool(null);
+    }
+    const features = this.store.doc.features.filter(f => !f.rolledBack);
     const made: Feature[] = [];
     const renamed = new Map<string, string>();
     for (const b of bodies) {
-      const blob = await this.kernel.export(features, "step", [b.id]);
+      const blob = await this.kernel.export(features, 'step', [b.id]);
       const bytes = new Uint8Array(await blob.arrayBuffer());
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
       // The body keeps its id where it can be a step's (names, colours, folders stay with it).
-      const id = /^[\w-]+$/.test(b.id) && !made.some((m) => m.id === b.id) ? b.id : this.store.newIdentity("import").id;
-      if (id !== b.id) renamed.set(b.id, id);
+      const id = /^[\w-]+$/.test(b.id) && !made.some(m => m.id === b.id) ? b.id : this.store.newIdentity('import').id;
+      if (id !== b.id) {
+        renamed.set(b.id, id);
+      }
       const name = this.store.doc.names[b.id] ?? b.name;
-      made.push({ id, name, type: "import", format: "step", fileName: `${name}.step`, data: btoa(bin) });
+      made.push({ id, name, type: 'import', format: 'step', fileName: `${name}.step`, data: btoa(bin) });
     }
     const keepSketches = !!v.sketches;
     const keepVars = !!v.variables;
     this.store.commit((d) => {
       const sketches = keepSketches
         ? d.features.flatMap((f): Feature[] => {
-            if (f.type !== "sketch" || f.rolledBack) return [];
-            // Nothing left to follow: a merged body has no steps to point at.
-            const s: SketchFeature = { ...f, attachedTo: undefined, outlineOffsets: undefined, links: undefined };
-            s.constraints = s.constraints?.filter((c) => !/"(ref|lnk)-/.test(JSON.stringify(c)));
-            if (!keepVars) delete s.exprs;
-            return [s];
-          })
+          if (f.type !== 'sketch' || f.rolledBack) {
+            return [];
+          }
+          // Nothing left to follow: a merged body has no steps to point at.
+          const s: SketchFeature = { ...f, attachedTo: undefined, outlineOffsets: undefined, links: undefined };
+          s.constraints = s.constraints?.filter(c => !/"(ref|lnk)-/.test(JSON.stringify(c)));
+          if (!keepVars) {
+            delete s.exprs;
+          }
+
+          return [s];
+        })
         : [];
       d.features = [...made, ...sketches];
-      if (!keepVars) d.variables = [];
+      if (!keepVars) {
+        d.variables = [];
+      }
       d.historyGroups = undefined;
       const re = (id: string) => renamed.get(id) ?? id;
-      const reKeys = <T,>(r: Record<string, T> | undefined) => (r ? Object.fromEntries(Object.entries(r).map(([k, x]) => [re(k), x])) : r);
+      const reKeys = <T>(r: Record<string, T> | undefined) => (r ? Object.fromEntries(Object.entries(r).map(([k, x]) => [re(k), x])) : r);
       d.names = reKeys(d.names)!;
       d.colors = reKeys(d.colors);
       d.opacity = reKeys(d.opacity);
       d.materials = reKeys(d.materials);
       d.hidden = d.hidden.map(re);
-      d.folders = d.folders?.map((f) => ({ ...f, items: f.items.map(re) }));
+      d.folders = d.folders?.map(f => ({ ...f, items: f.items.map(re) }));
     });
-    this.ui.toast(`History merged: ${made.length} bod${made.length === 1 ? "y" : "ies"}${keepSketches ? ", the sketches kept" : ""}`);
+    this.ui.toast(`History merged: ${made.length} bod${made.length === 1 ? 'y' : 'ies'}${keepSketches ? ', the sketches kept' : ''}`);
   }
 
   /** What a History step works on: its bodies (made or changed), sketches, and the edges it names. */
@@ -1032,39 +1259,63 @@ export class App implements AppContext {
     const bodies = new Set<string>();
     const sketches = new Set<string>();
     const edges: [Vec3, Vec3][] = [];
-    if (!f) return { bodies: [], lines: [] };
-    if (f.type === "sketch") sketches.add(f.id);
+    if (!f) {
+      return { bodies: [], lines: [] };
+    }
+    if (f.type === 'sketch') {
+      sketches.add(f.id);
+    }
     // Bodies this step made (its own id, or copies "id:…").
-    for (const b of this.result?.bodies ?? []) if (b.id === f.id || b.id.startsWith(`${f.id}:`)) bodies.add(b.id);
-    const walk = (v: unknown, key = ""): void => {
-      if (Array.isArray(v)) return v.forEach((x) => walk(x, key));
-      if (!v || typeof v !== "object") {
-        if (typeof v === "string" && (key === "body" || key === "bodies" || key === "target")) bodies.add(v);
-        if (typeof v === "string" && key === "sketch") sketches.add(v);
+    for (const b of this.result?.bodies ?? []) {
+      if (b.id === f.id || b.id.startsWith(`${f.id}:`)) {
+        bodies.add(b.id);
+      }
+    }
+    const walk = (v: unknown, key = ''): void => {
+      if (Array.isArray(v)) {
+        return v.forEach(x => walk(x, key));
+      }
+      if (!v || typeof v !== 'object') {
+        if (typeof v === 'string' && (key === 'body' || key === 'bodies' || key === 'target')) {
+          bodies.add(v);
+        }
+        if (typeof v === 'string' && key === 'sketch') {
+          sketches.add(v);
+        }
+
         return;
       }
       const o = v as Record<string, unknown>;
       // An edge reference: draw the edge itself.
-      if (Array.isArray(o.mid) && Array.isArray(o.dir) && typeof o.length === "number") {
+      if (Array.isArray(o.mid) && Array.isArray(o.dir) && typeof o.length === 'number') {
         const m = o.mid as Vec3;
         const d = o.dir as Vec3;
         const h = (o.length as number) / 2;
         edges.push([[m[0] - d[0] * h, m[1] - d[1] * h, m[2] - d[2] * h], [m[0] + d[0] * h, m[1] + d[1] * h, m[2] + d[2] * h]]);
       }
-      for (const [k, x] of Object.entries(o)) if (k !== "exprs") walk(x, k);
+      for (const [k, x] of Object.entries(o)) {
+        if (k !== 'exprs') {
+          walk(x, k);
+        }
+      }
     };
     walk(f);
     // Only what's still there.
-    const have = new Set((this.result?.bodies ?? []).map((b) => b.id));
+    const have = new Set((this.result?.bodies ?? []).map(b => b.id));
     // Sketch curves in 3D.
     const lines: Vec3[][] = [...edges];
     for (const sid of sketches) {
       const plane = this.sketchPlane(sid);
       const sk = this.store.find<SketchFeature>(sid);
-      if (!plane || !sk) continue;
-      for (const e of sk.entities) lines.push(...entityWorldPolylines(e, plane));
+      if (!plane || !sk) {
+        continue;
+      }
+      for (const e of sk.entities) {
+        lines.push(...entityWorldPolylines(e, plane));
+      }
     }
-    return { bodies: [...bodies].filter((b) => have.has(b)), lines };
+
+    return { bodies: [...bodies].filter(b => have.has(b)), lines };
   }
 
   editStep(id: string): void {
@@ -1073,20 +1324,24 @@ export class App implements AppContext {
 
   private editFeature(id: string, pick?: string[]): void {
     const f = this.store.find(id);
-    if (!f) return;
+    if (!f) {
+      return;
+    }
     this.setSelection([]);
     // What the step works on can be off screen (or under History): once its
     // tool shows its picks, bring them into view. A sketch frames itself.
-    if (f.type !== "sketch") {
+    if (f.type !== 'sketch') {
       const before = this.tool;
       setTimeout(() => this.tool !== before && this.view.keepInView(), 400);
     }
     switch (f.type) {
-      case "boolean":
+      case 'boolean':
         // Subtract / Intersect open their tool (picks, Keep options); Union has nothing to set.
-        if (f.op !== "union") return this.setTool(new BooleanOp(this, f.op, f.target, f.tools, f));
+        if (f.op !== 'union') {
+          return this.setTool(new BooleanOp(this, f.op, f.target, f.tools, f));
+        }
         break;
-      case "sketch": {
+      case 'sketch': {
         // (From one of its steps in History: open with what that step made picked, ready to change.)
         const tool = new SketchTool(this, { sketchId: f.id });
         this.setTool(tool);
@@ -1094,66 +1349,78 @@ export class App implements AppContext {
           tool.stopDrawing();
           tool.preselect(pick);
         }
+
         return;
       }
-      case "extrude":
+      case 'extrude':
         return this.setTool(new ExtrudeOp(this, f.source, f as ExtrudeFeature));
-      case "fillet":
-      case "chamfer":
+      case 'fillet':
+      case 'chamfer':
         return this.setTool(new EdgeOp(this, f.type, f.edges, f as EdgeFeature));
-      case "revolve":
+      case 'revolve':
         return this.setTool(new RevolveOp(this, f.source, f as RevolveFeature));
-      case "sweep":
+      case 'sweep':
         return this.setTool(new SweepOp(this, f.source, f as SweepFeature));
-      case "loft":
+      case 'loft':
         return this.setTool(new LoftOp(this, f.sections, [], f as LoftFeature));
-      case "shell":
+      case 'shell':
         return this.setTool(new ShellOp(this, f.body, f.faces, f as ShellFeature));
-      case "split":
+      case 'split':
         return this.setTool(new SplitOp(this, f.body, f as SplitFeature));
-      case "fillToPlane":
+      case 'fillToPlane':
         return this.setTool(new FillToPlaneOp(this, f.body, f as FillToPlaneFeature));
-      case "fill":
+      case 'fill':
         return this.setTool(new FillOp(this, f.boundary, f));
-      case "imprint":
+      case 'imprint':
         return this.setTool(new ImprintOp(this, f.source ? { source: f.source } : { edges: f.edges ?? [] }, f));
-      case "wrap":
+      case 'wrap':
         return this.setTool(new WrapOp(this, f.source, f));
-      case "thread":
+      case 'thread':
         return this.setTool(new ThreadOp(this, f.face, f.round ?? { r: 5, hole: false }, f));
-      case "plane":
+      case 'plane':
         return this.setTool(new PlaneOp(this, f.plane, f.face, f as PlaneFeature));
-      case "transform": {
-        if (f.op.kind === "scale" && f.op.ref) return this.setTool(new ScaleRefOp(this, f.bodies, f as TransformFeature));
-        if (f.op.kind === "scale" || f.op.kind === "scaleXYZ") return this.setTool(new ScaleOp(this, f.op.kind === "scaleXYZ", f.bodies, f as TransformFeature));
+      case 'transform': {
+        if (f.op.kind === 'scale' && f.op.ref) {
+          return this.setTool(new ScaleRefOp(this, f.bodies, f as TransformFeature));
+        }
+        if (f.op.kind === 'scale' || f.op.kind === 'scaleXYZ') {
+          return this.setTool(new ScaleOp(this, f.op.kind === 'scaleXYZ', f.bodies, f as TransformFeature));
+        }
+
         return this.setTool(new TransformOp(this, f.op.kind, f.bodies, f as TransformFeature));
       }
-      case "scaleFace":
+      case 'scaleFace':
         return this.setTool(new ScaleFaceOp(this, f.face, { origin: f.face.center, normal: f.face.normal, xDir: f.u }, f));
-      case "replaceFace":
+      case 'replaceFace':
         return this.setTool(new ReplaceFaceOp(this, f.face, f));
-      case "image":
+      case 'image':
         return this.setTool(new ImageOp(this, f as ImageFeature));
       // (Opened from History: that step itself is edited.)
-      case "freeform":
+      case 'freeform':
         return this.setTool(new FreeformTool(this, { feature: f, keep: { inPlace: true } }));
-      case "freeformEdit": {
+      case 'freeformEdit': {
         // The shape as this edit left it; Done keeps the change in this step.
         const t = editedStep(this.store.features, f.target, f.id);
-        if (t?.type === "freeform") return this.setTool(new FreeformTool(this, { feature: t, keep: { edit: f.id } }));
-        if (t?.type === "faceFreeform") {
+        if (t?.type === 'freeform') {
+          return this.setTool(new FreeformTool(this, { feature: t, keep: { edit: f.id } }));
+        }
+        if (t?.type === 'faceFreeform') {
           const tool = faceFreeformTool(this, null, t, { edit: f.id });
+
           return tool ? this.setTool(tool) : undefined;
         }
-        return this.ui.toast("The freeform this edits is gone");
+
+        return this.ui.toast('The freeform this edits is gone');
       }
-      case "connect":
+      case 'connect':
         return this.setTool(new ConnectOp(this, [], f));
-      case "faceFreeform":
+      case 'faceFreeform':
         return this.setTool(faceFreeformTool(this, null, f, { inPlace: true }));
-      case "moveFace": {
+      case 'moveFace': {
         const target = f.face ? { face: f.face, plane: { origin: f.face.center, normal: f.face.normal, xDir: xDirFor(f.face.normal) } } : f.edge ? { edge: f.edge } : f.vertex ? { vertex: f.vertex } : null;
-        if (target) return this.setTool(new MoveFaceOp(this, target, f));
+        if (target) {
+          return this.setTool(new MoveFaceOp(this, target, f));
+        }
         break;
       }
       default:
@@ -1167,17 +1434,26 @@ export class App implements AppContext {
   /** The edges picked for a fillet or chamfer: each edge, and every edge round each face. */
   private pickedEdges(): EdgeRef[] {
     const out: EdgeRef[] = [];
-    const have = (r: EdgeRef) => out.some((e) => e.body === r.body && Math.hypot(e.mid[0] - r.mid[0], e.mid[1] - r.mid[1], e.mid[2] - r.mid[2]) < 1e-6);
+    const have = (r: EdgeRef) => out.some(e => e.body === r.body && Math.hypot(e.mid[0] - r.mid[0], e.mid[1] - r.mid[1], e.mid[2] - r.mid[2]) < 1e-6);
     // (A round face's seam - the same face either side - is nothing to round:
     // picked, the step broke with "an edge it was built on is gone".)
     const seam = (body: string, k: number) => !!this.view.body(body)?.edges[k]?.seam;
     let seams = 0;
     for (const s of this.selection) {
-      if (s.kind === "edge" && seam(s.body, s.edge)) seams++;
-      const refs = s.kind === "edge" ? (seam(s.body, s.edge) ? [] : [edgeRefOf(this, s)]) : s.kind === "face" ? edgesOfFace(this, s.body, s.face).filter((k) => !seam(s.body, k)).map((k) => edgeRefOf(this, { body: s.body, edge: k })) : [];
-      for (const r of refs) if (r && !have(r)) out.push(r);
+      if (s.kind === 'edge' && seam(s.body, s.edge)) {
+        seams++;
+      }
+      const refs = s.kind === 'edge' ? (seam(s.body, s.edge) ? [] : [edgeRefOf(this, s)]) : s.kind === 'face' ? edgesOfFace(this, s.body, s.face).filter(k => !seam(s.body, k)).map(k => edgeRefOf(this, { body: s.body, edge: k })) : [];
+      for (const r of refs) {
+        if (r && !have(r)) {
+          out.push(r);
+        }
+      }
     }
-    if (seams) this.ui.toast("That line is a seam - where a round face starts and ends, no corner there to round or chamfer. Tap a real edge.");
+    if (seams) {
+      this.ui.toast('That line is a seam - where a round face starts and ends, no corner there to round or chamfer. Tap a real edge.');
+    }
+
     return out;
   }
 
@@ -1187,272 +1463,293 @@ export class App implements AppContext {
 
   mainTools(): ToolItem[] {
     // (Marked: it asks for a pick after it is tapped. The sentence bar leaves those out - there the pick comes first.)
-    const wait = (label: string, accepts: Sel["kind"][], run: () => void) =>
+    const wait = (label: string, accepts: Sel['kind'][], run: () => void) =>
       Object.assign(
         () => {
           this.selectTool.waitFor(label, accepts, run);
           this.selectTool.refresh();
         },
-        { needsPick: true },
+        { needsPick: true }
       );
     const bodies = () => bodiesOf(this.selection);
     const transform = (kind: ConstructorParameters<typeof TransformOp>[1], label: string) =>
-      wait(label, ["body", "face", "edge"], () => this.setTool(new TransformOp(this, kind, bodies())));
+      wait(label, ['body', 'face', 'edge'], () => this.setTool(new TransformOp(this, kind, bodies())));
     const src = () => sourcesOf(this, this.selection)[0];
+
     return [
       // An empty project: Sketch pulses - that's where to start.
-      { id: "sketch", label: "Sketch", icon: "sketch", shortcut: "S", pulse: this.store.features.length === 0, run: () => this.setTool(new SketchTool(this)) },
+      { id: 'sketch', label: 'Sketch', icon: 'sketch', shortcut: 'S', pulse: this.store.features.length === 0, run: () => this.setTool(new SketchTool(this)) },
       {
         // A shape from a sketch's: pulled, turned, swept, lofted.
-        id: "create",
-        label: "Create",
-        icon: "extrude",
+        id: 'create',
+        label: 'Create',
+        icon: 'extrude',
         children: [
           // (The first shape drawn, nothing solid yet: this is the next step, it pulses.)
-          { id: "extrude", label: "Extrude", icon: "extrude", pulse: this.firstShape(), run: wait("Extrude", ["profile", "face"], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
-          { id: "revolve", label: "Revolve", icon: "revolve", run: wait("Revolve", ["profile", "face"], () => src() && this.setTool(new RevolveOp(this, src()!))) },
-          { id: "sweep", label: "Sweep", icon: "sweep", run: wait("Sweep", ["profile", "face"], () => src() && this.setTool(new SweepOp(this, src()!))) },
-          { id: "loft", label: "Loft", icon: "loft", run: wait("Loft", ["profile", "face"], () => this.setTool(new LoftOp(this, sourcesOf(this, this.selection).flatMap((s): ExtrudeSource[] => (s.kind === "profile" ? s.regions.map((r) => ({ ...s, regions: [r] })) : [s])), this.selection))) },
-        ],
+          { id: 'extrude', label: 'Extrude', icon: 'extrude', pulse: this.firstShape(), run: wait('Extrude', ['profile', 'face'], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
+          { id: 'revolve', label: 'Revolve', icon: 'revolve', run: wait('Revolve', ['profile', 'face'], () => src() && this.setTool(new RevolveOp(this, src()!))) },
+          { id: 'sweep', label: 'Sweep', icon: 'sweep', run: wait('Sweep', ['profile', 'face'], () => src() && this.setTool(new SweepOp(this, src()!))) },
+          { id: 'loft', label: 'Loft', icon: 'loft', run: wait('Loft', ['profile', 'face'], () => this.setTool(new LoftOp(this, sourcesOf(this, this.selection).flatMap((s): ExtrudeSource[] => (s.kind === 'profile' ? s.regions.map(r => ({ ...s, regions: [r] })) : [s])), this.selection))) }
+        ]
       },
       {
         // A body changed where it is: edges, faces, walls, details.
-        id: "modify",
-        label: "Modify",
-        icon: "fillet",
+        id: 'modify',
+        label: 'Modify',
+        icon: 'fillet',
         children: [
-          { id: "fillet", label: "Fillet", icon: "fillet", run: wait("Fillet", ["edge", "face"], () => this.setTool(new EdgeOp(this, "fillet", this.pickedEdges()))) },
-          { id: "chamfer", label: "Chamfer", icon: "chamfer", run: wait("Chamfer", ["edge", "face"], () => this.setTool(new EdgeOp(this, "chamfer", this.pickedEdges()))) },
-          { id: "shell", label: "Shell", icon: "shell", run: wait("Shell", ["face", "body"], () => {
+          { id: 'fillet', label: 'Fillet', icon: 'fillet', run: wait('Fillet', ['edge', 'face'], () => this.setTool(new EdgeOp(this, 'fillet', this.pickedEdges()))) },
+          { id: 'chamfer', label: 'Chamfer', icon: 'chamfer', run: wait('Chamfer', ['edge', 'face'], () => this.setTool(new EdgeOp(this, 'chamfer', this.pickedEdges()))) },
+          { id: 'shell', label: 'Shell', icon: 'shell', run: wait('Shell', ['face', 'body'], () => {
             const s = this.selection[0];
-            const faces = this.selection.flatMap((x) => (x.kind === "face" ? [faceRefOf(this, x)!] : []));
+            const faces = this.selection.flatMap(x => (x.kind === 'face' ? [faceRefOf(this, x)!] : []));
             this.setTool(new ShellOp(this, bodiesOf([s])[0], faces));
           }) },
-          { id: "offsetFace", label: "Offset Face", icon: "offsetFace", run: wait("Offset Face", ["face"], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
-          { id: "offsetEdge", label: "Offset Edge", icon: "offsetEdge", run: () => {
-            const s = this.selection.find((x) => x.kind === "edge");
-            this.setTool(new OffsetEdgeOp(this, s?.kind === "edge" ? s : undefined));
+          { id: 'offsetFace', label: 'Offset Face', icon: 'offsetFace', run: wait('Offset Face', ['face'], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
+          { id: 'offsetEdge', label: 'Offset Edge', icon: 'offsetEdge', run: () => {
+            const s = this.selection.find(x => x.kind === 'edge');
+            this.setTool(new OffsetEdgeOp(this, s?.kind === 'edge' ? s : undefined));
           } },
-          { id: "thread", label: "Thread", icon: "thread", run: wait("Thread (tap a round face or its rim)", ["face", "edge"], () => this.startThread()) },
-          { id: "wrap", label: "Wrap & Emboss", icon: "wrap", beta: true, run: wait("Wrap & Emboss (tap a sketch's shape)", ["profile"], () => src() && this.setTool(new WrapOp(this, src()!))) },
+          { id: 'thread', label: 'Thread', icon: 'thread', run: wait('Thread (tap a round face or its rim)', ['face', 'edge'], () => this.startThread()) },
+          { id: 'wrap', label: 'Wrap & Emboss', icon: 'wrap', beta: true, run: wait("Wrap & Emboss (tap a sketch's shape)", ['profile'], () => src() && this.setTool(new WrapOp(this, src()!))) },
           // Holes filled, surfaces closed, broken bodies mended.
           {
-            id: "fix",
-            label: "Fix",
-            icon: "check",
+            id: 'fix',
+            label: 'Fix',
+            icon: 'check',
             children: [
-              { id: "fillNetwork", label: "Fill", icon: "fill", sub: "a surface over curves", run: () => this.setTool(new FillOp(this, this.pickedCurves())) },
-              { id: "fillToPlane", label: "Fill to Plane", icon: "fill", run: wait("Fill to Plane (tap the surface)", ["body", "face", "edge"], () => this.setTool(new FillToPlaneOp(this, bodiesOf(this.selection)[0]))) },
+              { id: 'fillNetwork', label: 'Fill', icon: 'fill', sub: 'a surface over curves', run: () => this.setTool(new FillOp(this, this.pickedCurves())) },
+              { id: 'fillToPlane', label: 'Fill to Plane', icon: 'fill', run: wait('Fill to Plane (tap the surface)', ['body', 'face', 'edge'], () => this.setTool(new FillToPlaneOp(this, bodiesOf(this.selection)[0]))) },
               {
-                id: "repair",
-                label: "Repair Body",
-                icon: "check",
-                run: wait("Repair Body", ["body", "face", "edge"], () => {
+                id: 'repair',
+                label: 'Repair Body',
+                icon: 'check',
+                run: wait('Repair Body', ['body', 'face', 'edge'], () => {
                   const ids = bodiesOf(this.selection);
-                  if (!ids.length) return;
-                  this.store.add({ ...this.store.newIdentity("repair"), type: "repair", bodies: ids });
-                  this.ui.toast("Repair added to History - it notes what it fixed");
-                }),
-              },
-            ],
+                  if (!ids.length) {
+                    return;
+                  }
+                  this.store.add({ ...this.store.newIdentity('repair'), type: 'repair', bodies: ids });
+                  this.ui.toast('Repair added to History - it notes what it fixed');
+                })
+              }
+            ]
           },
-          { id: "replace", label: "Replace Face", icon: "replaceFace", run: wait("Replace Face", ["face"], () => {
+          { id: 'replace', label: 'Replace Face', icon: 'replaceFace', run: wait('Replace Face', ['face'], () => {
             const s = this.selection[0];
-            const ref = s?.kind === "face" ? faceRefOf(this, s) : null;
-            if (ref) this.setTool(new ReplaceFaceOp(this, ref));
-          }) },
-        ],
+            const ref = s?.kind === 'face' ? faceRefOf(this, s) : null;
+            if (ref) {
+              this.setTool(new ReplaceFaceOp(this, ref));
+            }
+          }) }
+        ]
       },
       {
         // Bodies together, apart, or cut in two.
-        id: "combine",
-        label: "Combine",
-        icon: "union",
+        id: 'combine',
+        label: 'Combine',
+        icon: 'union',
         children: [
-          { id: "union", label: "Union", icon: "union", run: wait("Union (double-tap bodies)", ["body"], () => this.selectTool.refresh()) },
-          { id: "subtract", label: "Subtract", icon: "subtract", run: () => this.setTool(new BooleanOp(this, "subtract")) },
-          { id: "intersect", label: "Intersect", icon: "intersect", run: () => this.setTool(new BooleanOp(this, "intersect")) },
-          { id: "split", label: "Split Body", icon: "split", run: wait("Split Body", ["body", "face"], () => this.setTool(new SplitOp(this, bodiesOf(this.selection)[0]))) },
-        ],
+          { id: 'union', label: 'Union', icon: 'union', run: wait('Union (double-tap bodies)', ['body'], () => this.selectTool.refresh()) },
+          { id: 'subtract', label: 'Subtract', icon: 'subtract', run: () => this.setTool(new BooleanOp(this, 'subtract')) },
+          { id: 'intersect', label: 'Intersect', icon: 'intersect', run: () => this.setTool(new BooleanOp(this, 'intersect')) },
+          { id: 'split', label: 'Split Body', icon: 'split', run: wait('Split Body', ['body', 'face'], () => this.setTool(new SplitOp(this, bodiesOf(this.selection)[0]))) }
+        ]
       },
       {
-        id: "transform",
-        label: "Transform",
-        icon: "transform",
+        id: 'transform',
+        label: 'Transform',
+        icon: 'transform',
         children: [
           // Moved: freely, along a line, round an axis.
           {
-            id: "moveKinds",
-            label: "Move",
-            icon: "move",
+            id: 'moveKinds',
+            label: 'Move',
+            icon: 'move',
             children: [
-              { id: "move", label: "Move/Rotate", icon: "move", shortcut: "M", run: transform("move", "Move/Rotate") },
-              { id: "translate", label: "Translate", icon: "translate", run: transform("translate", "Translate") },
-              { id: "rotate", label: "Rotate Around Axis", icon: "rotateAxis", run: transform("rotate", "Rotate Around Axis") },
-            ],
+              { id: 'move', label: 'Move/Rotate', icon: 'move', shortcut: 'M', run: transform('move', 'Move/Rotate') },
+              { id: 'translate', label: 'Translate', icon: 'translate', run: transform('translate', 'Translate') },
+              { id: 'rotate', label: 'Rotate Around Axis', icon: 'rotateAxis', run: transform('rotate', 'Rotate Around Axis') }
+            ]
           },
-          { id: "scale", label: "Scale", icon: "scale", run: wait("Scale", ["body", "face", "edge"], () => this.setTool(new ScaleOp(this, false, bodies()))) },
-          { id: "mirror", label: "Mirror", icon: "mirror", run: transform("mirror", "Mirror") },
+          { id: 'scale', label: 'Scale', icon: 'scale', run: wait('Scale', ['body', 'face', 'edge'], () => this.setTool(new ScaleOp(this, false, bodies()))) },
+          { id: 'mirror', label: 'Mirror', icon: 'mirror', run: transform('mirror', 'Mirror') },
           {
-            id: "pattern",
-            label: "Pattern",
-            icon: "patternLinear",
+            id: 'pattern',
+            label: 'Pattern',
+            icon: 'patternLinear',
             children: [
-              { id: "linear", label: "Linear", icon: "patternLinear", run: transform("linear", "Pattern – Linear") },
-              { id: "circular", label: "Circular", icon: "patternCircular", run: transform("circular", "Pattern – Circular") },
-            ],
-          },
-        ],
+              { id: 'linear', label: 'Linear', icon: 'patternLinear', run: transform('linear', 'Pattern – Linear') },
+              { id: 'circular', label: 'Circular', icon: 'patternCircular', run: transform('circular', 'Pattern – Circular') }
+            ]
+          }
+        ]
       },
       {
-        id: "construct",
-        label: "Construct",
-        icon: "construct",
+        id: 'construct',
+        label: 'Construct',
+        icon: 'construct',
         children: [
           {
             // A tap: Offset Plane from the face or plane tapped next - or one of the other kinds, picked on the wheel.
-            id: "plane",
-            label: "Plane",
-            icon: "plane",
-            startsDefault: "offset",
-            run: wait("Offset Plane", ["face", "plane"], () => {
+            id: 'plane',
+            label: 'Plane',
+            icon: 'plane',
+            startsDefault: 'offset',
+            run: wait('Offset Plane', ['face', 'plane'], () => {
               const s = this.selection[0];
-              if (s?.kind === "face") {
+              if (s?.kind === 'face') {
                 const f = this.view.body(s.body)?.faces[s.face];
-                if (f?.plane) this.setTool(new PlaneOp(this, f.plane, faceRefOf(this, s)!));
-                else this.ui.toast("An Offset Plane starts from a flat face or a plane", "error");
-              } else if (s?.kind === "plane") {
+                if (f?.plane) {
+                  this.setTool(new PlaneOp(this, f.plane, faceRefOf(this, s)!));
+                } else {
+                  this.ui.toast('An Offset Plane starts from a flat face or a plane', 'error');
+                }
+              } else if (s?.kind === 'plane') {
                 const p = this.view.planeOf(s.id);
-                if (p) this.setTool(new PlaneOp(this, p, undefined));
+                if (p) {
+                  this.setTool(new PlaneOp(this, p, undefined));
+                }
               }
             }),
             children: [
-              { id: "offset", label: "Offset Plane", short: "Offset", icon: "planeOffset", run: () => this.setTool(new PlaneOp(this, null, undefined)) },
-              { id: "mid", label: "Midplane", icon: "planeMid", run: () => this.setTool(new MidplaneOp(this)) },
-              { id: "3pt", label: "Through 3 Points", short: "3 Points", icon: "plane3pt", run: () => this.setTool(new ThreePointPlaneOp(this)) },
-              { id: "curve", label: "On Curve at Point", short: "On Curve", icon: "planeCurve", run: () => this.setTool(new CurvePointPlaneOp(this, false)) },
-              { id: "perp", label: "Perpendicular to Edge at Point", short: "Perpendicular", icon: "planePerp", run: () => this.setTool(new CurvePointPlaneOp(this, true)) },
-              { id: "angle", label: "Through Edge at Angle", short: "At Angle", icon: "planeAngle", run: () => this.setTool(new EdgeAnglePlaneOp(this)) },
-              { id: "parallel", label: "Parallel to Face at Point", short: "Parallel", icon: "planeParallel", run: () => this.setTool(new FacePointPlaneOp(this)) },
-            ],
+              { id: 'offset', label: 'Offset Plane', short: 'Offset', icon: 'planeOffset', run: () => this.setTool(new PlaneOp(this, null, undefined)) },
+              { id: 'mid', label: 'Midplane', icon: 'planeMid', run: () => this.setTool(new MidplaneOp(this)) },
+              { id: '3pt', label: 'Through 3 Points', short: '3 Points', icon: 'plane3pt', run: () => this.setTool(new ThreePointPlaneOp(this)) },
+              { id: 'curve', label: 'On Curve at Point', short: 'On Curve', icon: 'planeCurve', run: () => this.setTool(new CurvePointPlaneOp(this, false)) },
+              { id: 'perp', label: 'Perpendicular to Edge at Point', short: 'Perpendicular', icon: 'planePerp', run: () => this.setTool(new CurvePointPlaneOp(this, true)) },
+              { id: 'angle', label: 'Through Edge at Angle', short: 'At Angle', icon: 'planeAngle', run: () => this.setTool(new EdgeAnglePlaneOp(this)) },
+              { id: 'parallel', label: 'Parallel to Face at Point', short: 'Parallel', icon: 'planeParallel', run: () => this.setTool(new FacePointPlaneOp(this)) }
+            ]
           },
           {
-            id: "axis",
-            label: "Axis",
-            icon: "axis",
+            id: 'axis',
+            label: 'Axis',
+            icon: 'axis',
             // (Along X, Y or Z: the origin's own axes, tapped in the view.)
             children: [
-              { id: "axisFace", label: "Square to Face", short: "Face", icon: "axisFace" as const, run: wait("Axis Square to Face", ["face"], () => {
+              { id: 'axisFace', label: 'Square to Face', short: 'Face', icon: 'axisFace' as const, run: wait('Axis Square to Face', ['face'], () => {
                 const s = this.selection[0];
-                const f = s?.kind === "face" ? this.view.body(s.body)?.faces[s.face] : undefined;
-                if (f) this.setTool(new AxisOp(this, f.center, f.plane?.normal ?? f.normal, undefined, "face"));
+                const f = s?.kind === 'face' ? this.view.body(s.body)?.faces[s.face] : undefined;
+                if (f) {
+                  this.setTool(new AxisOp(this, f.center, f.plane?.normal ?? f.normal, undefined, 'face'));
+                }
               }) },
-              { id: "axisEdge", label: "Along Edge", short: "Edge", icon: "axisEdge" as const, run: wait("Axis Along Edge", ["edge"], () => {
+              { id: 'axisEdge', label: 'Along Edge', short: 'Edge', icon: 'axisEdge' as const, run: wait('Axis Along Edge', ['edge'], () => {
                 const s = this.selection[0];
-                const e = s?.kind === "edge" ? this.view.body(s.body)?.edges[s.edge] : undefined;
+                const e = s?.kind === 'edge' ? this.view.body(s.body)?.edges[s.edge] : undefined;
                 // A round edge: through its centre, square to it.
-                const ax = e && (e.type === "CIRCLE" ? circleAxis(e.start, e.mid, e.end, e.dir) : { origin: e.start, dir: e.dir });
-                if (ax) this.setTool(new AxisOp(this, ax.origin, ax.dir, undefined, e.type === "CIRCLE" ? "round" : "edge"));
+                const ax = e && (e.type === 'CIRCLE' ? circleAxis(e.start, e.mid, e.end, e.dir) : { origin: e.start, dir: e.dir });
+                if (ax) {
+                  this.setTool(new AxisOp(this, ax.origin, ax.dir, undefined, e.type === 'CIRCLE' ? 'round' : 'edge'));
+                }
               }) },
-              { id: "axisRound", label: "Cylinder / Cone", icon: "axisRound" as const, run: wait("Axis of Cylinder / Cone", ["face"], () => {
+              { id: 'axisRound', label: 'Cylinder / Cone', icon: 'axisRound' as const, run: wait('Axis of Cylinder / Cone', ['face'], () => {
                 const s = this.selection[0];
-                const ax = s?.kind === "face" ? surfaceAxis(this, s.body, s.face) : null;
-                if (ax) this.setTool(new AxisOp(this, ax.origin, ax.dir, undefined, "round"));
-                else this.ui.toast("Tap a round face - a cylinder, a hole or a cone - for the axis through its middle", "error");
+                const ax = s?.kind === 'face' ? surfaceAxis(this, s.body, s.face) : null;
+                if (ax) {
+                  this.setTool(new AxisOp(this, ax.origin, ax.dir, undefined, 'round'));
+                } else {
+                  this.ui.toast('Tap a round face - a cylinder, a hole or a cone - for the axis through its middle', 'error');
+                }
               }) },
-              { id: "axis2pt", label: "Point to Point", icon: "axis2pt" as const, run: () => this.setTool(new TwoPointAxisOp(this)) },
-              { id: "axisPlanes", label: "Intersection of 2 Planes", short: "2 Planes", icon: "axisPlanes" as const, run: () => this.setTool(new PlanesAxisOp(this)) },
-            ],
-          },
-        ],
+              { id: 'axis2pt', label: 'Point to Point', icon: 'axis2pt' as const, run: () => this.setTool(new TwoPointAxisOp(this)) },
+              { id: 'axisPlanes', label: 'Intersection of 2 Planes', short: '2 Planes', icon: 'axisPlanes' as const, run: () => this.setTool(new PlanesAxisOp(this)) }
+            ]
+          }
+        ]
       },
       {
         // Smooth shapes from a control cage.
-        id: "freeform",
-        label: "Freeform",
-        icon: "freeform",
+        id: 'freeform',
+        label: 'Freeform',
+        icon: 'freeform',
         children: [
-          ...(["box", "sphere", "cylinder", "torus", "plane"] as const).map((k) => ({
+          ...(['box', 'sphere', 'cylinder', 'torus', 'plane'] as const).map(k => ({
             id: `ff-${k}`,
-            label: { box: "Box", sphere: "Sphere", cylinder: "Cylinder", torus: "Torus", plane: "Surface" }[k],
-            icon: ({ box: "ffBox", sphere: "ffSphere", cylinder: "ffCylinder", torus: "ffTorus", plane: "ffSurface" } as const)[k],
-            run: () => this.setTool(new FreeformTool(this, { primitive: k })),
+            label: { box: 'Box', sphere: 'Sphere', cylinder: 'Cylinder', torus: 'Torus', plane: 'Surface' }[k],
+            icon: ({ box: 'ffBox', sphere: 'ffSphere', cylinder: 'ffCylinder', torus: 'ffTorus', plane: 'ffSurface' } as const)[k],
+            run: () => this.setTool(new FreeformTool(this, { primitive: k }))
           })),
           // A flat face of a body made smooth (its edges stay put).
           {
-            id: "faceFreeform",
+            id: 'faceFreeform',
             beta: true,
-            label: "Freeform Face",
-            icon: "faceFreeform" as const,
-            sub: "a face of a body",
-            run: wait("Freeform Face (tap a flat face)", ["face"], () => {
+            label: 'Freeform Face',
+            icon: 'faceFreeform' as const,
+            sub: 'a face of a body',
+            run: wait('Freeform Face (tap a flat face)', ['face'], () => {
               const s = this.selection[0];
-              if (s?.kind !== "face" || !this.view.body(s.body)?.faces[s.face]?.plane) return void this.ui.toast("Freeform Face works on flat faces for now");
+              if (s?.kind !== 'face' || !this.view.body(s.body)?.faces[s.face]?.plane) {
+                return void this.ui.toast('Freeform Face works on flat faces for now');
+              }
               const t = faceFreeformTool(this, s);
-              if (t) this.setTool(t);
-            }),
+              if (t) {
+                this.setTool(t);
+              }
+            })
           },
           // A smooth bridge between two faces.
-          { id: "connect", label: "Connect", icon: "connect" as const, sub: "two faces", beta: true, run: () => this.setTool(new ConnectOp(this, this.selection.filter((s) => s.kind === "face").slice(0, 2))) },
-        ],
+          { id: 'connect', label: 'Connect', icon: 'connect' as const, sub: 'two faces', beta: true, run: () => this.setTool(new ConnectOp(this, this.selection.filter(s => s.kind === 'face').slice(0, 2))) }
+        ]
       },
       {
         // Less often: a file or picture brought in, and the project as a building model.
-        id: "more",
-        label: "More",
-        icon: "more",
+        id: 'more',
+        label: 'More',
+        icon: 'more',
         children: [
           {
-            id: "insert",
-            label: "Insert",
-            icon: "insert",
+            id: 'insert',
+            label: 'Insert',
+            icon: 'insert',
             children: [
-              { id: "image", label: "Image on plane", icon: "image", run: () => void insertImage(this).then((f) => f && this.setTool(new ImageOp(this, f))) },
-              { id: "file", label: "File", icon: "file", sub: "STEP, STL, OBJ, 3MF, DXF, SVG", run: () => void insertFile(this) },
-              { id: "project", label: "Project", icon: "file", sub: ".super", run: () => void insertFile(this) },
-              { id: "refImage", label: "Reference Image", icon: "refImage", sub: "a picture in its own window, over the model", run: () => void this.refImages.open() },
+              { id: 'image', label: 'Image on plane', icon: 'image', run: () => void insertImage(this).then(f => f && this.setTool(new ImageOp(this, f))) },
+              { id: 'file', label: 'File', icon: 'file', sub: 'STEP, STL, OBJ, 3MF, DXF, SVG', run: () => void insertFile(this) },
+              { id: 'project', label: 'Project', icon: 'file', sub: '.super', run: () => void insertFile(this) },
+              { id: 'refImage', label: 'Reference Image', icon: 'refImage', sub: 'a picture in its own window, over the model', run: () => void this.refImages.open() },
               // A web page or a video in a window over the model (open already: brought up again).
-              { id: "browser", label: "Browser", icon: "browser", sub: "a web page or a video, in a window over the model", active: this.web.isOpen, run: () => this.web.open() },
-            ],
+              { id: 'browser', label: 'Browser', icon: 'browser', sub: 'a web page or a video, in a window over the model', active: this.web.isOpen, run: () => this.web.open() }
+            ]
           },
           {
             // The project as a building information model: real materials, and
             // from them the technical sheet and the drawings.
-            id: "bim",
-            label: "BIM",
-            icon: "bim",
+            id: 'bim',
+            label: 'BIM',
+            icon: 'bim',
             children: [
-              { id: "bimMaterials", label: "Materials", icon: "bim", sub: "a real material for each body", run: () => this.setTool(new BimTool(this)) },
-              { id: "bimSheet", label: "Technical Sheet", icon: "sheet", sub: "parts list, masses, data", run: () => void openSheet(this) },
-              { id: "bimDrawings", label: "Drawings", icon: "drawing", sub: "views with dimensions", run: () => void openDrawing(this) },
-              { id: "bimAssemblies", label: "Assemblies", icon: "assembly", sub: "joints: how the parts move", run: () => this.setTool(new AssemblyTool(this)) },
-            ],
-          },
-        ],
-      },
+              { id: 'bimMaterials', label: 'Materials', icon: 'bim', sub: 'a real material for each body', run: () => this.setTool(new BimTool(this)) },
+              { id: 'bimSheet', label: 'Technical Sheet', icon: 'sheet', sub: 'parts list, masses, data', run: () => void openSheet(this) },
+              { id: 'bimDrawings', label: 'Drawings', icon: 'drawing', sub: 'views with dimensions', run: () => void openDrawing(this) },
+              { id: 'bimAssemblies', label: 'Assemblies', icon: 'assembly', sub: 'joints: how the parts move', run: () => this.setTool(new AssemblyTool(this)) }
+            ]
+          }
+        ]
+      }
     ];
   }
 
   bottomTools(): ToolItem[] {
     return [
       // The one whose card is open pulses (as a tool does while its window is open).
-      { id: "section", label: "Section View", icon: "section", sub: this.section ? "On" : this.lastSection ? "Off · tap to show" : "Off", active: !!this.section, pulse: this.tool instanceof SectionTool, run: () => this.toggleSection() },
-      { id: "measure", label: "Measure", icon: "measure", active: this.tool instanceof MeasureTool, pulse: this.tool instanceof MeasureTool, run: () => this.setTool(this.tool instanceof MeasureTool ? null : new MeasureTool(this)) },
+      { id: 'section', label: 'Section View', icon: 'section', sub: this.section ? 'On' : this.lastSection ? 'Off · tap to show' : 'Off', active: !!this.section, pulse: this.tool instanceof SectionTool, run: () => this.toggleSection() },
+      { id: 'measure', label: 'Measure', icon: 'measure', active: this.tool instanceof MeasureTool, pulse: this.tool instanceof MeasureTool, run: () => this.setTool(this.tool instanceof MeasureTool ? null : new MeasureTool(this)) },
       // On: a tag per variable in the view (tap one to change it), and their card. Off again.
-      { id: "variables", label: "Variables", icon: "variable", sub: this.varsOn ? "On" : this.store.doc.variables.length ? `Off · ${this.store.doc.variables.length}` : "Off", active: this.varsOn, pulse: this.tool instanceof VariablesTool, run: () => this.toggleVariables() },
+      { id: 'variables', label: 'Variables', icon: 'variable', sub: this.varsOn ? 'On' : this.store.doc.variables.length ? `Off · ${this.store.doc.variables.length}` : 'Off', active: this.varsOn, pulse: this.tool instanceof VariablesTool, run: () => this.toggleVariables() },
       this.isolated
-        ? { id: "isolate", label: "Isolate", icon: "isolate", sub: "On - tap to show all", active: true, run: () => this.isolate(null) }
+        ? { id: 'isolate', label: 'Isolate', icon: 'isolate', sub: 'On - tap to show all', active: true, run: () => this.isolate(null) }
         : {
-            id: "isolate",
-            label: "Isolate",
-            icon: "isolate",
-            sub: "Off",
-            disabled: !bodiesOf(this.selection).length,
-            why: "Select a body, face or edge to isolate",
-            run: () => this.isolate(bodiesOf(this.selection)),
-          },
+          id: 'isolate',
+          label: 'Isolate',
+          icon: 'isolate',
+          sub: 'Off',
+          disabled: !bodiesOf(this.selection).length,
+          why: 'Select a body, face or edge to isolate',
+          run: () => this.isolate(bodiesOf(this.selection))
+        },
       // The way out with what was made: is it fit to print, and the files to take it away as.
-      { id: "printShare", label: "Print / Share", icon: "share", run: () => void this.printShare() },
+      { id: 'printShare', label: 'Print / Share', icon: 'share', run: () => void this.printShare() }
     ];
   }
 
@@ -1462,93 +1759,131 @@ export class App implements AppContext {
     if (this.input.dragging && this.tool.dragKey?.(e)) {
       e.preventDefault();
       (document.activeElement as HTMLElement | null)?.blur?.();
-      if (e.key === "Enter") this.input.endDrag();
+      if (e.key === 'Enter') {
+        this.input.endDrag();
+      }
+
       return;
     }
     const target = e.target as HTMLElement;
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-    const mod = e.ctrlKey || e.metaKey;
-    const k = e.key.toLowerCase();
-    if (mod && k === "z") {
-      e.preventDefault();
-      if (e.shiftKey) this.redo();
-      else this.undo();
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
       return;
     }
-    if (mod && k === "y") {
+    const mod = e.ctrlKey || e.metaKey;
+    const k = e.key.toLowerCase();
+    if (mod && k === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        this.redo();
+      } else {
+        this.undo();
+      }
+
+      return;
+    }
+    if (mod && k === 'y') {
       e.preventDefault();
       this.redo();
+
       return;
     }
     // Select Through: pick what's behind the faces in front.
-    if (mod && e.shiftKey && k === "s") {
+    if (mod && e.shiftKey && k === 's') {
       e.preventDefault();
       this.view.setSelectThrough(!this.view.selectThrough);
-      this.ui.toast(this.view.selectThrough ? "Select Through on: edges and sketches behind the faces can be picked" : "Select Through off");
+      this.ui.toast(this.view.selectThrough ? 'Select Through on: edges and sketches behind the faces can be picked' : 'Select Through off');
+
       return;
     }
-    if (mod && k === "s") {
+    if (mod && k === 's') {
       e.preventDefault();
       this.save();
+
       return;
     }
     // Everything: Ctrl+A (the bodies, or with none the sketches' shapes; in a sketch, its curves).
-    if (mod && !e.shiftKey && k === "a") {
+    if (mod && !e.shiftKey && k === 'a') {
       e.preventDefault();
       this.tool.selectAll?.();
+
       return;
     }
     // Search commands: Ctrl+F anywhere (X too, outside a sketch - see below).
-    if (mod && k === "f") {
+    if (mod && k === 'f') {
       e.preventDefault();
       this.searchCommands();
+
       return;
     }
     // The standard views: Ctrl (or Alt, where the browser keeps Ctrl+1… for its tabs) + 1 to 7.
     if ((mod || e.altKey) && /^[1-7]$/.test(e.key)) {
       e.preventDefault();
       this.viewByNumber(Number(e.key));
+
       return;
     }
     if (this.tool.key?.(e)) {
       e.preventDefault();
+
       return;
     }
     // Space over a face: zoom to it.
-    if (k === " " && !mod && this.pointerAt) {
+    if (k === ' ' && !mod && this.pointerAt) {
       const hit = this.view.pick(this.pointerAt[0], this.pointerAt[1], { edges: false, planes: false, profiles: false });
-      if (hit?.kind === "face" && this.view.zoomToFace(hit.body, hit.face)) e.preventDefault();
+      if (hit?.kind === 'face' && this.view.zoomToFace(hit.body, hit.face)) {
+        e.preventDefault();
+      }
+
       return;
     }
-    if (this.tool !== this.selectTool) return;
+    if (this.tool !== this.selectTool) {
+      return;
+    }
     // The booleans: Ctrl+U / B / I.
-    if (mod && !e.shiftKey && (k === "u" || k === "b" || k === "i")) {
-      if (this.runCommand([{ u: "Union", b: "Subtract", i: "Intersect" }[k]])) e.preventDefault();
+    if (mod && !e.shiftKey && (k === 'u' || k === 'b' || k === 'i')) {
+      if (this.runCommand([{ u: 'Union', b: 'Subtract', i: 'Intersect' }[k]])) {
+        e.preventDefault();
+      }
+
       return;
     }
-    if (mod || e.altKey) return;
-    if (k === "x") return void (e.preventDefault(), this.searchCommands());
-    if (e.key === "?") return void showShortcuts();
+    if (mod || e.altKey) {
+      return;
+    }
+    if (k === 'x') {
+      return void (e.preventDefault(), this.searchCommands());
+    }
+    if (e.key === '?') {
+      return void showShortcuts();
+    }
     const none = !this.selection.length;
-    if (k === "s" && none) return void this.setTool(new SketchTool(this));
-    if (k === "f" && none) return void this.fit();
+    if (k === 's' && none) {
+      return void this.setTool(new SketchTool(this));
+    }
+    if (k === 'f' && none) {
+      return void this.fit();
+    }
     // A drawing tool's letter with nothing picked: a sketch, with that tool (once its plane is picked).
-    const draw: Record<string, "line" | "arc" | "circle" | "rect" | "polygon" | "spline" | "offset" | "trim"> = { l: "line", a: "arc", c: "circle", r: "rect", g: "polygon", i: "spline", o: "offset", t: "trim" };
-    if (draw[k] && none && !e.shiftKey) return void this.setTool(new SketchTool(this, { kind: draw[k] }));
+    const draw: Record<string, 'line' | 'arc' | 'circle' | 'rect' | 'polygon' | 'spline' | 'offset' | 'trim'> = { l: 'line', a: 'arc', c: 'circle', r: 'rect', g: 'polygon', i: 'spline', o: 'offset', t: 'trim' };
+    if (draw[k] && none && !e.shiftKey) {
+      return void this.setTool(new SketchTool(this, { kind: draw[k] }));
+    }
     // A modeling tool's letter: that tool, for what's picked (or waiting for it).
     const tools: Record<string, string[]> = {
-      e: ["Extrude", "Offset Face"],
-      f: ["Fillet"],
-      h: ["Shell"],
-      m: ["Move/Rotate"],
-      n: ["Translate"],
-      p: ["Project as Sketch"],
-      s: ["Scale", "Scale Sketch"],
-      v: ["Revolve"],
-      w: ["Sweep"],
-      o: ["Offset Edge"],
+      e: ['Extrude', 'Offset Face'],
+      f: ['Fillet'],
+      h: ['Shell'],
+      m: ['Move/Rotate'],
+      n: ['Translate'],
+      p: ['Project as Sketch'],
+      s: ['Scale', 'Scale Sketch'],
+      v: ['Revolve'],
+      w: ['Sweep'],
+      o: ['Offset Edge']
     };
-    if (tools[k] && !e.shiftKey && this.runCommand(tools[k])) e.preventDefault();
+    if (tools[k] && !e.shiftKey && this.runCommand(tools[k])) {
+      e.preventDefault();
+    }
   }
 
   /** Where the pointer was last over the view (Space zooms to the face there). */
@@ -1558,33 +1893,45 @@ export class App implements AppContext {
   private pickedCurves(): PathRef[] {
     const out: PathRef[] = [];
     for (const s of this.selection) {
-      if (s.kind === "curve") {
-        const p = out.find((x): x is Extract<PathRef, { kind: "sketch" }> => x.kind === "sketch" && x.sketch === s.sketch);
-        if (p) p.entities.push(s.entity);
-        else out.push({ kind: "sketch", sketch: s.sketch, entities: [s.entity] });
-      } else if (s.kind === "edge") {
+      if (s.kind === 'curve') {
+        const p = out.find((x): x is Extract<PathRef, { kind: 'sketch' }> => x.kind === 'sketch' && x.sketch === s.sketch);
+        if (p) {
+          p.entities.push(s.entity);
+        } else {
+          out.push({ kind: 'sketch', sketch: s.sketch, entities: [s.entity] });
+        }
+      } else if (s.kind === 'edge') {
         const ref = edgeRefOf(this, s);
-        if (!ref) continue;
-        const p = out.find((x): x is Extract<PathRef, { kind: "edges" }> => x.kind === "edges" && x.edges[0]?.body === ref.body);
-        if (p) p.edges.push(ref);
-        else out.push({ kind: "edges", edges: [ref] });
+        if (!ref) {
+          continue;
+        }
+        const p = out.find((x): x is Extract<PathRef, { kind: 'edges' }> => x.kind === 'edges' && x.edges[0]?.body === ref.body);
+        if (p) {
+          p.edges.push(ref);
+        } else {
+          out.push({ kind: 'edges', edges: [ref] });
+        }
       }
     }
+
     return out;
   }
 
   /** Run the first of these commands that's offered now (the picked thing's tools first). */
   private runCommand(labels: string[]): boolean {
     const hit = findAction(this.ui.offered(), this.mainTools(), labels);
-    if (!hit) return false;
+    if (!hit) {
+      return false;
+    }
     hit.item.run!();
+
     return true;
   }
 
   private searchCommands(): void {
     openCommandSearch(
       () => this.ui.offered(),
-      () => [...this.mainTools(), { id: "shortcuts", label: "Keyboard shortcuts", icon: "menu", shortcut: "?", run: () => showShortcuts() }],
+      () => [...this.mainTools(), { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'menu', shortcut: '?', run: () => showShortcuts() }]
     );
   }
 
@@ -1594,6 +1941,7 @@ export class App implements AppContext {
     if (n === 1) {
       cam.iso();
       this.view.fitAll();
+
       return;
     }
     const views: [Vec3, Vec3?][] = [
@@ -1602,7 +1950,7 @@ export class App implements AppContext {
       [[0, 0, 1]],
       [[0, 0, -1]],
       [[1, 0, 0], [0, 1, 0]],
-      [[-1, 0, 0], [0, -1, 0]],
+      [[-1, 0, 0], [0, -1, 0]]
     ];
     const [normal, xDir] = views[n - 2];
     cam.lookAlong(normal, xDir);
@@ -1615,102 +1963,119 @@ export class App implements AppContext {
   // ------------------------------------------------------------ files
 
   private wireTopbar(): void {
-    const on = (id: string, fn: () => void) => document.getElementById(id)!.addEventListener("click", fn);
-    const menu = document.getElementById("file-menu")!;
-    const more = document.getElementById("more-menu")!;
+    const on = (id: string, fn: () => void) => document.getElementById(id)!.addEventListener('click', fn);
+    const menu = document.getElementById('file-menu')!;
+    const more = document.getElementById('more-menu')!;
     // Phones: one thing open at a time at the left - a menu closes Items.
     // Phones: one thing open at a time - a menu takes the place of Items and of History.
     const phoneItemsAway = () => {
-      if (window.innerWidth > 720) return;
-      if (document.getElementById("items")!.classList.contains("open")) this.items.toggle(false);
-      if (document.body.classList.contains("history-open")) this.ui.toggleHistory(false);
+      if (window.innerWidth > 720) {
+        return;
+      }
+      if (document.getElementById('items')!.classList.contains('open')) {
+        this.items.toggle(false);
+      }
+      if (document.body.classList.contains('history-open')) {
+        this.ui.toggleHistory(false);
+      }
     };
-    on("file-btn", () => ((more.hidden = true), menu.toggleAttribute("hidden"), !menu.hidden && phoneItemsAway()));
-    on("more-btn", () => ((menu.hidden = true), more.toggleAttribute("hidden"), !more.hidden && phoneItemsAway()));
-    on("history-btn", () => ((menu.hidden = more.hidden = true), this.ui.toggleHistory()));
-    document.getElementById("m-version")!.textContent = `Version ${__APP_VERSION__}`;
+    on('file-btn', () => ((more.hidden = true), menu.toggleAttribute('hidden'), !menu.hidden && phoneItemsAway()));
+    on('more-btn', () => ((menu.hidden = true), more.toggleAttribute('hidden'), !more.hidden && phoneItemsAway()));
+    on('history-btn', () => ((menu.hidden = more.hidden = true), this.ui.toggleHistory()));
+    document.getElementById('m-version')!.textContent = `Version ${__APP_VERSION__}`;
     const moreItem = (id: string, fn: () => void) => on(id, () => ((more.hidden = true), fn()));
     // Fullscreen (the label follows the state; Esc also leaves it).
-    const fs = document.getElementById("m-fullscreen")!;
+    const fs = document.getElementById('m-fullscreen')!;
     const doc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
     const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
     const isFull = () => !!(document.fullscreenElement ?? doc.webkitFullscreenElement);
     const paint = () => {
-      fs.firstChild!.textContent = isFull() ? "Exit fullscreen" : "Fullscreen";
+      fs.firstChild!.textContent = isFull() ? 'Exit fullscreen' : 'Fullscreen';
       // Tablets draw their own close button at the top left in fullscreen: the top bar makes room.
-      document.body.classList.toggle("is-fullscreen", isFull());
+      document.body.classList.toggle('is-fullscreen', isFull());
     };
-    document.addEventListener("fullscreenchange", paint);
-    document.addEventListener("webkitfullscreenchange", paint);
+    document.addEventListener('fullscreenchange', paint);
+    document.addEventListener('webkitfullscreenchange', paint);
     const goFull = () => {
-      if (root.requestFullscreen) void root.requestFullscreen().catch(() => this.ui.toast("This browser won't go fullscreen here"));
-      else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen();
+      if (root.requestFullscreen) {
+        void root.requestFullscreen().catch(() => this.ui.toast("This browser won't go fullscreen here"));
+      } else if (root.webkitRequestFullscreen) {
+        root.webkitRequestFullscreen();
+      }
       // iPhone Safari has no fullscreen for pages: the Home Screen app is.
-      else this.ui.toast("Tip: Share → Add to Home Screen opens superGeometry.app full screen");
+      else {
+        this.ui.toast('Tip: Share → Add to Home Screen opens superGeometry.app full screen');
+      }
     };
-    moreItem("m-fullscreen", () => {
-      if (isFull()) return void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.());
+    moreItem('m-fullscreen', () => {
+      if (isFull()) {
+        return void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.());
+      }
       goFull();
     });
     // The welcome window (and File → Open) has a Full screen button too (a
     // browser only allows it from a tap). Everywhere but an app that already
     // has the whole screen; where a browser has none (iPhone), it says how.
-    this.fullscreen = !matchMedia("(display-mode: fullscreen)").matches ? { isFull, toggle: () => (isFull() ? void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.()) : goFull()) } : null;
+    this.fullscreen = !matchMedia('(display-mode: fullscreen)').matches ? { isFull, toggle: () => (isFull() ? void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.()) : goFull()) } : null;
     // Help and Tutorial: placeholders for now.
     // A newer build out? More pulses and its Update item says NEW.
     this.updates = new Updates(() => this.store.flush());
-    moreItem("m-update", () => void this.confirmReset());
+    moreItem('m-update', () => void this.confirmReset());
     // Phones and tablets: an offer to add the app to the home screen (More → Install app too).
-    const install = new Install((t) => this.ui.toast(t));
-    const inst = document.getElementById("m-install")!;
-    document.getElementById("more-btn")!.addEventListener("click", () => (inst.hidden = !install.available));
-    moreItem("m-install", () => install.offer(true));
+    const install = new Install(t => this.ui.toast(t));
+    const inst = document.getElementById('m-install')!;
+    document.getElementById('more-btn')!.addEventListener('click', () => (inst.hidden = !install.available));
+    moreItem('m-install', () => install.offer(true));
     // Help: a panel explaining every button (toggle it from More → Help).
     const help = new HelpPanel();
-    moreItem("m-help", () => help.toggle());
+    moreItem('m-help', () => help.toggle());
     // The guide text (what to tap next): on or off.
     // (Each a switch on its row - they said On or Off in words. Asked for: "make the two buttons (guide text and
     // offline mode) have a toggle icon. I don't like how right now it's only on or off in text".)
     const switchOf = (id: string, on: boolean) => {
       const b = document.getElementById(id)!;
-      b.classList.toggle("on", on);
-      b.setAttribute("aria-checked", String(on));
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
     };
-    const paintHints = () => switchOf("m-hints", settings.value.showHints);
+    const paintHints = () => switchOf('m-hints', settings.value.showHints);
     paintHints();
     // (Also switched off by the × on the guide text itself.)
     settings.onChange(paintHints);
-    moreItem("m-hints", () => {
-      settings.set("showHints", !settings.value.showHints);
+    moreItem('m-hints', () => {
+      settings.set('showHints', !settings.value.showHints);
       paintHints();
       this.ui.refreshHint();
     });
     // Offline mode: the app kept on this device, so it works with no connection.
-    const offlineState = document.getElementById("m-offline-state")!;
+    const offlineState = document.getElementById('m-offline-state')!;
     // (Its switch; beside it only how far the download is while it runs.)
-    const offline = new Offline((t, k) => this.ui.toast(t, k), (state) => ((offlineState.textContent = state === "On" || state === "Off" ? "" : state), switchOf("m-offline", settings.value.offline)));
-    this.updates.offline = { get on() { return settings.value.offline; }, download: (fresh) => offline.download(fresh) };
-    moreItem("m-offline", () => void offline.toggle());
+    const offline = new Offline((t, k) => this.ui.toast(t, k), state => ((offlineState.textContent = state === 'On' || state === 'Off' ? '' : state), switchOf('m-offline', settings.value.offline)));
+    this.updates.offline = { get on() {
+      return settings.value.offline; 
+    }, download: fresh => offline.download(fresh) };
+    moreItem('m-offline', () => void offline.toggle());
     // The tutorial: a first part, built one lit tap at a time (see ui/tutorial.ts).
     const tutorial = new Tutorial({
-      tool: () => this.tool as unknown as ReturnType<TutorialHost["tool"]>,
+      tool: () => this.tool as unknown as ReturnType<TutorialHost['tool']>,
       selection: () => this.selection,
-      setSelection: (sel) => this.setSelection(sel),
+      setSelection: sel => this.setSelection(sel),
       features: () => this.store.features,
-      toScreen: (p) => this.view.toScreen(new Vector3(p[0], p[1], p[2])),
+      toScreen: p => this.view.toScreen(new Vector3(p[0], p[1], p[2])),
       canvas: () => this.view.canvas,
-      faces: (body) => (this.view.body(body)?.faces ?? []).map((f) => ({ center: f.center, normal: f.normal, type: f.type })),
-      bodies: () => this.view.bodyList.map((b) => b.id),
+      faces: body => (this.view.body(body)?.faces ?? []).map(f => ({ center: f.center, normal: f.normal, type: f.type })),
+      bodies: () => this.view.bodyList.map(b => b.id),
       eye: () => this.view.cam.camera.position,
       newProject: () => this.newProject(),
-      setUp: () => (sketchVariant("circle", "center"), sketchSides(6)),
+      setUp: () => (sketchVariant('circle', 'center'), sketchSides(6)),
       closePanels: () => (this.ui.toggleHistory(false), this.items.toggle(false)),
       zoomTo: (mm, px) => {
         const now = this.view.cam.worldPerPixel(this.view.height);
         const want = mm / px;
         const off = this.view.cam.target.lengthSq() > 1e-12;
         // (Asked for each frame until the first circle is drawn: nothing is done when the view is there already.)
-        if (!(now > 0) || (!off && Math.abs(now / want - 1) < 1e-3)) return;
+        if (!(now > 0) || (!off && Math.abs(now / want - 1) < 1e-3)) {
+          return;
+        }
         this.view.cam.target.set(0, 0, 0);
         this.view.cam.zoom(want / now);
         this.view.requestRender();
@@ -1718,113 +2083,136 @@ export class App implements AppContext {
       chamferAt: (z) => {
         const t = this.tool as unknown as { id: string; feature?: { edges: EdgeRef[] }; edgeSels?(): Sel[]; update?(): void };
         const body = t.feature?.edges[0]?.body;
-        if (t.id !== "chamfer" || !t.feature || !body) return;
+        if (t.id !== 'chamfer' || !t.feature || !body) {
+          return;
+        }
         const flat = (p: Vec3) => Math.abs(p[2] - z) < 1e-6;
         // (Once: with them chamfered, the body as it is shown has new edges at that height - the cuts' own.)
-        if (t.feature.edges.some((e) => flat(e.mid))) return;
-        const have = (m: Vec3) => t.feature!.edges.some((e) => e.body === body && Math.hypot(e.mid[0] - m[0], e.mid[1] - m[1], e.mid[2] - m[2]) < 1e-6);
+        if (t.feature.edges.some(e => flat(e.mid))) {
+          return;
+        }
+        const have = (m: Vec3) => t.feature!.edges.some(e => e.body === body && Math.hypot(e.mid[0] - m[0], e.mid[1] - m[1], e.mid[2] - m[2]) < 1e-6);
         let added = false;
         (this.view.body(body)?.edges ?? []).forEach((e, i) => {
-          if (e.type !== "LINE" || !flat(e.start) || !flat(e.end) || have(e.mid)) return;
+          if (e.type !== 'LINE' || !flat(e.start) || !flat(e.end) || have(e.mid)) {
+            return;
+          }
           const ref = edgeRefOf(this, { body, edge: i });
-          if (ref) (t.feature!.edges.push(ref), (added = true));
+          if (ref) {
+            (t.feature!.edges.push(ref), (added = true));
+          }
         });
-        if (!added) return;
-        if (t.edgeSels) this.setSelection(t.edgeSels());
+        if (!added) {
+          return;
+        }
+        if (t.edgeSels) {
+          this.setSelection(t.edgeSels());
+        }
         t.update?.();
       },
-      plainTaps: (on) => void (this.input.plainTaps = on),
+      plainTaps: on => void (this.input.plainTaps = on),
       exact: (kind, centre, edge) => void (this.tool instanceof SketchTool && this.tool.exact(kind, centre, edge)),
       setNumber: (field, mm) => {
         const t = this.tool as unknown as { id: string; feature?: Record<string, unknown>; render?(): void; update?(): void; setPitch?(v: number): void };
-        if (!t.feature || t.id !== { clearance: "boolean", distance: "extrude", start: "extrude", pitch: "thread" }[field]) return;
+        if (!t.feature || t.id !== { clearance: 'boolean', distance: 'extrude', start: 'extrude', pitch: 'thread' }[field]) {
+          return;
+        }
         // (A thread: a plain right-hand one of one start, whatever the thread made last on a rod this size was.)
-        if (field === "pitch") {
+        if (field === 'pitch') {
           t.feature.left = undefined;
           t.feature.starts = undefined;
           t.setPitch?.(mm);
+
           return;
         }
         t.feature[field] = mm;
         t.render?.();
         t.update?.();
-      },
+      }
     });
     this.tutorial = tutorial;
-    moreItem("m-tutorial", () => this.startTutorial());
+    moreItem('m-tutorial', () => this.startTutorial());
     this.startTutorial = () => {
       // (The question whether to start it, should it be up: answered.)
-      document.querySelector(".dialog.tutorial-ask")?.closest(".dialog-back")?.remove();
+      document.querySelector('.dialog.tutorial-ask')?.closest('.dialog-back')?.remove();
       void tutorial.start();
     };
     // About: the README, in the app. Support links open in a new tab (no access back to this page).
-    moreItem("m-about", () => showAbout());
+    moreItem('m-about', () => showAbout());
     // Feedback: a bug report, suggestion or discussion, posted on r/supergeometry (Reddit's page, in a new tab).
     // (Loaded on the first tap: most visits never open it.)
-    moreItem("m-feedback", () => void import("./ui/feedback").then(({ showFeedback }) => showFeedback()));
+    moreItem('m-feedback', () => void import('./ui/feedback').then(({ showFeedback }) => showFeedback()));
     // Support: a short list of ways (each opens in a new tab). One without a link yet says so.
-    const donateList = document.getElementById("m-donate-list")!;
-    on("m-donate", () => {
+    const donateList = document.getElementById('m-donate-list')!;
+    on('m-donate', () => {
       donateList.hidden = !donateList.hidden;
-      document.getElementById("m-donate-arrow")!.textContent = donateList.hidden ? "▸" : "▾";
+      document.getElementById('m-donate-arrow')!.textContent = donateList.hidden ? '▸' : '▾';
     });
     for (const { id, url } of SUPPORT) {
       const b = document.getElementById(`m-support-${id}`);
-      if (!b) continue;
-      if (!url) {
-        b.querySelector(".menu-soon")!.textContent = "soon";
-        b.classList.add("disabled");
+      if (!b) {
+        continue;
       }
-      moreItem(`m-support-${id}`, () => (url ? openSupport(url) : this.ui.toast("Coming soon")));
+      if (!url) {
+        b.querySelector('.menu-soon')!.textContent = 'soon';
+        b.classList.add('disabled');
+      }
+      moreItem(`m-support-${id}`, () => (url ? openSupport(url) : this.ui.toast('Coming soon')));
     }
-    document.addEventListener("pointerdown", (e) => {
-      if (!(e.target as HTMLElement).closest("#file-menu, #file-btn")) menu.hidden = true;
-      if (!(e.target as HTMLElement).closest("#more-menu, #more-btn")) more.hidden = true;
+    document.addEventListener('pointerdown', (e) => {
+      if (!(e.target as HTMLElement).closest('#file-menu, #file-btn')) {
+        menu.hidden = true;
+      }
+      if (!(e.target as HTMLElement).closest('#more-menu, #more-btn')) {
+        more.hidden = true;
+      }
     });
     const item = (id: string, fn: () => void) =>
       on(id, () => {
         menu.hidden = true;
         fn();
       });
-    item("m-new", () => void this.newProject());
-    item("m-open", () => void this.showProjects());
-    item("m-save", () => this.save());
-    item("m-stl", () => void this.export("stl"));
-    item("m-step", () => void this.export("step"));
-    item("m-3mf", () => void this.export3mf());
-    item("m-glb", () => void this.exportGLB());
-    item("m-each", () => {
+    item('m-new', () => void this.newProject());
+    item('m-open', () => void this.showProjects());
+    item('m-save', () => this.save());
+    item('m-stl', () => void this.export('stl'));
+    item('m-step', () => void this.export('step'));
+    item('m-3mf', () => void this.export3mf());
+    item('m-glb', () => void this.exportGLB());
+    item('m-each', () => {
       // Which format each body is saved in: a menu where the File menu was.
-      const r = document.getElementById("file-btn")!.getBoundingClientRect();
-      const row = (f: "stl" | "step" | "3mf" | "glb", label: string) => ({ label, run: () => void this.exportEach(f) });
-      this.ui.menu(r.left, r.bottom + 4, [row("stl", "Each body as STL"), row("step", "Each body as STEP"), row("3mf", "Each body as 3MF"), row("glb", "Each body as GLB")]);
+      const r = document.getElementById('file-btn')!.getBoundingClientRect();
+      const row = (f: 'stl' | 'step' | '3mf' | 'glb', label: string) => ({ label, run: () => void this.exportEach(f) });
+      this.ui.menu(r.left, r.bottom + 4, [row('stl', 'Each body as STL'), row('step', 'Each body as STEP'), row('3mf', 'Each body as 3MF'), row('glb', 'Each body as GLB')]);
     });
-    item("m-dxf", () => this.exportDXF());
-    item("m-svg", () => this.exportDXF("download", "svg"));
+    item('m-dxf', () => this.exportDXF());
+    item('m-svg', () => this.exportDXF('download', 'svg'));
     // A share button at the right of each export (and Save): straight to the share sheet.
     // Only for the file types this browser will really share (Chrome on Android,
     // for one, refuses 3D and CAD files: a button there would only download).
     {
       const shares: [string, string, () => void][] = [
-        ["m-save", "super", () => this.save("share")],
-        ["m-stl", "stl", () => void this.export("stl", "share")],
-        ["m-step", "step", () => void this.export("step", "share")],
-        ["m-3mf", "3mf", () => void this.export3mf("share")],
-        ["m-glb", "glb", () => void this.exportGLB("share")],
-        ["m-dxf", "dxf", () => this.exportDXF("share")],
-        ["m-svg", "svg", () => this.exportDXF("share", "svg")],
+        ['m-save', 'super', () => this.save('share')],
+        ['m-stl', 'stl', () => void this.export('stl', 'share')],
+        ['m-step', 'step', () => void this.export('step', 'share')],
+        ['m-3mf', '3mf', () => void this.export3mf('share')],
+        ['m-glb', 'glb', () => void this.exportGLB('share')],
+        ['m-dxf', 'dxf', () => this.exportDXF('share')],
+        ['m-svg', 'svg', () => this.exportDXF('share', 'svg')]
       ];
       // Android's share sheet turns these files away or mangles them: downloads only there.
       const android = /Android/i.test(navigator.userAgent);
       for (const [id, ext, run] of shares) {
-        if (android || !canShareType(ext)) continue;
+        if (android || !canShareType(ext)) {
+          continue;
+        }
         const btn = document.getElementById(id)!;
-        const sh = document.createElement("span");
-        sh.className = "menu-share";
-        sh.setAttribute("role", "button");
-        sh.title = "Share";
+        const sh = document.createElement('span');
+        sh.className = 'menu-share';
+        sh.setAttribute('role', 'button');
+        sh.title = 'Share';
         sh.innerHTML = icons.share;
-        sh.addEventListener("click", (e) => {
+        sh.addEventListener('click', (e) => {
           e.stopPropagation();
           menu.hidden = true;
           run();
@@ -1832,68 +2220,86 @@ export class App implements AppContext {
         btn.append(sh);
       }
     }
-    on("undo-btn", () => this.undo());
-    on("redo-btn", () => this.redo());
+    on('undo-btn', () => this.undo());
+    on('redo-btn', () => this.redo());
     this.store.onChange(() => this.updateUndo());
     this.updateUndo();
 
     // Project name: click and type; Enter or leaving the field renames.
     // (Editable text, not an input: a phone's browser hung its autofill bar -
     // passwords, cards, addresses - over the screen for an input.)
-    const name = document.getElementById("project-name") as HTMLElement;
-    name.contentEditable = "plaintext-only";
-    if (name.contentEditable !== "plaintext-only") name.contentEditable = "true";
-    const typed = () => (name.textContent ?? "").replace(/\s+/g, " ").trim();
+    const name = document.getElementById('project-name') as HTMLElement;
+    name.contentEditable = 'plaintext-only';
+    if (name.contentEditable !== 'plaintext-only') {
+      name.contentEditable = 'true';
+    }
+    const typed = () => (name.textContent ?? '').replace(/\s+/g, ' ').trim();
     const show = () => {
-      if (document.activeElement !== name) name.textContent = this.store.doc.name;
+      if (document.activeElement !== name) {
+        name.textContent = this.store.doc.name;
+      }
       // A new, unnamed project keeps the page's own title (what search results show).
-      document.title = this.store.doc.name === "Untitled" ? PAGE_TITLE : `${this.store.doc.name} – superGeometry.app`;
+      document.title = this.store.doc.name === 'Untitled' ? PAGE_TITLE : `${this.store.doc.name} – superGeometry.app`;
     };
     const rename = () => {
       const v = typed();
-      if (v && v !== this.store.doc.name) this.store.commit((d) => (d.name = v));
+      if (v && v !== this.store.doc.name) {
+        this.store.commit(d => (d.name = v));
+      }
       name.textContent = this.store.doc.name;
       name.scrollLeft = 0;
     };
-    name.addEventListener("blur", rename);
+    name.addEventListener('blur', rename);
     // On a small screen, while it is being renamed, it opens over the buttons
     // beside it (File, Items, History, More) to the bar's end; they stay where
     // they are under it, kept in place by a spot of its old width.
-    const spot = document.createElement("span");
-    spot.className = "project-name-spot";
-    name.addEventListener("focus", () => {
-      if (!matchMedia("(max-width: 720px), (pointer: coarse)").matches) return;
+    const spot = document.createElement('span');
+    spot.className = 'project-name-spot';
+    name.addEventListener('focus', () => {
+      if (!matchMedia('(max-width: 720px), (pointer: coarse)').matches) {
+        return;
+      }
       const bar = name.parentElement!;
       spot.style.width = `${name.offsetWidth}px`;
       spot.style.marginRight = getComputedStyle(name).marginRight;
       const left = name.offsetLeft;
       name.before(spot);
-      name.classList.add("wide");
+      name.classList.add('wide');
       name.style.left = `${left}px`;
       name.style.width = `${bar.clientWidth - left - 4}px`;
     });
-    name.addEventListener("blur", () => {
-      if (!name.classList.contains("wide")) return;
-      name.classList.remove("wide");
-      name.style.left = name.style.width = "";
+    name.addEventListener('blur', () => {
+      if (!name.classList.contains('wide')) {
+        return;
+      }
+      name.classList.remove('wide');
+      name.style.left = name.style.width = '';
       spot.remove();
     });
-    name.addEventListener("keydown", (e) => {
+    name.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") e.preventDefault(), name.blur();
-      if (e.key === "Escape") (name.textContent = this.store.doc.name), name.blur();
+      if (e.key === 'Enter') {
+        e.preventDefault(), name.blur();
+      }
+      if (e.key === 'Escape') {
+        (name.textContent = this.store.doc.name), name.blur();
+      }
     });
     // Pasted: as plain text on one line.
-    name.addEventListener("paste", (e) => {
+    name.addEventListener('paste', (e) => {
       e.preventDefault();
-      document.execCommand("insertText", false, (e.clipboardData?.getData("text/plain") ?? "").replace(/\s+/g, " "));
+      document.execCommand('insertText', false, (e.clipboardData?.getData('text/plain') ?? '').replace(/\s+/g, ' '));
     });
     // A mouse selects the whole name to type over; a finger gets the caret
     // where it tapped (selecting all brought up the phone's Cut / Copy bar).
-    name.addEventListener("focus", () => {
-      if (!matchMedia("(pointer: fine)").matches) return;
+    name.addEventListener('focus', () => {
+      if (!matchMedia('(pointer: fine)').matches) {
+        return;
+      }
       requestAnimationFrame(() => {
-        if (document.activeElement !== name) return;
+        if (document.activeElement !== name) {
+          return;
+        }
         const r = document.createRange();
         r.selectNodeContents(name);
         getSelection()?.removeAllRanges();
@@ -1905,8 +2311,8 @@ export class App implements AppContext {
     // The saved mark at the end of the name: a tick once every change is on this device.
     const mark = () => {
       const saved = this.store.saved;
-      name.classList.toggle("saving", !saved);
-      name.title = `Project name - click to rename\n${saved ? "Saved on this device" : "Saving…"}`;
+      name.classList.toggle('saving', !saved);
+      name.title = `Project name - click to rename\n${saved ? 'Saved on this device' : 'Saving…'}`;
     };
     this.store.onSavedState(mark);
     mark();
@@ -1919,22 +2325,33 @@ export class App implements AppContext {
    */
   private undo(): void {
     if (this.tool.undo) {
-      if (!this.tool.undo()) this.ui.toast("Nothing to undo in this edit yet (Cancel leaves it unchanged)");
+      if (!this.tool.undo()) {
+        this.ui.toast('Nothing to undo in this edit yet (Cancel leaves it unchanged)');
+      }
+
       return this.updateUndo();
     }
     if (this.tool instanceof SketchTool) {
-      if (this.tool.undoPoint()) return;
+      if (this.tool.undoPoint()) {
+        return;
+      }
       this.tool.stopDrawing();
-    } else if (this.tool !== this.selectTool) this.setTool(null);
+    } else if (this.tool !== this.selectTool) {
+      this.setTool(null);
+    }
     this.store.undo();
   }
   private redo(): void {
     if (this.tool.redo) {
       this.tool.redo();
+
       return this.updateUndo();
     }
-    if (this.tool instanceof SketchTool) this.tool.stopDrawing();
-    else if (this.tool !== this.selectTool) this.setTool(null);
+    if (this.tool instanceof SketchTool) {
+      this.tool.stopDrawing();
+    } else if (this.tool !== this.selectTool) {
+      this.setTool(null);
+    }
     this.store.redo();
   }
   refreshUndo(): void {
@@ -1943,8 +2360,8 @@ export class App implements AppContext {
 
   private updateUndo(): void {
     const t = this.tool?.undo ? this.tool : null;
-    (document.getElementById("undo-btn") as HTMLButtonElement).disabled = t ? !t.canUndo : !this.store.canUndo;
-    (document.getElementById("redo-btn") as HTMLButtonElement).disabled = t ? !t.canRedo : !this.store.canRedo;
+    (document.getElementById('undo-btn') as HTMLButtonElement).disabled = t ? !t.canUndo : !this.store.canUndo;
+    (document.getElementById('redo-btn') as HTMLButtonElement).disabled = t ? !t.canRedo : !this.store.canRedo;
   }
 
   private updates!: Updates;
@@ -1952,18 +2369,20 @@ export class App implements AppContext {
   /** More → Update: asked first (it reloads the app), with the option to save a copy. */
   private async confirmReset(): Promise<void> {
     const choice = await this.ui.ask(
-      "Update?",
-      "The app reloads with its newest version. Your project stays on this device - you can also save a copy to a file first.",
+      'Update?',
+      'The app reloads with its newest version. Your project stays on this device - you can also save a copy to a file first.',
       [
-        { id: "reset", label: "Yes, update" },
-        { id: "save", label: "Save a copy & update", primary: true },
-      ],
+        { id: 'reset', label: 'Yes, update' },
+        { id: 'save', label: 'Save a copy & update', primary: true }
+      ]
     );
-    if (!choice) return;
-    if (choice === "save") {
+    if (!choice) {
+      return;
+    }
+    if (choice === 'save') {
       this.save();
       // Give the download a moment to start before the page reloads.
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 800));
     }
     await this.updates.reset();
   }
@@ -1976,11 +2395,17 @@ export class App implements AppContext {
   private async newProject(): Promise<void> {
     const was = this.store.features.length ? this.store.doc.name : null;
     await this.switchProject(emptyDoc(), newProjectId());
-    if (was) this.ui.toast(`“${was}” is kept in File → Open`);
+    if (was) {
+      this.ui.toast(`“${was}” is kept in File → Open`);
+    }
     // The first minute makes something: a new project opens in a sketch on the floor with Line on, as every new
     // sketch does - tap, tap, back to the start: a shape; Exit pulses, the shape is pulled up.
-    if (!this.store.features.length && this.tool === this.selectTool) this.setTool(new SketchTool(this, { plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, kind: "line" }));
-    if (await this.updates.check()) await this.updates.reset();
+    if (!this.store.features.length && this.tool === this.selectTool) {
+      this.setTool(new SketchTool(this, { plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, kind: 'line' }));
+    }
+    if (await this.updates.check()) {
+      await this.updates.reset();
+    }
   }
 
   // ------------------------------------------------------------ library
@@ -1998,11 +2423,11 @@ export class App implements AppContext {
       await setCurrentProject(id);
     }
     this.projectId = id;
-    this.projectKept = (await libraryEntries()).some((e) => e.id === id);
+    this.projectKept = (await libraryEntries()).some(e => e.id === id);
     // The library's copy follows when the app goes to the background (the
     // autosave holds the newest state meanwhile, and is copied in at the next
     // start if need be) - no extra saving or drawing while modelling.
-    this.store.onSaved = (text) => document.visibilityState === "hidden" && void this.keepInLibrary(text);
+    this.store.onSaved = text => document.visibilityState === 'hidden' && void this.keepInLibrary(text);
     // Its newest state is the autosave (a page closed mid-save left the library a step behind).
     const text = JSON.stringify(this.store.doc);
     // (No picture: nothing is drawn yet.)
@@ -2015,9 +2440,11 @@ export class App implements AppContext {
   /** The open project into the library: with a new picture of the view now and then (it costs a moment). */
   private async keepInLibrary(text: string, picture = false): Promise<void> {
     const id = this.projectId;
-    if (!id || (!this.projectKept && !this.store.features.length)) return;
+    if (!id || (!this.projectKept && !this.store.features.length)) {
+      return;
+    }
     // A new picture: opening the gallery, leaving the project, or the app going to the background.
-    const snap = picture || document.visibilityState === "hidden";
+    const snap = picture || document.visibilityState === 'hidden';
     this.projectKept = true;
     await keepProject(id, this.store.doc.name, text, snap ? this.viewPicture() : undefined);
   }
@@ -2025,7 +2452,7 @@ export class App implements AppContext {
   /** A small picture of the model (as the view looks at it, framed to fit), for the library. */
   private viewPicture(): string | undefined {
     try {
-      return this.view.snapshot(320, 240, getComputedStyle(document.body).backgroundColor || "#2b2d31");
+      return this.view.snapshot(320, 240, getComputedStyle(document.body).backgroundColor || '#2b2d31');
     } catch {
       return undefined;
     }
@@ -2036,18 +2463,24 @@ export class App implements AppContext {
     this.setTool(null);
     this.setSection(null);
     this.isolate(null);
-    if (this.projectId) await this.keepInLibrary(JSON.stringify(this.store.doc), true);
-    const kept = (await libraryEntries()).some((e) => e.id === id);
+    if (this.projectId) {
+      await this.keepInLibrary(JSON.stringify(this.store.doc), true);
+    }
+    const kept = (await libraryEntries()).some(e => e.id === id);
     await setCurrentProject(id);
     // The id and the document change together: an autosave due meanwhile went to the old project.
     this.projectId = id;
     this.projectKept = kept;
     // The last one's rebuild, if it is still going, is no use now: dropped, not waited for
     // (opening a small project while a guitar was still being built took the guitar's 90 s).
-    if (this.kernel.running) this.kernel.stop();
+    if (this.kernel.running) {
+      this.kernel.stop();
+    }
     this.store.openDoc(doc);
     // A new one starts from the default view (not looking up from below, as the last was left).
-    if (!doc.features.length) this.view.cam.iso();
+    if (!doc.features.length) {
+      this.view.cam.iso();
+    }
     setTimeout(() => this.fit(), 400);
   }
 
@@ -2057,30 +2490,38 @@ export class App implements AppContext {
 
   private async showProjects(welcome = false, starting = false): Promise<void> {
     // The open one with its picture as it looks now (starting: nothing has changed, nor is it drawn yet).
-    if (this.projectId && !starting) await this.keepInLibrary(JSON.stringify(this.store.doc), true);
+    if (this.projectId && !starting) {
+      await this.keepInLibrary(JSON.stringify(this.store.doc), true);
+    }
     const entries = await libraryEntries();
     showLibrary(entries, this.projectId, {
-      open: (id) => void this.openKept(id),
+      open: id => void this.openKept(id),
       tutorial: () => (this.tutorialAsked(), this.startTutorial()),
       newProject: () => void this.newProject(),
       openFile: () => this.open(),
-      download: (id) => void this.downloadKept(id),
-      remove: (id) => forgetProject(id),
+      download: id => void this.downloadKept(id),
+      remove: id => forgetProject(id),
       rename: async (id, current) => {
-        const name = (await this.ui.dialog("Rename project", [{ key: "name", label: "Name", value: current }]))?.name.trim();
-        if (!name || name === current) return null;
+        const name = (await this.ui.dialog('Rename project', [{ key: 'name', label: 'Name', value: current }]))?.name.trim();
+        if (!name || name === current) {
+          return null;
+        }
         // The open one through its document (the top bar and its autosave follow).
-        if (id === this.projectId) this.store.commit((d) => (d.name = name));
-        else await renameProject(id, name);
+        if (id === this.projectId) {
+          this.store.commit(d => (d.name = name));
+        } else {
+          await renameProject(id, name);
+        }
+
         return name;
-      },
+      }
     }, { welcome, fullscreen: this.fullscreen, onClose: welcome ? () => this.offerTutorial() : undefined });
   }
 
   /** The tutorial has been offered on this device (or begun): it isn't offered again. */
   private tutorialAsked(): void {
     try {
-      localStorage.setItem("sg.tutorialAsked", "1");
+      localStorage.setItem('sg.tutorialAsked', '1');
     } catch {
       /* a private window: asked again next time */
     }
@@ -2095,29 +2536,33 @@ export class App implements AppContext {
   private offerTutorial(): void {
     let asked = true;
     try {
-      asked = localStorage.getItem("sg.tutorialAsked") === "1";
+      asked = localStorage.getItem('sg.tutorialAsked') === '1';
     } catch {
       /* no storage: not offered (it would be offered every time) */
     }
-    if (asked) return;
+    if (asked) {
+      return;
+    }
     this.tutorialAsked();
     // (After what closing the window started - a new project, a file being opened - has had its turn.)
     setTimeout(() => {
       // (The welcome window was closed by its own Tutorial button: the tutorial is running, there is nothing to
       // ask - the question came up over it, where the tutorial lets nothing be tapped but its lit spot. Reported:
       // "now i cant do the tutorial on PC. i cant click draw", in a private window - a first visit.)
-      if (this.tutorial?.running) return;
-      const back = el("div", "dialog-back");
-      const box = el("div", "dialog tutorial-ask");
-      box.append(el("div", "panel-title", "New here?"), el("div", "tutorial-ask-text", "The tutorial builds a bolt and the nut that fits it with you, one tap at a time. It takes a few minutes."));
-      const row = el("div", "dialog-actions");
-      const no = el("button", "text-btn", "Not now");
-      const yes = el("button", "text-btn primary", "Start the tutorial");
+      if (this.tutorial?.running) {
+        return;
+      }
+      const back = el('div', 'dialog-back');
+      const box = el('div', 'dialog tutorial-ask');
+      box.append(el('div', 'panel-title', 'New here?'), el('div', 'tutorial-ask-text', 'The tutorial builds a bolt and the nut that fits it with you, one tap at a time. It takes a few minutes.'));
+      const row = el('div', 'dialog-actions');
+      const no = el('button', 'text-btn', 'Not now');
+      const yes = el('button', 'text-btn primary', 'Start the tutorial');
       const close = () => back.remove();
-      no.addEventListener("click", close);
-      yes.addEventListener("click", () => (close(), this.startTutorial()));
+      no.addEventListener('click', close);
+      yes.addEventListener('click', () => (close(), this.startTutorial()));
       row.append(no, yes);
-      box.append(row, el("div", "tutorial-ask-note", "It is under More > Tutorial whenever you want it."));
+      box.append(row, el('div', 'tutorial-ask-note', 'It is under More > Tutorial whenever you want it.'));
       back.append(box);
       document.body.append(back);
     }, 350);
@@ -2125,22 +2570,26 @@ export class App implements AppContext {
 
   private async openKept(id: string): Promise<void> {
     const text = await projectText(id);
-    if (!text) return this.ui.toast("That project couldn't be read", "error");
+    if (!text) {
+      return this.ui.toast("That project couldn't be read", 'error');
+    }
     try {
       await this.switchProject(parseProject(text), id);
     } catch (err) {
-      this.ui.toast(`Could not open: ${(err as Error).message}`, "error");
+      this.ui.toast(`Could not open: ${(err as Error).message}`, 'error');
     }
   }
 
   private async downloadKept(id: string): Promise<void> {
     const text = await projectText(id);
-    const e = (await libraryEntries()).find((x) => x.id === id);
-    if (text && e) download(new Blob([text], { type: "application/json" }), `${e.name}.super`);
+    const e = (await libraryEntries()).find(x => x.id === id);
+    if (text && e) {
+      download(new Blob([text], { type: 'application/json' }), `${e.name}.super`);
+    }
   }
 
-  private save(how: Delivery = "download"): void {
-    void this.deliver(new Blob([JSON.stringify(this.store.doc)], { type: "application/json" }), `${this.store.doc.name}.super`, how);
+  private save(how: Delivery = 'download'): void {
+    void this.deliver(new Blob([JSON.stringify(this.store.doc)], { type: 'application/json' }), `${this.store.doc.name}.super`, how);
   }
 
   /**
@@ -2148,11 +2597,14 @@ export class App implements AppContext {
    * the system share sheet - mail, messages, a slicer app…).
    */
   private async deliver(blob: Blob, name: string, how: Delivery): Promise<void> {
-    if (how === "download") return download(blob, name);
-    const ext = name.split(".").pop()!.toLowerCase();
-    const file = new File([blob], name, { type: MIME[ext] ?? (blob.type || "application/octet-stream") });
+    if (how === 'download') {
+      return download(blob, name);
+    }
+    const ext = name.split('.').pop()!.toLowerCase();
+    const file = new File([blob], name, { type: MIME[ext] ?? (blob.type || 'application/octet-stream') });
     if (!canShare(file)) {
-      this.ui.toast(`This browser can't share .${ext} files - downloaded instead`, "error");
+      this.ui.toast(`This browser can't share .${ext} files - downloaded instead`, 'error');
+
       return download(blob, name);
     }
     const share = () => navigator.share({ files: [file], title: name });
@@ -2160,45 +2612,54 @@ export class App implements AppContext {
       await share();
     } catch (err) {
       const why = (err as Error).name;
-      if (why === "AbortError") return; // closed the share sheet
-      if (why !== "NotAllowedError") {
-        this.ui.toast("Sharing didn't work here - downloaded instead", "error");
+      if (why === 'AbortError') {
+        return;
+      } // closed the share sheet
+      if (why !== 'NotAllowedError') {
+        this.ui.toast("Sharing didn't work here - downloaded instead", 'error');
+
         return download(blob, name);
       }
       // Making the file took a moment and the browser no longer counts this as a
       // tap: one more tap shares it.
       // The share sheet is opened right in that tap (not after it), as iOS requires.
       let again: Promise<void> | null = null;
-      const go = await this.ui.ask("Ready to share", name, [
-        { id: "share", label: "Share", primary: true, run: () => (again = share()) },
-        { id: "dl", label: "Download instead" },
+      const go = await this.ui.ask('Ready to share', name, [
+        { id: 'share', label: 'Share', primary: true, run: () => (again = share()) },
+        { id: 'dl', label: 'Download instead' }
       ]);
-      if (go === "share" && again) {
+      if (go === 'share' && again) {
         try {
           await again;
         } catch (e) {
-          if ((e as Error).name === "AbortError") return;
-          this.ui.toast("Sharing isn't available here - downloaded instead", "error");
+          if ((e as Error).name === 'AbortError') {
+            return;
+          }
+          this.ui.toast("Sharing isn't available here - downloaded instead", 'error');
           download(blob, name);
         }
-      } else if (go === "dl") download(blob, name);
+      } else if (go === 'dl') {
+        download(blob, name);
+      }
     }
   }
 
   private open(): void {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = acceptFor(".super,.tessel,application/json");
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = acceptFor('.super,.tessel,application/json');
     input.onchange = async () => {
       const file = input.files?.[0];
-      if (!file) return;
+      if (!file) {
+        return;
+      }
       try {
         const doc = parseProject(await file.text());
-        doc.name = file.name.replace(/\.(super|tessel)$/i, "");
+        doc.name = file.name.replace(/\.(super|tessel)$/i, '');
         // A project of its own in the library (the open one is kept as it was).
         await this.switchProject(doc, newProjectId());
       } catch (err) {
-        this.ui.toast(`Could not open: ${(err as Error).message}`, "error");
+        this.ui.toast(`Could not open: ${(err as Error).message}`, 'error');
       }
     };
     input.click();
@@ -2208,62 +2669,78 @@ export class App implements AppContext {
    * DXF of a sketch: the one open (e.g. picked in Items), or the one whose
    * curves or regions are selected. Without one, say how to pick it.
    */
-  private exportDXF(how: Delivery = "download", as: "dxf" | "svg" = "dxf"): void {
-    const fromSel = this.selection.flatMap((s) => (s.kind === "curve" || s.kind === "point" || s.kind === "profile" ? [s.sketch] : []))[0];
+  private exportDXF(how: Delivery = 'download', as: 'dxf' | 'svg' = 'dxf'): void {
+    const fromSel = this.selection.flatMap(s => (s.kind === 'curve' || s.kind === 'point' || s.kind === 'profile' ? [s.sketch] : []))[0];
     const id = this.tool.activeSketch ?? fromSel;
     const sk = id ? this.store.find<SketchFeature>(id) : undefined;
-    if (!sk || sk.type !== "sketch") {
+    if (!sk || sk.type !== 'sketch') {
       this.ui.toast(`Select a sketch first: open Items, tap the sketch, then File → Export ${as.toUpperCase()}.`);
-      if (!document.getElementById("items")?.classList.contains("open")) this.items.toggle(true);
+      if (!document.getElementById('items')?.classList.contains('open')) {
+        this.items.toggle(true);
+      }
+
       return;
     }
-    if (!sk.entities.length) return this.ui.toast("That sketch is empty");
+    if (!sk.entities.length) {
+      return this.ui.toast('That sketch is empty');
+    }
     // (SVG: for a laser cutter, a plotter, a drawing program - millimetres, the page just round the drawing.)
-    const file = as === "svg" ? new Blob([sketchToSVG(sk.entities, `${this.store.doc.name} - ${sk.name}`)], { type: "image/svg+xml" }) : new Blob([sketchToDXF(sk.entities)], { type: "application/dxf" });
+    const file = as === 'svg' ? new Blob([sketchToSVG(sk.entities, `${this.store.doc.name} - ${sk.name}`)], { type: 'image/svg+xml' }) : new Blob([sketchToDXF(sk.entities)], { type: 'application/dxf' });
     void this.deliver(file, `${this.store.doc.name} - ${sk.name}.${as}`, how);
     this.ui.toast(`Exported “${sk.name}” as ${as.toUpperCase()}`);
   }
 
   /** The bodies to export (chosen, else shown) with their fine meshes - for GLB. */
   private async fineMeshes(ids: string[]): Promise<{ name: string; positions: Float32Array; indices: Uint32Array; color?: string; opacity?: number }[]> {
-    const fine = JSON.parse(await (await this.kernel.export(this.store.doc.features, "mesh", ids)).text()) as { id: string; positions: number[]; indices: number[] }[];
+    const fine = JSON.parse(await (await this.kernel.export(this.store.doc.features, 'mesh', ids)).text()) as { id: string; positions: number[]; indices: number[] }[];
     const names = this.store.doc.names ?? {};
+
     return ids.flatMap((id) => {
-      const b = this.result?.bodies.find((x) => x.id === id);
-      const m = fine.find((x) => x.id === id);
-      if (!b) return [];
+      const b = this.result?.bodies.find(x => x.id === id);
+      const m = fine.find(x => x.id === id);
+      if (!b) {
+        return [];
+      }
+
       return [{ name: names[id] ?? b.name, positions: m ? new Float32Array(m.positions) : b.positions, indices: m ? new Uint32Array(m.indices) : b.indices, color: this.store.doc.colors?.[id], opacity: this.store.doc.opacity?.[id] }];
     });
   }
 
   /** GLB (one-file glTF): for the web, AR and renderers - the bodies' meshes and colours. */
-  private async exportGLB(how: Delivery = "download"): Promise<void> {
+  private async exportGLB(how: Delivery = 'download'): Promise<void> {
     const ids = chosenBodies(this);
-    const bodies = (this.result?.bodies ?? []).filter((b) => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
-    if (!bodies.length) return this.ui.toast("Nothing to export");
+    const bodies = (this.result?.bodies ?? []).filter(b => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
+    if (!bodies.length) {
+      return this.ui.toast('Nothing to export');
+    }
     try {
-      this.ui.setStatus("Exporting GLB…");
-      const out = glb(await this.fineMeshes(bodies.map((b) => b.id)), this.store.doc.name);
-      await this.deliver(new Blob([out as BlobPart], { type: "model/gltf-binary" }), `${this.store.doc.name}.glb`, how);
+      this.ui.setStatus('Exporting GLB…');
+      const out = glb(await this.fineMeshes(bodies.map(b => b.id)), this.store.doc.name);
+      await this.deliver(new Blob([out as BlobPart], { type: 'model/gltf-binary' }), `${this.store.doc.name}.glb`, how);
     } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, "error");
+      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
     } finally {
       this.ui.setStatus(null);
     }
   }
 
   /** Each body in a file of its own (named after it), together in a ZIP. */
-  private async exportEach(format: "stl" | "step" | "3mf" | "glb"): Promise<void> {
+  private async exportEach(format: 'stl' | 'step' | '3mf' | 'glb'): Promise<void> {
     const ids = chosenBodies(this);
-    const bodies = (this.result?.bodies ?? []).filter((b) => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
-    if (!bodies.length) return this.ui.toast("Nothing to export");
+    const bodies = (this.result?.bodies ?? []).filter(b => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
+    if (!bodies.length) {
+      return this.ui.toast('Nothing to export');
+    }
     const names = this.store.doc.names ?? {};
     const used = new Set<string>();
     const fileName = (id: string, fallback: string) => {
-      const base = (names[id] ?? fallback).replace(/[\\/:*?"<>|]+/g, "-").trim() || "Body";
+      const base = (names[id] ?? fallback).replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Body';
       let n = base;
-      for (let k = 2; used.has(n.toLowerCase()); k++) n = `${base} ${k}`;
+      for (let k = 2; used.has(n.toLowerCase()); k++) {
+        n = `${base} ${k}`;
+      }
       used.add(n.toLowerCase());
+
       return `${n}.${format}`;
     };
     try {
@@ -2271,60 +2748,66 @@ export class App implements AppContext {
       for (const [i, b] of bodies.entries()) {
         this.ui.setStatus(`Exporting body ${i + 1} of ${bodies.length}…`);
         let blob: Blob;
-        if (format === "glb") blob = new Blob([glb(await this.fineMeshes([b.id]), names[b.id] ?? b.name) as BlobPart]);
-        else if (format === "3mf") {
+        if (format === 'glb') {
+          blob = new Blob([glb(await this.fineMeshes([b.id]), names[b.id] ?? b.name) as BlobPart]);
+        } else if (format === '3mf') {
           const [m] = await this.fineMeshes([b.id]);
-          blob = await exportThreeMF([m], m.name, await this.kernel.export(this.store.doc.features, "step", [b.id]));
-        } else blob = await this.kernel.export(this.store.doc.features, format, [b.id]);
+          blob = await exportThreeMF([m], m.name, await this.kernel.export(this.store.doc.features, 'step', [b.id]));
+        } else {
+          blob = await this.kernel.export(this.store.doc.features, format, [b.id]);
+        }
         files.push({ name: fileName(b.id, b.name), data: new Uint8Array(await blob.arrayBuffer()) });
       }
       const out = await zip(files);
-      await this.deliver(new Blob([out], { type: "application/zip" }), `${this.store.doc.name} - ${bodies.length} ${bodies.length === 1 ? "body" : "bodies"}.zip`, "download");
-      this.ui.toast(`${bodies.length} ${bodies.length === 1 ? "body" : "bodies"}, each its own ${format.toUpperCase()} file, in a ZIP`);
+      await this.deliver(new Blob([out], { type: 'application/zip' }), `${this.store.doc.name} - ${bodies.length} ${bodies.length === 1 ? 'body' : 'bodies'}.zip`, 'download');
+      this.ui.toast(`${bodies.length} ${bodies.length === 1 ? 'body' : 'bodies'}, each its own ${format.toUpperCase()} file, in a ZIP`);
     } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, "error");
+      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
     } finally {
       this.ui.setStatus(null);
     }
   }
 
   /** 3MF for slicers: the meshes, with the exact STEP model packed inside. */
-  private async export3mf(how: Delivery = "download"): Promise<void> {
+  private async export3mf(how: Delivery = 'download'): Promise<void> {
     const ids = chosenBodies(this);
-    const bodies = (this.result?.bodies ?? []).filter((b) => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
-    if (!bodies.length) return this.ui.toast("Nothing to export");
+    const bodies = (this.result?.bodies ?? []).filter(b => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
+    if (!bodies.length) {
+      return this.ui.toast('Nothing to export');
+    }
     try {
-      this.ui.setStatus("Exporting 3MF…");
-      const step = await this.kernel.export(this.store.doc.features, "step", bodies.map((b) => b.id));
+      this.ui.setStatus('Exporting 3MF…');
+      const step = await this.kernel.export(this.store.doc.features, 'step', bodies.map(b => b.id));
       // A fine mesh, as for STL (the view's is coarse: round faces came out faceted in the slicer).
-      const fine = JSON.parse(await (await this.kernel.export(this.store.doc.features, "mesh", bodies.map((b) => b.id))).text()) as { id: string; positions: number[]; indices: number[] }[];
+      const fine = JSON.parse(await (await this.kernel.export(this.store.doc.features, 'mesh', bodies.map(b => b.id))).text()) as { id: string; positions: number[]; indices: number[] }[];
       const names = this.store.doc.names ?? {};
       const blob = await exportThreeMF(
         bodies.map((b) => {
-          const m = fine.find((x) => x.id === b.id);
+          const m = fine.find(x => x.id === b.id);
+
           return { name: names[b.id] ?? b.name, positions: m ? new Float32Array(m.positions) : b.positions, indices: m ? new Uint32Array(m.indices) : b.indices, color: this.store.doc.colors?.[b.id] };
         }),
         this.store.doc.name,
-        step,
+        step
       );
       await this.deliver(blob, `${this.store.doc.name}.3mf`, how);
     } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, "error");
+      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
     } finally {
       this.ui.setStatus(null);
     }
   }
 
-  private async export(format: ExportFormat, how: Delivery = "download"): Promise<void> {
+  private async export(format: ExportFormat, how: Delivery = 'download'): Promise<void> {
     // Selected bodies win; otherwise what's isolated; otherwise everything.
     const picked = bodiesOf(this.selection);
-    const bodies = picked.length ? picked : (this.isolated ?? []).filter((id) => this.result?.bodies.some((b) => b.id === id));
+    const bodies = picked.length ? picked : (this.isolated ?? []).filter(id => this.result?.bodies.some(b => b.id === id));
     try {
-      this.ui.setStatus(`Exporting ${bodies.length ? `${bodies.length} bod${bodies.length > 1 ? "ies" : "y"} as ` : ""}${format.toUpperCase()}…`);
+      this.ui.setStatus(`Exporting ${bodies.length ? `${bodies.length} bod${bodies.length > 1 ? 'ies' : 'y'} as ` : ''}${format.toUpperCase()}…`);
       const blob = await this.kernel.export(this.store.doc.features, format, bodies.length ? bodies : undefined);
-      await this.deliver(blob, `${this.store.doc.name}.${format === "step" ? "step" : "stl"}`, how);
+      await this.deliver(blob, `${this.store.doc.name}.${format === 'step' ? 'step' : 'stl'}`, how);
     } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, "error");
+      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
     } finally {
       this.ui.setStatus(null);
     }
@@ -2334,25 +2817,26 @@ export class App implements AppContext {
 /** Same choice of bodies as the other exports: selected, else isolated, else all. */
 function chosenBodies(app: App): string[] {
   const picked = bodiesOf(app.selection);
-  return picked.length ? picked : (app.isolated ?? []).filter((id) => app.result?.bodies.some((b) => b.id === id));
+
+  return picked.length ? picked : (app.isolated ?? []).filter(id => app.result?.bodies.some(b => b.id === id));
 }
 
-type Delivery = "download" | "share";
+type Delivery = 'download' | 'share';
 
 /** The file types the exports are shared as (the share sheet picks apps by them). */
 const MIME: Record<string, string> = {
-  stl: "model/stl",
-  step: "model/step",
-  "3mf": "model/3mf",
-  glb: "model/gltf-binary",
-  dxf: "image/vnd.dxf",
-  svg: "image/svg+xml",
-  super: "application/json",
+  stl: 'model/stl',
+  step: 'model/step',
+  '3mf': 'model/3mf',
+  glb: 'model/gltf-binary',
+  dxf: 'image/vnd.dxf',
+  svg: 'image/svg+xml',
+  super: 'application/json'
 };
 
 function canShare(file: File): boolean {
   try {
-    return typeof navigator.share === "function" && !!navigator.canShare?.({ files: [file] });
+    return typeof navigator.share === 'function' && !!navigator.canShare?.({ files: [file] });
   } catch {
     return false;
   }
@@ -2360,11 +2844,11 @@ function canShare(file: File): boolean {
 
 /** Will this browser share a file of this kind (the system share sheet)? */
 function canShareType(ext: string): boolean {
-  return canShare(new File(["x"], `x.${ext}`, { type: MIME[ext] ?? "application/octet-stream" }));
+  return canShare(new File(['x'], `x.${ext}`, { type: MIME[ext] ?? 'application/octet-stream' }));
 }
 
 function download(blob: Blob, name: string): void {
-  const a = document.createElement("a");
+  const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();

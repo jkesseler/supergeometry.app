@@ -7,10 +7,10 @@
 // (a circle becomes an ellipse, a cylinder an elliptic one). Then the faces
 // are sewn back into a solid.
 
-import { cast, getOC, measureArea, type Shape3D } from "replicad";
-import type { Vec3 } from "../doc/types";
-import { healthOf, isHealthy, repairShape } from "./repair";
-import { cubicKnots, interpolateGrid } from "../freeform/bspline";
+import { cast, getOC, measureArea, type Shape3D } from 'replicad';
+import { cubicKnots, interpolateGrid } from '../freeform/bspline';
+import { healthOf, isHealthy, repairShape } from './repair';
+import type { Vec3 } from '../doc/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -20,6 +20,7 @@ function exactVolume(s: Shape3D): number {
   const props = new oc.GProp_GProps();
   try {
     oc.BRepGProp.VolumeProperties(s.wrapped, props, 1e-6, true, false);
+
     return props.Mass();
   } finally {
     props.delete();
@@ -38,7 +39,11 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
   // Each edge once (shared by two faces): the same new edge on both sides.
   const done: { old: any; made: any }[] = [];
   const edgeOf = (e: any): any => {
-    for (const d of done) if (d.old.IsSame(e)) return d.made;
+    for (const d of done) {
+      if (d.old.IsSame(e)) {
+        return d.made;
+      }
+    }
     const c = keep(new oc.BRepAdaptor_Curve(e));
     const u0 = c.FirstParameter();
     const u1 = c.LastParameter();
@@ -59,6 +64,7 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
     }
     // Built along the curve's own direction: oriented as the original was.
     done.push({ old: e, made });
+
     return made;
   };
 
@@ -67,12 +73,15 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
     const ex = keep(new oc.TopExp_Explorer(w, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
     for (; ex.More(); ex.Next()) {
       const e = oc.TopoDS.Edge(ex.Current());
-      if (oc.BRep_Tool.Degenerated(e)) continue;
+      if (oc.BRep_Tool.Degenerated(e)) {
+        continue;
+      }
       const fwd = oc.TopoDS.Edge(e.Oriented(oc.TopAbs_Orientation.TopAbs_FORWARD));
       list.Append(edgeOf(fwd).Oriented(e.Orientation()));
     }
     const mk = keep(new oc.BRepBuilderAPI_MakeWire());
     mk.Add(list);
+
     return mk.IsDone() ? mk.Wire() : null;
   };
 
@@ -92,20 +101,24 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
         const d: Vec3 = [q.X() - last.X(), q.Y() - last.Y(), q.Z() - last.Z()];
         const l = Math.hypot(...d);
         if (l > 1e-12) {
-          if (prev) total += Math.acos(Math.max(-1, Math.min(1, (d[0] * prev[0] + d[1] * prev[1] + d[2] * prev[2]) / l)));
+          if (prev) {
+            total += Math.acos(Math.max(-1, Math.min(1, (d[0] * prev[0] + d[1] * prev[1] + d[2] * prev[2]) / l)));
+          }
           prev = [d[0] / l, d[1] / l, d[2] / l];
         }
         last = q;
       }
+
       return total;
     };
     const count = (turn: number) => Math.max(17, Math.min(481, Math.ceil(turn / (Math.PI / 16)) + 1));
     let tu = 0;
     let tv = 0;
     for (const f of [0.1, 0.5, 0.9]) {
-      tu = Math.max(tu, turning((t) => s.Value(u0 + (u1 - u0) * t, uv.VMin + (uv.VMax - uv.VMin) * f)));
-      tv = Math.max(tv, turning((t) => s.Value(u0 + (u1 - u0) * f, uv.VMin + (uv.VMax - uv.VMin) * t)));
+      tu = Math.max(tu, turning(t => s.Value(u0 + (u1 - u0) * t, uv.VMin + (uv.VMax - uv.VMin) * f)));
+      tv = Math.max(tv, turning(t => s.Value(u0 + (u1 - u0) * f, uv.VMin + (uv.VMax - uv.VMin) * t)));
     }
+
     return [count(tu), count(tv)];
   };
 
@@ -127,17 +140,23 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
     }
     const poles = interpolateGrid(grid);
     const arr = keep(new oc.NCollection_Array2_gp_Pnt(1, NU, 1, NV));
-    for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) arr.SetValue(i + 1, j + 1, keep(new oc.gp_Pnt(...poles[i][j])));
+    for (let i = 0; i < NU; i++) {
+      for (let j = 0; j < NV; j++) {
+        arr.SetValue(i + 1, j + 1, keep(new oc.gp_Pnt(...poles[i][j])));
+      }
+    }
     const knots = (n: number, a: number, b: number) => {
       const kn = cubicKnots(n);
       const k = keep(new oc.NCollection_Array1_double(1, kn.knots.length));
       kn.knots.forEach((x, i) => k.SetValue(i + 1, a + (b - a) * x));
       const m = keep(new oc.NCollection_Array1_int(1, kn.mults.length));
       kn.mults.forEach((x, i) => m.SetValue(i + 1, x));
+
       return [k, m];
     };
     const [ku, mu] = knots(NU, uv.UMin, uv.UMax);
     const [kv, mv] = knots(NV, uv.VMin, uv.VMax);
+
     return new oc.Geom_BSplineSurface(arr, ku, kv, mu, mv, 3, 3, false, false);
   };
 
@@ -153,8 +172,10 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
       const outer = oc.BRepTools.OuterWire(face);
       const wires: any[] = [];
       const wx = keep(new oc.TopExp_Explorer(face, oc.TopAbs_ShapeEnum.TopAbs_WIRE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
-      for (; wx.More(); wx.Next()) wires.push(oc.TopoDS.Wire(wx.Current()));
-      const inner = wires.filter((w) => !w.IsSame(outer));
+      for (; wx.More(); wx.Next()) {
+        wires.push(oc.TopoDS.Wire(wx.Current()));
+      }
+      const inner = wires.filter(w => !w.IsSame(outer));
       let made: any;
       if (s.GetType() === oc.GeomAbs_SurfaceType.GeomAbs_Plane) {
         // Flat stays flat: the plane through the stretched point, its normal
@@ -164,11 +185,15 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
         const nn: Vec3 = [n.X() / k[0], n.Y() / k[1], n.Z() / k[2]];
         const gpl = keep(new oc.gp_Pln(map(pl.Location()), keep(new oc.gp_Dir(nn[0], nn[1], nn[2]))));
         const ow = wireOf(outer);
-        if (!ow) throw new Error("wire");
+        if (!ow) {
+          throw new Error('wire');
+        }
         const mk = keep(new oc.BRepBuilderAPI_MakeFace(gpl, ow, true));
         for (const w of inner) {
           const iw = wireOf(w);
-          if (iw) mk.Add(iw);
+          if (iw) {
+            mk.Add(iw);
+          }
         }
         made = mk.Face();
       } else {
@@ -177,8 +202,12 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
         const fitted = (u0: number, u1: number) => {
           const [nu, nv] = samples(s, u0, u1, uv);
           const grid = keep(new oc.NCollection_Array2_gp_Pnt(1, nu, 1, nv));
-          for (let i = 0; i < nu; i++)
-            for (let j = 0; j < nv; j++) grid.SetValue(i + 1, j + 1, map(s.Value(u0 + ((u1 - u0) * i) / (nu - 1), uv.VMin + ((uv.VMax - uv.VMin) * j) / (nv - 1))));
+          for (let i = 0; i < nu; i++) {
+            for (let j = 0; j < nv; j++) {
+              grid.SetValue(i + 1, j + 1, map(s.Value(u0 + ((u1 - u0) * i) / (nu - 1), uv.VMin + ((uv.VMax - uv.VMin) * j) / (nv - 1))));
+            }
+          }
+
           return keep(new oc.GeomAPI_PointsToBSplineSurface(grid, 3, 8, oc.GeomAbs_Shape.GeomAbs_C2, fitTol)).Surface();
         };
         // The face covers its whole parameter rectangle (a cylinder's side, a
@@ -191,7 +220,9 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
             // In two halves (a sphere: one face, closed round and pinched at
             // its poles, didn't sew into a closed skin on its own).
             const mid = (uv.UMin + uv.UMax) / 2;
-            for (const [a, b] of [[uv.UMin, mid], [mid, uv.UMax]]) sewing.Add(keep(new oc.BRepBuilderAPI_MakeFace(fitted(a, b), 1e-7)).Face().Oriented(orient));
+            for (const [a, b] of [[uv.UMin, mid], [mid, uv.UMax]]) {
+              sewing.Add(keep(new oc.BRepBuilderAPI_MakeFace(fitted(a, b), 1e-7)).Face().Oriented(orient));
+            }
             continue;
           }
           made = keep(new oc.BRepBuilderAPI_MakeFace(fitted(uv.UMin, uv.UMax), 1e-7)).Face();
@@ -213,21 +244,28 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
             const ex = keep(new oc.TopExp_Explorer(w, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
             for (; ex.More(); ex.Next()) {
               const e = oc.TopoDS.Edge(ex.Current());
-              if (oc.BRep_Tool.Degenerated(e)) continue;
+              if (oc.BRep_Tool.Degenerated(e)) {
+                continue;
+              }
               // Its outline on this face, in (u, v) (each side of a seam its own).
               const pc = keep(new oc.BRepAdaptor_Curve2d(e, face));
               const mk = keep(new oc.BRepBuilderAPI_MakeEdge(pc.Curve(), surf, pc.FirstParameter(), pc.LastParameter()));
-              if (!mk.IsDone()) throw new Error("outline edge");
+              if (!mk.IsDone()) {
+                throw new Error('outline edge');
+              }
               const ne = mk.Edge();
               oc.BRepLib.BuildCurve3d(ne, size * 1e-7, oc.GeomAbs_Shape.GeomAbs_C1, 14, 0);
               builder.Add(wire, ne.Oriented(e.Orientation()));
             }
             const fw = keep(new oc.ShapeFix_Wire(wire, host, size * 1e-6));
             fw.FixConnected(size * 1e-4);
+
             return fw.Wire();
           };
           const mk = keep(new oc.BRepBuilderAPI_MakeFace(surf, outline(outer), true));
-          for (const w of inner) mk.Add(outline(w));
+          for (const w of inner) {
+            mk.Add(outline(w));
+          }
           const fix = keep(new oc.ShapeFix_Face(mk.Face()));
           fix.SetPrecision(size * 1e-7);
           fix.Perform();
@@ -238,12 +276,15 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
     }
     sewing.Perform(keep(new oc.Message_ProgressRange()));
     const sewed = sewing.SewedShape();
+
     return sewed.ShapeType() === oc.TopAbs_ShapeEnum.TopAbs_SHELL ? sewed : null;
   };
 
   try {
     const shell = build(false) ?? build(true);
-    if (!shell) throw new Error("its faces didn't close up");
+    if (!shell) {
+      throw new Error("its faces didn't close up");
+    }
     const fixSolid = keep(new oc.ShapeFix_Solid());
     let solid = cast(fixSolid.SolidFromShell(oc.TopoDS.Shell(shell))) as Shape3D;
     let v = exactVolume(solid);
@@ -254,14 +295,19 @@ export function stretchShape(shape: Shape3D, center: Vec3, k: Vec3): Shape3D {
     // A stretch multiplies the volume by kx·ky·kz: anything else went wrong.
     // (Measured closely: the quick estimate was 7% out on a fitted elliptic side.)
     const want = Math.abs(exactVolume(shape)) * k[0] * k[1] * k[2];
-    if (Math.abs(v - want) > want * 2e-3) throw new Error(`volume ${v} vs ${want}`);
+    if (Math.abs(v - want) > want * 2e-3) {
+      throw new Error(`volume ${v} vs ${want}`);
+    }
     // A face cut to its stretched edges can come out a little off (a sliver
     // where it meets its neighbour): the repair tidies it, same shape.
     if (!isHealthy(healthOf(solid))) {
       const fixed = repairShape(solid, { maxSolids: 1, volume: want });
-      if (!fixed || !isHealthy(healthOf(fixed.shape))) throw new Error("the stretched faces don't join cleanly");
+      if (!fixed || !isHealthy(healthOf(fixed.shape))) {
+        throw new Error("the stretched faces don't join cleanly");
+      }
       solid = fixed.shape;
     }
+
     return solid;
   } catch (e) {
     throw new Error(`This body couldn't be stretched along one direction (${(e as Error).message ?? e})`);

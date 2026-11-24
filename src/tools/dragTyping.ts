@@ -1,14 +1,14 @@
 // Type a value while holding a drag: digits set the value live, Enter applies
 // it and finishes, Esc drops what was typed. "," is accepted as decimal point.
 
-import { mergingCommits } from "../doc/store";
-import { evaluate, UNIT_LABEL, units } from "../units";
-import { numpadInput } from "../ui/numpad";
-import type { ToolPointer } from "../view/input";
-import type { AppContext } from "./tool";
+import { mergingCommits } from '../doc/store';
+import { evaluate, UNIT_LABEL, units } from '../units';
+import { numpadInput } from '../ui/numpad';
+import type { ToolPointer } from '../view/input';
+import type { AppContext } from './tool';
 
 export interface DragTypingTarget {
-  kind: "length" | "angle" | "number";
+  kind: 'length' | 'angle' | 'number';
   /** Apply a typed value (mm for lengths, degrees for angles). */
   apply(v: number): void;
   /** Enter: finish with the current value. */
@@ -22,7 +22,7 @@ export interface DragTypingTarget {
 }
 
 export class DragTyping {
-  text = "";
+  text = '';
   private at: { x: number; y: number } = { x: 0, y: 0 };
   private static all = new Set<DragTyping>();
 
@@ -32,7 +32,9 @@ export class DragTyping {
 
   /** Every floating value box away (the tool that showed it ended). */
   static hideAll(): void {
-    for (const t of DragTyping.all) t.hideBox();
+    for (const t of DragTyping.all) {
+      t.hideBox();
+    }
   }
 
   // ------------------------------------------------- floating value box
@@ -49,39 +51,47 @@ export class DragTyping {
     this.at = { x: p.x, y: p.y };
     this.boxTarget = target;
     if (!this.boxEl) {
-      const box = document.createElement("div");
-      box.className = "dim-widget editable float-value";
-      const input = document.createElement("input");
-      input.inputMode = "decimal";
+      const box = document.createElement('div');
+      box.className = 'dim-widget editable float-value';
+      const input = document.createElement('input');
+      input.inputMode = 'decimal';
       input.spellcheck = false;
       numpadInput(input);
-      const unit = document.createElement("span");
-      unit.className = "dim-unit";
+      const unit = document.createElement('span');
+      unit.className = 'dim-unit';
       box.append(input, unit);
-      input.addEventListener("input", () => {
+      input.addEventListener('input', () => {
         const t = this.boxTarget;
-        if (!t) return;
+        if (!t) {
+          return;
+        }
         const v = evaluate(input.value, t.kind);
-        input.classList.toggle("invalid", v === null);
-        if (v !== null) mergingCommits(input, () => t.apply(v));
+        input.classList.toggle('invalid', v === null);
+        if (v !== null) {
+          mergingCommits(input, () => t.apply(v));
+        }
       });
-      input.addEventListener("keydown", (e) => {
+      input.addEventListener('keydown', (e) => {
         e.stopPropagation();
-        if (e.key === "Enter") {
+        if (e.key === 'Enter') {
           const t = this.boxTarget;
           this.hideBox();
           t?.commit();
         }
-        if (e.key === "Escape") input.blur();
+        if (e.key === 'Escape') {
+          input.blur();
+        }
       });
-      box.addEventListener("pointerdown", (e) => e.stopPropagation());
+      box.addEventListener('pointerdown', e => e.stopPropagation());
       document.body.append(box);
       this.boxEl = box;
       this.boxInput = input;
     }
-    const unit = target.kind === "length" ? UNIT_LABEL[units()] : target.kind === "angle" ? "°" : "";
-    (this.boxEl.querySelector(".dim-unit") as HTMLElement).textContent = unit;
-    if (document.activeElement !== this.boxInput) this.boxInput!.value = value.replace(/\s*(mm|cm|m|in|ft|°|")$/, "").replace(/^×/, "");
+    const unit = target.kind === 'length' ? UNIT_LABEL[units()] : target.kind === 'angle' ? '°' : '';
+    (this.boxEl.querySelector('.dim-unit') as HTMLElement).textContent = unit;
+    if (document.activeElement !== this.boxInput) {
+      this.boxInput!.value = value.replace(/\s*(mm|cm|m|in|ft|°|")$/, '').replace(/^×/, '');
+    }
     const r = this.app.view.canvas.getBoundingClientRect();
     this.boxEl.hidden = false;
     // Below right of the finger - or left of it / above it where that runs off
@@ -92,8 +102,12 @@ export class DragTyping {
     const M = 8;
     let x = r.left + p.x + 22;
     let y = r.top + p.y + 16;
-    if (x + w > innerWidth - M) x = r.left + p.x - 22 - w;
-    if (y + h > innerHeight - M) y = r.top + p.y - 16 - h;
+    if (x + w > innerWidth - M) {
+      x = r.left + p.x - 22 - w;
+    }
+    if (y + h > innerHeight - M) {
+      y = r.top + p.y - 16 - h;
+    }
     x = Math.max(M, Math.min(x, innerWidth - M - w));
     y = Math.max(M, Math.min(y, innerHeight - M - h));
     this.boxEl.style.left = `${Math.round(x)}px`;
@@ -116,63 +130,85 @@ export class DragTyping {
   /** Remember where the pointer is (the typed value is shown next to it). */
   track(p: ToolPointer): void {
     this.at = { x: p.x, y: p.y };
-    if (this.active) this.show();
+    if (this.active) {
+      this.show();
+    }
   }
 
   reset(): void {
-    this.text = "";
+    this.text = '';
   }
 
   /** Handle a key during a drag; true if it was used. */
   key(e: KeyboardEvent, t: DragTypingTarget): boolean {
-    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      return false;
+    }
     this.display = t.show ?? null;
-    this.unit = t.kind === "length" ? UNIT_LABEL[units()] : t.kind === "angle" ? "°" : "";
-    if (e.key === "Enter") {
-      this.text = "";
+    this.unit = t.kind === 'length' ? UNIT_LABEL[units()] : t.kind === 'angle' ? '°' : '';
+    if (e.key === 'Enter') {
+      this.text = '';
       this.app.ui.setLabel(0, 0, null);
       t.commit();
+
       return true;
     }
-    if (e.key === "Escape") {
-      if (!this.text) return false;
-      this.text = "";
+    if (e.key === 'Escape') {
+      if (!this.text) {
+        return false;
+      }
+      this.text = '';
       this.app.ui.setLabel(0, 0, null);
       t.cancel?.();
+
       return true;
     }
-    if (e.key === "Tab") {
-      if (!t.next?.()) return false;
-      this.text = "";
+    if (e.key === 'Tab') {
+      if (!t.next?.()) {
+        return false;
+      }
+      this.text = '';
       this.show();
+
       return true;
     }
-    if (e.key === "Backspace") {
+    if (e.key === 'Backspace') {
       this.text = this.text.slice(0, -1);
     } else if (e.key.length === 1 && /[0-9.,+\-*/()a-z"' ]/i.test(e.key)) {
-      this.text += e.key === "," ? "." : e.key;
-    } else return false;
+      this.text += e.key === ',' ? '.' : e.key;
+    } else {
+      return false;
+    }
     const v = this.text ? evaluate(this.text, t.kind) : null;
-    if (v !== null) t.apply(v);
-    else if (!this.text) t.cancel?.();
+    if (v !== null) {
+      t.apply(v);
+    } else if (!this.text) {
+      t.cancel?.();
+    }
     this.show(v === null && !!this.text);
+
     return true;
   }
 
-  private unit = "";
-  private display: DragTypingTarget["show"] | null = null;
+  private unit = '';
+  private display: DragTypingTarget['show'] | null = null;
 
   private show(invalid = false): void {
-    if (this.display) return this.display(this.text, invalid);
+    if (this.display) {
+      return this.display(this.text, invalid);
+    }
     // What's typed goes into the value box on screen (this drag's, or the
     // tool's own on the model): a second blue "Enter ↵ apply" box isn't needed.
-    const into = this.boxInput ?? [...document.querySelectorAll<HTMLInputElement>(".dim-widget.editable input")].find((i) => i.offsetParent);
+    const into = this.boxInput ?? [...document.querySelectorAll<HTMLInputElement>('.dim-widget.editable input')].find(i => i.offsetParent);
     if (into) {
-      if (this.text) into.value = this.text;
-      into.classList.toggle("invalid", invalid);
+      if (this.text) {
+        into.value = this.text;
+      }
+      into.classList.toggle('invalid', invalid);
       this.app.ui.setLabel(0, 0, null);
+
       return;
     }
-    this.app.ui.setLabel(this.at.x, this.at.y, this.text ? `${this.text}▌ ${this.unit}${invalid ? "  ?" : ""}` : null);
+    this.app.ui.setLabel(this.at.x, this.at.y, this.text ? `${this.text}▌ ${this.unit}${invalid ? '  ?' : ''}` : null);
   }
 }

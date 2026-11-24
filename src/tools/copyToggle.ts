@@ -2,9 +2,9 @@
 // leaves the original where it was and makes a copy; the copy is then
 // selected, so the next drag (or typed value + Enter) copies again.
 
-import type { Vec3 } from "../doc/types";
-import { icons } from "../ui/icons";
-import type { Viewport } from "../view/viewport";
+import { icons } from '../ui/icons';
+import type { Vec3 } from '../doc/types';
+import type { Viewport } from '../view/viewport';
 
 /** Shared by bodies, sketches and images: the switch stays as you left it. */
 export const copyMode = { on: false };
@@ -12,21 +12,21 @@ export const copyMode = { on: false };
 export const linkMode = { on: false };
 
 export class CopyToggle {
-  private btn = document.createElement("button");
+  private btn = document.createElement('button');
   private hook = () => this.layout();
 
   constructor(
     private view: Viewport,
     /** Where the gimbal is (world). */
     private at: () => Vec3 | null,
-    private onChange?: (on: boolean) => void,
+    private onChange?: (on: boolean) => void
   ) {
-    this.btn.className = "copy-toggle";
-    this.btn.title = "Copy: drag to make a copy, then set the values or Link it in the panel; tap empty space when done";
+    this.btn.className = 'copy-toggle';
+    this.btn.title = 'Copy: drag to make a copy, then set the values or Link it in the panel; tap empty space when done';
     this.btn.innerHTML = `${icons.copy}<span>Copy</span>`;
     // Never let the press reach the viewport (it would start a drag or deselect).
-    this.btn.addEventListener("pointerdown", (e) => e.stopPropagation());
-    this.btn.addEventListener("click", (e) => {
+    this.btn.addEventListener('pointerdown', e => e.stopPropagation());
+    this.btn.addEventListener('click', (e) => {
       e.stopPropagation();
       copyMode.on = !copyMode.on;
       this.paint();
@@ -40,7 +40,7 @@ export class CopyToggle {
   }
 
   private paint(): void {
-    this.btn.classList.toggle("on", copyMode.on);
+    this.btn.classList.toggle('on', copyMode.on);
   }
 
   private layout(): void {

@@ -6,7 +6,7 @@
 // gear's outline swept with a twist (362 spline faces, 25 places each) ran
 // the engine out of memory (0.2 GB to 3.8 GB) and broke it. Where the place
 // on the surface is known, ask there.
-import { getOC, type Edge, type Face, type Shape3D } from "replicad";
+import { getOC, type Edge, type Face, type Shape3D } from 'replicad';
 
 type Tuple = [number, number, number];
 type Vec3 = Tuple;
@@ -20,6 +20,7 @@ export function surfaceAt(face: Face, s: number, t: number): { p: Tuple; n: Tupl
   const g = new oc.BRepGProp_Face(face.wrapped, false);
   try {
     g.Normal(uMin + (uMax - uMin) * s, vMin + (vMax - vMin) * t, p, n);
+
     return { p: [p.X(), p.Y(), p.Z()], n: [n.X(), n.Y(), n.Z()] };
   } finally {
     g.delete();
@@ -46,6 +47,7 @@ export function normalOnEdge(face: Face, edge: Edge, s: number): Tuple | null {
     uv = c.Value(t0 + (c.LastParameter() - t0) * s);
     g.Normal(uv!.X(), uv!.Y(), p, n);
     const l = Math.hypot(n.X(), n.Y(), n.Z());
+
     return l > 0 ? [n.X() / l, n.Y() / l, n.Z() / l] : null;
   } catch {
     return null;
@@ -68,30 +70,38 @@ export function normalOnEdge(face: Face, edge: Edge, s: number): Tuple | null {
 const EPS = 1e-6;
 type Measurable = Shape3D | Face;
 
-function props(s: Measurable, kind: "volume" | "area") {
+function props(s: Measurable, kind: 'volume' | 'area') {
   const oc = getOC();
   const p = new oc.GProp_GProps();
   let ok = true;
   try {
-    const err = kind === "volume" ? oc.BRepGProp.VolumeProperties(s.wrapped, p, EPS, false, false) : oc.BRepGProp.SurfaceProperties(s.wrapped, p, EPS, false);
+    const err = kind === 'volume' ? oc.BRepGProp.VolumeProperties(s.wrapped, p, EPS, false, false) : oc.BRepGProp.SurfaceProperties(s.wrapped, p, EPS, false);
     ok = Number.isFinite(err) && Number.isFinite(p.Mass());
   } catch {
     ok = false;
   }
-  if (ok) return p;
+  if (ok) {
+    return p;
+  }
   // (Where the adaptive measure won't settle, the plain one.)
   p.delete();
   const q = new oc.GProp_GProps();
-  if (kind === "volume") oc.BRepGProp.VolumeProperties(s.wrapped, q, false, false, false);
-  else oc.BRepGProp.SurfaceProperties(s.wrapped, q, false, false);
+  if (kind === 'volume') {
+    oc.BRepGProp.VolumeProperties(s.wrapped, q, false, false, false);
+  } else {
+    oc.BRepGProp.SurfaceProperties(s.wrapped, q, false, false);
+  }
+
   return q;
 }
 
 /** The volume (signed: below 0 for a solid inside out), as replicad's but to a millionth. */
 export function measureVolume(s: Measurable): number {
   const own = ownSums(s);
-  if (own) return own.vol;
-  const p = props(s, "volume");
+  if (own) {
+    return own.vol;
+  }
+  const p = props(s, 'volume');
   try {
     return p.Mass();
   } finally {
@@ -109,22 +119,31 @@ export function measureVolume(s: Measurable): number {
 const quick = new WeakMap<object, number>();
 export function quickVolume(s: Measurable): number {
   const exact = measured.get(s);
-  if (exact) return exact.vol;
+  if (exact) {
+    return exact.vol;
+  }
   const had = quick.get(s);
-  if (had !== undefined) return had;
+  if (had !== undefined) {
+    return had;
+  }
   const oc = getOC();
   let v = NaN;
   const p = new oc.GProp_GProps();
   try {
     const err = oc.BRepGProp.VolumeProperties(s.wrapped, p, 1e-3, false, false);
-    if (Number.isFinite(err)) v = p.Mass();
+    if (Number.isFinite(err)) {
+      v = p.Mass();
+    }
   } catch {
     // The plain one, below.
   } finally {
     p.delete();
   }
-  if (!Number.isFinite(v)) v = roughVolume(s);
+  if (!Number.isFinite(v)) {
+    v = roughVolume(s);
+  }
   quick.set(s, v);
+
   return v;
 }
 
@@ -139,6 +158,7 @@ export function roughVolume(s: Measurable): number {
   const q = new oc.GProp_GProps();
   try {
     oc.BRepGProp.VolumeProperties(s.wrapped, q, false, false, false);
+
     return q.Mass();
   } finally {
     q.delete();
@@ -163,7 +183,7 @@ const GAUSS: [number, number][] = [
   [-0.5384693101056831, 0.4786286704993665],
   [0, 0.5688888888888889],
   [0.5384693101056831, 0.4786286704993665],
-  [0.906179845938664, 0.2369268850561891],
+  [0.906179845938664, 0.2369268850561891]
 ];
 
 function sweptFace(f: Face): boolean {
@@ -172,6 +192,7 @@ function sweptFace(f: Face): boolean {
   const a = new oc.BRepAdaptor_Surface(f.wrapped, true);
   try {
     const t = a.GetType();
+
     return t === T.GeomAbs_SurfaceOfExtrusion || t === T.GeomAbs_SurfaceOfRevolution || t === T.GeomAbs_OffsetSurface || t === T.GeomAbs_OtherSurface;
   } finally {
     a.delete();
@@ -182,10 +203,15 @@ function sweptFace(f: Face): boolean {
 function pieces(a: number, b: number, joints: number[], k: number): number[] {
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
-  const at = [lo, ...joints.filter((x) => x > lo + 1e-12 * (1 + Math.abs(lo)) && x < hi - 1e-12 * (1 + Math.abs(hi))), hi];
+  const at = [lo, ...joints.filter(x => x > lo + 1e-12 * (1 + Math.abs(lo)) && x < hi - 1e-12 * (1 + Math.abs(hi))), hi];
   const out: number[] = [];
-  for (let i = 0; i + 1 < at.length; i++) for (let j = 0; j < k; j++) out.push(at[i] + ((at[i + 1] - at[i]) * j) / k);
+  for (let i = 0; i + 1 < at.length; i++) {
+    for (let j = 0; j < k; j++) {
+      out.push(at[i] + ((at[i + 1] - at[i]) * j) / k);
+    }
+  }
   out.push(hi);
+
   return a <= b ? out : out.reverse();
 }
 
@@ -208,7 +234,10 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
     try {
       fill(arr);
       const out: number[] = [];
-      for (let i = 1; i <= count + 1; i++) out.push(arr.Value(i));
+      for (let i = 1; i <= count + 1; i++) {
+        out.push(arr.Value(i));
+      }
+
       return out;
     } finally {
       arr.delete();
@@ -225,10 +254,10 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
     const nv = surf.NbVIntervals(S);
     const alongV = nv < nu;
     const w0 = alongV ? surf.FirstVParameter() : surf.FirstUParameter();
-    const joints = alongV ? intervals(nv, (a) => surf.VIntervals(a, S)) : intervals(nu, (a) => surf.UIntervals(a, S));
+    const joints = alongV ? intervals(nv, a => surf.VIntervals(a, S)) : intervals(nu, a => surf.UIntervals(a, S));
     // The surface's joints the other way: where the outline crosses one, the
     // sums bend there, so the outline is cut there too.
-    const across = (alongV ? intervals(nu, (a) => surf.UIntervals(a, S)) : intervals(nv, (a) => surf.VIntervals(a, S))).slice(1, -1);
+    const across = (alongV ? intervals(nu, a => surf.UIntervals(a, S)) : intervals(nv, a => surf.VIntervals(a, S))).slice(1, -1);
     for (; ex.More(); ex.Next()) {
       const cur = ex.Current();
       const e = oc.TopoDS.Edge(cur);
@@ -236,11 +265,14 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
       const c = new oc.BRepAdaptor_Curve2d(e, f.wrapped);
       e.delete();
       cur.delete();
-      const tJoints = intervals(c.NbIntervals(S), (a) => c.Intervals(a, S));
+      const tJoints = intervals(c.NbIntervals(S), a => c.Intervals(a, S));
       edges.push({ c, sign, t0: c.FirstParameter(), t1: c.LastParameter(), joints: tJoints });
-      if (!across.length) continue;
+      if (!across.length) {
+        continue;
+      }
       const other = (t: number) => {
         c.D1(t, q, d);
+
         return alongV ? q.X() : q.Y();
       };
       const base = [...tJoints];
@@ -253,21 +285,29 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
           const tb = base[i] + ((base[i + 1] - base[i]) * j) / N;
           const ob = other(tb);
           for (const J of across) {
-            if ((oa - J) * (ob - J) >= 0) continue;
+            if ((oa - J) * (ob - J) >= 0) {
+              continue;
+            }
             let [lo, hi, flo, fhi] = [ta, tb, oa - J, ob - J];
             let side = 0;
             let t = lo;
             for (let it = 0; it < 60; it++) {
               t = (lo * fhi - hi * flo) / (fhi - flo);
               const ft = other(t) - J;
-              if (Math.abs(ft) <= 1e-13 * (1 + Math.abs(J)) || hi - lo <= 1e-14 * (1 + Math.abs(hi))) break;
+              if (Math.abs(ft) <= 1e-13 * (1 + Math.abs(J)) || hi - lo <= 1e-14 * (1 + Math.abs(hi))) {
+                break;
+              }
               if (ft * flo < 0) {
                 [hi, fhi] = [t, ft];
-                if (side === -1) flo /= 2;
+                if (side === -1) {
+                  flo /= 2;
+                }
                 side = -1;
               } else {
                 [lo, flo] = [t, ft];
-                if (side === 1) fhi /= 2;
+                if (side === 1) {
+                  fhi /= 2;
+                }
                 side = 1;
               }
             }
@@ -300,8 +340,11 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
       const h = (wb - wa) / 2;
       const c = (wb + wa) / 2;
       for (const [x, wt] of GAUSS) {
-        if (alongV) g.Normal(o, c + h * x, p, n);
-        else g.Normal(c + h * x, o, p, n);
+        if (alongV) {
+          g.Normal(o, c + h * x, p, n);
+        } else {
+          g.Normal(c + h * x, o, p, n);
+        }
         const nx = n.X();
         const ny = n.Y();
         const nz = n.Z();
@@ -322,6 +365,7 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
         out[6] += ((dy * dy) / 2) * ny * wh;
         out[7] += ((dz * dz) / 2) * nz * wh;
       }
+
       return out;
     };
     const refine = (whole: Float64Array, wa: number, wb: number, o: number, tolA: number, depth: number) => {
@@ -329,7 +373,10 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
       const l = gauss(wa, m, o);
       const rr = gauss(m, wb, o);
       if ((Math.abs(l[0] + rr[0] - whole[0]) <= tolA && Math.abs(l[4] + rr[4] - whole[4]) <= tolA * size) || depth >= 20 || budget <= 0) {
-        for (let j = 0; j < 8; j++) r[j] += l[j] + rr[j];
+        for (let j = 0; j < 8; j++) {
+          r[j] += l[j] + rr[j];
+        }
+
         return;
       }
       const half = Math.max(tolA / 2, floor);
@@ -349,16 +396,24 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
         scale += Math.abs(got[0]);
       }
       if (rough) {
-        for (const got of parts) for (let j = 0; j < 8; j++) r[j] += got[j];
+        for (const got of parts) {
+          for (let j = 0; j < 8; j++) {
+            r[j] += got[j];
+          }
+        }
+
         return r;
       }
       const span = Math.abs(w - w0) || 1;
       const tol = scale * EPS * 0.1;
       floor = tol * 1e-3;
-      for (let i = 0; i + 1 < ws.length; i++) refine(parts[i], ws[i], ws[i + 1], o, (tol * Math.abs(ws[i + 1] - ws[i])) / span, 0);
+      for (let i = 0; i + 1 < ws.length; i++) {
+        refine(parts[i], ws[i], ws[i + 1], o, (tol * Math.abs(ws[i + 1] - ws[i])) / span, 0);
+      }
+
       return r;
     };
-    type Curve2d = (typeof edges)[number]["c"];
+    type Curve2d = (typeof edges)[number]['c'];
     const piece = (c: Curve2d, sign: number, a: number, b: number) => {
       const out = new Float64Array(8);
       const h = (b - a) / 2;
@@ -366,11 +421,16 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
       for (const [x, wt] of GAUSS) {
         c.D1(m + h * x, q, d);
         const dOther = alongV ? d.X() : d.Y();
-        if (dOther === 0) continue;
+        if (dOther === 0) {
+          continue;
+        }
         const got = alongV ? inner(q.Y(), q.X()) : inner(q.X(), q.Y());
         const f2 = sign * dOther * wt * h;
-        for (let j = 0; j < 8; j++) out[j] += got[j] * f2;
+        for (let j = 0; j < 8; j++) {
+          out[j] += got[j] * f2;
+        }
       }
+
       return out;
     };
     const add = (whole: Float64Array, c: Curve2d, sign: number, a: number, b: number, tolA: number, depth: number) => {
@@ -378,7 +438,10 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
       const l = piece(c, sign, a, m);
       const rr = piece(c, sign, m, b);
       if ((Math.abs(l[0] + rr[0] - whole[0]) <= tolA && Math.abs(l[4] + rr[4] - whole[4]) <= tolA * size) || depth >= 24 || budget <= 0) {
-        for (let j = 0; j < 8; j++) tot[j] += l[j] + rr[j];
+        for (let j = 0; j < 8; j++) {
+          tot[j] += l[j] + rr[j];
+        }
+
         return;
       }
       const half = Math.max(tolA / 2, tolArea * 1e-4);
@@ -398,18 +461,24 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
       // (Which way round the outline runs depends on the face's own way
       // round: the area must come out above 0.)
       const s = tot[0] < 0 ? -1 : 1;
+
       return { area: s * tot[0], m: [s * tot[1], s * tot[2], s * tot[3]], vol: s * tot[4], mv: [s * tot[5], s * tot[6], s * tot[7]] };
     };
     // (A face an offset closed to nothing - 1e-15 mm² - adds nothing: held
     // to a tenth of a millionth of its own no area, it never settled, 3 s each
     // in a split box's shell.)
     const first = sums();
-    if (Math.abs(first.area) < size * size * 1e-12) return first;
+    if (Math.abs(first.area) < size * size * 1e-12) {
+      return first;
+    }
     tolArea = Math.max(Math.abs(first.area), size * size * 1e-6) * EPS * 0.1;
     rough = false;
+
     return sums();
   } finally {
-    for (const e of edges) e.c.delete();
+    for (const e of edges) {
+      e.c.delete();
+    }
     ex.delete();
     d.delete();
     q.delete();
@@ -424,16 +493,21 @@ function faceSums(f: Face, R: Vec3, size: number): Sums {
 function ownSums(s: Measurable): (Sums & { R: Vec3 }) | null {
   // (Kept per shape: a shell's checks measure the same body several times.)
   const known = measured.get(s);
-  if (known !== undefined) return known;
+  if (known !== undefined) {
+    return known;
+  }
   const got = ownSumsNow(s);
   measured.set(s, got);
+
   return got;
 }
 const measured = new WeakMap<object, (Sums & { R: Vec3 }) | null>();
 
 function ownSumsNow(s: Measurable): (Sums & { R: Vec3 }) | null {
   const faces = s.faces;
-  if (!faces.some(sweptFace)) return null;
+  if (!faces.some(sweptFace)) {
+    return null;
+  }
   const b = s.boundingBox;
   const R = [...b.center] as Vec3;
   const size = Math.max(1e-9, Math.hypot(b.width, b.height, b.depth));
@@ -447,14 +521,17 @@ function ownSumsNow(s: Measurable): (Sums & { R: Vec3 }) | null {
       out.mv[j] += r.mv[j];
     }
   }
+
   return { ...out, R };
 }
 
 /** The area of all its faces, to a millionth. */
 export function measureArea(s: Measurable): number {
   const own = ownSums(s);
-  if (own) return own.area;
-  const p = props(s, "area");
+  if (own) {
+    return own.area;
+  }
+  const p = props(s, 'area');
   try {
     return p.Mass();
   } finally {
@@ -465,7 +542,9 @@ export function measureArea(s: Measurable): number {
 /** A face's area and its middle (centre of area), measured once - at the plain fineness (for showing, not for checks). */
 export function areaProperties(f: Face): { area: number; center: Vec3 } {
   const own = ownSums(f);
-  if (own) return { area: own.area, center: own.m.map((x) => x / own.area) as Vec3 };
+  if (own) {
+    return { area: own.area, center: own.m.map(x => x / own.area) as Vec3 };
+  }
   const oc = getOC();
   const p = new oc.GProp_GProps();
   oc.BRepGProp.SurfaceProperties(f.wrapped, p, false, false);
@@ -481,8 +560,10 @@ export function areaProperties(f: Face): { area: number; center: Vec3 } {
 /** Volume and centre of mass, to a millionth. */
 export function volumeProperties(s: Shape3D): { volume: number; centerOfMass: Vec3 } {
   const own = ownSums(s);
-  if (own) return { volume: own.vol, centerOfMass: own.mv.map((x, j) => own.R[j] + x / own.vol) as Vec3 };
-  const p = props(s, "volume");
+  if (own) {
+    return { volume: own.vol, centerOfMass: own.mv.map((x, j) => own.R[j] + x / own.vol) as Vec3 };
+  }
+  const p = props(s, 'volume');
   const c = p.CentreOfMass();
   try {
     return { volume: p.Mass(), centerOfMass: [c.X(), c.Y(), c.Z()] };

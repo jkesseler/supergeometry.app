@@ -1,15 +1,18 @@
 // Health checks for solids, shared by the engine's edit guard and the repair tool.
 
-import { cast, getOC, measureArea, type Edge, type Shape3D } from "replicad";
-import { meshFaces, meshOff } from "./meshing";
+import { cast, getOC, measureArea, type Edge, type Shape3D } from 'replicad';
+import { meshFaces, meshOff } from './meshing';
 
 /** OpenCascade's own check (self-crossing faces, bad edges…). */
 const validCache = new WeakMap<Shape3D, boolean>();
 export function shapeValid(shape: Shape3D): boolean {
   const known = validCache.get(shape);
-  if (known !== undefined) return known;
+  if (known !== undefined) {
+    return known;
+  }
   const ok = checkValid(shape);
   validCache.set(shape, ok);
+
   return ok;
 }
 
@@ -72,7 +75,10 @@ export function pinchedEdges(shape: Shape3D): number {
 
 function edgeUse(shape: Shape3D): { open: number[]; pinched: number } {
   let known = openCache.get(shape);
-  if (!known) openCache.set(shape, (known = findEdgeUse(shape)));
+  if (!known) {
+    openCache.set(shape, (known = findEdgeUse(shape)));
+  }
+
   return known;
 }
 
@@ -86,15 +92,18 @@ function findEdgeUse(shape: Shape3D): { open: number[]; pinched: number } {
   const oc = getOC();
   shape.faces.forEach((f, k) => {
     for (const fe of f.edges) {
-      const m = buckets.get(fe.hashCode)?.find((x) => x.e.isSame(fe));
+      const m = buckets.get(fe.hashCode)?.find(x => x.e.isSame(fe));
       // A seam (cylinder/torus) belongs to its face twice but is listed once.
-      if (m) m.n += oc.BRep_Tool.IsClosed(fe.wrapped, f.wrapped) ? 2 : 1;
+      if (m) {
+        m.n += oc.BRep_Tool.IsClosed(fe.wrapped, f.wrapped) ? 2 : 1;
+      }
       m?.faces.add(k);
     }
   });
   // A pole (where a revolved profile touches the axis) is a point-edge, not a gap.
   const all = [...buckets.values()].flat();
-  return { open: all.filter((x) => x.n < 2 && !oc.BRep_Tool.Degenerated(x.e.wrapped)).map((x) => x.i), pinched: all.filter((x) => x.faces.size > 2).length };
+
+  return { open: all.filter(x => x.n < 2 && !oc.BRep_Tool.Degenerated(x.e.wrapped)).map(x => x.i), pinched: all.filter(x => x.faces.size > 2).length };
 }
 
 /**
@@ -116,11 +125,14 @@ export function deepCopy(s: Shape3D): Shape3D {
   try {
     if (oc.BinTools.Write(s.wrapped, name, progress) && oc.BinTools.Read(read, name, progress) && !read.IsNull()) {
       oc.BRepTools.Clean(read, true);
+
       return cast(read) as Shape3D;
     }
   } catch (err) {
     // (The engine itself breaking down is not a copy that couldn't be made.)
-    if (typeof WebAssembly !== "undefined" && err instanceof WebAssembly.RuntimeError) throw err;
+    if (typeof WebAssembly !== 'undefined' && err instanceof WebAssembly.RuntimeError) {
+      throw err;
+    }
   } finally {
     try {
       oc.FS.unlink(name);
@@ -141,16 +153,17 @@ export function deepCopy(s: Shape3D): Shape3D {
   }
 }
 
-export function subShapes(s: Shape3D, kind: "SOLID" | "SHELL"): any[] {
+export function subShapes(s: Shape3D, kind: 'SOLID' | 'SHELL'): any[] {
   const oc = getOC();
-  const ex = new oc.TopExp_Explorer(s.wrapped, kind === "SOLID" ? oc.TopAbs_ShapeEnum.TopAbs_SOLID : oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  const ex = new oc.TopExp_Explorer(s.wrapped, kind === 'SOLID' ? oc.TopAbs_ShapeEnum.TopAbs_SOLID : oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   const out: any[] = [];
   for (; ex.More(); ex.Next()) {
     const item = ex.Current();
-    out.push(kind === "SOLID" ? oc.TopoDS.Solid(item) : oc.TopoDS.Shell(item));
+    out.push(kind === 'SOLID' ? oc.TopoDS.Solid(item) : oc.TopoDS.Shell(item));
     item.delete();
   }
   ex.delete();
+
   return out;
 }
 
@@ -158,14 +171,18 @@ export function subShapes(s: Shape3D, kind: "SOLID" | "SHELL"): any[] {
 const thinCache = new WeakMap<Shape3D, number>();
 export function hairThin(s: Shape3D): number {
   let known = thinCache.get(s);
-  if (known === undefined) thinCache.set(s, (known = countHairThin(s)));
+  if (known === undefined) {
+    thinCache.set(s, (known = countHairThin(s)));
+  }
+
   return known;
 }
 
 function countHairThin(s: Shape3D): number {
-  const areas = s.faces.map((f) => measureArea(f));
+  const areas = s.faces.map(f => measureArea(f));
   const total = areas.reduce((a, b) => a + b, 0);
-  return areas.filter((a) => a < total * 1e-7).length;
+
+  return areas.filter(a => a < total * 1e-7).length;
 }
 
 /** A solid's volume counted from a mesh of it (coarse, so the view's own finer mesh still gets made). */
@@ -179,5 +196,6 @@ export function meshVolume(s: Shape3D, size: number): number {
     const [i, j, l] = [3 * t[k], 3 * t[k + 1], 3 * t[k + 2]];
     v += p[i] * (p[j + 1] * p[l + 2] - p[j + 2] * p[l + 1]) - p[i + 1] * (p[j] * p[l + 2] - p[j + 2] * p[l]) + p[i + 2] * (p[j] * p[l + 1] - p[j + 1] * p[l]);
   }
+
   return v / 6;
 }

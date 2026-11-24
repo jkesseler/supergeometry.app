@@ -5,119 +5,179 @@
 // that would change is written so that it does not: its plain lengths get the unit they were typed in ("160 mm",
 // "od / 2 + 5 mm"). What is no length - a count, a factor, an angle - is left as it is.
 
-import { kindOfPath } from "./params";
-import { namesIn } from "./varAnchors";
-import type { ProjectDoc, Units, Variable } from "./types";
-import { UNIT_MM, valueAt } from "../units";
+import { UNIT_MM, valueAt } from '../units';
+import { kindOfPath } from './params';
+import { namesIn } from './varAnchors';
+import type { ProjectDoc, Units, Variable } from './types';
 
 const NUM = String.raw`(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?`;
 
 /** Rewrites the project's formulas for a change of unit (in place). Returns how many it could not keep as they were. */
 export function keepSizes(doc: ProjectDoc, from: Units, to: Units): { changed: number; lost: number } {
   const out = { changed: 0, lost: 0 };
-  if (from === to) return out;
+  if (from === to) {
+    return out;
+  }
   const sFrom = UNIT_MM[from];
   const sTo = UNIT_MM[to];
-  const old: Variable[] = doc.variables.map((v) => ({ ...v }));
+  const old: Variable[] = doc.variables.map(v => ({ ...v }));
   const vars = doc.variables;
   const same = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
   /** How a formula's size goes with the unit in use: 0 not at all, 1 in step with it; NaN neither (or it can't be read). */
   const degree = (text: string): number => {
     const a = valueAt(text, sFrom, vars);
     const b = valueAt(text, sFrom * 2, vars);
-    if (a === null || b === null) return NaN;
+    if (a === null || b === null) {
+      return NaN;
+    }
+
     return same(a, b) ? 0 : same(b, 2 * a) ? 1 : NaN;
   };
   /** One part of a sum, its size fixed to the unit it was typed in. */
   const pin = (term: string): string | null => {
     const want = valueAt(term, sFrom, vars);
-    if (want === null) return null;
+    if (want === null) {
+      return null;
+    }
     // (The spaces round it stay where they were.)
     const [, pre, core, post] = /^(\s*)(.*?)(\s*)$/s.exec(term)!;
-    const lead = new RegExp(String.raw`^(-?\s*${NUM})(\s*(?:[*/].*)?)$`, "is").exec(core);
+    const lead = new RegExp(String.raw`^(-?\s*${NUM})(\s*(?:[*/].*)?)$`, 'is').exec(core);
     const tries = [...(lead ? [`${lead[1]} ${from}${lead[2]}`] : []), `(${core}) ${from}`];
     for (const t of tries) {
       const got = valueAt(t, sTo, vars);
-      if (got !== null && same(got, want) && degree(t) === 0) return pre + t + post;
+      if (got !== null && same(got, want) && degree(t) === 0) {
+        return pre + t + post;
+      }
     }
+
     return null;
   };
   /** A formula with each part that goes with the unit fixed to it - into its brackets where a part is mixed. */
   const fixed = (expr: string): string => {
-    if (degree(expr) === 0) return expr;
+    if (degree(expr) === 0) {
+      return expr;
+    }
+
     return terms(expr)
       .map((t) => {
-        if (t.op) return t.text;
+        if (t.op) {
+          return t.text;
+        }
         const d = degree(t.text);
-        if (d === 0) return t.text;
+        if (d === 0) {
+          return t.text;
+        }
         const whole = d === 1 ? pin(t.text) : null;
-        if (whole) return whole;
+        if (whole) {
+          return whole;
+        }
         // Mixed (a length with its unit beside a plain one, inside brackets): each bracket's own parts.
         const inner = brackets(t.text, fixed);
+
         return degree(inner) === 1 ? (pin(inner) ?? inner) : inner;
       })
-      .join("");
+      .join('');
   };
   const rewrite = (expr: string, was: number | null): string => {
-    if (was === null) return expr;
+    if (was === null) {
+      return expr;
+    }
     const now = valueAt(expr, sTo, vars);
-    if (now !== null && same(now, was)) return expr;
+    if (now !== null && same(now, was)) {
+      return expr;
+    }
     const next = fixed(expr);
     const got = valueAt(next, sTo, vars);
     if (got !== null && same(got, was)) {
       out.changed++;
+
       return next;
     }
     // (Not a sum of plain parts - "a * b" of two lengths: the whole of it, if that is in step with the unit.)
     const whole = degree(expr) === 1 ? pin(expr) : null;
     if (whole) {
       out.changed++;
+
       return whole;
     }
     out.lost++;
+
     return expr;
   };
 
   // What each formula comes to now, before anything is touched.
   const before = new Map<string, number | null>();
-  for (const v of old) before.set(`v:${v.name}`, valueAt(v.expr, sFrom, old));
+  for (const v of old) {
+    before.set(`v:${v.name}`, valueAt(v.expr, sFrom, old));
+  }
   // Variables used as a count, a factor or an angle somewhere (and the ones those are made from) stay as they are:
   // "6" with a unit after it is no count. Where one of them is used as a length, that place is fixed instead.
   const plain = new Set<string>();
   const mark = (expr: string) => {
     for (const n of namesIn(expr)) {
-      if (plain.has(n)) continue;
-      const v = old.find((x) => x.name === n);
-      if (!v) continue;
+      if (plain.has(n)) {
+        continue;
+      }
+      const v = old.find(x => x.name === n);
+      if (!v) {
+        continue;
+      }
       plain.add(n);
       mark(v.expr);
     }
   };
   for (const f of doc.features) {
-    for (const [path, expr] of Object.entries(f.exprs ?? {})) if (kindOfPath(path) !== "length") mark(expr);
-    if (f.type === "sketch") for (const c of f.constraints ?? []) if (c.expr && c.prop === "angle") mark(c.expr);
+    for (const [path, expr] of Object.entries(f.exprs ?? {})) {
+      if (kindOfPath(path) !== 'length') {
+        mark(expr);
+      }
+    }
+    if (f.type === 'sketch') {
+      for (const c of f.constraints ?? []) {
+        if (c.expr && c.prop === 'angle') {
+          mark(c.expr);
+        }
+      }
+    }
   }
   // Variables first, each after the ones it is made from (so those are already as they will be).
   const done = new Set<string>();
   for (let pass = 0; pass <= vars.length; pass++) {
     for (const v of vars) {
-      if (done.has(v.name)) continue;
-      const needs = namesIn(v.expr).filter((n) => n !== v.name && vars.some((x) => x.name === n));
-      if (pass < vars.length && needs.some((n) => !done.has(n))) continue;
+      if (done.has(v.name)) {
+        continue;
+      }
+      const needs = namesIn(v.expr).filter(n => n !== v.name && vars.some(x => x.name === n));
+      if (pass < vars.length && needs.some(n => !done.has(n))) {
+        continue;
+      }
       done.add(v.name);
-      if (!plain.has(v.name)) v.expr = rewrite(v.expr, before.get(`v:${v.name}`) ?? null);
+      if (!plain.has(v.name)) {
+        v.expr = rewrite(v.expr, before.get(`v:${v.name}`) ?? null);
+      }
     }
   }
   // Then every size that follows a formula.
   const length = (expr: string) => rewrite(expr, valueAt(expr, sFrom, old));
   for (const f of doc.features) {
-    for (const [path, expr] of Object.entries(f.exprs ?? {})) if (kindOfPath(path) === "length") f.exprs![path] = length(expr);
-    if (f.type !== "sketch") continue;
+    for (const [path, expr] of Object.entries(f.exprs ?? {})) {
+      if (kindOfPath(path) === 'length') {
+        f.exprs![path] = length(expr);
+      }
+    }
+    if (f.type !== 'sketch') {
+      continue;
+    }
     for (const c of f.constraints ?? []) {
-      if (c.expr && c.prop !== "angle") c.expr = length(c.expr);
-      if (c.atExpr) c.atExpr = c.atExpr.map((e) => (e ? length(e) : e));
+      if (c.expr && c.prop !== 'angle') {
+        c.expr = length(c.expr);
+      }
+      if (c.atExpr) {
+        c.atExpr = c.atExpr.map(e => (e ? length(e) : e));
+      }
     }
   }
+
   return out;
 }
 
@@ -128,17 +188,22 @@ function terms(expr: string): { text: string; op: boolean }[] {
   let start = 0;
   for (let i = 0; i < expr.length; i++) {
     const c = expr[i];
-    if (c === "(") depth++;
-    else if (c === ")") depth--;
-    else if ((c === "+" || c === "-") && depth === 0) {
+    if (c === '(') {
+      depth++;
+    } else if (c === ')') {
+      depth--;
+    } else if ((c === '+' || c === '-') && depth === 0) {
       const before = expr.slice(start, i).trimEnd();
       // A sign, not a sum: at the start, after another operator, or the exponent of 1e-3.
-      if (!before || /[-+*/^(]$/.test(before) || (/\de$/i.test(before) && /^\d/.test(expr.slice(i + 1)))) continue;
+      if (!before || /[-+*/^(]$/.test(before) || (/\de$/i.test(before) && /^\d/.test(expr.slice(i + 1)))) {
+        continue;
+      }
       out.push({ text: expr.slice(start, i), op: false }, { text: c, op: true });
       start = i + 1;
     }
   }
   out.push({ text: expr.slice(start), op: false });
+
   return out;
 }
 
@@ -147,27 +212,28 @@ function terms(expr: string): { text: string; op: boolean }[] {
  * and max(...) one by one.
  */
 function brackets(text: string, each: (inner: string) => string): string {
-  let out = "";
+  let out = '';
   let depth = 0;
   let start = 0;
   let many = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (c === "(") {
+    if (c === '(') {
       if (depth++ === 0) {
         many = /\b(min|max)\s*$/i.test(text.slice(0, i));
         out += text.slice(start, i + 1);
         start = i + 1;
       }
-    } else if (c === ")") {
+    } else if (c === ')') {
       if (--depth === 0) {
         out += each(text.slice(start, i));
         start = i;
       }
-    } else if ((c === "," || c === ";") && depth === 1 && many) {
+    } else if ((c === ',' || c === ';') && depth === 1 && many) {
       out += each(text.slice(start, i)) + c;
       start = i + 1;
     }
   }
+
   return out + text.slice(start);
 }

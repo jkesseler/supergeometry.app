@@ -5,10 +5,10 @@
 // round, taken away), the pipe's foot filleted onto the flange. Then the bend
 // changed at the start - 60°, 135°, a tighter radius - and every step after
 // follows.
-import type { Shape3D } from "replicad";
-import { after, bodies, check, circle, done, health, near, sketch, XY, XZ, profile } from "./kit";
-import { measureVolume } from "../src/kernel/ocFree";
-import type { Feature, SketchEntity, Vec3 } from "../src/doc/types";
+import { measureVolume } from '../src/kernel/ocFree';
+import { after, bodies, check, circle, done, health, near, sketch, XY, XZ, profile } from './kit';
+import type { Shape3D } from 'replicad';
+import type { Feature, SketchEntity, Vec3 } from '../src/doc/types';
 
 const vol = (id: string) => Math.abs(measureVolume(bodies().get(id) as Shape3D));
 const PI = Math.PI;
@@ -22,25 +22,26 @@ let last: any;
 const edgeAt = (body: string, pick: (m: Vec3) => boolean) =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (last.bodies.find((b: any) => b.id === body).edges as any[])
-    .filter((e) => pick(e.mid))
-    .map((e) => ({ body, mid: e.mid, dir: e.dir, length: e.length, ...(e.steps ? { steps: e.steps } : {}), ...(e.curves ? { curves: e.curves } : {}) }));
+    .filter(e => pick(e.mid))
+    .map(e => ({ body, mid: e.mid, dir: e.dir, length: e.length, ...(e.steps ? { steps: e.steps } : {}), ...(e.curves ? { curves: e.curves } : {}) }));
 
 function start(R: number, deg: number): Feature[] {
   const th = (deg * PI) / 180;
   // The bend in the front plane (its x out, its y up): from the origin, up, round to +x.
-  const path = [{ id: "bend", kind: "arc", a: [0, 0], m: [R - R * Math.cos(th / 2), R * Math.sin(th / 2)], b: [R - R * Math.cos(th), R * Math.sin(th)] } as SketchEntity];
-  const ring = [circle("o", 0, 0, RO), circle("i", 0, 0, RI)];
-  const flange = [circle("fo", 0, 0, RFL), circle("fi", 0, 0, RI)];
+  const path = [{ id: 'bend', kind: 'arc', a: [0, 0], m: [R - R * Math.cos(th / 2), R * Math.sin(th / 2)], b: [R - R * Math.cos(th), R * Math.sin(th)] } as SketchEntity];
+  const ring = [circle('o', 0, 0, RO), circle('i', 0, 0, RI)];
+  const flange = [circle('fo', 0, 0, RFL), circle('fi', 0, 0, RI)];
+
   return [
-    sketch("sPath", XZ(), path),
-    sketch("sRing", XY(), ring),
+    sketch('sPath', XZ(), path),
+    sketch('sRing', XY(), ring),
     // (The ring only: not the hole inside it.)
-    { id: "pipe", name: "Sweep", type: "sweep", source: profile("sRing", ring, (rs) => rs.filter((r) => near(r.a, PI * (RO * RO - RI * RI), 2))), path: { kind: "sketch", sketch: "sPath", entities: ["bend"] }, mode: "new" } as Feature,
-    sketch("sFlange", XY(), flange),
-    { id: "flange", name: "Flange", type: "extrude", source: profile("sFlange", flange, (rs) => rs.filter((r) => near(r.a, PI * (RFL * RFL - RI * RI), 2))), distance: -TF, mode: "join", target: "pipe" } as Feature,
-    sketch("sPin", XY(-TF - 1), [circle("p", RBC, 0, RH)]),
-    { id: "pin", name: "Pin", type: "extrude", source: profile("sPin", [circle("p", RBC, 0, RH)]), distance: TF + 1.5, mode: "new" } as Feature,
-    { id: "pins", name: "Pins", type: "transform", bodies: ["pin"], copy: true, op: { kind: "circular", axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, count: 4, angle: 360 } } as Feature,
+    { id: 'pipe', name: 'Sweep', type: 'sweep', source: profile('sRing', ring, rs => rs.filter(r => near(r.a, PI * (RO * RO - RI * RI), 2))), path: { kind: 'sketch', sketch: 'sPath', entities: ['bend'] }, mode: 'new' } as Feature,
+    sketch('sFlange', XY(), flange),
+    { id: 'flange', name: 'Flange', type: 'extrude', source: profile('sFlange', flange, rs => rs.filter(r => near(r.a, PI * (RFL * RFL - RI * RI), 2))), distance: -TF, mode: 'join', target: 'pipe' } as Feature,
+    sketch('sPin', XY(-TF - 1), [circle('p', RBC, 0, RH)]),
+    { id: 'pin', name: 'Pin', type: 'extrude', source: profile('sPin', [circle('p', RBC, 0, RH)]), distance: TF + 1.5, mode: 'new' } as Feature,
+    { id: 'pins', name: 'Pins', type: 'transform', bodies: ['pin'], copy: true, op: { kind: 'circular', axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, count: 4, angle: 360 } } as Feature
   ];
 }
 
@@ -49,33 +50,34 @@ async function run(label: string, R: number, deg: number, more: Feature[] | null
   const vPipe = PI * (RO * RO - RI * RI) * R * th;
   let fs = start(R, deg).slice(0, 3);
   let { errors, r } = await after(fs);
-  check(`${label}: the ring swept round ${deg}° at ${R} (Pappus)`, !errors.length && near(vol("pipe"), vPipe, 1e-6 * vPipe), [errors, vol("pipe"), vPipe]);
+  check(`${label}: the ring swept round ${deg}° at ${R} (Pappus)`, !errors.length && near(vol('pipe'), vPipe, 1e-6 * vPipe), [errors, vol('pipe'), vPipe]);
   const vFl = vPipe + PI * (RFL * RFL - RI * RI) * TF;
   fs = start(R, deg).slice(0, 5);
   ({ errors } = await after(fs));
-  check(`${label}: the flange joined below it`, !errors.length && bodies().size === 1 && near(vol("pipe"), vFl, 1e-6 * vFl), [errors, [...bodies().keys()], vol("pipe"), vFl]);
+  check(`${label}: the flange joined below it`, !errors.length && bodies().size === 1 && near(vol('pipe'), vFl, 1e-6 * vFl), [errors, [...bodies().keys()], vol('pipe'), vFl]);
   fs = start(R, deg);
   ({ errors } = await after(fs));
-  const pins = [...bodies().keys()].filter((k) => k.startsWith("pin"));
+  const pins = [...bodies().keys()].filter(k => k.startsWith('pin'));
   check(`${label}: four pins round`, !errors.length && pins.length === 4, [errors, pins]);
-  fs.push(more ? more[0] : ({ id: "bolts", name: "Bolt holes", type: "boolean", op: "subtract", target: "pipe", tools: pins } as Feature));
+  fs.push(more ? more[0] : ({ id: 'bolts', name: 'Bolt holes', type: 'boolean', op: 'subtract', target: 'pipe', tools: pins } as Feature));
   ({ errors, r } = await after(fs));
   last = r;
   const vHoles = vFl - 4 * PI * RH * RH * TF;
-  check(`${label}: four bolt holes`, !errors.length && bodies().size === 1 && near(vol("pipe"), vHoles, 1e-6 * vHoles), [errors, [...bodies().keys()], vol("pipe"), vHoles]);
-  fs.push(more ? more[1] : ({ id: "foot", name: "Fillet", type: "fillet", edges: edgeAt("pipe", (m) => near(m[2], 0, 1e-6) && near(Math.hypot(m[0], m[1]), RO, 1e-4)), radius: RF } as Feature));
+  check(`${label}: four bolt holes`, !errors.length && bodies().size === 1 && near(vol('pipe'), vHoles, 1e-6 * vHoles), [errors, [...bodies().keys()], vol('pipe'), vHoles]);
+  fs.push(more ? more[1] : ({ id: 'foot', name: 'Fillet', type: 'fillet', edges: edgeAt('pipe', m => near(m[2], 0, 1e-6) && near(Math.hypot(m[0], m[1]), RO, 1e-4)), radius: RF } as Feature));
   ({ errors } = await after(fs));
   // (Round a straight pipe it would add a quarter-round's corner turned at its centroid; the bend starts at once, so about that.)
   const add = RF * RF * (1 - PI / 4) * 2 * PI * (RO + (RF * (10 - 3 * PI)) / (3 * (4 - PI)));
-  const got = vol("pipe") - vHoles;
+  const got = vol('pipe') - vHoles;
   check(`${label}: the pipe's foot filleted onto the flange`, !errors.length && got > add * 0.9 && got < add * 1.1, [errors, got, add]);
-  const h = health(bodies().get("pipe") as Shape3D, "pipe");
+  const h = health(bodies().get('pipe') as Shape3D, 'pipe');
   check(`${label}: sound, one body`, h.healthy && bodies().size === 1, h.healthy ? `${Math.round(h.volume)} mm³` : h);
+
   return fs.slice(-2);
 }
 
-const later = await run("first", 40, 90, null);
-await run("60°", 40, 60, later);
-await run("135°", 40, 135, later);
-await run("tighter", 25, 90, later);
+const later = await run('first', 40, 90, null);
+await run('60°', 40, 60, later);
+await run('135°', 40, 135, later);
+await run('tighter', 25, 90, later);
 done();

@@ -7,12 +7,12 @@
 // face scaling, extrusions from faces. A step may fail with a message (that's
 // fine: "can't do that"). A step that succeeds must leave every body a single,
 // valid, closed solid with a sane volume and no hair-thin faces.
-import opencascade from "replicad-opencascadejs";
-import { getOC, measureArea, setOC, type Shape3D } from "replicad";
-import { writeFileSync } from "node:fs";
-import { debugBodies, regenerate } from "../src/kernel/engine";
-import type { Feature } from "../src/doc/types";
-import { base, problems, randomStep, rng, solids } from "./fuzzkit";
+import { writeFileSync } from 'node:fs';
+import opencascade from 'replicad-opencascadejs';
+import { getOC, measureArea, setOC, type Shape3D } from 'replicad';
+import { debugBodies, regenerate } from '../src/kernel/engine';
+import { base, problems, randomStep, rng, solids } from './fuzzkit';
+import type { Feature } from '../src/doc/types';
 
 setOC(await (opencascade as unknown as () => Promise<any>)());
 const oc = getOC();
@@ -43,7 +43,9 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
   const size = Math.max(...res.bodies[0].faces.map((f: any) => Math.max(...f.center.map(Math.abs)))) * 2 || 20;
   for (let st = 0; st < STEPS; st++) {
     const step = randomStep(R, st, res, size);
-    if (!step) continue;
+    if (!step) {
+      continue;
+    }
     const prevSolids = new Map(debugBodies());
     // What every body looks like now (its faces' areas): a step must never change an earlier result.
     // (A face whose area can't even be measured shows up as "?" - and as a failure below.)
@@ -51,13 +53,13 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
       try {
         return measureArea(f).toFixed(4);
       } catch {
-        return "?";
+        return '?';
       }
     };
-    const sig = (m: Map<string, Shape3D>) => [...m].map(([k, v]) => `${k}:${v.faces.map(area).join(",")}`).join("|");
+    const sig = (m: Map<string, Shape3D>) => [...m].map(([k, v]) => `${k}:${v.faces.map(area).join(',')}`).join('|');
     const sigBefore = sig(prevSolids);
-    if (sigBefore.includes("?")) {
-      failures.push({ scenario: sc, step: "(earlier step)", problems: ["a body has a face whose area can't be measured"], features });
+    if (sigBefore.includes('?')) {
+      failures.push({ scenario: sc, step: '(earlier step)', problems: ["a body has a face whose area can't be measured"], features });
       break;
     }
     const next = [...features, step];
@@ -69,14 +71,20 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
       break;
     }
     const err = r.errors.find((e: any) => e.featureId === step.id);
-    if (!err && (r.notes ?? []).some((n: any) => n.featureId === step.id && /Repaired automatically/.test(n.message))) repaired.push(step.name);
+    if (!err && (r.notes ?? []).some((n: any) => n.featureId === step.id && /Repaired automatically/.test(n.message))) {
+      repaired.push(step.name);
+    }
     if (sig(prevSolids) !== sigBefore) {
       failures.push({ scenario: sc, step: step.name, problems: ["changed an earlier step's result"], features: next });
-      console.log(`FAIL scenario ${sc} step ${st} (${step.name}): changed an earlier step's result${err ? " (refused)" : ""}`);
+      console.log(`FAIL scenario ${sc} step ${st} (${step.name}): changed an earlier step's result${err ? ' (refused)' : ''}`);
       break;
     }
-    if (ONLY !== null) console.log(`  step ${st} ${step.name}: ${err ? "refused: " + err.message : "ok"} | ${r.bodies.map((b: any) => b.id + ":" + b.faces.length + "f").join(" ")}`);
-    if (ONLY !== null && process.env.BREAKIT_DUMP) writeFileSync(`${process.env.BREAKIT_DUMP}-${st}.json`, JSON.stringify(next));
+    if (ONLY !== null) {
+      console.log(`  step ${st} ${step.name}: ${err ? 'refused: ' + err.message : 'ok'} | ${r.bodies.map((b: any) => b.id + ':' + b.faces.length + 'f').join(' ')}`);
+    }
+    if (ONLY !== null && process.env.BREAKIT_DUMP) {
+      writeFileSync(`${process.env.BREAKIT_DUMP}-${st}.json`, JSON.stringify(next));
+    }
     if (err) {
       refused++;
       refusedBy[step.name] = (refusedBy[step.name] ?? 0) + 1;
@@ -88,15 +96,19 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
     const bad: string[] = [];
     for (const b of r.bodies) {
       const s = solidsNow.get(b.id);
-      if (!s) continue;
-      const mayPart = step.type === "boolean" || step.type === "split" || (step.type === "extrude" && !(step.source.kind === "face" && step.target === step.source.face.body && step.mode !== "new"));
+      if (!s) {
+        continue;
+      }
+      const mayPart = step.type === 'boolean' || step.type === 'split' || (step.type === 'extrude' && !(step.source.kind === 'face' && step.target === step.source.face.body && step.mode !== 'new'));
       const prev = prevSolids.get(b.id);
       const p = problems(s, b.openEdges.length, mayPart, prev ? solids(prev) : 1);
-      if (p.length) bad.push(`${b.name}: ${p.join(", ")}`);
+      if (p.length) {
+        bad.push(`${b.name}: ${p.join(', ')}`);
+      }
     }
     if (bad.length) {
       failures.push({ scenario: sc, step: step.name, problems: bad, features: next });
-      console.log(`FAIL scenario ${sc} step ${st} (${step.name}): ${bad.join("; ")}`);
+      console.log(`FAIL scenario ${sc} step ${st} (${step.name}): ${bad.join('; ')}`);
       break;
     }
     ok++;
@@ -105,12 +117,23 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
   }
 }
 // Only when asked (BREAKIT_OUT=file), so a normal run leaves nothing behind.
-if (process.env.BREAKIT_OUT) writeFileSync(process.env.BREAKIT_OUT, JSON.stringify(failures, null, 1));
-if (repaired.length) console.log(`${repaired.length} edits saved by the automatic repair (${[...new Set(repaired)].join(", ")})`);
+if (process.env.BREAKIT_OUT) {
+  writeFileSync(process.env.BREAKIT_OUT, JSON.stringify(failures, null, 1));
+}
+if (repaired.length) {
+  console.log(`${repaired.length} edits saved by the automatic repair (${[...new Set(repaired)].join(', ')})`);
+}
 console.log(`${ok} edits ok, ${refused} refused (${JSON.stringify(refusedBy)}), ${failures.length} broke the model`);
 const byStep: Record<string, number> = {};
-for (const f of failures) byStep[f.step] = (byStep[f.step] ?? 0) + 1;
-console.log("broken by:", JSON.stringify(byStep));
-if (process.env.BREAKIT_WHY)
-  for (const [k, n] of Object.entries(refusedWhy).sort((a, b) => b[1] - a[1]).slice(0, 25)) console.log(`  ${n}× ${k}`);
-if (failures.length) process.exit(1);
+for (const f of failures) {
+  byStep[f.step] = (byStep[f.step] ?? 0) + 1;
+}
+console.log('broken by:', JSON.stringify(byStep));
+if (process.env.BREAKIT_WHY) {
+  for (const [k, n] of Object.entries(refusedWhy).sort((a, b) => b[1] - a[1]).slice(0, 25)) {
+    console.log(`  ${n}× ${k}`);
+  }
+}
+if (failures.length) {
+  process.exit(1);
+}

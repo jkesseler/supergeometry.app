@@ -1,7 +1,7 @@
 // Messages between the main thread and the kernel worker. This file is the
 // whole contract: the UI never touches kernel objects directly.
 
-import type { Feature, PlaneDef, SketchEntity, Vec3 } from "../doc/types";
+import type { Feature, PlaneDef, SketchEntity, Vec3 } from '../doc/types';
 
 export interface FaceInfo {
   center: Vec3;
@@ -172,24 +172,24 @@ export interface ProjectedView {
 }
 
 /** "mesh": each body as triangles, as finely as an STL (for a 3MF), JSON: { id, positions, indices }[]. */
-export type ExportFormat = "stl" | "step" | "mesh";
+export type ExportFormat = 'stl' | 'step' | 'mesh';
 
 export type Request =
-  | { type: "init" }
-  | { type: "regenerate"; features: Feature[]; saved?: boolean }
-  | { type: "export"; features: Feature[]; format: ExportFormat; bodies?: string[] }
-  | { type: "properties"; features: Feature[] }
-  | { type: "health"; features: Feature[] }
-  | { type: "drawing"; features: Feature[]; views: ViewSpec[]; bodies?: string[] };
+  | { type: 'init' }
+  | { type: 'regenerate'; features: Feature[]; saved?: boolean }
+  | { type: 'export'; features: Feature[]; format: ExportFormat; bodies?: string[] }
+  | { type: 'properties'; features: Feature[] }
+  | { type: 'health'; features: Feature[] }
+  | { type: 'drawing'; features: Feature[]; views: ViewSpec[]; bodies?: string[] };
 
 export type Response =
-  | { type: "ready" }
-  | { type: "regenerated"; result: RegenResult }
-  | { type: "exported"; blob: Blob }
-  | { type: "properties"; bodies: BodyProps[] }
-  | { type: "health"; bodies: BodyHealth[] }
-  | { type: "drawing"; views: ProjectedView[] }
-  | { type: "error"; message: string };
+  | { type: 'ready' }
+  | { type: 'regenerated'; result: RegenResult }
+  | { type: 'exported'; blob: Blob }
+  | { type: 'properties'; bodies: BodyProps[] }
+  | { type: 'health'; bodies: BodyHealth[] }
+  | { type: 'drawing'; views: ProjectedView[] }
+  | { type: 'error'; message: string };
 
 export interface Envelope<T> {
   id: number;

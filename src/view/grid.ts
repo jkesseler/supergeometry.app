@@ -1,6 +1,6 @@
-import { DoubleSide, Matrix4, Mesh, PlaneGeometry, ShaderMaterial, Vector3 } from "three";
-import type { PlaneDef } from "../doc/types";
-import { planeY } from "../geom";
+import { DoubleSide, Matrix4, Mesh, PlaneGeometry, ShaderMaterial, Vector3 } from 'three';
+import { planeY } from '../geom';
+import type { PlaneDef } from '../doc/types';
 
 /**
  * Infinite-looking grid that adapts its spacing to the zoom level, or stays at a locked step. It lies on the ground,
@@ -15,6 +15,7 @@ import { planeY } from "../geom";
 export function squareFor(raw: number): number {
   const p = Math.pow(10, Math.floor(Math.log10(raw)));
   const m = raw / p;
+
   return (m <= 1 + 1e-9 ? 1 : m <= 5 ? 5 : 10) * p;
 }
 
@@ -39,7 +40,7 @@ export class AdaptiveGrid {
         uCenter: { value: [0, 0] },
         uRadius: { value: 100 },
         // Quad centre (u, v) on the plane and its size: turns quad coords into plane coords.
-        uLocal: { value: [0, 0, 1] },
+        uLocal: { value: [0, 0, 1] }
       },
       vertexShader: /* glsl */ `
         uniform vec3 uLocal;
@@ -69,7 +70,7 @@ export class AdaptiveGrid {
           a *= 1.0 - smoothstep(0.55, 1.0, d);
           if (a < 0.01) discard;
           gl_FragColor = vec4(vec3(0.78), a);
-        }`,
+        }`
     });
     this.mesh = new Mesh(new PlaneGeometry(1, 1), this.material);
     this.mesh.renderOrder = -1;

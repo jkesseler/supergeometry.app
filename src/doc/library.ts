@@ -3,7 +3,7 @@
 // live in the browser's storage for this site: More → Update leaves
 // them alone; clearing the site's data in the browser's settings removes them.
 
-import { idbDel, idbGet, idbSet } from "./store";
+import { idbDel, idbGet, idbSet } from './store';
 
 export interface LibraryEntry {
   id: string;
@@ -16,8 +16,8 @@ export interface LibraryEntry {
   size: number;
 }
 
-const INDEX = "library";
-const CURRENT = "library-current";
+const INDEX = 'library';
+const CURRENT = 'library-current';
 const docKey = (id: string) => `project:${id}`;
 
 export function newProjectId(): string {
@@ -27,7 +27,8 @@ export function newProjectId(): string {
 /** The projects, newest first. */
 export async function libraryEntries(): Promise<LibraryEntry[]> {
   try {
-    const list = JSON.parse((await idbGet(INDEX)) ?? "[]") as LibraryEntry[];
+    const list = JSON.parse((await idbGet(INDEX)) ?? '[]') as LibraryEntry[];
+
     return Array.isArray(list) ? list.sort((a, b) => b.modified - a.modified) : [];
   } catch {
     return [];
@@ -39,6 +40,7 @@ let queue: Promise<unknown> = Promise.resolve();
 function editIndex(fn: (list: LibraryEntry[]) => LibraryEntry[]): Promise<void> {
   const run = queue.then(async () => idbSet(INDEX, JSON.stringify(fn(await libraryEntries()))));
   queue = run.catch(() => undefined);
+
   return run;
 }
 
@@ -54,9 +56,10 @@ export function setCurrentProject(id: string): Promise<void> {
 export async function keepProject(id: string, name: string, text: string, thumb?: string): Promise<void> {
   await idbSet(docKey(id), text);
   await editIndex((list) => {
-    const was = list.find((e) => e.id === id);
+    const was = list.find(e => e.id === id);
     const entry: LibraryEntry = { id, name, modified: Date.now(), thumb: thumb ?? was?.thumb, size: text.length };
-    return [entry, ...list.filter((e) => e.id !== id)];
+
+    return [entry, ...list.filter(e => e.id !== id)];
   });
   askToKeepStorage();
 }
@@ -77,11 +80,11 @@ export async function renameProject(id: string, name: string): Promise<void> {
       // unreadable: the list's name still changes
     }
   }
-  await editIndex((list) => list.map((e) => (e.id === id ? { ...e, name } : e)));
+  await editIndex(list => list.map(e => (e.id === id ? { ...e, name } : e)));
 }
 
 export async function forgetProject(id: string): Promise<void> {
-  await editIndex((list) => list.filter((e) => e.id !== id));
+  await editIndex(list => list.filter(e => e.id !== id));
   await idbDel(docKey(id));
 }
 
@@ -92,7 +95,9 @@ export async function forgetProject(id: string): Promise<void> {
  */
 let asked = false;
 function askToKeepStorage(): void {
-  if (asked) return;
+  if (asked) {
+    return;
+  }
   asked = true;
   try {
     void navigator.storage?.persist?.();

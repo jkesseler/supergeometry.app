@@ -1,13 +1,13 @@
-import { mouseChord, mouseDrag, settings } from "../settings";
-import { isHeadset, pickTolerance } from "../device";
+import { mouseChord, mouseDrag, settings } from '../settings';
+import { isHeadset, pickTolerance } from '../device';
 // One input model for mouse, touch and pen (see docs/ARCHITECTURE.md §5).
 
-import type { Viewport } from "./viewport";
+import type { Viewport } from './viewport';
 
 export interface ToolPointer {
   x: number;
   y: number;
-  type: "mouse" | "pen" | "touch";
+  type: 'mouse' | 'pen' | 'touch';
   shift: boolean;
   /** Ctrl/Cmd/Shift held at press: add to the selection. */
   add?: boolean;
@@ -52,7 +52,7 @@ const DOUBLE_TAP_MS = 350;
 
 interface Tracked {
   id: number;
-  type: ToolPointer["type"];
+  type: ToolPointer['type'];
   x0: number;
   y0: number;
   x: number;
@@ -66,18 +66,20 @@ interface Tracked {
 export class InputRouter {
   handler: PointerHandler = {};
   private pointers = new Map<number, Tracked>();
-  private mode: "idle" | "pending" | "captured" | "orbit" | "pan" | "zoom" | "pinch" | "box" | "ended" | "rpending" = "idle";
+  private mode: 'idle' | 'pending' | 'captured' | 'orbit' | 'pan' | 'zoom' | 'pinch' | 'box' | 'ended' | 'rpending' = 'idle';
 
   /** A tool is holding a drag (keys typed now go to it). */
   get dragging(): boolean {
-    return this.mode === "captured";
+    return this.mode === 'captured';
   }
 
   /** The drag was finished from the keyboard: ignore the rest until release. */
   endDrag(): void {
-    if (this.mode === "captured") this.mode = "ended";
+    if (this.mode === 'captured') {
+      this.mode = 'ended';
+    }
   }
-  private marquee = document.createElement("div");
+  private marquee = document.createElement('div');
   private modifiers = false;
   private penDown = false;
   private lastPinch: { d: number; cx: number; cy: number } | null = null;
@@ -85,32 +87,35 @@ export class InputRouter {
 
   constructor(private view: Viewport) {
     const el = view.canvas;
-    el.style.touchAction = "none";
-    this.marquee.id = "marquee";
+    el.style.touchAction = 'none';
+    this.marquee.id = 'marquee';
     this.marquee.hidden = true;
     document.body.append(this.marquee);
-    el.addEventListener("pointerdown", (e) => this.onDown(e));
-    el.addEventListener("pointermove", (e) => this.onMove(e));
-    el.addEventListener("pointerup", (e) => this.onUp(e));
-    el.addEventListener("pointercancel", (e) => this.onCancel(e));
-    el.addEventListener("pointerleave", (e) => {
+    el.addEventListener('pointerdown', e => this.onDown(e));
+    el.addEventListener('pointermove', e => this.onMove(e));
+    el.addEventListener('pointerup', e => this.onUp(e));
+    el.addEventListener('pointercancel', e => this.onCancel(e));
+    el.addEventListener('pointerleave', (e) => {
       // A hover still queued for the next frame would bring back what this clears.
       this.hoverAt = null;
-      if (e.pointerType !== "touch" && this.mode === "idle") this.handler.hover?.(null);
+      if (e.pointerType !== 'touch' && this.mode === 'idle') {
+        this.handler.hover?.(null);
+      }
     });
-    el.addEventListener("contextmenu", (e) => e.preventDefault());
-    el.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
+    el.addEventListener('contextmenu', e => e.preventDefault());
+    el.addEventListener('wheel', e => this.onWheel(e), { passive: false });
     // Pressing the wheel: no browser autoscroll (on Windows it kept sliding the
     // view while the wheel was held). Middle-drag pans instead.
-    el.addEventListener("mousedown", (e) => e.button === 1 && e.preventDefault());
-    el.addEventListener("auxclick", (e) => e.button === 1 && e.preventDefault());
+    el.addEventListener('mousedown', e => e.button === 1 && e.preventDefault());
+    el.addEventListener('auxclick', e => e.button === 1 && e.preventDefault());
     // Stop iPad Safari's own gestures (Scribble, magnifier, page zoom) on the canvas.
-    el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-    el.addEventListener("gesturestart", (e) => e.preventDefault());
+    el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    el.addEventListener('gesturestart', e => e.preventDefault());
   }
 
   private local(e: PointerEvent | WheelEvent): [number, number] {
     const r = this.view.canvas.getBoundingClientRect();
+
     return [e.clientX - r.left, e.clientY - r.top];
   }
 
@@ -119,10 +124,14 @@ export class InputRouter {
   }
 
   private onDown(e: PointerEvent): void {
-    const type = e.pointerType as ToolPointer["type"];
+    const type = e.pointerType as ToolPointer['type'];
     // Palm rejection: while the pen touches the screen, ignore fingers.
-    if (type === "touch" && this.penDown) return;
-    if (type === "pen") this.penDown = true;
+    if (type === 'touch' && this.penDown) {
+      return;
+    }
+    if (type === 'pen') {
+      this.penDown = true;
+    }
     try {
       this.view.canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -132,49 +141,62 @@ export class InputRouter {
     const t: Tracked = { id: e.pointerId, type, x0: x, y0: y, x, y, button: e.button, shift: e.shiftKey, at: e.timeStamp };
     this.pointers.set(e.pointerId, t);
 
-    if (type === "touch" && this.pointers.size === 2) {
+    if (type === 'touch' && this.pointers.size === 2) {
       // Second finger: abandon whatever the first finger was doing and pinch.
-      if (this.mode === "captured") {
-        if (this.handler.breakOff) this.handler.breakOff();
-        else this.handler.up?.(this.tp(t));
+      if (this.mode === 'captured') {
+        if (this.handler.breakOff) {
+          this.handler.breakOff();
+        } else {
+          this.handler.up?.(this.tp(t));
+        }
       }
-      this.mode = "pinch";
+      this.mode = 'pinch';
       this.lastPinch = this.pinchState();
+
       return;
     }
-    if (this.pointers.size > 1) return;
+    if (this.pointers.size > 1) {
+      return;
+    }
 
     // Mouse: which drags turn, move and zoom the view is a setting (Settings > Mouse). As it comes: right-drag
     // orbits, middle-drag (or shift+right) pans, alt+left orbits (trackpads).
-    const nav = type === "mouse" ? mouseDrag(settings.value.mouse, e.button, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey }) : null;
+    const nav = type === 'mouse' ? mouseDrag(settings.value.mouse, e.button, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey }) : null;
     if (nav) {
       // Right button: a drag orbits, a click is a "context" action (decided on move/up).
-      this.mode = nav === "right" ? "rpending" : nav;
-      this.navBase = nav === "right" ? null : nav;
+      this.mode = nav === 'right' ? 'rpending' : nav;
+      this.navBase = nav === 'right' ? null : nav;
+
       return;
     }
     this.modifiers = e.ctrlKey || e.metaKey || e.shiftKey;
     if (this.handler.down?.(this.tp(t))) {
-      this.mode = "captured";
+      this.mode = 'captured';
+
       return;
     }
-    this.mode = "pending";
+    this.mode = 'pending';
     this.held = false;
     // Fingers, pens and a headset's controller have no right button: press
     // and hold still is the right-click (the same menu). (A headset's browser
     // may report its controller as a mouse.)
-    if (!this.plainTaps && (type !== "mouse" || isHeadset) && this.handler.context) {
+    if (!this.plainTaps && (type !== 'mouse' || isHeadset) && this.handler.context) {
       clearTimeout(this.holdTimer);
       this.holdTimer = setTimeout(() => {
-        if (this.mode !== "pending" || this.pointers.get(t.id) !== t || this.pointers.size !== 1) return;
-        if (Math.hypot(t.x - t.x0, t.y - t.y0) >= TAP_SLOP[t.type]) return;
+        if (this.mode !== 'pending' || this.pointers.get(t.id) !== t || this.pointers.size !== 1) {
+          return;
+        }
+        if (Math.hypot(t.x - t.x0, t.y - t.y0) >= TAP_SLOP[t.type]) {
+          return;
+        }
         // Taken hold of: the touch goes on (a move from here drags it, a lift leaves it picked).
         if (this.handler.grab?.(this.tp(t))) {
           this.held = true;
           navigator.vibrate?.(12);
+
           return;
         }
-        this.mode = "ended";
+        this.mode = 'ended';
         navigator.vibrate?.(12);
         this.handler.context?.(this.tp(t));
       }, HOLD_MS);
@@ -195,12 +217,12 @@ export class InputRouter {
     const [x, y] = this.local(e);
     const t = this.pointers.get(e.pointerId);
     if (!t) {
-      if (e.pointerType !== "touch" && this.mode === "idle") {
+      if (e.pointerType !== 'touch' && this.mode === 'idle') {
         // At most one hover pick per frame: mice report far more often than the screen redraws.
-        this.hoverAt = { x, y, type: e.pointerType as ToolPointer["type"], shift: e.shiftKey, tol: pickTolerance(e.pointerType) };
+        this.hoverAt = { x, y, type: e.pointerType as ToolPointer['type'], shift: e.shiftKey, tol: pickTolerance(e.pointerType) };
         this.hoverFrame ||= requestAnimationFrame(() => {
           this.hoverFrame = 0;
-          if (this.hoverAt && this.mode === "idle") {
+          if (this.hoverAt && this.mode === 'idle') {
             // Hovering (not a tap): picks skip the slower near-miss search.
             this.view.hovering = true;
             try {
@@ -211,6 +233,7 @@ export class InputRouter {
           }
         });
       }
+
       return;
     }
     const dx = x - t.x;
@@ -221,25 +244,32 @@ export class InputRouter {
 
     // A middle drag with another button held too (some programs' way to turn or zoom): what the preset says for
     // it, and back to the middle button's own once that button is let go.
-    if (t.type === "mouse" && t.button === 1 && this.navBase && (this.mode === "orbit" || this.mode === "pan" || this.mode === "zoom")) {
+    if (t.type === 'mouse' && t.button === 1 && this.navBase && (this.mode === 'orbit' || this.mode === 'pan' || this.mode === 'zoom')) {
       this.mode = mouseChord(settings.value.mouse, e.buttons) ?? this.navBase;
     }
     switch (this.mode) {
-      case "rpending":
-        if (Math.hypot(x - t.x0, y - t.y0) >= TAP_SLOP.mouse) this.mode = "orbit";
+      case 'rpending':
+        if (Math.hypot(x - t.x0, y - t.y0) >= TAP_SLOP.mouse) {
+          this.mode = 'orbit';
+        }
+
         return;
-      case "pending": {
-        if (Math.hypot(x - t.x0, y - t.y0) < TAP_SLOP[t.type]) return;
+      case 'pending': {
+        if (Math.hypot(x - t.x0, y - t.y0) < TAP_SLOP[t.type]) {
+          return;
+        }
         if (this.handler.dragStart?.({ ...this.tp(t), x: t.x0, y: t.y0 })) {
-          this.mode = "captured";
+          this.mode = 'captured';
           this.handler.drag?.(this.tp(t));
+
           return;
         }
         // Mouse/pen drag on empty space = box selection; a finger orbits.
-        this.mode = (t.type !== "touch" || this.handler.boxByFinger) && this.handler.box ? "box" : "orbit";
+        this.mode = (t.type !== 'touch' || this.handler.boxByFinger) && this.handler.box ? 'box' : 'orbit';
+
         return;
       }
-      case "box": {
+      case 'box': {
         const a = { x: t.x0, y: t.y0 };
         const b = { x, y };
         const r = this.view.canvas.getBoundingClientRect();
@@ -247,39 +277,47 @@ export class InputRouter {
           left: `${r.left + Math.min(a.x, b.x)}px`,
           top: `${r.top + Math.min(a.y, b.y)}px`,
           width: `${Math.abs(b.x - a.x)}px`,
-          height: `${Math.abs(b.y - a.y)}px`,
+          height: `${Math.abs(b.y - a.y)}px`
         });
         this.marquee.hidden = false;
         // Right to left takes whatever it touches: drawn dashed.
-        this.marquee.classList.toggle("touching", b.x < a.x);
+        this.marquee.classList.toggle('touching', b.x < a.x);
         this.handler.box?.(a, b, false, this.modifiers);
+
         return;
       }
-      case "captured":
+      case 'captured':
         this.handler.drag?.(this.tp(t));
+
         return;
-      case "orbit":
+      case 'orbit':
         this.view.cam.orbit(dx, dy);
         this.view.requestRender();
+
         return;
-      case "pan":
+      case 'pan':
         this.view.cam.pan(dx, dy, this.view.height);
         this.view.requestRender();
+
         return;
-      case "zoom":
+      case 'zoom':
         // Dragged down: further away. About where the drag began.
         this.view.cam.zoom(Math.exp(dy * 0.01), this.view.worldUnder(t.x0, t.y0));
         this.view.requestRender();
+
         return;
-      case "pinch": {
+      case 'pinch': {
         const s = this.pinchState();
-        if (!s || !this.lastPinch) return;
+        if (!s || !this.lastPinch) {
+          return;
+        }
         this.view.cam.pan(s.cx - this.lastPinch.cx, s.cy - this.lastPinch.cy, this.view.height);
         if (s.d > 0 && this.lastPinch.d > 0) {
           this.view.cam.zoom(this.lastPinch.d / s.d, this.view.worldUnder(s.cx, s.cy));
         }
         this.lastPinch = s;
         this.view.requestRender();
+
         return;
       }
     }
@@ -288,42 +326,62 @@ export class InputRouter {
   private onUp(e: PointerEvent): void {
     clearTimeout(this.holdTimer);
     const t = this.pointers.get(e.pointerId);
-    if (e.pointerType === "pen") this.penDown = false;
-    if (!t) return;
-    this.pointers.delete(e.pointerId);
-    if (this.mode === "pinch") {
-      // Lifting one finger of a pinch must not orbit with the remaining one.
-      if (this.pointers.size === 0) this.mode = "idle";
-      else this.lastPinch = null;
+    if (e.pointerType === 'pen') {
+      this.penDown = false;
+    }
+    if (!t) {
       return;
     }
-    if (this.pointers.size > 0) return;
+    this.pointers.delete(e.pointerId);
+    if (this.mode === 'pinch') {
+      // Lifting one finger of a pinch must not orbit with the remaining one.
+      if (this.pointers.size === 0) {
+        this.mode = 'idle';
+      } else {
+        this.lastPinch = null;
+      }
+
+      return;
+    }
+    if (this.pointers.size > 0) {
+      return;
+    }
     const mode = this.mode;
-    this.mode = "idle";
-    if (mode === "captured") this.handler.up?.(this.tp(t));
-    if (mode === "pending" && !this.held) this.emitTap(t);
+    this.mode = 'idle';
+    if (mode === 'captured') {
+      this.handler.up?.(this.tp(t));
+    }
+    if (mode === 'pending' && !this.held) {
+      this.emitTap(t);
+    }
     this.held = false;
-    if (mode === "rpending") this.handler.context?.(this.tp(t));
-    if (mode === "box") {
+    if (mode === 'rpending') {
+      this.handler.context?.(this.tp(t));
+    }
+    if (mode === 'box') {
       this.marquee.hidden = true;
       // (On a touch screen every tap adds to what's picked: a box does too.)
-      this.handler.box?.({ x: t.x0, y: t.y0 }, { x: t.x, y: t.y }, true, this.modifiers || t.type === "touch");
+      this.handler.box?.({ x: t.x0, y: t.y0 }, { x: t.x, y: t.y }, true, this.modifiers || t.type === 'touch');
     }
   }
 
   private onCancel(e: PointerEvent): void {
     clearTimeout(this.holdTimer);
-    if (e.pointerType === "pen") this.penDown = false;
+    if (e.pointerType === 'pen') {
+      this.penDown = false;
+    }
     const t = this.pointers.get(e.pointerId);
     this.pointers.delete(e.pointerId);
     if (this.pointers.size === 0) {
-      if (this.mode === "captured" && t) this.handler.up?.(this.tp(t));
-      this.mode = "idle";
+      if (this.mode === 'captured' && t) {
+        this.handler.up?.(this.tp(t));
+      }
+      this.mode = 'idle';
     }
   }
 
   /** What the press that began this drag of the view does by itself (see the chord above). */
-  private navBase: "orbit" | "pan" | "zoom" | null = null;
+  private navBase: 'orbit' | 'pan' | 'zoom' | null = null;
   private hoverAt: ToolPointer | null = null;
   private hoverFrame = 0;
 
@@ -340,8 +398,11 @@ export class InputRouter {
 
   private pinchState(): { d: number; cx: number; cy: number } | null {
     const pts = [...this.pointers.values()];
-    if (pts.length < 2) return null;
+    if (pts.length < 2) {
+      return null;
+    }
     const [a, b] = pts;
+
     return { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
   }
 
@@ -350,7 +411,9 @@ export class InputRouter {
     // Wheel held down (panning): a press on the wheel can tilt it, and a tilted
     // wheel repeats sideways scrolls for as long as it's held - the view slid
     // off to one side without stopping. Only the drag pans meanwhile.
-    if (e.buttons & 4 || this.mode === "pan" || this.mode === "orbit" || this.mode === "zoom") return;
+    if (e.buttons & 4 || this.mode === 'pan' || this.mode === 'orbit' || this.mode === 'zoom') {
+      return;
+    }
     const [x, y] = this.local(e);
     if (e.ctrlKey || !isTrackpadPan(e)) {
       // Mouse wheel, or trackpad pinch (reported as ctrl+wheel).

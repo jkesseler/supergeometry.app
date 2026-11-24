@@ -13,8 +13,8 @@
 // On a phone or tablet (AR through its camera): point it at the floor or a
 // table and tap to put the model there (tap again to move it); two fingers
 // pinch to size it and twist to turn it. The scale sits at the left edge.
-import { BufferGeometry, CanvasTexture, Color, DoubleSide, Euler, Group, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, RingGeometry, Scene, SRGBColorSpace, Vector3, type WebGLRenderer, type XRTargetRaySpace } from "three";
-import { icons, type IconName } from "../ui/icons";
+import { BufferGeometry, CanvasTexture, Color, DoubleSide, Euler, Group, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Quaternion, RingGeometry, Scene, SRGBColorSpace, Vector3, type WebGLRenderer, type XRTargetRaySpace } from 'three';
+import { icons, type IconName } from '../ui/icons';
 
 type Vec3 = [number, number, number];
 
@@ -51,34 +51,43 @@ const xrSystem = (): XRSystemLike | undefined => (navigator as Navigator & { xr?
 /** Whether this browser can open the headset view (a headset's browser, or a PC with a headset). */
 export async function vrSupported(handheld = false): Promise<boolean> {
   const xr = xrSystem();
-  if (!xr) return false;
+  if (!xr) {
+    return false;
+  }
   // A phone's "VR" is a cardboard viewer: only its AR counts.
-  for (const mode of handheld ? ["immersive-ar"] : ["immersive-ar", "immersive-vr"])
+  for (const mode of handheld ? ['immersive-ar'] : ['immersive-ar', 'immersive-vr']) {
     try {
-      if (await xr.isSessionSupported(mode)) return true;
+      if (await xr.isSessionSupported(mode)) {
+        return true;
+      }
     } catch {
-      /* try the next */
+    /* try the next */
     }
+  }
+
   return false;
 }
 
 // ----------------------------------------------------------------- drawing
 
 const FONT = '-apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif';
-const ACCENT = "#0a84ff";
-const GLASS = "rgba(28, 28, 30, 0.82)";
-const LINE = "rgba(255, 255, 255, 0.14)";
+const ACCENT = '#0a84ff';
+const GLASS = 'rgba(28, 28, 30, 0.82)';
+const LINE = 'rgba(255, 255, 255, 0.14)';
 
 /** White icon pictures, made once each (drawn on canvases). */
 const iconPics = new Map<string, HTMLImageElement>();
 function iconPic(name: IconName, onLoad: () => void): HTMLImageElement | null {
   const have = iconPics.get(name);
-  if (have) return have.complete && have.naturalWidth ? have : null;
+  if (have) {
+    return have.complete && have.naturalWidth ? have : null;
+  }
   const img = new Image();
-  const svg = icons[name].replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" ').split("currentColor").join("#ffffff");
+  const svg = icons[name].replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" ').split('currentColor').join('#ffffff');
   img.onload = onLoad;
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   iconPics.set(name, img);
+
   return null;
 }
 
@@ -90,12 +99,12 @@ class Board {
   constructor(
     readonly px: number,
     readonly py: number,
-    readonly w: number,
+    readonly w: number
   ) {
-    const c = document.createElement("canvas");
+    const c = document.createElement('canvas');
     c.width = px;
     c.height = py;
-    this.g = c.getContext("2d")!;
+    this.g = c.getContext('2d')!;
     this.tex = new CanvasTexture(c);
     this.tex.colorSpace = SRGBColorSpace;
     this.mesh = new Mesh(new PlaneGeometry(w, (w * py) / px), new MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, depthTest: false, side: DoubleSide }));
@@ -103,6 +112,7 @@ class Board {
   }
   clear(): CanvasRenderingContext2D {
     this.g.clearRect(0, 0, this.px, this.py);
+
     return this.g;
   }
   show(): void {
@@ -115,7 +125,7 @@ class Wheel {
   readonly board = new Board(768, 768, 0.2);
   items: VRItem[] = [];
   hot = -1;
-  title = "";
+  title = '';
   constructor() {
     this.board.mesh.visible = false;
     // Above the controller, tilted toward you.
@@ -129,13 +139,17 @@ class Wheel {
   private at(i: number): [number, number] {
     const n = Math.max(this.items.length, 1);
     const a = (i / n) * Math.PI * 2;
+
     return [384 + Math.sin(a) * 250, 384 - Math.cos(a) * 250];
   }
   /** The button at a stick angle (0: up, clockwise), or -1. */
   slotAt(x: number, y: number): number {
-    if (Math.hypot(x, y) < 0.55 || !this.items.length) return -1;
+    if (Math.hypot(x, y) < 0.55 || !this.items.length) {
+      return -1;
+    }
     const a = (Math.atan2(x, -y) + Math.PI * 2) % (Math.PI * 2);
     const n = this.items.length;
+
     return Math.round((a / (Math.PI * 2)) * n) % n;
   }
   /** The button under a point of the board (-1..1 across, -1..1 up), or -1. */
@@ -147,8 +161,11 @@ class Wheel {
     this.items.forEach((_, i) => {
       const [x, y] = this.at(i);
       const d = Math.hypot(px - x, py - y);
-      if (d < bd) ((bd = d), (best = i));
+      if (d < bd) {
+        ((bd = d), (best = i));
+      }
     });
+
     return best;
   }
   draw(): void {
@@ -163,27 +180,28 @@ class Wheel {
     this.items.forEach((it, i) => {
       const [x, y] = this.at(i);
       const hot = i === this.hot;
-      g.fillStyle = hot ? ACCENT : "rgba(255,255,255,0.08)";
+      g.fillStyle = hot ? ACCENT : 'rgba(255,255,255,0.08)';
       g.beginPath();
       g.arc(x, y, hot ? 74 : 66, 0, Math.PI * 2);
       g.fill();
       g.globalAlpha = it.disabled ? 0.35 : 1;
       const pic = it.icon ? iconPic(it.icon, () => this.draw()) : null;
-      if (pic) g.drawImage(pic, x - 34, y - 34, 68, 68);
-      else {
-        g.fillStyle = "#fff";
+      if (pic) {
+        g.drawImage(pic, x - 34, y - 34, 68, 68);
+      } else {
+        g.fillStyle = '#fff';
         g.font = `600 30px ${FONT}`;
-        g.textAlign = "center";
-        g.textBaseline = "middle";
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
         g.fillText(it.label.slice(0, 2), x, y);
       }
       g.globalAlpha = 1;
     });
     // The middle: what the chosen button does (or the wheel's name).
-    const text = this.items[this.hot] ? this.items[this.hot].label : this.items.length ? this.title : "Pick a face, edge or corner first";
-    g.fillStyle = "#fff";
-    g.textAlign = "center";
-    g.textBaseline = "middle";
+    const text = this.items[this.hot] ? this.items[this.hot].label : this.items.length ? this.title : 'Pick a face, edge or corner first';
+    g.fillStyle = '#fff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
     g.font = `600 ${text.length > 16 ? 30 : 38}px ${FONT}`;
     wrap(g, text, 384, 384, 230, 42);
     this.board.show();
@@ -193,15 +211,19 @@ class Wheel {
 /** Text in at most two lines, centred on (x, y). */
 function wrap(g: CanvasRenderingContext2D, text: string, x: number, y: number, max: number, lh: number): void {
   const lines: string[] = [];
-  let cur = "";
-  for (const w of text.split(" ")) {
+  let cur = '';
+  for (const w of text.split(' ')) {
     const next = cur ? `${cur} ${w}` : w;
     if (g.measureText(next).width > max && cur) {
       lines.push(cur);
       cur = w;
-    } else cur = next;
+    } else {
+      cur = next;
+    }
   }
-  if (cur) lines.push(cur);
+  if (cur) {
+    lines.push(cur);
+  }
   const shown = lines.slice(0, 2);
   shown.forEach((l, i) => g.fillText(l, x, y + (i - (shown.length - 1) / 2) * lh));
 }
@@ -214,11 +236,13 @@ function wrap(g: CanvasRenderingContext2D, text: string, x: number, y: number, m
  */
 class Tape {
   readonly board = new Board(300, 560, 0.06);
-  private key = "";
+  private key = '';
   draw(ratio: number): void {
     const v = Math.log2(Math.max(1e-6, ratio));
     const key = `${ratioText(ratio)}|${v.toFixed(2)}`;
-    if (key === this.key) return;
+    if (key === this.key) {
+      return;
+    }
     this.key = key;
     const g = this.board.clear();
     g.fillStyle = GLASS;
@@ -229,14 +253,14 @@ class Tape {
     g.lineWidth = 3;
     g.stroke();
     // The number now.
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.fillStyle = "#fff";
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#fff';
     g.font = `600 64px ${FONT}`;
     g.fillText(ratioText(ratio), 150, 72);
-    g.fillStyle = "rgba(235,235,245,0.55)";
+    g.fillStyle = 'rgba(235,235,245,0.55)';
     g.font = `500 26px ${FONT}`;
-    g.fillText(Math.abs(v) < 0.005 ? "real size" : v > 0 ? "bigger" : "smaller", 150, 122);
+    g.fillText(Math.abs(v) < 0.005 ? 'real size' : v > 0 ? 'bigger' : 'smaller', 150, 122);
     // The tape: one mark a doubling, 80 px apart, the pointer in the middle of the window.
     const top = 156;
     const bottom = 540;
@@ -246,32 +270,37 @@ class Tape {
     g.beginPath();
     g.rect(0, top, 300, bottom - top);
     g.clip();
-    for (let k = Math.floor(v) - 3; k <= Math.ceil(v) + 3; k++)
+    for (let k = Math.floor(v) - 3; k <= Math.ceil(v) + 3; k++) {
       for (const half of [0, 0.5]) {
         const y = mid - (k + half - v) * step;
-        if (y < top - 20 || y > bottom + 20) continue;
+        if (y < top - 20 || y > bottom + 20) {
+          continue;
+        }
         const zero = k === 0 && !half;
-        g.strokeStyle = zero ? ACCENT : half ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.6)";
+        g.strokeStyle = zero ? ACCENT : half ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.6)';
         g.lineWidth = zero ? 5 : 3;
         g.beginPath();
         g.moveTo(40, y);
         g.lineTo(half ? 72 : 96, y);
         g.stroke();
-        if (half) continue;
-        g.textAlign = "left";
-        g.fillStyle = zero ? ACCENT : "rgba(235,235,245,0.8)";
+        if (half) {
+          continue;
+        }
+        g.textAlign = 'left';
+        g.fillStyle = zero ? ACCENT : 'rgba(235,235,245,0.8)';
         g.font = `${zero ? 700 : 500} 34px ${FONT}`;
         g.fillText(k >= 0 ? `${2 ** k}:1` : `1:${2 ** -k}`, 116, y);
       }
+    }
     g.restore();
     // The pointer: where the model is now.
-    g.fillStyle = "#fff";
+    g.fillStyle = '#fff';
     g.beginPath();
     g.moveTo(12, mid - 14);
     g.lineTo(34, mid);
     g.lineTo(12, mid + 14);
     g.fill();
-    g.strokeStyle = "#fff";
+    g.strokeStyle = '#fff';
     g.lineWidth = 2;
     g.beginPath();
     g.moveTo(34, mid);
@@ -280,13 +309,14 @@ class Tape {
     this.board.show();
   }
   reset(): void {
-    this.key = "";
+    this.key = '';
   }
 }
 
 /** A scale as people write it: 1:1, 2:1, 1:4, 1:2.5 (a tenth when it's not whole, under ten). */
 function ratioText(r: number): string {
   const one = (n: number) => (n >= 10 || Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1));
+
   return r >= 1 ? `${one(r)}:1` : `1:${one(1 / r)}`;
 }
 
@@ -296,7 +326,7 @@ function ratioText(r: number): string {
 const REAL = 0.001;
 
 interface Hand {
-  side: "left" | "right";
+  side: 'left' | 'right';
   ray: XRTargetRaySpace;
   line: Line;
   wheel: Wheel;
@@ -332,7 +362,7 @@ export class VRMode {
   /** The right stick stopped at real size: it sizes again once let go. */
   private stickHeld = false;
   private toast: { text: string; until: number } | null = null;
-  private cardKey = "";
+  private cardKey = '';
   /** The model's bottom middle, in the holder's own (y up, millimetres) coordinates. */
   private base = new Vector3();
   /** The model's size (millimetres, its longest diagonal). */
@@ -367,35 +397,40 @@ export class VRMode {
   }
 
   /** Pictures of the wheel (the stick on button `hot`) and of the card saying `text`, as the headset shows them (to check their look). */
-  snapshot(hot = -1, text = "X-Ray", ratio = 1): { wheel: string; card: string; tape: string } {
+  snapshot(hot = -1, text = 'X-Ray', ratio = 1): { wheel: string; card: string; tape: string } {
     const w = new Wheel();
     w.items = this.items();
-    w.title = "View";
+    w.title = 'View';
     w.hot = hot;
     w.draw();
     this.say(text);
-    this.cardKey = "";
+    this.cardKey = '';
     this.drawCard();
     this.toast = null;
-    this.cardKey = "";
+    this.cardKey = '';
     const t = new Tape();
     t.draw(ratio);
+
     return { wheel: w.board.g.canvas.toDataURL(), card: this.card.g.canvas.toDataURL(), tape: t.board.g.canvas.toDataURL() };
   }
 
   async enter(): Promise<void> {
     const xr = xrSystem();
-    if (!xr || this.session) return;
+    if (!xr || this.session) {
+      return;
+    }
     // Passthrough first (the model in your real room), else a plain dark room.
     let session: XRSession | null = null;
     this.passthrough = false;
     this.handheld = this.host.handheld;
-    if (this.handheld) this.makeOverlay();
+    if (this.handheld) {
+      this.makeOverlay();
+    }
     try {
-      if (await xr.isSessionSupported("immersive-ar")) {
+      if (await xr.isSessionSupported('immersive-ar')) {
         session = await xr.requestSession(
-          "immersive-ar",
-          this.handheld ? { optionalFeatures: ["local-floor", "hit-test", "dom-overlay"], domOverlay: { root: this.overlay } } : { optionalFeatures: ["local-floor", "hit-test"] },
+          'immersive-ar',
+          this.handheld ? { optionalFeatures: ['local-floor', 'hit-test', 'dom-overlay'], domOverlay: { root: this.overlay } } : { optionalFeatures: ['local-floor', 'hit-test'] }
         );
         this.passthrough = true;
       }
@@ -406,10 +441,12 @@ export class VRMode {
       this.dropOverlay();
       throw new Error("this browser can't show AR");
     }
-    if (!session) session = await xr.requestSession("immersive-vr", { optionalFeatures: ["local-floor"] });
+    if (!session) {
+      session = await xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+    }
     const { renderer, scene } = this.host;
     renderer.xr.enabled = true;
-    renderer.xr.setReferenceSpaceType("local-floor");
+    renderer.xr.setReferenceSpaceType('local-floor');
     try {
       await renderer.xr.setSession(session);
     } catch (err) {
@@ -424,7 +461,9 @@ export class VRMode {
     if (this.passthrough) {
       this.room.background = null;
       renderer.setClearColor(0x000000, 0);
-    } else this.room.background = scene.background instanceof Color ? scene.background.clone() : new Color(0x2b2d31);
+    } else {
+      this.room.background = scene.background instanceof Color ? scene.background.clone() : new Color(0x2b2d31);
+    }
     // The page's scene is z up in millimetres; the room is y up in metres.
     this.holder.add(scene, this.shadow);
     scene.rotation.set(-Math.PI / 2, 0, 0);
@@ -438,9 +477,14 @@ export class VRMode {
     this.needsFirstPlace = !this.handheld;
     this.holder.visible = !this.handheld;
     this.host.onEnter();
-    if (this.handheld) this.startPhone(session);
-    else for (const i of [0, 1]) this.addHand(i);
-    session.addEventListener("end", () => this.leave());
+    if (this.handheld) {
+      this.startPhone(session);
+    } else {
+      for (const i of [0, 1]) {
+        this.addHand(i);
+      }
+    }
+    session.addEventListener('end', () => this.leave());
     this.last = 0;
     renderer.setAnimationLoop((t: number, frame?: XRFrame) => this.frame(t, frame));
   }
@@ -456,13 +500,14 @@ export class VRMode {
   /** The wheel's buttons. */
   private items(): VRItem[] {
     const looks = this.host.looks();
+
     return [
-      { label: "Real size", icon: "ruler", disabled: this.real, run: () => this.resize(REAL) },
-      { label: "Hand size", icon: "scale", run: () => this.resize(0.25 / this.size) },
-      { label: "Bring here", icon: "fit", run: () => this.bringHere() },
-      { label: looks.xray, icon: "display", run: () => this.say(this.host.xray()) },
-      { label: looks.edges, icon: looks.edges.startsWith("Hide") ? "eyeOff" : "eye", run: () => this.say(this.host.edges()) },
-      { label: "Exit", icon: "exit", run: () => this.exit() },
+      { label: 'Real size', icon: 'ruler', disabled: this.real, run: () => this.resize(REAL) },
+      { label: 'Hand size', icon: 'scale', run: () => this.resize(0.25 / this.size) },
+      { label: 'Bring here', icon: 'fit', run: () => this.bringHere() },
+      { label: looks.xray, icon: 'display', run: () => this.say(this.host.xray()) },
+      { label: looks.edges, icon: looks.edges.startsWith('Hide') ? 'eyeOff' : 'eye', run: () => this.say(this.host.edges()) },
+      { label: 'Exit', icon: 'exit', run: () => this.exit() }
     ];
   }
 
@@ -481,6 +526,7 @@ export class VRMode {
   /** Where the model's bottom middle is in the room. */
   private baseInRoom(): Vector3 {
     this.holder.updateMatrix();
+
     return this.base.clone().applyMatrix4(this.holder.matrix);
   }
 
@@ -490,8 +536,9 @@ export class VRMode {
     const q = new Quaternion().setFromEuler(new Euler(0, yaw, 0));
     const s = this.holder.scale.x;
     const to = at.clone().sub(this.base.clone().multiplyScalar(s).applyQuaternion(q));
-    if (glide) this.glide = { from: this.holder.position.clone(), to, qFrom: this.holder.quaternion.clone(), qTo: q, t0: performance.now() };
-    else {
+    if (glide) {
+      this.glide = { from: this.holder.position.clone(), to, qFrom: this.holder.quaternion.clone(), qTo: q, t0: performance.now() };
+    } else {
       this.glide = null;
       this.holder.position.copy(to);
       this.holder.quaternion.copy(q);
@@ -504,7 +551,9 @@ export class VRMode {
     const head = new Vector3().setFromMatrixPosition(cam.matrixWorld);
     const look = new Vector3(0, 0, -1).applyQuaternion(new Quaternion().setFromRotationMatrix(cam.matrixWorld));
     look.y = 0;
-    if (look.lengthSq() < 1e-6) look.set(0, 0, -1);
+    if (look.lengthSq() < 1e-6) {
+      look.set(0, 0, -1);
+    }
     look.normalize();
     const big = this.size * this.holder.scale.x;
     const at = head.clone().addScaledVector(look, Math.max(0.55, 0.35 + big * 0.7));
@@ -518,8 +567,12 @@ export class VRMode {
     const keep = this.baseInRoom();
     this.holder.scale.setScalar(s);
     this.holder.position.add(keep.sub(this.baseInRoom()));
-    if (this.glide) this.glide = null;
-    if (say) this.say(say);
+    if (this.glide) {
+      this.glide = null;
+    }
+    if (say) {
+      this.say(say);
+    }
   }
 
   private addHand(i: number): void {
@@ -530,10 +583,10 @@ export class VRMode {
     const wheel = new Wheel();
     ray.add(wheel.board.mesh);
     this.room.add(ray);
-    const hand: Hand = { side: i === 0 ? "right" : "left", ray, line, wheel, squeezing: false, grabFrom: null, was: [false, false], heldSince: 0, hits: null, asked: null };
+    const hand: Hand = { side: i === 0 ? 'right' : 'left', ray, line, wheel, squeezing: false, grabFrom: null, was: [false, false], heldSince: 0, hits: null, asked: null };
     // The card rides above the right hand, the scale above the left (which hand is which comes with the controller).
     const placeCard = () => {
-      if (hand.side === "right") {
+      if (hand.side === 'right') {
         ray.add(this.card.mesh);
         this.card.mesh.position.set(0, 0.06, -0.1);
         this.card.mesh.rotation.x = -0.6;
@@ -543,24 +596,26 @@ export class VRMode {
         this.tape.board.mesh.rotation.x = -0.6;
       }
     };
-    ray.addEventListener("connected", (e) => {
+    ray.addEventListener('connected', (e) => {
       const src = (e as unknown as { data?: XRInputSource }).data;
-      if (src?.handedness === "left" || src?.handedness === "right") hand.side = src.handedness;
+      if (src?.handedness === 'left' || src?.handedness === 'right') {
+        hand.side = src.handedness;
+      }
       placeCard();
     });
-    ray.addEventListener("disconnected", () => {
+    ray.addEventListener('disconnected', () => {
       hand.hits?.cancel();
       hand.hits = null;
       hand.asked = null;
     });
     placeCard();
     this.hands.push(hand);
-    ray.addEventListener("selectstart", () => this.trigger(hand));
-    ray.addEventListener("squeezestart", () => {
+    ray.addEventListener('selectstart', () => this.trigger(hand));
+    ray.addEventListener('squeezestart', () => {
       hand.squeezing = true;
       this.startGrab();
     });
-    ray.addEventListener("squeezeend", () => {
+    ray.addEventListener('squeezeend', () => {
       hand.squeezing = false;
       this.startGrab();
     });
@@ -569,15 +624,20 @@ export class VRMode {
   /** The trigger: a button of the open wheel, else put the model down where the ring is. */
   private trigger(hand: Hand): void {
     for (const other of this.hands) {
-      if (other === hand || !other.wheel.open) continue;
+      if (other === hand || !other.wheel.open) {
+        continue;
+      }
       const slot = this.wheelUnderRay(hand, other.wheel);
       if (slot >= 0) {
         other.wheel.board.mesh.visible = false;
         this.run(other.wheel.items[slot]);
+
         return;
       }
     }
-    if (hand.side !== "right" || !this.reticle.visible) return;
+    if (hand.side !== 'right' || !this.reticle.visible) {
+      return;
+    }
     const head = new Vector3().setFromMatrixPosition(this.host.renderer.xr.getCamera().matrixWorld);
     this.putAt(this.reticle.position.clone(), head);
     this.placed = true;
@@ -592,43 +652,57 @@ export class VRMode {
     const n = new Vector3(0, 0, 1).applyQuaternion(m.getWorldQuaternion(new Quaternion()));
     const c = new Vector3().setFromMatrixPosition(m.matrixWorld);
     const den = n.dot(d);
-    if (Math.abs(den) < 1e-6) return -1;
+    if (Math.abs(den) < 1e-6) {
+      return -1;
+    }
     const t = c.clone().sub(o).dot(n) / den;
-    if (t < 0) return -1;
+    if (t < 0) {
+      return -1;
+    }
     const local = o.clone().addScaledVector(d, t).applyMatrix4(m.matrixWorld.clone().invert());
     const half = wheel.board.w / 2;
+
     return wheel.slotAtPoint(local.x / half, local.y / half);
   }
 
   private run(item: VRItem | undefined): void {
-    if (item && !item.disabled) item.run();
+    if (item && !item.disabled) {
+      item.run();
+    }
   }
 
   private startGrab(): void {
-    const held = this.hands.filter((h) => h.squeezing);
+    const held = this.hands.filter(h => h.squeezing);
     this.glide = null;
     this.holder.updateMatrix();
     this.grabStart = this.holder.matrix.clone();
-    for (const h of this.hands) h.grabFrom = h.squeezing ? h.ray.matrixWorld.clone() : null;
+    for (const h of this.hands) {
+      h.grabFrom = h.squeezing ? h.ray.matrixWorld.clone() : null;
+    }
     this.pinch = held.length === 2 ? { d0: held[0].ray.position.distanceTo(held[1].ray.position), s0: this.holder.scale.x, snapped: false } : null;
-    if (held.length) this.placed = false;
+    if (held.length) {
+      this.placed = false;
+    }
   }
 
   private rayOf(hand: Hand): { o: Vector3; d: Vector3 } {
     hand.ray.updateMatrixWorld();
     const o = new Vector3().setFromMatrixPosition(hand.ray.matrixWorld);
     const d = new Vector3(0, 0, -1).applyQuaternion(new Quaternion().setFromRotationMatrix(hand.ray.matrixWorld)).normalize();
+
     return { o, d };
   }
 
   private buzz(hand: Hand, strength: number, ms: number): void {
-    const src = [...(this.session?.inputSources ?? [])].find((s) => s.handedness === hand.side);
+    const src = [...(this.session?.inputSources ?? [])].find(s => s.handedness === hand.side);
     const act = (src?.gamepad as (Gamepad & { hapticActuators?: { pulse(v: number, ms: number): void }[] }) | undefined)?.hapticActuators?.[0];
     act?.pulse(strength, ms);
   }
 
   private say(text: string): void {
-    if (text) this.toast = { text, until: performance.now() + 1500 };
+    if (text) {
+      this.toast = { text, until: performance.now() + 1500 };
+    }
   }
 
   private frame(t: number, frame?: XRFrame): void {
@@ -650,9 +724,11 @@ export class VRMode {
       const e = 1 - Math.pow(1 - k, 3);
       this.holder.position.lerpVectors(this.glide.from, this.glide.to, e);
       this.holder.quaternion.slerpQuaternions(this.glide.qFrom, this.glide.qTo, e);
-      if (k >= 1) this.glide = null;
+      if (k >= 1) {
+        this.glide = null;
+      }
     }
-    const held = this.hands.filter((h) => h.squeezing);
+    const held = this.hands.filter(h => h.squeezing);
     if (held.length === 1 && this.grabStart && held[0].grabFrom) {
       const m = held[0].ray.matrixWorld.clone().multiply(held[0].grabFrom.clone().invert()).multiply(this.grabStart);
       m.decompose(this.holder.position, this.holder.quaternion, this.holder.scale);
@@ -661,18 +737,34 @@ export class VRMode {
       let s = this.pinch.s0 * (d / this.pinch.d0);
       // Real size holds for a moment on the way (a little click in the hands).
       const near = Math.abs(s / REAL - 1) < 0.07;
-      if (near) s = REAL;
-      if (near && !this.pinch.snapped) for (const h of held) this.buzz(h, 0.5, 30);
+      if (near) {
+        s = REAL;
+      }
+      if (near && !this.pinch.snapped) {
+        for (const h of held) {
+          this.buzz(h, 0.5, 30);
+        }
+      }
       this.pinch.snapped = near;
-      if (s !== this.holder.scale.x) this.resize(s);
+      if (s !== this.holder.scale.x) {
+        this.resize(s);
+      }
     }
     for (const src of this.session?.inputSources ?? []) {
-      const hand = this.hands.find((h) => h.side === src.handedness);
-      if (!hand) continue;
-      if (hand.asked !== src) this.askScan(hand, src);
-      if (src.gamepad) this.buttons(hand, src.gamepad, t, dt);
+      const hand = this.hands.find(h => h.side === src.handedness);
+      if (!hand) {
+        continue;
+      }
+      if (hand.asked !== src) {
+        this.askScan(hand, src);
+      }
+      if (src.gamepad) {
+        this.buttons(hand, src.gamepad, t, dt);
+      }
     }
-    if (this.handheld && frame) this.touch(frame);
+    if (this.handheld && frame) {
+      this.touch(frame);
+    }
     this.aim(frame);
     this.shadow.visible = this.placed && !held.length;
     this.drawCard();
@@ -687,7 +779,9 @@ export class VRMode {
     const s = this.session as (XRSession & { requestHitTestSource?(o: { space: XRSpace }): Promise<XRHitTestSource> | undefined }) | null;
     s?.requestHitTestSource?.({ space: src.targetRaySpace })
       ?.then((h) => {
-        if (hand.asked !== src || !this.session) return void h.cancel();
+        if (hand.asked !== src || !this.session) {
+          return void h.cancel();
+        }
         hand.hits?.cancel();
         hand.hits = h;
       })
@@ -700,12 +794,14 @@ export class VRMode {
     const sy = pad.axes[3] ?? 0;
     const ax = !!pad.buttons[4]?.pressed;
     const by = !!pad.buttons[5]?.pressed;
-    if (hand.side === "left") {
+    if (hand.side === 'left') {
       // X held: the wheel opens; the stick chooses; letting go runs it. A tap: bring it here.
-      if (ax && !hand.was[0]) hand.heldSince = t;
+      if (ax && !hand.was[0]) {
+        hand.heldSince = t;
+      }
       if (ax && !hand.wheel.open && t - hand.heldSince > 140) {
         hand.wheel.items = this.items();
-        hand.wheel.title = "View";
+        hand.wheel.title = 'View';
         hand.wheel.hot = -1;
         hand.wheel.board.mesh.visible = true;
         this.tape.board.mesh.visible = false;
@@ -716,18 +812,25 @@ export class VRMode {
         if (slot !== hand.wheel.hot) {
           hand.wheel.hot = slot;
           hand.wheel.draw();
-          if (slot >= 0) this.buzz(hand, 0.2, 12);
+          if (slot >= 0) {
+            this.buzz(hand, 0.2, 12);
+          }
         }
       }
       if (!ax && hand.was[0]) {
         const item = hand.wheel.open ? hand.wheel.items[hand.wheel.hot] : undefined;
         hand.wheel.board.mesh.visible = false;
         this.tape.board.mesh.visible = true;
-        if (item) this.run(item);
-        else if (t - hand.heldSince < 300) this.bringHere();
+        if (item) {
+          this.run(item);
+        } else if (t - hand.heldSince < 300) {
+          this.bringHere();
+        }
       }
       // Y: X-Ray on / off.
-      if (by && !hand.was[1]) this.say(this.host.xray());
+      if (by && !hand.was[1]) {
+        this.say(this.host.xray());
+      }
       if (!hand.wheel.open && Math.abs(sy) > 0.15) {
         this.glide = null;
         this.holder.position.y -= sy * 0.5 * dt;
@@ -738,7 +841,9 @@ export class VRMode {
       if (ax && !hand.was[0]) {
         this.resize(this.real ? 0.25 / this.size : REAL);
       }
-      if (by && !hand.was[1]) this.bringHere();
+      if (by && !hand.was[1]) {
+        this.bringHere();
+      }
       // Stick: left / right turns it about its middle, up / down sizes it.
       if (Math.abs(sx) > 0.2 && Math.abs(sx) > Math.abs(sy)) {
         this.glide = null;
@@ -755,7 +860,9 @@ export class VRMode {
           this.buzz(hand, 0.5, 30);
         }
         this.resize(next);
-      } else if (Math.abs(sy) < 0.15) this.stickHeld = false;
+      } else if (Math.abs(sy) < 0.15) {
+        this.stickHeld = false;
+      }
     }
     hand.was = [ax, by];
   }
@@ -769,79 +876,107 @@ export class VRMode {
       ray = this.viewerRay(frame);
       hits = this.viewerHits;
     } else {
-      hand = this.hands.find((h) => h.side === "right");
+      hand = this.hands.find(h => h.side === 'right');
       ray = hand ? this.rayOf(hand) : null;
       hits = hand?.hits ?? null;
     }
-    if (!ray) return;
+    if (!ray) {
+      return;
+    }
     const { o, d } = ray;
     let at: Vector3 | null = null;
     const space = this.host.renderer.xr.getReferenceSpace();
     if (frame && hits && space) {
       for (const r of frame.getHitTestResults(hits)) {
         const pose = r.getPose(space);
-        if (!pose) continue;
+        if (!pose) {
+          continue;
+        }
         const q = pose.transform.orientation;
         const up = new Vector3(0, 1, 0).applyQuaternion(new Quaternion(q.x, q.y, q.z, q.w));
-        if (up.y < 0.8) continue;
+        if (up.y < 0.8) {
+          continue;
+        }
         const p = pose.transform.position;
         at = new Vector3(p.x, p.y, p.z);
         break;
       }
     }
     // No room scan (or none there yet): the floor.
-    if (!at && d.y < -0.05) at = o.clone().addScaledVector(d, -o.y / d.y);
-    if (at && at.distanceTo(o) > 8) at = null;
-    this.reticle.visible = !!at && !this.two && !this.hands.some((h) => h.wheel.open || h.squeezing);
-    if (at) this.reticle.position.set(at.x, at.y + 0.002, at.z);
-    if (hand) hand.line.scale.z = at ? Math.max(0.02, at.distanceTo(o)) : 2;
+    if (!at && d.y < -0.05) {
+      at = o.clone().addScaledVector(d, -o.y / d.y);
+    }
+    if (at && at.distanceTo(o) > 8) {
+      at = null;
+    }
+    this.reticle.visible = !!at && !this.two && !this.hands.some(h => h.wheel.open || h.squeezing);
+    if (at) {
+      this.reticle.position.set(at.x, at.y + 0.002, at.z);
+    }
+    if (hand) {
+      hand.line.scale.z = at ? Math.max(0.02, at.distanceTo(o)) : 2;
+    }
   }
 
   // ------------------------------------------------------------ phone, tablet
 
   private startPhone(session: XRSession): void {
-    session.addEventListener("select", this.onTap);
+    session.addEventListener('select', this.onTap);
     const s = session as XRSession & { requestHitTestSource?(o: { space: XRSpace }): Promise<XRHitTestSource> | undefined };
     session
-      .requestReferenceSpace("viewer")
-      .then((space) => s.requestHitTestSource?.({ space }))
+      .requestReferenceSpace('viewer')
+      .then(space => s.requestHitTestSource?.({ space }))
       .then((h) => {
-        if (!h) return;
-        if (this.session !== session) h.cancel();
-        else this.viewerHits = h;
+        if (!h) {
+          return;
+        }
+        if (this.session !== session) {
+          h.cancel();
+        } else {
+          this.viewerHits = h;
+        }
       })
       .catch(() => {});
     // Without the page's layer over the camera, the scale floats at the lower left instead.
-    if (!(session as XRSession & { domOverlayState?: unknown }).domOverlayState) this.room.add(this.tape.board.mesh);
-    this.setHint("Point at the floor or a table, then tap");
+    if (!(session as XRSession & { domOverlayState?: unknown }).domOverlayState) {
+      this.room.add(this.tape.board.mesh);
+    }
+    this.setHint('Point at the floor or a table, then tap');
   }
 
   /** Where the phone looks: its position and straight ahead. */
   private viewerRay(frame?: XRFrame): { o: Vector3; d: Vector3; q: Quaternion } | null {
     const space = this.host.renderer.xr.getReferenceSpace();
     const pose = frame && space ? frame.getViewerPose(space) : null;
-    if (!pose) return null;
+    if (!pose) {
+      return null;
+    }
     const p = pose.transform.position;
     const r = pose.transform.orientation;
     const q = new Quaternion(r.x, r.y, r.z, r.w);
+
     return { o: new Vector3(p.x, p.y, p.z), d: new Vector3(0, 0, -1).applyQuaternion(q), q };
   }
 
   /** A tap on the screen: the model goes where the ring is (not after a pinch). */
   private phoneTap(e: XRInputSourceEvent): void {
-    if (e.inputSource.targetRayMode !== "screen" || this.pinchUsed || !this.reticle.visible) return;
+    if (e.inputSource.targetRayMode !== 'screen' || this.pinchUsed || !this.reticle.visible) {
+      return;
+    }
     const head = new Vector3().setFromMatrixPosition(this.host.renderer.xr.getCamera().matrixWorld);
     this.putAt(this.reticle.position.clone(), head, this.holder.visible);
     this.holder.visible = true;
     this.placed = true;
-    this.setHint("Pinch to size it, twist to turn it, tap to move it");
+    this.setHint('Pinch to size it, twist to turn it, tap to move it');
   }
 
   /** Fingers on the screen: two of them size the model (pinch) and turn it (twist) about its foot. */
   private touch(frame: XRFrame): void {
     const space = this.host.renderer.xr.getReferenceSpace();
     const view = this.viewerRay(frame);
-    if (!space || !view) return;
+    if (!space || !view) {
+      return;
+    }
     // The 3D scale (no page layer): low on the left, facing you.
     if (this.tape.board.mesh.parent === this.room) {
       this.tape.board.mesh.position.copy(view.o).add(new Vector3(-0.07, -0.1, -0.35).applyQuaternion(view.q));
@@ -850,16 +985,25 @@ export class VRMode {
     const back = view.q.clone().invert();
     const pts: [number, number][] = [];
     for (const src of this.session?.inputSources ?? []) {
-      if (src.targetRayMode !== "screen") continue;
+      if (src.targetRayMode !== 'screen') {
+        continue;
+      }
       const pose = frame.getPose(src.targetRaySpace, space);
-      if (!pose) continue;
+      if (!pose) {
+        continue;
+      }
       const r = pose.transform.orientation;
       const d = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(r.x, r.y, r.z, r.w)).applyQuaternion(back);
-      if (d.z < -1e-3) pts.push([d.x / -d.z, d.y / -d.z]);
+      if (d.z < -1e-3) {
+        pts.push([d.x / -d.z, d.y / -d.z]);
+      }
     }
-    if (!pts.length) this.pinchUsed = false;
+    if (!pts.length) {
+      this.pinchUsed = false;
+    }
     if (pts.length < 2 || !this.holder.visible) {
       this.two = null;
+
       return;
     }
     const [a, b] = pts;
@@ -869,11 +1013,14 @@ export class VRMode {
       this.glide = null;
       this.two = { d0: Math.max(1e-4, dist), a0: ang, s0: this.holder.scale.x, q0: this.holder.quaternion.clone(), base: this.baseInRoom() };
       this.pinchUsed = true;
+
       return;
     }
     let s = (this.two.s0 * dist) / this.two.d0;
     // Real size holds for a moment on the way.
-    if (Math.abs(s / REAL - 1) < 0.07) s = REAL;
+    if (Math.abs(s / REAL - 1) < 0.07) {
+      s = REAL;
+    }
     let da = ang - this.two.a0;
     da = Math.atan2(Math.sin(da), Math.cos(da));
     this.holder.scale.setScalar(s);
@@ -884,19 +1031,19 @@ export class VRMode {
   /** The phone's layer over the camera: Exit at the top, the hint at the bottom, the scale at the left. */
   private makeOverlay(): void {
     this.dropOverlay();
-    const glass = "background:rgba(28,28,30,0.72);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.14);color:#fff;border-radius:999px";
-    const root = document.createElement("div");
+    const glass = 'background:rgba(28,28,30,0.72);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.14);color:#fff;border-radius:999px';
+    const root = document.createElement('div');
     root.style.cssText = `position:fixed;inset:0;pointer-events:none;font:500 15px ${FONT};z-index:1000`;
-    const exit = document.createElement("button");
-    exit.textContent = "Exit AR";
+    const exit = document.createElement('button');
+    exit.textContent = 'Exit AR';
     exit.style.cssText = `position:absolute;top:calc(env(safe-area-inset-top, 0px) + 16px);right:16px;pointer-events:auto;${glass};font:600 15px ${FONT};padding:10px 18px`;
     // A tap on Exit isn't a tap in the room.
-    exit.addEventListener("beforexrselect", (e) => e.preventDefault());
-    exit.addEventListener("click", () => this.exit());
-    const hint = document.createElement("div");
+    exit.addEventListener('beforexrselect', e => e.preventDefault());
+    exit.addEventListener('click', () => this.exit());
+    const hint = document.createElement('div');
     hint.style.cssText = `position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom, 0px) + 24px);transform:translateX(-50%);${glass};padding:10px 18px;white-space:nowrap`;
     const tape = this.tape.board.g.canvas;
-    tape.style.cssText = "position:absolute;left:16px;top:50%;transform:translateY(-50%);width:84px;height:auto";
+    tape.style.cssText = 'position:absolute;left:16px;top:50%;transform:translateY(-50%);width:84px;height:auto';
     root.append(exit, hint, tape);
     document.body.append(root);
     this.overlay = root;
@@ -910,16 +1057,22 @@ export class VRMode {
   }
 
   private setHint(text: string): void {
-    if (this.hint && this.hint.textContent !== text) this.hint.textContent = text;
+    if (this.hint && this.hint.textContent !== text) {
+      this.hint.textContent = text;
+    }
   }
 
   /** The card: a short message for a moment. */
   private drawCard(): void {
-    const toast = this.toast && performance.now() < this.toast.until ? this.toast.text : "";
-    if (toast === this.cardKey) return;
+    const toast = this.toast && performance.now() < this.toast.until ? this.toast.text : '';
+    if (toast === this.cardKey) {
+      return;
+    }
     this.cardKey = toast;
     this.card.mesh.visible = !!toast;
-    if (!toast) return;
+    if (!toast) {
+      return;
+    }
     const g = this.card.clear();
     g.fillStyle = GLASS;
     g.beginPath();
@@ -928,9 +1081,9 @@ export class VRMode {
     g.strokeStyle = LINE;
     g.lineWidth = 3;
     g.stroke();
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.fillStyle = "#fff";
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#fff';
     g.font = `600 52px ${FONT}`;
     wrap(g, toast, 320, 100, 560, 58);
     this.card.show();
@@ -952,11 +1105,11 @@ export class VRMode {
     this.pinch = null;
     this.glide = null;
     this.toast = null;
-    this.cardKey = "";
+    this.cardKey = '';
     this.card.mesh.removeFromParent();
     this.tape.board.mesh.removeFromParent();
     this.tape.reset();
-    this.session?.removeEventListener("select", this.onTap);
+    this.session?.removeEventListener('select', this.onTap);
     this.viewerHits?.cancel();
     this.viewerHits = null;
     this.two = null;
@@ -975,14 +1128,15 @@ export class VRMode {
 
 /** A soft round shadow (dark in the middle, gone at the edge). */
 function shadowTexture(): CanvasTexture {
-  const c = document.createElement("canvas");
+  const c = document.createElement('canvas');
   c.width = c.height = 128;
-  const g = c.getContext("2d")!;
+  const g = c.getContext('2d')!;
   const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  r.addColorStop(0, "rgba(0,0,0,0.42)");
-  r.addColorStop(0.55, "rgba(0,0,0,0.22)");
-  r.addColorStop(1, "rgba(0,0,0,0)");
+  r.addColorStop(0, 'rgba(0,0,0,0.42)');
+  r.addColorStop(0.55, 'rgba(0,0,0,0.22)');
+  r.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = r;
   g.fillRect(0, 0, 128, 128);
+
   return new CanvasTexture(c);
 }

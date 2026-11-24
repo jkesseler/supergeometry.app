@@ -3,20 +3,20 @@
 // a group's tools (most used first), and the main tool a pick's tool is under
 // another name. (They came with the tool wheel the line took over from.)
 
-const OWN = "own";
+const OWN = 'own';
 
 /**
  * Where a picked thing's tool goes when it isn't named like one of the main
  * tools (those go where the main tool is). Anything not known: with the pick's own, under More.
  */
 export const GROUP_OF: Record<string, string> = {
-  text: "sketch", offset: "sketch", projs: "sketch",
-  editFreeform: "freeform", fillHole: "freeform", thicken: "freeform",
-  planePerp: "construct", planeEdge: "construct", proje: "construct",
-  moveBody: "transform", moveVertex: "transform", patl: "transform", patc: "transform", copySketch: "transform", align: "transform",
-  offsetFromEdge: "modify",
-  drawing: "more", material: "more",
-  deselect: OWN, wholePattern: OWN, color: OWN, opacity: OWN, delete: OWN, deleteBody: OWN,
+  text: 'sketch', offset: 'sketch', projs: 'sketch',
+  editFreeform: 'freeform', fillHole: 'freeform', thicken: 'freeform',
+  planePerp: 'construct', planeEdge: 'construct', proje: 'construct',
+  moveBody: 'transform', moveVertex: 'transform', patl: 'transform', patc: 'transform', copySketch: 'transform', align: 'transform',
+  offsetFromEdge: 'modify',
+  drawing: 'more', material: 'more',
+  deselect: OWN, wholePattern: OWN, color: OWN, opacity: OWN, delete: OWN, deleteBody: OWN
 };
 
 /**
@@ -24,14 +24,14 @@ export const GROUP_OF: Record<string, string> = {
  * they are listed.)
  */
 export const RANK = [
-  "extrude", "revolve", "sweep", "loft",
-  "fillet", "chamfer", "shell", "offsetFace", "fix", "offsetEdge", "thread", "wrap",
-  "subtract", "union", "intersect", "split",
-  "move", "mirror", "pattern", "scale", "translate", "rotate",
-  "plane", "axis", "proje",
-  "ff-box", "ff-cylinder", "ff-sphere", "ff-torus", "ff-plane", "faceFreeform", "connect",
-  "measure", "section", "variables", "insert", "bim",
+  'extrude', 'revolve', 'sweep', 'loft',
+  'fillet', 'chamfer', 'shell', 'offsetFace', 'fix', 'offsetEdge', 'thread', 'wrap',
+  'subtract', 'union', 'intersect', 'split',
+  'move', 'mirror', 'pattern', 'scale', 'translate', 'rotate',
+  'plane', 'axis', 'proje',
+  'ff-box', 'ff-cylinder', 'ff-sphere', 'ff-torus', 'ff-plane', 'faceFreeform', 'connect',
+  'measure', 'section', 'variables', 'insert', 'bim'
 ];
 
 /** A picked thing's tool that is one of the main tools under another name. */
-export const ALIAS: Record<string, string> = { patl: "linear", patc: "circular", moveBody: "move", deleteBody: "delete", planePerp: "perp", planeEdge: "angle" };
+export const ALIAS: Record<string, string> = { patl: 'linear', patc: 'circular', moveBody: 'move', deleteBody: 'delete', planePerp: 'perp', planeEdge: 'angle' };

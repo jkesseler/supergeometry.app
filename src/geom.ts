@@ -1,6 +1,6 @@
 ﻿// Small vector / plane helpers shared by the UI and the kernel worker.
 
-import type { PlaneDef, Vec2, Vec3 } from "./doc/types";
+import type { PlaneDef, Vec2, Vec3 } from './doc/types';
 
 export const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -9,11 +9,12 @@ export const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2
 export const cross = (a: Vec3, b: Vec3): Vec3 => [
   a[1] * b[2] - a[2] * b[1],
   a[2] * b[0] - a[0] * b[2],
-  a[0] * b[1] - a[1] * b[0],
+  a[0] * b[1] - a[1] * b[0]
 ];
 export const len = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
 export const norm = (a: Vec3): Vec3 => {
   const l = len(a) || 1;
+
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 export const dist = (a: Vec3, b: Vec3): number => len(sub(a, b));
@@ -28,11 +29,13 @@ export function planeY(p: PlaneDef): Vec3 {
 
 export function toWorld(p: PlaneDef, uv: Vec2): Vec3 {
   const y = planeY(p);
+
   return add(p.origin, add(scale(p.xDir, uv[0]), scale(y, uv[1])));
 }
 
 export function toPlane(p: PlaneDef, w: Vec3): Vec2 {
   const d = sub(w, p.origin);
+
   return [dot(d, p.xDir), dot(d, planeY(p))];
 }
 
@@ -42,6 +45,7 @@ export function xDirFor(normal: Vec3): Vec3 {
   // Project ref onto the plane; for vertical faces this gives a horizontal x axis.
   const x = Math.abs(normal[2]) > 0.9 ? ref : cross(ref, normal);
   const proj = sub(x, scale(normal, dot(x, normal)));
+
   return norm(proj);
 }
 
@@ -56,13 +60,17 @@ export function xDirFor(normal: Vec3): Vec3 {
 export function originOnPlane(p: PlaneDef): PlaneDef {
   const n = p.normal;
   const k = (p.origin[0] * n[0] + p.origin[1] * n[1] + p.origin[2] * n[2]) / (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+
   return { ...p, origin: [n[0] * k, n[1] * k, n[2] * k] };
 }
 
 /** A default size: `v` rounded to two significant figures (217.4 -> 220, 0.0347 -> 0.035). */
 export function roundSig(v: number, sig = 2): number {
-  if (!Number.isFinite(v) || v === 0) return v;
+  if (!Number.isFinite(v) || v === 0) {
+    return v;
+  }
   const p = Math.pow(10, Math.floor(Math.log10(Math.abs(v))) - sig + 1);
+
   return Math.round(v / p) * p;
 }
 
@@ -78,5 +86,6 @@ export function patternSpacing(extent: number, fallback = 10): number {
 export function niceStep(raw: number): number {
   const p = Math.pow(10, Math.floor(Math.log10(raw)));
   const m = raw / p;
+
   return (m < 2 ? 1 : m < 7 ? 5 : 10) * p;
 }

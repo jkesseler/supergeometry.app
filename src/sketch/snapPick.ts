@@ -22,8 +22,13 @@ export function nearestSnap<T extends SnapCandidate>(cands: T[], tol: number): T
   const keeps = (x: SnapCandidate) => !!(x.ref || x.mid || x.model);
   let best: T | null = null;
   for (const c of cands) {
-    if (c.d >= tol) continue;
-    if (!best || c.d < best.d - 0.5 || (c.d < best.d + 0.5 && keeps(c) && !keeps(best))) best = c;
+    if (c.d >= tol) {
+      continue;
+    }
+    if (!best || c.d < best.d - 0.5 || (c.d < best.d + 0.5 && keeps(c) && !keeps(best))) {
+      best = c;
+    }
   }
+
   return best;
 }

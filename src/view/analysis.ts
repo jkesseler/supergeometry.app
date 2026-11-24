@@ -2,9 +2,9 @@
 // faces meet smoothly - a kink in a stripe is a crease, a jump a gap) and a
 // curvature map (blue hollow, green flat, red domed).
 
-import { ShaderMaterial, UniformsLib, UniformsUtils, Vector3 } from "three";
+import { ShaderMaterial, UniformsLib, UniformsUtils, Vector3 } from 'three';
 
-export type Analysis = "none" | "zebra" | "curvature";
+export type Analysis = 'none' | 'zebra' | 'curvature';
 
 /**
  * Curvature at each vertex of a mesh (1/mm), from how the normals turn along
@@ -21,10 +21,16 @@ export function curvatureOf(positions: ArrayLike<number>, normals: ArrayLike<num
     const dy = positions[3 * i + 1] - positions[3 * j + 1];
     const dz = positions[3 * i + 2] - positions[3 * j + 2];
     const len2 = dx * dx + dy * dy + dz * dz;
-    if (len2 < 1e-12) return;
+    if (len2 < 1e-12) {
+      return;
+    }
     const k = ((normals[3 * i] - normals[3 * j]) * dx + (normals[3 * i + 1] - normals[3 * j + 1]) * dy + (normals[3 * i + 2] - normals[3 * j + 2]) * dz) / len2;
-    if (Math.abs(k) > Math.abs(out[i])) out[i] = k;
-    if (Math.abs(k) > Math.abs(out[j])) out[j] = k;
+    if (Math.abs(k) > Math.abs(out[i])) {
+      out[i] = k;
+    }
+    if (Math.abs(k) > Math.abs(out[j])) {
+      out[j] = k;
+    }
   };
   for (let t = 0; t + 2 < indices.length; t += 3) {
     const a = indices[t], b = indices[t + 1], c = indices[t + 2];
@@ -32,6 +38,7 @@ export function curvatureOf(positions: ArrayLike<number>, normals: ArrayLike<num
     add(b, c);
     add(c, a);
   }
+
   return out;
 }
 
@@ -100,11 +107,11 @@ export function analysisMaterial(): ShaderMaterial {
         uHorizontal: { value: 0 },
         uScale: { value: 0.1 },
         uOrtho: { value: false },
-        uViewDir: { value: new Vector3(0, 0, -1) },
-      },
+        uViewDir: { value: new Vector3(0, 0, -1) }
+      }
     ]),
     vertexShader: vertex,
     fragmentShader: fragment,
-    clipping: true,
+    clipping: true
   });
 }

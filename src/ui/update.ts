@@ -4,18 +4,22 @@
 // Updating - or More → Update - clears the browser's stored copies of
 // the app's files and reloads. Your project is saved first and stays.
 
-import { el } from "./ui";
+import { el } from './ui';
 
 /** The app's main script of this page (its name changes with every build). */
 export function loadedBuild(): string | null {
-  const s = [...document.querySelectorAll<HTMLScriptElement>("script[src]")].map((x) => x.src).find((src) => /\/assets\/index-[\w-]+\.js/.test(src));
+  const s = [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map(x => x.src).find(src => /\/assets\/index-[\w-]+\.js/.test(src));
+
   return s ? (s.match(/index-[\w-]+\.js/)?.[0] ?? null) : null;
 }
 
 async function liveBuild(): Promise<string | null> {
   try {
-    const res = await fetch(`/?check=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) return null;
+    const res = await fetch(`/?check=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) {
+      return null;
+    }
+
     return (await res.text()).match(/index-[\w-]+\.js/)?.[0] ?? null;
   } catch {
     return null; // offline: nothing to say
@@ -34,27 +38,36 @@ export class Updates {
   /** `beforeReload` saves the project before the page is reloaded. */
   constructor(private beforeReload: () => Promise<void>) {
     // Only a built site has a build to compare (not the dev server).
-    if (!loadedBuild()) return;
+    if (!loadedBuild()) {
+      return;
+    }
     setTimeout(() => void this.check(), 20_000);
     setInterval(() => void this.check(), 10 * 60_000);
-    document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && void this.check());
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && void this.check());
   }
 
   /** More pulses; its Update item gets a NEW badge. */
   private markPending(): void {
-    document.body.classList.add("update-pending");
-    const item = document.getElementById("m-update");
-    if (item && !item.querySelector(".new-badge")) item.append(el("span", "new-badge", "NEW"));
+    document.body.classList.add('update-pending');
+    const item = document.getElementById('m-update');
+    if (item && !item.querySelector('.new-badge')) {
+      item.append(el('span', 'new-badge', 'NEW'));
+    }
   }
 
   /** Is a newer build out? Marks More if so. Returns whether it is. */
   async check(): Promise<boolean> {
     const mine = loadedBuild();
     const live = await liveBuild();
-    if (!mine || !live || live === mine) return false;
+    if (!mine || !live || live === mine) {
+      return false;
+    }
     // Offline mode: the new version is downloaded now, so it's there next start even with no connection.
-    if (this.offline?.on) await this.offline.download(false);
+    if (this.offline?.on) {
+      await this.offline.download(false);
+    }
     this.markPending();
+
     return true;
   }
 
@@ -68,21 +81,28 @@ export class Updates {
     if (this.offline?.on && navigator.onLine) {
       await this.offline.download(true);
       location.reload();
+
       return;
     }
     try {
-      if ("caches" in window) for (const k of await caches.keys()) await caches.delete(k);
+      if ('caches' in window) {
+        for (const k of await caches.keys()) {
+          await caches.delete(k);
+        }
+      }
     } catch {
       // nothing stored
     }
     try {
-      for (const r of (await navigator.serviceWorker?.getRegistrations?.()) ?? []) await r.unregister();
+      for (const r of (await navigator.serviceWorker?.getRegistrations?.()) ?? []) {
+        await r.unregister();
+      }
     } catch {
       // none
     }
     // A fresh address so no stored copy of the page is used.
     const url = new URL(location.href);
-    url.searchParams.set("v", String(Date.now()));
+    url.searchParams.set('v', String(Date.now()));
     location.replace(url.toString());
   }
 }

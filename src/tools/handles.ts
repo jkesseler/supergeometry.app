@@ -1,9 +1,9 @@
-import { ConeGeometry, Group, Mesh, MeshBasicMaterial, SphereGeometry, Vector3 } from "three";
-import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
-import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import type { Vec3 } from "../doc/types";
-import type { Viewport } from "../view/viewport";
-import type { ToolPointer } from "../view/input";
+import { ConeGeometry, Group, Mesh, MeshBasicMaterial, SphereGeometry, Vector3 } from 'three';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import type { Vec3 } from '../doc/types';
+import type { Viewport } from '../view/viewport';
+import type { ToolPointer } from '../view/input';
 
 // Amber, so a handle never disappears against the blue of a selection.
 const COLOR = 0xffa31a;
@@ -29,18 +29,18 @@ export class Handle {
   private shaft: LineSegments2 | null = null;
   /** The dark edge under the shaft. */
   private under: LineSegments2 | null = null;
-  private underMat: ReturnType<Viewport["lineMaterial"]> | null = null;
+  private underMat: ReturnType<Viewport['lineMaterial']> | null = null;
   private lineMat;
   private onFrame = () => this.layout();
 
   /** `px`: how long an arrow is on screen (a pair back to back - a double arrow - is drawn shorter). */
-  constructor(private view: Viewport, readonly shape: "arrow" | "dot", private px = ARROW_PX) {
+  constructor(private view: Viewport, readonly shape: 'arrow' | 'dot', private px = ARROW_PX) {
     this.lineMat = view.lineMaterial(COLOR, 3);
     this.lineMat.transparent = true;
-    this.head = new Mesh(shape === "arrow" ? new ConeGeometry(0.095, 0.3, 24) : new SphereGeometry(0.1, 20, 12), this.mat);
+    this.head = new Mesh(shape === 'arrow' ? new ConeGeometry(0.095, 0.3, 24) : new SphereGeometry(0.1, 20, 12), this.mat);
     this.head.renderOrder = 50;
     this.group.add(this.head);
-    if (shape === "arrow") {
+    if (shape === 'arrow') {
       this.underMat = view.lineMaterial(EDGE, 6);
       this.underMat.transparent = true;
       this.underMat.opacity = 0.55;
@@ -60,7 +60,9 @@ export class Handle {
 
   /** Highlight while the pointer is over it (brighter and a bit bigger). */
   setHot(on: boolean): void {
-    if (on === this.hot) return;
+    if (on === this.hot) {
+      return;
+    }
     this.hot = on;
     this.mat.color.setHex(on ? HOT : COLOR);
     if (this.shaft) {
@@ -75,7 +77,9 @@ export class Handle {
 
   set(base: Vec3, dir?: Vec3): void {
     this.base.set(...base);
-    if (dir) this.dir.set(...dir).normalize();
+    if (dir) {
+      this.dir.set(...dir).normalize();
+    }
     this.layout();
     this.view.requestRender();
   }
@@ -87,14 +91,19 @@ export class Handle {
 
   /** Shown or not (a hidden one can't be grabbed). */
   setVisible(on: boolean): void {
-    if (this.group.visible === on) return;
+    if (this.group.visible === on) {
+      return;
+    }
     this.group.visible = on;
     this.view.requestRender();
   }
 
   hit(p: ToolPointer): boolean {
-    if (!this.group.visible) return false;
+    if (!this.group.visible) {
+      return false;
+    }
     const s = this.grabPoint();
+
     return !!s && Math.hypot(s[0] - p.x, s[1] - p.y) < Math.max(30, p.tol * 1.8);
   }
 
@@ -105,7 +114,9 @@ export class Handle {
     this.head.geometry.dispose();
     this.shaft?.geometry.dispose();
     this.under?.geometry.dispose();
-    if (this.underMat) this.view.releaseLineMaterial(this.underMat);
+    if (this.underMat) {
+      this.view.releaseLineMaterial(this.underMat);
+    }
     this.view.releaseLineMaterial(this.lineMat);
     this.view.requestRender();
   }
@@ -119,13 +130,13 @@ export class Handle {
   }
 
   private tip(): Vector3 {
-    return this.shape === "arrow" ? this.base.clone().addScaledVector(this.dir, this.size()) : this.base.clone();
+    return this.shape === 'arrow' ? this.base.clone().addScaledVector(this.dir, this.size()) : this.base.clone();
   }
 
   private layout(): void {
     const s = this.size();
     this.head.scale.setScalar(this.headScale());
-    if (this.shape === "arrow") {
+    if (this.shape === 'arrow') {
       const tip = this.tip();
       this.head.position.copy(tip);
       this.head.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), this.dir);
@@ -161,12 +172,17 @@ export function axisDrag(view: Viewport, origin: Vec3, dir: Vec3, from: ToolPoin
     const b = dot3(d, r.d);
     const den = 1 - b * b;
     // Looking (almost) straight along the line: no good answer this way.
-    if (den < 0.03) return null;
+    if (den < 0.03) {
+      return null;
+    }
+
     return (b * dot3(r.d, w) - dot3(d, w)) / den;
   };
   const t0 = along(from);
   const t1 = along(to);
-  if (t0 !== null && t1 !== null) return t1 - t0;
+  if (t0 !== null && t1 !== null) {
+    return t1 - t0;
+  }
   // Nearly end-on: by the screen direction of a long piece of the line (or,
   // dead end-on, finger up = towards you).
   const wpp = view.cam.worldPerPixel(view.height);
@@ -180,9 +196,12 @@ export function axisDrag(view: Viewport, origin: Vec3, dir: Vec3, from: ToolPoin
     const vx = b[0] - a[0];
     const vy = b[1] - a[1];
     const l2 = vx * vx + vy * vy;
-    if (l2 > 16) return ((dx * vx + dy * vy) / l2) * L;
+    if (l2 > 16) {
+      return ((dx * vx + dy * vy) / l2) * L;
+    }
   }
   const eye = view.pointerRay(view.width / 2, view.height / 2).d;
   const towardYou = dot3(d, eye) < 0 ? 1 : -1;
+
   return -dy * wpp * towardYou;
 }

@@ -1,15 +1,15 @@
-import { getPath, setPath } from "../doc/params";
-import { BETA_TYPES } from "../doc/store";
-import type { ExtrudeSource, Feature, SketchFeature, Vec2 } from "../doc/types";
-import type { FieldKind, PanelItem, ToolItem } from "../ui/ui";
-import { isExpression } from "../ui/ui";
-import type { ToolPointer } from "../view/input";
-import type { PickHit, PickOptions } from "../view/viewport";
-import { hitToSel, sourcesOf, viewMenu, type AppContext, type Sel, type Tool } from "./tool";
-import { DragTyping } from "./dragTyping";
-import { screenClass } from "../device";
-import { arrangement, materialRegions, pointInRegion, resolveRegion, type Region } from "../sketch/regions";
-import { pointInPoly } from "../sketch/curves";
+import { getPath, setPath } from '../doc/params';
+import { BETA_TYPES } from '../doc/store';
+import { isExpression } from '../ui/ui';
+import { screenClass } from '../device';
+import { arrangement, materialRegions, pointInRegion, resolveRegion, type Region } from '../sketch/regions';
+import { pointInPoly } from '../sketch/curves';
+import { hitToSel, sourcesOf, viewMenu, type AppContext, type Sel, type Tool } from './tool';
+import { DragTyping } from './dragTyping';
+import type { ExtrudeSource, Feature, SketchFeature, Vec2 } from '../doc/types';
+import type { FieldKind, PanelItem, ToolItem } from '../ui/ui';
+import type { ToolPointer } from '../view/input';
+import type { PickHit, PickOptions } from '../view/viewport';
 
 /** Something the user has to point at (an axis, a path, faces to remove, …). */
 export interface Slot {
@@ -45,7 +45,7 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
   constructor(
     protected app: AppContext,
     draft: F,
-    protected existing?: F,
+    protected existing?: F
   ) {
     this.feature = existing ? structuredClone(existing) : draft;
     this.startSelection = [...app.selection];
@@ -58,7 +58,9 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
   protected cancel(): void {
     const back = this.startSelection;
     this.app.setTool(null);
-    if (back.length) this.app.setSelection(back);
+    if (back.length) {
+      this.app.setSelection(back);
+    }
   }
 
   get editingId(): string {
@@ -71,7 +73,7 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
   protected abstract items(): PanelItem[];
   /** Is the draft complete enough to preview and commit? */
   protected ready(): boolean {
-    return this.slots.every((s) => s.filled());
+    return this.slots.every(s => s.filled());
   }
   /** Extra panel buttons. */
   protected actions(): ToolItem[] {
@@ -80,21 +82,23 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
 
   enter(): void {
     // Cancel is in the card (on a phone the card is one row without it: there it's in the column).
-    this.app.ui.setTools(screenClass() === "phone" ? [{ id: "cancel", label: "Cancel", icon: "close", shortcut: "Esc", run: () => this.cancel() }] : []);
+    this.app.ui.setTools(screenClass() === 'phone' ? [{ id: 'cancel', label: 'Cancel', icon: 'close', shortcut: 'Esc', run: () => this.cancel() }] : []);
     this.app.ui.setBottom([]);
-    this.active = this.slots.findIndex((s) => !s.filled());
+    this.active = this.slots.findIndex(s => !s.filled());
     // A step opened again with everything picked: taps add to (or take from) its
     // list of picks, as they did when it was made. (They did nothing: the four
     // bolts left out of a Subtract couldn't be added without tapping its slot first.)
-    if (this.active < 0) this.active = this.slots.reduce((last, s, i) => (s.multi ? i : last), -1);
+    if (this.active < 0) {
+      this.active = this.slots.reduce((last, s, i) => (s.multi ? i : last), -1);
+    }
     this.render();
     this.update();
     this.app.ui.focusPanel();
     this.steps = [JSON.stringify(this.feature)];
     this.redos = [];
-    window.addEventListener("pointerdown", this.onDown, true);
-    window.addEventListener("pointerup", this.onUp, true);
-    window.addEventListener("pointercancel", this.onUp, true);
+    window.addEventListener('pointerdown', this.onDown, true);
+    window.addEventListener('pointerup', this.onUp, true);
+    window.addEventListener('pointercancel', this.onUp, true);
   }
 
   // ---- Undo inside the tool
@@ -118,18 +122,26 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
 
   /** What the draft is now, as a step - if it differs from the last one. */
   private record(): void {
-    if (this.restoring || !this.steps.length) return;
+    if (this.restoring || !this.steps.length) {
+      return;
+    }
     const now = JSON.stringify(this.feature);
-    if (now === this.steps[this.steps.length - 1]) return;
+    if (now === this.steps[this.steps.length - 1]) {
+      return;
+    }
     this.steps.push(now);
-    if (this.steps.length > 100) this.steps.shift();
+    if (this.steps.length > 100) {
+      this.steps.shift();
+    }
     this.redos = [];
     (this.app as AppContext & { refreshUndo?(): void }).refreshUndo?.();
   }
 
   /** The draft changed: a step once the drag ends, or once typing stops for a moment (digit by digit is one step). */
   private noteChange(): void {
-    if (this.restoring || this.held) return;
+    if (this.restoring || this.held) {
+      return;
+    }
     clearTimeout(this.settle);
     this.settle = window.setTimeout(() => this.record(), 450);
   }
@@ -139,7 +151,9 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
     this.restoring = true;
     try {
       const f = this.feature as unknown as Record<string, unknown>;
-      for (const k of Object.keys(f)) delete f[k];
+      for (const k of Object.keys(f)) {
+        delete f[k];
+      }
       Object.assign(f, JSON.parse(step));
       this.restored();
       this.render();
@@ -163,25 +177,30 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
     this.record();
     if (this.steps.length < 2) {
       this.cancel();
+
       return true;
     }
     this.redos.push(this.steps.pop()!);
     this.restore(this.steps[this.steps.length - 1]);
+
     return true;
   }
   redo(): boolean {
     const next = this.redos.pop();
-    if (!next) return false;
+    if (!next) {
+      return false;
+    }
     this.steps.push(next);
     this.restore(next);
+
     return true;
   }
 
   exit(): void {
     clearTimeout(this.settle);
-    window.removeEventListener("pointerdown", this.onDown, true);
-    window.removeEventListener("pointerup", this.onUp, true);
-    window.removeEventListener("pointercancel", this.onUp, true);
+    window.removeEventListener('pointerdown', this.onDown, true);
+    window.removeEventListener('pointerup', this.onUp, true);
+    window.removeEventListener('pointercancel', this.onUp, true);
     this.app.view.setOriginPlanesVisible(false);
     this.app.ui.showPanel(null);
     this.app.ui.setHint(null);
@@ -193,7 +212,9 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
 
   hover(p: ToolPointer | null): void {
     const slot = this.slots[this.active];
-    if (!p || !slot) return this.app.setHover(null);
+    if (!p || !slot) {
+      return this.app.setHover(null);
+    }
     const hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, ...slot.pick });
     this.lastHover = { x: p.x, y: p.y, hit };
     this.app.setHover(hitToSel(hit));
@@ -213,26 +234,34 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
   protected regionTap(p: ToolPointer): boolean {
     const f = this.feature as unknown as { source?: ExtrudeSource };
     const src = f.source;
-    if (src?.kind !== "profile" || this.existing) return false;
+    if (src?.kind !== 'profile' || this.existing) {
+      return false;
+    }
     const hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, profiles: true, planes: false, axes: false, vertices: false });
-    if (hit?.kind !== "profile" || hit.sketch !== src.sketch) return false;
+    if (hit?.kind !== 'profile' || hit.sketch !== src.sketch) {
+      return false;
+    }
     const arr = arrangement(this.app.sketchCurves(src.sketch));
-    const have = src.regions.map((ref) => resolveRegion(arr, ref)).map((r) => (r ? arr.regions.indexOf(r) : -1)).filter((k) => k >= 0);
-    const sel = have.map((region) => ({ kind: "profile" as const, sketch: src.sketch, region }));
-    const i = sel.findIndex((s) => s.region === hit.region);
-    const next = i >= 0 ? sel.filter((_, j) => j !== i) : [...sel, { kind: "profile" as const, sketch: hit.sketch, region: hit.region }];
+    const have = src.regions.map(ref => resolveRegion(arr, ref)).map(r => (r ? arr.regions.indexOf(r) : -1)).filter(k => k >= 0);
+    const sel = have.map(region => ({ kind: 'profile' as const, sketch: src.sketch, region }));
+    const i = sel.findIndex(s => s.region === hit.region);
+    const next = i >= 0 ? sel.filter((_, j) => j !== i) : [...sel, { kind: 'profile' as const, sketch: hit.sketch, region: hit.region }];
     if (!next.length) {
       this.app.setTool(null);
+
       return true;
     }
     const made = sourcesOf(this.app, next)[0];
-    if (!made) return false;
+    if (!made) {
+      return false;
+    }
     f.source = made;
     this.regionsChanged();
-    this.app.ui.toast(`${next.length} region${next.length > 1 ? "s" : ""} selected`);
+    this.app.ui.toast(`${next.length} region${next.length > 1 ? 's' : ''} selected`);
     this.render();
-    this.app.setSelection([...next, ...this.slots.flatMap((s) => s.shows?.() ?? [])]);
+    this.app.setSelection([...next, ...this.slots.flatMap(s => s.shows?.() ?? [])]);
     this.update();
+
     return true;
   }
 
@@ -252,27 +281,48 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
     // last boundary curve, tapped once the loop closed, took the edge of the
     // surface just made on it instead.)
     const mine = (b: string) => b === this.feature.id || b.startsWith(`${this.feature.id}:`);
-    if (hit && "body" in hit && hit.body && mine(hit.body)) hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, ...(slot?.pick ?? {}), bodies: false });
-    if (this.moreRegions && (!slot || !hit || hit.kind === "plane" || hit.kind === "profile") && this.regionTap(p)) return;
+    if (hit && 'body' in hit && hit.body && mine(hit.body)) {
+      hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, ...(slot?.pick ?? {}), bodies: false });
+    }
+    if (this.moreRegions && (!slot || !hit || hit.kind === 'plane' || hit.kind === 'profile') && this.regionTap(p)) {
+      return;
+    }
     // Tapping empty space ends the tool: keep the result if it's complete.
     if (!hit) {
-      if (this.ready()) this.done();
-      else this.app.setTool(null);
+      if (this.ready()) {
+        this.done();
+      } else {
+        this.app.setTool(null);
+      }
+
       return;
     }
-    if (!slot) return;
+    if (!slot) {
+      return;
+    }
     // Not this one - but another body's face in the same place is (the bolts
     // flush with the flange they're to cut: the flange came first every time).
-    const body = "body" in hit ? hit.body : null;
-    if (!slot.accept(hit) && !(body && this.app.view.facesAt(p.x, p.y).some((f) => f.kind === "face" && f.body !== body && slot.accept(f)))) {
-      if (this.moreRegions && this.regionTap(p)) return;
-      if (body && !mine(body) && this.otherBody(body)) return;
-      if (slot.rejectHint) this.app.ui.toast(slot.rejectHint);
+    const body = 'body' in hit ? hit.body : null;
+    if (!slot.accept(hit) && !(body && this.app.view.facesAt(p.x, p.y).some(f => f.kind === 'face' && f.body !== body && slot.accept(f)))) {
+      if (this.moreRegions && this.regionTap(p)) {
+        return;
+      }
+      if (body && !mine(body) && this.otherBody(body)) {
+        return;
+      }
+      if (slot.rejectHint) {
+        this.app.ui.toast(slot.rejectHint);
+      }
+
       return;
     }
-    if (!slot.multi) this.active = this.slots.findIndex((s, i) => i > this.active && !s.filled());
+    if (!slot.multi) {
+      this.active = this.slots.findIndex((s, i) => i > this.active && !s.filled());
+    }
     this.render();
-    if (this.finishWhenPicked && this.ready()) return void this.finishIfOk();
+    if (this.finishWhenPicked && this.ready()) {
+      return void this.finishIfOk();
+    }
     this.update();
   }
 
@@ -283,14 +333,20 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
    */
   pickBody(id: string): boolean {
     const slot = this.slots[this.active];
-    if (!slot || !slot.accept({ kind: "body", body: id, point: [0, 0, 0] } as unknown as PickHit)) return false;
-    if (!slot.multi) this.active = this.slots.findIndex((s, i) => i > this.active && !s.filled());
+    if (!slot || !slot.accept({ kind: 'body', body: id, point: [0, 0, 0] } as unknown as PickHit)) {
+      return false;
+    }
+    if (!slot.multi) {
+      this.active = this.slots.findIndex((s, i) => i > this.active && !s.filled());
+    }
     this.render();
     if (this.finishWhenPicked && this.ready()) {
       void this.finishIfOk();
+
       return true;
     }
     this.update();
+
     return true;
   }
 
@@ -300,11 +356,12 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
   private async finishIfOk(): Promise<void> {
     this.onDraftChanged();
     const r = await this.app.preview(this.featuresWith());
-    const err = r?.errors.find((e) => e.featureId === this.feature.id)?.message;
+    const err = r?.errors.find(e => e.featureId === this.feature.id)?.message;
     if (err) {
       this.error = err;
       this.setHint();
       this.app.ui.toast(err);
+
       return;
     }
     this.done();
@@ -316,25 +373,30 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
    */
   context(p: ToolPointer): void {
     viewMenu(this.app, p.x, p.y, [
-      { label: "Done", shortcut: "Enter", disabled: !this.ready() || !!this.error, run: () => this.done() },
-      { label: "Cancel", shortcut: "Esc", run: () => this.cancel() },
+      { label: 'Done', shortcut: 'Enter', disabled: !this.ready() || !!this.error, run: () => this.done() },
+      { label: 'Cancel', shortcut: 'Esc', run: () => this.cancel() }
     ]);
   }
 
   key(e: KeyboardEvent): boolean {
-    if (e.key === "Enter") this.done();
-    else if (e.key === "Escape") this.cancel();
-    else return false;
+    if (e.key === 'Enter') {
+      this.done();
+    } else if (e.key === 'Escape') {
+      this.cancel();
+    } else {
+      return false;
+    }
+
     return true;
   }
 
   /** Rebuild the panel (after slots/choices change). */
   protected render(): void {
     const slotItems: PanelItem[] = this.slots.flatMap((s, i): PanelItem[] => [
-      { type: "slot", label: s.label, value: s.describe(), active: i === this.active, filled: s.filled(), onClick: () => ((this.active = i), this.render()) },
+      { type: 'slot', label: s.label, value: s.describe(), active: i === this.active, filled: s.filled(), onClick: () => ((this.active = i), this.render()) },
       ...(s.presets?.length && i === this.active
-        ? [{ type: "choice" as const, options: s.presets.map((p, k) => ({ id: String(k), label: p.label })), value: "", onChange: (k: string) => (s.presets![Number(k)].apply(), this.advance(), this.render(), this.update()) }]
-        : []),
+        ? [{ type: 'choice' as const, options: s.presets.map((p, k) => ({ id: String(k), label: p.label })), value: '', onChange: (k: string) => (s.presets![Number(k)].apply(), this.advance(), this.render(), this.update()) }]
+        : [])
     ]);
     this.app.ui.showPanel({
       title: this.feature.name,
@@ -342,7 +404,7 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
       items: [...slotItems, ...this.items()],
       actions: this.actions(),
       onDone: () => this.done(),
-      onCancel: () => this.cancel(),
+      onCancel: () => this.cancel()
     });
     this.showSlotHighlights();
     this.setHint();
@@ -351,11 +413,13 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
 
   private advance(): void {
     const s = this.slots[this.active];
-    if (s && !s.multi) this.active = this.slots.findIndex((x, i) => i > this.active && !x.filled());
+    if (s && !s.multi) {
+      this.active = this.slots.findIndex((x, i) => i > this.active && !x.filled());
+    }
   }
 
   private showSlotHighlights(): void {
-    this.app.setSelection(this.slots.flatMap((s) => s.shows?.() ?? []));
+    this.app.setSelection(this.slots.flatMap(s => s.shows?.() ?? []));
   }
 
   protected setHint(): void {
@@ -381,30 +445,37 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
     // (The steps that aren't the project's own: the draft, or what a tool puts in its place.)
     const list = ready ? this.featuresWith() : null;
     const own = new Set(base);
-    const key = list ? JSON.stringify(list.filter((f) => !own.has(f))) : "";
+    const key = list ? JSON.stringify(list.filter(f => !own.has(f))) : '';
     const was = this.asked;
-    if (was && was.key === key && was.base === base && (was.pending || was.result === this.app.result)) return;
+    if (was && was.key === key && was.base === base && (was.pending || was.result === this.app.result)) {
+      return;
+    }
     const mine = { key, base, pending: true, result: null as unknown };
     this.asked = mine;
     const shown = (r: unknown) => {
       mine.pending = false;
       mine.result = r;
       // Overtaken by something else's rebuild: asked again next time.
-      if (!r && this.asked === mine) this.asked = null;
+      if (!r && this.asked === mine) {
+        this.asked = null;
+      }
     };
     if (!ready) {
       void this.app.preview([...base]).then(shown);
+
       return;
     }
     this.app.preview(list!).then((r) => {
       shown(r);
-      this.error = r?.errors.find((e) => e.featureId === this.feature.id)?.message ?? null;
+      this.error = r?.errors.find(e => e.featureId === this.feature.id)?.message ?? null;
       this.setHint();
       // What the step notes about itself (it cut where Add may have been
       // meant, a piece left off): said while it's being made, not only on
       // its History row, out of sight on a phone. Once per new note.
-      const note = r ? (r.notes?.find((n) => n.featureId === this.feature.id)?.message ?? null) : this.noted;
-      if (note && note !== this.noted && !this.error) this.app.ui.toast(note);
+      const note = r ? (r.notes?.find(n => n.featureId === this.feature.id)?.message ?? null) : this.noted;
+      if (note && note !== this.noted && !this.error) {
+        this.app.ui.toast(note);
+      }
       this.noted = note;
     });
   }
@@ -421,20 +492,24 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
    */
   protected num(label: string, path: string, kind: FieldKind, opts: { min?: number; onInput?: (v: number) => void; inBox?: boolean } = {}): PanelItem {
     const f = this.feature as Feature;
+
     return {
-      type: "number",
+      type: 'number',
       label,
       value: Number(getPath(f, path) ?? 0),
       kind,
       min: opts.min,
       expr: f.exprs?.[path],
       inBox: opts.inBox,
-      onExpr: (expr) => this.setExpr(path, expr),
+      onExpr: expr => this.setExpr(path, expr),
       onInput: (v) => {
         setPath(f, path, v);
-        if (opts.onInput) opts.onInput(v);
-        else this.update();
-      },
+        if (opts.onInput) {
+          opts.onInput(v);
+        } else {
+          this.update();
+        }
+      }
     };
   }
 
@@ -446,45 +521,60 @@ export abstract class FeatureOp<F extends Feature> implements Tool {
   protected setExpr(path: string, expr: string | null): void {
     const f = this.feature as Feature;
     const exprs = { ...(f.exprs ?? {}) };
-    if (expr) exprs[path] = expr;
-    else delete exprs[path];
+    if (expr) {
+      exprs[path] = expr;
+    } else {
+      delete exprs[path];
+    }
     f.exprs = Object.keys(exprs).length ? exprs : undefined;
   }
 
-  protected typedInto(path: string, text: string, wrap: (t: string) => string = (t) => t): void {
+  protected typedInto(path: string, text: string, wrap: (t: string) => string = t => t): void {
     const f = this.feature as Feature;
     const exprs = { ...(f.exprs ?? {}) };
-    if (isExpression(text)) exprs[path] = wrap(text.trim());
-    else delete exprs[path];
+    if (isExpression(text)) {
+      exprs[path] = wrap(text.trim());
+    } else {
+      delete exprs[path];
+    }
     f.exprs = Object.keys(exprs).length ? exprs : undefined;
   }
 
   protected featuresWith(): Feature[] {
     const list = [...this.app.store.features];
-    if (!this.existing) return [...list, this.feature];
-    list[list.findIndex((f) => f.id === this.feature.id)] = this.feature;
+    if (!this.existing) {
+      return [...list, this.feature];
+    }
+    list[list.findIndex(f => f.id === this.feature.id)] = this.feature;
+
     return list;
   }
 
   protected done(): void {
     if (!this.ready()) {
-      const missing = this.slots.find((s) => !s.filled());
+      const missing = this.slots.find(s => !s.filled());
       // Nothing left to pick means nothing changed: just close the tool.
-      if (!missing) return this.app.setTool(null);
-      this.app.ui.toast("Finish picking first: " + missing.label);
+      if (!missing) {
+        return this.app.setTool(null);
+      }
+      this.app.ui.toast('Finish picking first: ' + missing.label);
+
       return;
     }
-    if (this.existing) this.app.store.update(this.feature.id, this.feature);
-    else {
+    if (this.existing) {
+      this.app.store.update(this.feature.id, this.feature);
+    } else {
       // A new solid from sketches: the sketches step out of the way (the eye in Items brings them back).
       const f = this.feature as Feature;
       // An extrude: its sketch is hidden straight away (tap the eye to bring it
       // back for the next shape). Other steps: once all its regions are used -
       // one drawn with several parts stays in view until the last is made.
-      const used = sketchesUsed(f).filter((id) => f.type === "extrude" || allRegionsUsed(this.app, id, [...this.app.store.doc.features, f]));
+      const used = sketchesUsed(f).filter(id => f.type === 'extrude' || allRegionsUsed(this.app, id, [...this.app.store.doc.features, f]));
       this.app.store.commit((d) => {
         d.features.push(f);
-        if (used.length) d.hidden = [...new Set([...d.hidden, ...used])];
+        if (used.length) {
+          d.hidden = [...new Set([...d.hidden, ...used])];
+        }
       });
     }
     this.app.setTool(null);
@@ -498,13 +588,19 @@ function allRegionsUsed(app: AppContext, sketch: string, features: Feature[]): b
     // Only what was drawn counts (not the outline of the face it's on: window
     // sketches on a wall stayed in view after every window was cut).
     const drawn = materialRegions(arrangement(app.store.find<SketchFeature>(sketch)?.entities ?? []));
-    if (drawn.length <= 1 && arr.regions.length <= 1) return true;
+    if (drawn.length <= 1 && arr.regions.length <= 1) {
+      return true;
+    }
     const used: Region[] = [];
     const add = (s: ExtrudeSource) => {
-      if (s.kind !== "profile" || s.sketch !== sketch) return;
+      if (s.kind !== 'profile' || s.sketch !== sketch) {
+        return;
+      }
       for (const ref of s.regions) {
         const r = resolveRegion(arr, ref);
-        if (r) used.push(r);
+        if (r) {
+          used.push(r);
+        }
       }
     };
     // A full turn's axis in the sketch: what's drawn across it (a whole circle
@@ -512,16 +608,21 @@ function allRegionsUsed(app: AppContext, sketch: string, features: Feature[]): b
     const mirrors: ((q: Vec2) => Vec2)[] = [];
     const pl = app.sketchPlane(sketch);
     for (const g of features) {
-      if (g.type === "extrude" || g.type === "revolve" || g.type === "sweep") add(g.source);
-      else if (g.type === "loft") g.sections.forEach(add);
-      if (g.type === "revolve" && pl && Math.abs(g.angle) >= 360 - 1e-9 && g.source.kind === "profile" && g.source.sketch === sketch) {
+      if (g.type === 'extrude' || g.type === 'revolve' || g.type === 'sweep') {
+        add(g.source);
+      } else if (g.type === 'loft') {
+        g.sections.forEach(add);
+      }
+      if (g.type === 'revolve' && pl && Math.abs(g.angle) >= 360 - 1e-9 && g.source.kind === 'profile' && g.source.sketch === sketch) {
         const n = pl.normal;
         const y: [number, number, number] = [n[1] * pl.xDir[2] - n[2] * pl.xDir[1], n[2] * pl.xDir[0] - n[0] * pl.xDir[2], n[0] * pl.xDir[1] - n[1] * pl.xDir[0]];
         const d3 = g.axis.dir;
         const dl = Math.hypot(d3[0], d3[1], d3[2]) || 1;
         const off = (d3[0] * n[0] + d3[1] * n[1] + d3[2] * n[2]) / dl;
         const rel = [g.axis.origin[0] - pl.origin[0], g.axis.origin[1] - pl.origin[1], g.axis.origin[2] - pl.origin[2]];
-        if (Math.abs(off) > 1e-9 || Math.abs(rel[0] * n[0] + rel[1] * n[1] + rel[2] * n[2]) > 1e-6) continue;
+        if (Math.abs(off) > 1e-9 || Math.abs(rel[0] * n[0] + rel[1] * n[1] + rel[2] * n[2]) > 1e-6) {
+          continue;
+        }
         const dot2 = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
         const o: Vec2 = [dot2(rel, pl.xDir), dot2(rel, y)];
         const du = dot2(d3, pl.xDir) / dl;
@@ -529,6 +630,7 @@ function allRegionsUsed(app: AppContext, sketch: string, features: Feature[]): b
         mirrors.push((q) => {
           const t = (q[0] - o[0]) * du + (q[1] - o[1]) * dv;
           const f: Vec2 = [o[0] + t * du, o[1] + t * dv];
+
           return [2 * f[0] - q[0], 2 * f[1] - q[1]];
         });
       }
@@ -539,10 +641,11 @@ function allRegionsUsed(app: AppContext, sketch: string, features: Feature[]): b
     // it, sampled a little differently - slivers are left that no one would
     // use; the sketch stayed in view and its face-wide region took every later
     // tap on that face.)
-    const inside = (m: Region, q: Vec2) => pointInPoly(q, m.outer.poly) && !m.holes.some((h) => pointInPoly(q, h.poly));
-    const covered = (m: Region) => used.some((r) => inside(m, pointInRegion(r)));
-    const turnedIn = (m: Region) => mirrors.some((mir) => used.some((r) => inside(r, mir(pointInRegion(m)))));
-    return drawn.every((m) => covered(m) || turnedIn(m));
+    const inside = (m: Region, q: Vec2) => pointInPoly(q, m.outer.poly) && !m.holes.some(h => pointInPoly(q, h.poly));
+    const covered = (m: Region) => used.some(r => inside(m, pointInRegion(r)));
+    const turnedIn = (m: Region) => mirrors.some(mir => used.some(r => inside(r, mir(pointInRegion(m)))));
+
+    return drawn.every(m => covered(m) || turnedIn(m));
   } catch {
     return true;
   }
@@ -550,17 +653,17 @@ function allRegionsUsed(app: AppContext, sketch: string, features: Feature[]): b
 
 /** The sketches an extrude / revolve / sweep / loft was made from. */
 export function sketchesUsed(f: Feature): string[] {
-  const of = (s: ExtrudeSource) => (s.kind === "profile" ? [s.sketch] : []);
+  const of = (s: ExtrudeSource) => (s.kind === 'profile' ? [s.sketch] : []);
   switch (f.type) {
-    case "extrude":
-    case "revolve":
+    case 'extrude':
+    case 'revolve':
       return of(f.source);
-    case "sweep":
-      return [...of(f.source), ...(f.path.kind === "sketch" ? [f.path.sketch] : [])];
-    case "loft":
+    case 'sweep':
+      return [...of(f.source), ...(f.path.kind === 'sketch' ? [f.path.sketch] : [])];
+    case 'loft':
       return f.sections.flatMap(of);
-    case "fill":
-      return [...f.boundary, ...(f.guides ?? [])].flatMap((p) => (p.kind === "sketch" ? [p.sketch] : []));
+    case 'fill':
+      return [...f.boundary, ...(f.guides ?? [])].flatMap(p => (p.kind === 'sketch' ? [p.sketch] : []));
     default:
       return [];
   }
