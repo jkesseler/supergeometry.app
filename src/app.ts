@@ -1,17 +1,10 @@
 import { FeatureOp, sketchesUsed } from './tools/featureOp';
-import { BooleanOp } from './tools/booleanOp';
 import { SelectTool } from './tools/select';
 import { sectionPlane, SectionTool, type SectionState } from './tools/section';
 import { FreeformTool } from './tools/freeform';
 import { add, dist, scale } from './geom';
-import { bodyCenter, AxisOp, ConnectOp, EdgeOp, ExtrudeOp, FillOp, FillToPlaneOp, ThreadOp, ImageOp, LoftOp, MidplaneOp, PlaneOp, ReplaceFaceOp, ScaleOp, RevolveOp, ShellOp, SplitOp, SweepOp, TransformOp } from './tools/ops';
-import { faceFreeformTool } from './tools/faceFreeform';
-import { OffsetEdgeOp } from './tools/offsetEdge';
+import { bodyCenter, ThreadOp, TransformOp } from './tools/ops';
 import { ItemsPanel } from './ui/items';
-import { openDrawing } from './bim/drawing';
-import { openSheet } from './bim/sheet';
-import { BimTool } from './bim/bimTool';
-import { MeasureTool } from './tools/measure';
 import { PinLayer } from './tools/annotate';
 import { settings } from './settings';
 import { KernelClient } from './kernel/client';
@@ -21,20 +14,16 @@ import { variableTags } from './doc/varAnchors';
 import { numpadVariables } from './ui/numpad';
 import { WebWindow } from './ui/webWindow';
 import { RefImages } from './ui/refImages';
-import { createVariable, insertFile, insertImage } from './io/insert';
+import { createVariable } from './io/insert';
 import { libraryEntries } from './doc/library';
 import { DocStore } from './doc/store';
-import { WrapOp } from './tools/wrapOps';
-import { PlanesAxisOp, TwoPointAxisOp, surfaceAxis } from './tools/axisOps';
-import { CurvePointPlaneOp, EdgeAnglePlaneOp, FacePointPlaneOp, ThreePointPlaneOp } from './tools/planeOps';
-import { circleAxis } from './tools/slots';
 import { isTouchDevice } from './device';
 import { SketchTool } from './tools/sketch';
 import { Tutorial } from './ui/tutorial';
 import { AssemblyTool } from './assembly/assemblyTool';
 import { definedCurves } from './sketch/constraints';
 import { keepSizes } from './doc/unitChange';
-import { bodiesOf, edgeRefOf, edgesOfFace, faceRefOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from './tools/tool';
+import { bodiesOf, faceRefOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from './tools/tool';
 import { setupRightColumn } from './ui/panels';
 import { UI } from './ui/ui';
 import { Sentence } from './ui/sentence';
@@ -50,6 +39,7 @@ import { Updates } from './ui/update';
 import { Exporter } from './app/exporting';
 import { History } from './app/history';
 import { Keys } from './app/keys';
+import { Menus } from './app/menus';
 import { Topbar } from './app/topbar';
 import { Projects } from './app/projects';
 import { isHeadset, screenClass } from './device';
@@ -57,7 +47,7 @@ import { Viewport } from './view/viewport';
 import { VRMode, vrSupported } from './view/xr';
 import type { ToolItem } from './ui/ui';
 import type { RegenResult } from './kernel/protocol';
-import type { EdgeRef, ExtrudeSource, Feature, ImageFeature, PathRef, PinDef, PlaneDef, SketchEntity, SketchFeature, Units, Vec3 } from './doc/types';
+import type { Feature, ImageFeature, PinDef, PlaneDef, SketchEntity, SketchFeature, Units, Vec3 } from './doc/types';
 
 export class App implements AppContext {
   readonly store = new DocStore();
@@ -67,6 +57,7 @@ export class App implements AppContext {
   readonly projects = new Projects(this);
   private readonly history = new History(this);
   private readonly keys = new Keys(this);
+  private readonly menus = new Menus(this);
   private readonly topbar = new Topbar(this);
   readonly exporter = new Exporter(this);
   /** The sentence bar: the pick, then what it offers, on one line - the way to the tools. */
@@ -575,13 +566,13 @@ export class App implements AppContext {
   }
 
   /** The last section used: Section View off and on again brings it back. */
-  private lastSection: SectionState | null = null;
+  lastSection: SectionState | null = null;
 
   /**
    * Section View button: on → off (remembered); off → the remembered section,
    * or a new one - straight from a selected flat face if there is one.
    */
-  private toggleSection(): void {
+  toggleSection(): void {
     if (this.section) {
       const keep = this.section;
       if (this.tool instanceof SectionTool) {
@@ -818,7 +809,7 @@ export class App implements AppContext {
   }
 
   /** The Variables button: on (tags and their card), or off. */
-  private toggleVariables(): void {
+  toggleVariables(): void {
     if (this.varsOn) {
       return this.variablesOff();
     }
@@ -1060,355 +1051,16 @@ export class App implements AppContext {
 
   // ------------------------------------------------------------ menus
 
-  /** Nothing selected: the top-level menu (the left tool column). */
-  /** The edges picked for a fillet or chamfer: each edge, and every edge round each face. */
-  private pickedEdges(): EdgeRef[] {
-    const out: EdgeRef[] = [];
-    const have = (edgeRef: EdgeRef) => out.some(e => e.body === edgeRef.body && Math.hypot(e.mid[0] - edgeRef.mid[0], e.mid[1] - edgeRef.mid[1], e.mid[2] - edgeRef.mid[2]) < 1e-6);
-    // (A round face's seam - the same face either side - is nothing to round:
-    // picked, the step broke with "an edge it was built on is gone".)
-    const seam = (body: string, edgeIndex: number) => !!this.view.body(body)?.edges[edgeIndex]?.seam;
-    let seams = 0;
-    for (const highlight of this.selection) {
-      if (highlight.kind === 'edge' && seam(highlight.body, highlight.edge)) {
-        seams++;
-      }
-      const refs = highlight.kind === 'edge' ? (seam(highlight.body, highlight.edge) ? [] : [edgeRefOf(this, highlight)]) : highlight.kind === 'face' ? edgesOfFace(this, highlight.body, highlight.face).filter(edgeIndex => !seam(highlight.body, edgeIndex)).map(edgeIndex => edgeRefOf(this, { body: highlight.body, edge: edgeIndex })) : [];
-      for (const ref of refs) {
-        if (ref && !have(ref)) {
-          out.push(ref);
-        }
-      }
-    }
-    if (seams) {
-      this.ui.toast('That line is a seam - where a round face starts and ends, no corner there to round or chamfer. Tap a real edge.');
-    }
-
-    return out;
-  }
-
   firstShape(): boolean {
-    return !this.result?.bodies.length && this.view.profileCount > 0;
+    return this.menus.firstShape();
   }
 
   mainTools(): ToolItem[] {
-    // (Marked: it asks for a pick after it is tapped. The sentence bar leaves those out - there the pick comes first.)
-    const wait = (label: string, accepts: Sel['kind'][], run: () => void) =>
-      Object.assign(
-        () => {
-          this.selectTool.waitFor(label, accepts, run);
-          this.selectTool.refresh();
-        },
-        { needsPick: true }
-      );
-    const bodies = () => bodiesOf(this.selection);
-    const transform = (kind: ConstructorParameters<typeof TransformOp>[1], label: string) =>
-      wait(label, ['body', 'face', 'edge'], () => this.setTool(new TransformOp(this, kind, bodies())));
-    const src = () => sourcesOf(this, this.selection)[0];
-
-    return [
-      // An empty project: Sketch pulses - that's where to start.
-      { id: 'sketch', label: 'Sketch', icon: 'sketch', shortcut: 'S', pulse: this.store.features.length === 0, run: () => this.setTool(new SketchTool(this)) },
-      {
-        // A shape from a sketch's: pulled, turned, swept, lofted.
-        id: 'create',
-        label: 'Create',
-        icon: 'extrude',
-        children: [
-          // (The first shape drawn, nothing solid yet: this is the next step, it pulses.)
-          { id: 'extrude', label: 'Extrude', icon: 'extrude', pulse: this.firstShape(), run: wait('Extrude', ['profile', 'face'], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
-          { id: 'revolve', label: 'Revolve', icon: 'revolve', run: wait('Revolve', ['profile', 'face'], () => src() && this.setTool(new RevolveOp(this, src()!))) },
-          { id: 'sweep', label: 'Sweep', icon: 'sweep', run: wait('Sweep', ['profile', 'face'], () => src() && this.setTool(new SweepOp(this, src()!))) },
-          { id: 'loft', label: 'Loft', icon: 'loft', run: wait('Loft', ['profile', 'face'], () => this.setTool(new LoftOp(this, sourcesOf(this, this.selection).flatMap((source): ExtrudeSource[] => (source.kind === 'profile' ? source.regions.map(region => ({ ...source, regions: [region] })) : [source])), this.selection))) }
-        ]
-      },
-      {
-        // A body changed where it is: edges, faces, walls, details.
-        id: 'modify',
-        label: 'Modify',
-        icon: 'fillet',
-        children: [
-          { id: 'fillet', label: 'Fillet', icon: 'fillet', run: wait('Fillet', ['edge', 'face'], () => this.setTool(new EdgeOp(this, 'fillet', this.pickedEdges()))) },
-          { id: 'chamfer', label: 'Chamfer', icon: 'chamfer', run: wait('Chamfer', ['edge', 'face'], () => this.setTool(new EdgeOp(this, 'chamfer', this.pickedEdges()))) },
-          { id: 'shell', label: 'Shell', icon: 'shell', run: wait('Shell', ['face', 'body'], () => {
-            const highlight = this.selection[0];
-            const faces = this.selection.flatMap(highlight => (highlight.kind === 'face' ? [faceRefOf(this, highlight)!] : []));
-            this.setTool(new ShellOp(this, bodiesOf([highlight])[0], faces));
-          }) },
-          { id: 'offsetFace', label: 'Offset Face', icon: 'offsetFace', run: wait('Offset Face', ['face'], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
-          { id: 'offsetEdge', label: 'Offset Edge', icon: 'offsetEdge', run: () => {
-            const edgePick = this.selection.find(highlight => highlight.kind === 'edge');
-            this.setTool(new OffsetEdgeOp(this, edgePick?.kind === 'edge' ? edgePick : undefined));
-          } },
-          { id: 'thread', label: 'Thread', icon: 'thread', run: wait('Thread (tap a round face or its rim)', ['face', 'edge'], () => this.startThread()) },
-          { id: 'wrap', label: 'Wrap & Emboss', icon: 'wrap', beta: true, run: wait("Wrap & Emboss (tap a sketch's shape)", ['profile'], () => src() && this.setTool(new WrapOp(this, src()!))) },
-          // Holes filled, surfaces closed, broken bodies mended.
-          {
-            id: 'fix',
-            label: 'Fix',
-            icon: 'check',
-            children: [
-              { id: 'fillNetwork', label: 'Fill', icon: 'fill', sub: 'a surface over curves', run: () => this.setTool(new FillOp(this, this.pickedCurves())) },
-              { id: 'fillToPlane', label: 'Fill to Plane', icon: 'fill', run: wait('Fill to Plane (tap the surface)', ['body', 'face', 'edge'], () => this.setTool(new FillToPlaneOp(this, bodiesOf(this.selection)[0]))) },
-              {
-                id: 'repair',
-                label: 'Repair Body',
-                icon: 'check',
-                run: wait('Repair Body', ['body', 'face', 'edge'], () => {
-                  const ids = bodiesOf(this.selection);
-                  if (!ids.length) {
-                    return;
-                  }
-                  this.store.add({ ...this.store.newIdentity('repair'), type: 'repair', bodies: ids });
-                  this.ui.toast('Repair added to History - it notes what it fixed');
-                })
-              }
-            ]
-          },
-          { id: 'replace', label: 'Replace Face', icon: 'replaceFace', run: wait('Replace Face', ['face'], () => {
-            const highlight = this.selection[0];
-            const ref = highlight?.kind === 'face' ? faceRefOf(this, highlight) : null;
-            if (ref) {
-              this.setTool(new ReplaceFaceOp(this, ref));
-            }
-          }) }
-        ]
-      },
-      {
-        // Bodies together, apart, or cut in two.
-        id: 'combine',
-        label: 'Combine',
-        icon: 'union',
-        children: [
-          { id: 'union', label: 'Union', icon: 'union', run: wait('Union (double-tap bodies)', ['body'], () => this.selectTool.refresh()) },
-          { id: 'subtract', label: 'Subtract', icon: 'subtract', run: () => this.setTool(new BooleanOp(this, 'subtract')) },
-          { id: 'intersect', label: 'Intersect', icon: 'intersect', run: () => this.setTool(new BooleanOp(this, 'intersect')) },
-          { id: 'split', label: 'Split Body', icon: 'split', run: wait('Split Body', ['body', 'face'], () => this.setTool(new SplitOp(this, bodiesOf(this.selection)[0]))) }
-        ]
-      },
-      {
-        id: 'transform',
-        label: 'Transform',
-        icon: 'transform',
-        children: [
-          // Moved: freely, along a line, round an axis.
-          {
-            id: 'moveKinds',
-            label: 'Move',
-            icon: 'move',
-            children: [
-              { id: 'move', label: 'Move/Rotate', icon: 'move', shortcut: 'M', run: transform('move', 'Move/Rotate') },
-              { id: 'translate', label: 'Translate', icon: 'translate', run: transform('translate', 'Translate') },
-              { id: 'rotate', label: 'Rotate Around Axis', icon: 'rotateAxis', run: transform('rotate', 'Rotate Around Axis') }
-            ]
-          },
-          { id: 'scale', label: 'Scale', icon: 'scale', run: wait('Scale', ['body', 'face', 'edge'], () => this.setTool(new ScaleOp(this, false, bodies()))) },
-          { id: 'mirror', label: 'Mirror', icon: 'mirror', run: transform('mirror', 'Mirror') },
-          {
-            id: 'pattern',
-            label: 'Pattern',
-            icon: 'patternLinear',
-            children: [
-              { id: 'linear', label: 'Linear', icon: 'patternLinear', run: transform('linear', 'Pattern – Linear') },
-              { id: 'circular', label: 'Circular', icon: 'patternCircular', run: transform('circular', 'Pattern – Circular') }
-            ]
-          }
-        ]
-      },
-      {
-        id: 'construct',
-        label: 'Construct',
-        icon: 'construct',
-        children: [
-          {
-            // A tap: Offset Plane from the face or plane tapped next - or one of the other kinds, picked on the wheel.
-            id: 'plane',
-            label: 'Plane',
-            icon: 'plane',
-            startsDefault: 'offset',
-            run: wait('Offset Plane', ['face', 'plane'], () => {
-              const highlight = this.selection[0];
-              if (highlight?.kind === 'face') {
-                const face = this.view.body(highlight.body)?.faces[highlight.face];
-                if (face?.plane) {
-                  this.setTool(new PlaneOp(this, face.plane, faceRefOf(this, highlight)!));
-                } else {
-                  this.ui.toast('An Offset Plane starts from a flat face or a plane', 'error');
-                }
-              } else if (highlight?.kind === 'plane') {
-                const plane = this.view.planeOf(highlight.id);
-                if (plane) {
-                  this.setTool(new PlaneOp(this, plane, undefined));
-                }
-              }
-            }),
-            children: [
-              { id: 'offset', label: 'Offset Plane', short: 'Offset', icon: 'planeOffset', run: () => this.setTool(new PlaneOp(this, null, undefined)) },
-              { id: 'mid', label: 'Midplane', icon: 'planeMid', run: () => this.setTool(new MidplaneOp(this)) },
-              { id: '3pt', label: 'Through 3 Points', short: '3 Points', icon: 'plane3pt', run: () => this.setTool(new ThreePointPlaneOp(this)) },
-              { id: 'curve', label: 'On Curve at Point', short: 'On Curve', icon: 'planeCurve', run: () => this.setTool(new CurvePointPlaneOp(this, false)) },
-              { id: 'perp', label: 'Perpendicular to Edge at Point', short: 'Perpendicular', icon: 'planePerp', run: () => this.setTool(new CurvePointPlaneOp(this, true)) },
-              { id: 'angle', label: 'Through Edge at Angle', short: 'At Angle', icon: 'planeAngle', run: () => this.setTool(new EdgeAnglePlaneOp(this)) },
-              { id: 'parallel', label: 'Parallel to Face at Point', short: 'Parallel', icon: 'planeParallel', run: () => this.setTool(new FacePointPlaneOp(this)) }
-            ]
-          },
-          {
-            id: 'axis',
-            label: 'Axis',
-            icon: 'axis',
-            // (Along X, Y or Z: the origin's own axes, tapped in the view.)
-            children: [
-              { id: 'axisFace', label: 'Square to Face', short: 'Face', icon: 'axisFace' as const, run: wait('Axis Square to Face', ['face'], () => {
-                const highlight = this.selection[0];
-                const faceInfo = highlight?.kind === 'face' ? this.view.body(highlight.body)?.faces[highlight.face] : undefined;
-                if (faceInfo) {
-                  this.setTool(new AxisOp(this, faceInfo.center, faceInfo.plane?.normal ?? faceInfo.normal, undefined, 'face'));
-                }
-              }) },
-              { id: 'axisEdge', label: 'Along Edge', short: 'Edge', icon: 'axisEdge' as const, run: wait('Axis Along Edge', ['edge'], () => {
-                const highlight = this.selection[0];
-                const e = highlight?.kind === 'edge' ? this.view.body(highlight.body)?.edges[highlight.edge] : undefined;
-                // A round edge: through its centre, square to it.
-                const ax = e && (e.type === 'CIRCLE' ? circleAxis(e.start, e.mid, e.end, e.dir) : { origin: e.start, dir: e.dir });
-                if (ax) {
-                  this.setTool(new AxisOp(this, ax.origin, ax.dir, undefined, e.type === 'CIRCLE' ? 'round' : 'edge'));
-                }
-              }) },
-              { id: 'axisRound', label: 'Cylinder / Cone', icon: 'axisRound' as const, run: wait('Axis of Cylinder / Cone', ['face'], () => {
-                const highlight = this.selection[0];
-                const ax = highlight?.kind === 'face' ? surfaceAxis(this, highlight.body, highlight.face) : null;
-                if (ax) {
-                  this.setTool(new AxisOp(this, ax.origin, ax.dir, undefined, 'round'));
-                } else {
-                  this.ui.toast('Tap a round face - a cylinder, a hole or a cone - for the axis through its middle', 'error');
-                }
-              }) },
-              { id: 'axis2pt', label: 'Point to Point', icon: 'axis2pt' as const, run: () => this.setTool(new TwoPointAxisOp(this)) },
-              { id: 'axisPlanes', label: 'Intersection of 2 Planes', short: '2 Planes', icon: 'axisPlanes' as const, run: () => this.setTool(new PlanesAxisOp(this)) }
-            ]
-          }
-        ]
-      },
-      {
-        // Smooth shapes from a control cage.
-        id: 'freeform',
-        label: 'Freeform',
-        icon: 'freeform',
-        children: [
-          ...(['box', 'sphere', 'cylinder', 'torus', 'plane'] as const).map(primitive => ({
-            id: `ff-${primitive}`,
-            label: { box: 'Box', sphere: 'Sphere', cylinder: 'Cylinder', torus: 'Torus', plane: 'Surface' }[primitive],
-            icon: ({ box: 'ffBox', sphere: 'ffSphere', cylinder: 'ffCylinder', torus: 'ffTorus', plane: 'ffSurface' } as const)[primitive],
-            run: () => this.setTool(new FreeformTool(this, { primitive: primitive }))
-          })),
-          // A flat face of a body made smooth (its edges stay put).
-          {
-            id: 'faceFreeform',
-            beta: true,
-            label: 'Freeform Face',
-            icon: 'faceFreeform' as const,
-            sub: 'a face of a body',
-            run: wait('Freeform Face (tap a flat face)', ['face'], () => {
-              const highlight = this.selection[0];
-              if (highlight?.kind !== 'face' || !this.view.body(highlight.body)?.faces[highlight.face]?.plane) {
-                return void this.ui.toast('Freeform Face works on flat faces for now');
-              }
-              const t = faceFreeformTool(this, highlight);
-              if (t) {
-                this.setTool(t);
-              }
-            })
-          },
-          // A smooth bridge between two faces.
-          { id: 'connect', label: 'Connect', icon: 'connect' as const, sub: 'two faces', beta: true, run: () => this.setTool(new ConnectOp(this, this.selection.filter(highlight => highlight.kind === 'face').slice(0, 2))) }
-        ]
-      },
-      {
-        // Less often: a file or picture brought in, and the project as a building model.
-        id: 'more',
-        label: 'More',
-        icon: 'more',
-        children: [
-          {
-            id: 'insert',
-            label: 'Insert',
-            icon: 'insert',
-            children: [
-              { id: 'image', label: 'Image on plane', icon: 'image', run: () => void insertImage(this).then(image => image && this.setTool(new ImageOp(this, image))) },
-              { id: 'file', label: 'File', icon: 'file', sub: 'STEP, STL, OBJ, 3MF, DXF, SVG', run: () => void insertFile(this) },
-              { id: 'project', label: 'Project', icon: 'file', sub: '.super', run: () => void insertFile(this) },
-              { id: 'refImage', label: 'Reference Image', icon: 'refImage', sub: 'a picture in its own window, over the model', run: () => void this.refImages.open() },
-              // A web page or a video in a window over the model (open already: brought up again).
-              { id: 'browser', label: 'Browser', icon: 'browser', sub: 'a web page or a video, in a window over the model', active: this.web.isOpen, run: () => this.web.open() }
-            ]
-          },
-          {
-            // The project as a building information model: real materials, and
-            // from them the technical sheet and the drawings.
-            id: 'bim',
-            label: 'BIM',
-            icon: 'bim',
-            children: [
-              { id: 'bimMaterials', label: 'Materials', icon: 'bim', sub: 'a real material for each body', run: () => this.setTool(new BimTool(this)) },
-              { id: 'bimSheet', label: 'Technical Sheet', icon: 'sheet', sub: 'parts list, masses, data', run: () => void openSheet(this) },
-              { id: 'bimDrawings', label: 'Drawings', icon: 'drawing', sub: 'views with dimensions', run: () => void openDrawing(this) },
-              { id: 'bimAssemblies', label: 'Assemblies', icon: 'assembly', sub: 'joints: how the parts move', run: () => this.setTool(new AssemblyTool(this)) }
-            ]
-          }
-        ]
-      }
-    ];
+    return this.menus.mainTools();
   }
 
   bottomTools(): ToolItem[] {
-    return [
-      // The one whose card is open pulses (as a tool does while its window is open).
-      { id: 'section', label: 'Section View', icon: 'section', sub: this.section ? 'On' : this.lastSection ? 'Off · tap to show' : 'Off', active: !!this.section, pulse: this.tool instanceof SectionTool, run: () => this.toggleSection() },
-      { id: 'measure', label: 'Measure', icon: 'measure', active: this.tool instanceof MeasureTool, pulse: this.tool instanceof MeasureTool, run: () => this.setTool(this.tool instanceof MeasureTool ? null : new MeasureTool(this)) },
-      // On: a tag per variable in the view (tap one to change it), and their card. Off again.
-      { id: 'variables', label: 'Variables', icon: 'variable', sub: this.varsOn ? 'On' : this.store.doc.variables.length ? `Off · ${this.store.doc.variables.length}` : 'Off', active: this.varsOn, pulse: this.tool instanceof VariablesTool, run: () => this.toggleVariables() },
-      this.isolated
-        ? { id: 'isolate', label: 'Isolate', icon: 'isolate', sub: 'On - tap to show all', active: true, run: () => this.isolate(null) }
-        : {
-          id: 'isolate',
-          label: 'Isolate',
-          icon: 'isolate',
-          sub: 'Off',
-          disabled: !bodiesOf(this.selection).length,
-          why: 'Select a body, face or edge to isolate',
-          run: () => this.isolate(bodiesOf(this.selection))
-        },
-      // The way out with what was made: is it fit to print, and the files to take it away as.
-      { id: 'printShare', label: 'Print / Share', icon: 'share', run: () => void this.printShare() }
-    ];
-  }
-
-  /** The picked sketch curves and edges, as paths (one per sketch, one per body): what Fill starts with. */
-  private pickedCurves(): PathRef[] {
-    const out: PathRef[] = [];
-    for (const highlight of this.selection) {
-      if (highlight.kind === 'curve') {
-        const sketchPath = out.find((pathRef): pathRef is Extract<PathRef, { kind: 'sketch' }> => pathRef.kind === 'sketch' && pathRef.sketch === highlight.sketch);
-        if (sketchPath) {
-          sketchPath.entities.push(highlight.entity);
-        } else {
-          out.push({ kind: 'sketch', sketch: highlight.sketch, entities: [highlight.entity] });
-        }
-      } else if (highlight.kind === 'edge') {
-        const ref = edgeRefOf(this, highlight);
-        if (!ref) {
-          continue;
-        }
-        const edgePath = out.find((pathRef): pathRef is Extract<PathRef, { kind: 'edges' }> => pathRef.kind === 'edges' && pathRef.edges[0]?.body === ref.body);
-        if (edgePath) {
-          edgePath.edges.push(ref);
-        } else {
-          out.push({ kind: 'edges', edges: [ref] });
-        }
-      }
-    }
-
-    return out;
+    return this.menus.bottomTools();
   }
 
   fit(): void {
