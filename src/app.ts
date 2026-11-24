@@ -59,15 +59,12 @@ import { icons } from './ui/icons';
 import { Updates } from './ui/update';
 import { Offline } from './ui/offline';
 import { Install } from './ui/install';
-import { exportThreeMF, zip } from './io/threemf';
-import { glb } from './io/formats';
-import { sketchToDXF } from './io/dxf';
-import { sketchToSVG } from './io/svg';
+import { Exporter, canShareType, download } from './app/exporting';
 import { isHeadset, screenClass } from './device';
 import { Viewport } from './view/viewport';
 import { VRMode, vrSupported } from './view/xr';
 import type { ToolItem } from './ui/ui';
-import type { ExportFormat, RegenResult } from './kernel/protocol';
+import type { RegenResult } from './kernel/protocol';
 import type { EdgeFeature, EdgeRef, ExtrudeFeature, ExtrudeSource, Feature, FillToPlaneFeature, ImageFeature, LoftFeature, PathRef, PinDef, PlaneDef, PlaneFeature, ProjectDoc, RevolveFeature, ShellFeature, SketchEntity, SketchFeature, SplitFeature, SweepFeature, TransformFeature, Units, Vec3 } from './doc/types';
 
 /** The page's own title, from index.html (it names the app for search results). */
@@ -79,6 +76,7 @@ export class App implements AppContext {
   readonly kernel = new KernelClient();
   readonly view: Viewport;
   readonly ui = new UI();
+  private readonly exporter = new Exporter(this);
   /** The sentence bar: the pick, then what it offers, on one line - the way to the tools. */
   sentence!: Sentence;
   /** The look ahead a tool under the pointer is showing on the model (see ghost.ts). */
@@ -100,14 +98,14 @@ export class App implements AppContext {
   private selectTool: SelectTool;
   /** The headset mode (its pictures can be checked on the page: vr.snapshot). */
   vr: VRMode | null = null;
-  private tool: Tool;
+  tool: Tool;
   /** The tutorial begun (More > Tutorial, and the welcome window's button). */
   private startTutorial: () => void = () => {};
   /** The tutorial (for the debug handle: a test steps it by hand where the browser draws seldom). */
   tutorial: Tutorial | null = null;
   private shownErrors = '';
   private pinLayer: PinLayer;
-  private items: ItemsPanel;
+  items: ItemsPanel;
 
   constructor(canvas: HTMLCanvasElement) {
     this.view = new Viewport(canvas);
@@ -447,9 +445,9 @@ export class App implements AppContext {
       b.addEventListener('click', () => (close(), run()));
       row.append(b);
     };
-    file('3MF', 'For 3D printing (keeps sizes and colours)', () => void this.export3mf());
-    file('STL', 'For 3D printing (every slicer opens it)', () => void this.export('stl'));
-    file('STEP', 'For other CAD programs', () => void this.export('step'));
+    file('3MF', 'For 3D printing (keeps sizes and colours)', () => void this.exporter.export3mf());
+    file('STL', 'For 3D printing (every slicer opens it)', () => void this.exporter.export('stl'));
+    file('STEP', 'For other CAD programs', () => void this.exporter.export('step'));
     file('Picture', 'A PNG of the view as it is now', () => this.ui.runRight('shot'));
     box.append(head, check, row);
     back.append(box);
@@ -1797,7 +1795,7 @@ export class App implements AppContext {
     }
     if (mod && key === 's') {
       e.preventDefault();
-      this.save();
+      this.exporter.save();
 
       return;
     }
@@ -2174,31 +2172,31 @@ export class App implements AppContext {
       });
     item('m-new', () => void this.newProject());
     item('m-open', () => void this.showProjects());
-    item('m-save', () => this.save());
-    item('m-stl', () => void this.export('stl'));
-    item('m-step', () => void this.export('step'));
-    item('m-3mf', () => void this.export3mf());
-    item('m-glb', () => void this.exportGLB());
+    item('m-save', () => this.exporter.save());
+    item('m-stl', () => void this.exporter.export('stl'));
+    item('m-step', () => void this.exporter.export('step'));
+    item('m-3mf', () => void this.exporter.export3mf());
+    item('m-glb', () => void this.exporter.exportGLB());
     item('m-each', () => {
       // Which format each body is saved in: a menu where the File menu was.
       const rect = document.getElementById('file-btn')!.getBoundingClientRect();
-      const row = (format: 'stl' | 'step' | '3mf' | 'glb', label: string) => ({ label, run: () => void this.exportEach(format) });
+      const row = (format: 'stl' | 'step' | '3mf' | 'glb', label: string) => ({ label, run: () => void this.exporter.exportEach(format) });
       this.ui.menu(rect.left, rect.bottom + 4, [row('stl', 'Each body as STL'), row('step', 'Each body as STEP'), row('3mf', 'Each body as 3MF'), row('glb', 'Each body as GLB')]);
     });
-    item('m-dxf', () => this.exportDXF());
-    item('m-svg', () => this.exportDXF('download', 'svg'));
+    item('m-dxf', () => this.exporter.exportDXF());
+    item('m-svg', () => this.exporter.exportDXF('download', 'svg'));
     // A share button at the right of each export (and Save): straight to the share sheet.
     // Only for the file types this browser will really share (Chrome on Android,
     // for one, refuses 3D and CAD files: a button there would only download).
     {
       const shares: [string, string, () => void][] = [
-        ['m-save', 'super', () => this.save('share')],
-        ['m-stl', 'stl', () => void this.export('stl', 'share')],
-        ['m-step', 'step', () => void this.export('step', 'share')],
-        ['m-3mf', '3mf', () => void this.export3mf('share')],
-        ['m-glb', 'glb', () => void this.exportGLB('share')],
-        ['m-dxf', 'dxf', () => this.exportDXF('share')],
-        ['m-svg', 'svg', () => this.exportDXF('share', 'svg')]
+        ['m-save', 'super', () => this.exporter.save('share')],
+        ['m-stl', 'stl', () => void this.exporter.export('stl', 'share')],
+        ['m-step', 'step', () => void this.exporter.export('step', 'share')],
+        ['m-3mf', '3mf', () => void this.exporter.export3mf('share')],
+        ['m-glb', 'glb', () => void this.exporter.exportGLB('share')],
+        ['m-dxf', 'dxf', () => this.exporter.exportDXF('share')],
+        ['m-svg', 'svg', () => this.exporter.exportDXF('share', 'svg')]
       ];
       // Android's share sheet turns these files away or mangles them: downloads only there.
       const android = /Android/i.test(navigator.userAgent);
@@ -2380,7 +2378,7 @@ export class App implements AppContext {
       return;
     }
     if (choice === 'save') {
-      this.save();
+      this.exporter.save();
       // Give the download a moment to start before the page reloads.
       await new Promise(resolve => setTimeout(resolve, 800));
     }
@@ -2588,62 +2586,6 @@ export class App implements AppContext {
     }
   }
 
-  private save(how: Delivery = 'download'): void {
-    void this.deliver(new Blob([JSON.stringify(this.store.doc)], { type: 'application/json' }), `${this.store.doc.name}.super`, how);
-  }
-
-  /**
-   * Hand a made file over: download it, or share it (phones and tablets:
-   * the system share sheet - mail, messages, a slicer app…).
-   */
-  private async deliver(blob: Blob, name: string, how: Delivery): Promise<void> {
-    if (how === 'download') {
-      return download(blob, name);
-    }
-    const ext = name.split('.').pop()!.toLowerCase();
-    const file = new File([blob], name, { type: MIME[ext] ?? (blob.type || 'application/octet-stream') });
-    if (!canShare(file)) {
-      this.ui.toast(`This browser can't share .${ext} files - downloaded instead`, 'error');
-
-      return download(blob, name);
-    }
-    const share = () => navigator.share({ files: [file], title: name });
-    try {
-      await share();
-    } catch (err) {
-      const why = (err as Error).name;
-      if (why === 'AbortError') {
-        return;
-      } // closed the share sheet
-      if (why !== 'NotAllowedError') {
-        this.ui.toast("Sharing didn't work here - downloaded instead", 'error');
-
-        return download(blob, name);
-      }
-      // Making the file took a moment and the browser no longer counts this as a
-      // tap: one more tap shares it.
-      // The share sheet is opened right in that tap (not after it), as iOS requires.
-      let again: Promise<void> | null = null;
-      const go = await this.ui.ask('Ready to share', name, [
-        { id: 'share', label: 'Share', primary: true, run: () => (again = share()) },
-        { id: 'dl', label: 'Download instead' }
-      ]);
-      if (go === 'share' && again) {
-        try {
-          await again;
-        } catch (e) {
-          if ((e as Error).name === 'AbortError') {
-            return;
-          }
-          this.ui.toast("Sharing isn't available here - downloaded instead", 'error');
-          download(blob, name);
-        }
-      } else if (go === 'dl') {
-        download(blob, name);
-      }
-    }
-  }
-
   private open(): void {
     const input = document.createElement('input');
     input.type = 'file';
@@ -2664,193 +2606,4 @@ export class App implements AppContext {
     };
     input.click();
   }
-
-  /**
-   * DXF of a sketch: the one open (e.g. picked in Items), or the one whose
-   * curves or regions are selected. Without one, say how to pick it.
-   */
-  private exportDXF(how: Delivery = 'download', as: 'dxf' | 'svg' = 'dxf'): void {
-    const fromSel = this.selection.flatMap(highlight => (highlight.kind === 'curve' || highlight.kind === 'point' || highlight.kind === 'profile' ? [highlight.sketch] : []))[0];
-    const id = this.tool.activeSketch ?? fromSel;
-    const sk = id ? this.store.find<SketchFeature>(id) : undefined;
-    if (!sk || sk.type !== 'sketch') {
-      this.ui.toast(`Select a sketch first: open Items, tap the sketch, then File → Export ${as.toUpperCase()}.`);
-      if (!document.getElementById('items')?.classList.contains('open')) {
-        this.items.toggle(true);
-      }
-
-      return;
-    }
-    if (!sk.entities.length) {
-      return this.ui.toast('That sketch is empty');
-    }
-    // (SVG: for a laser cutter, a plotter, a drawing program - millimetres, the page just round the drawing.)
-    const file = as === 'svg' ? new Blob([sketchToSVG(sk.entities, `${this.store.doc.name} - ${sk.name}`)], { type: 'image/svg+xml' }) : new Blob([sketchToDXF(sk.entities)], { type: 'application/dxf' });
-    void this.deliver(file, `${this.store.doc.name} - ${sk.name}.${as}`, how);
-    this.ui.toast(`Exported “${sk.name}” as ${as.toUpperCase()}`);
-  }
-
-  /** The bodies to export (chosen, else shown) with their fine meshes - for GLB. */
-  private async fineMeshes(ids: string[]): Promise<{ name: string; positions: Float32Array; indices: Uint32Array; color?: string; opacity?: number }[]> {
-    const fine = JSON.parse(await (await this.kernel.export(this.store.doc.features, 'mesh', ids)).text()) as { id: string; positions: number[]; indices: number[] }[];
-    const names = this.store.doc.names ?? {};
-
-    return ids.flatMap((id) => {
-      const b = this.result?.bodies.find(body => body.id === id);
-      const fineMesh = fine.find(bodyMesh => bodyMesh.id === id);
-      if (!b) {
-        return [];
-      }
-
-      return [{ name: names[id] ?? b.name, positions: fineMesh ? new Float32Array(fineMesh.positions) : b.positions, indices: fineMesh ? new Uint32Array(fineMesh.indices) : b.indices, color: this.store.doc.colors?.[id], opacity: this.store.doc.opacity?.[id] }];
-    });
-  }
-
-  /** GLB (one-file glTF): for the web, AR and renderers - the bodies' meshes and colours. */
-  private async exportGLB(how: Delivery = 'download'): Promise<void> {
-    const ids = chosenBodies(this);
-    const bodies = (this.result?.bodies ?? []).filter(b => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
-    if (!bodies.length) {
-      return this.ui.toast('Nothing to export');
-    }
-    try {
-      this.ui.setStatus('Exporting GLB…');
-      const out = glb(await this.fineMeshes(bodies.map(b => b.id)), this.store.doc.name);
-      await this.deliver(new Blob([out as BlobPart], { type: 'model/gltf-binary' }), `${this.store.doc.name}.glb`, how);
-    } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
-    } finally {
-      this.ui.setStatus(null);
-    }
-  }
-
-  /** Each body in a file of its own (named after it), together in a ZIP. */
-  private async exportEach(format: 'stl' | 'step' | '3mf' | 'glb'): Promise<void> {
-    const ids = chosenBodies(this);
-    const bodies = (this.result?.bodies ?? []).filter(b => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
-    if (!bodies.length) {
-      return this.ui.toast('Nothing to export');
-    }
-    const names = this.store.doc.names ?? {};
-    const used = new Set<string>();
-    const fileName = (id: string, fallback: string) => {
-      const base = (names[id] ?? fallback).replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Body';
-      let name = base;
-      for (let suffix = 2; used.has(name.toLowerCase()); suffix++) {
-        name = `${base} ${suffix}`;
-      }
-      used.add(name.toLowerCase());
-
-      return `${name}.${format}`;
-    };
-    try {
-      const files: { name: string; data: Uint8Array }[] = [];
-      for (const [i, b] of bodies.entries()) {
-        this.ui.setStatus(`Exporting body ${i + 1} of ${bodies.length}…`);
-        let blob: Blob;
-        if (format === 'glb') {
-          blob = new Blob([glb(await this.fineMeshes([b.id]), names[b.id] ?? b.name) as BlobPart]);
-        } else if (format === '3mf') {
-          const [fineMesh] = await this.fineMeshes([b.id]);
-          blob = await exportThreeMF([fineMesh], fineMesh.name, await this.kernel.export(this.store.doc.features, 'step', [b.id]));
-        } else {
-          blob = await this.kernel.export(this.store.doc.features, format, [b.id]);
-        }
-        files.push({ name: fileName(b.id, b.name), data: new Uint8Array(await blob.arrayBuffer()) });
-      }
-      const out = await zip(files);
-      await this.deliver(new Blob([out], { type: 'application/zip' }), `${this.store.doc.name} - ${bodies.length} ${bodies.length === 1 ? 'body' : 'bodies'}.zip`, 'download');
-      this.ui.toast(`${bodies.length} ${bodies.length === 1 ? 'body' : 'bodies'}, each its own ${format.toUpperCase()} file, in a ZIP`);
-    } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
-    } finally {
-      this.ui.setStatus(null);
-    }
-  }
-
-  /** 3MF for slicers: the meshes, with the exact STEP model packed inside. */
-  private async export3mf(how: Delivery = 'download'): Promise<void> {
-    const ids = chosenBodies(this);
-    const bodies = (this.result?.bodies ?? []).filter(b => (ids.length ? ids.includes(b.id) : !this.view.isHidden(b.id)));
-    if (!bodies.length) {
-      return this.ui.toast('Nothing to export');
-    }
-    try {
-      this.ui.setStatus('Exporting 3MF…');
-      const step = await this.kernel.export(this.store.doc.features, 'step', bodies.map(b => b.id));
-      // A fine mesh, as for STL (the view's is coarse: round faces came out faceted in the slicer).
-      const fine = JSON.parse(await (await this.kernel.export(this.store.doc.features, 'mesh', bodies.map(b => b.id))).text()) as { id: string; positions: number[]; indices: number[] }[];
-      const names = this.store.doc.names ?? {};
-      const blob = await exportThreeMF(
-        bodies.map((b) => {
-          const fineMesh = fine.find(mesh => mesh.id === b.id);
-
-          return { name: names[b.id] ?? b.name, positions: fineMesh ? new Float32Array(fineMesh.positions) : b.positions, indices: fineMesh ? new Uint32Array(fineMesh.indices) : b.indices, color: this.store.doc.colors?.[b.id] };
-        }),
-        this.store.doc.name,
-        step
-      );
-      await this.deliver(blob, `${this.store.doc.name}.3mf`, how);
-    } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
-    } finally {
-      this.ui.setStatus(null);
-    }
-  }
-
-  private async export(format: ExportFormat, how: Delivery = 'download'): Promise<void> {
-    // Selected bodies win; otherwise what's isolated; otherwise everything.
-    const picked = bodiesOf(this.selection);
-    const bodies = picked.length ? picked : (this.isolated ?? []).filter(id => this.result?.bodies.some(b => b.id === id));
-    try {
-      this.ui.setStatus(`Exporting ${bodies.length ? `${bodies.length} bod${bodies.length > 1 ? 'ies' : 'y'} as ` : ''}${format.toUpperCase()}…`);
-      const blob = await this.kernel.export(this.store.doc.features, format, bodies.length ? bodies : undefined);
-      await this.deliver(blob, `${this.store.doc.name}.${format === 'step' ? 'step' : 'stl'}`, how);
-    } catch (err) {
-      this.ui.toast(`Export failed: ${(err as Error).message}`, 'error');
-    } finally {
-      this.ui.setStatus(null);
-    }
-  }
-}
-
-/** Same choice of bodies as the other exports: selected, else isolated, else all. */
-function chosenBodies(app: App): string[] {
-  const picked = bodiesOf(app.selection);
-
-  return picked.length ? picked : (app.isolated ?? []).filter(id => app.result?.bodies.some(b => b.id === id));
-}
-
-type Delivery = 'download' | 'share';
-
-/** The file types the exports are shared as (the share sheet picks apps by them). */
-const MIME: Record<string, string> = {
-  stl: 'model/stl',
-  step: 'model/step',
-  '3mf': 'model/3mf',
-  glb: 'model/gltf-binary',
-  dxf: 'image/vnd.dxf',
-  svg: 'image/svg+xml',
-  super: 'application/json'
-};
-
-function canShare(file: File): boolean {
-  try {
-    return typeof navigator.share === 'function' && !!navigator.canShare?.({ files: [file] });
-  } catch {
-    return false;
-  }
-}
-
-/** Will this browser share a file of this kind (the system share sheet)? */
-function canShareType(ext: string): boolean {
-  return canShare(new File(['x'], `x.${ext}`, { type: MIME[ext] ?? 'application/octet-stream' }));
-}
-
-function download(blob: Blob, name: string): void {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
