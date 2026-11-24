@@ -1,4 +1,4 @@
-import { FeatureOp, sketchesUsed } from './tools/featureOp';
+import { FeatureOp } from './tools/featureOp';
 import { SelectTool } from './tools/select';
 import { sectionPlane, SectionTool, type SectionState } from './tools/section';
 import { FreeformTool } from './tools/freeform';
@@ -21,7 +21,6 @@ import { isTouchDevice } from './device';
 import { SketchTool } from './tools/sketch';
 import { Tutorial } from './ui/tutorial';
 import { AssemblyTool } from './assembly/assemblyTool';
-import { definedCurves } from './sketch/constraints';
 import { keepSizes } from './doc/unitChange';
 import { bodiesOf, faceRefOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from './tools/tool';
 import { setupRightColumn } from './ui/panels';
@@ -39,6 +38,7 @@ import { Updates } from './ui/update';
 import { Exporter } from './app/exporting';
 import { History } from './app/history';
 import { Keys } from './app/keys';
+import { Scene } from './app/scene';
 import { Menus } from './app/menus';
 import { Topbar } from './app/topbar';
 import { Projects } from './app/projects';
@@ -47,7 +47,7 @@ import { Viewport } from './view/viewport';
 import { VRMode, vrSupported } from './view/xr';
 import type { ToolItem } from './ui/ui';
 import type { RegenResult } from './kernel/protocol';
-import type { Feature, ImageFeature, PinDef, PlaneDef, SketchEntity, SketchFeature, Units, Vec3 } from './doc/types';
+import type { Feature, PinDef, PlaneDef, SketchEntity, SketchFeature, Units, Vec3 } from './doc/types';
 
 export class App implements AppContext {
   readonly store = new DocStore();
@@ -57,6 +57,7 @@ export class App implements AppContext {
   readonly projects = new Projects(this);
   private readonly history = new History(this);
   private readonly keys = new Keys(this);
+  private readonly scene = new Scene(this);
   private readonly menus = new Menus(this);
   private readonly topbar = new Topbar(this);
   readonly exporter = new Exporter(this);
@@ -536,7 +537,7 @@ export class App implements AppContext {
     if (leavingOp && next === this.selectTool) {
       void this.regenerate();
     } else {
-      this.refreshSketches();
+      this.scene.refreshSketches();
     }
     this.history.render();
     // Drawing goes straight on to 3D: the shape just closed is picked as the sketch is left, so its arrow is up
@@ -702,8 +703,8 @@ export class App implements AppContext {
     this.known = new Set([...(this.result?.bodies ?? []).map(b => b.id), ...this.store.doc.features.map(feature => feature.id)]);
     this.applyVisibility();
     // Isolated bodies are all there is: sketches, planes, axes and images step out too.
-    this.refreshConstruction();
-    this.refreshSketches();
+    this.scene.refreshConstruction();
+    this.scene.refreshSketches();
     if (this.tool === this.selectTool) {
       this.selectTool.refresh();
     }
@@ -869,17 +870,14 @@ export class App implements AppContext {
     }
   }
 
-  /** Sketches the engine moved the curves of (they follow a body): those curves, by the sketch as it was sent. */
-  private solved = new WeakMap<Feature, SketchEntity[]>();
-
   private apply(result: RegenResult, features: readonly Feature[]): void {
     this.result = result;
-    this.solved = new WeakMap();
+    this.scene.solved = new WeakMap();
     if (result.sketchEntities) {
       const moved = result.sketchEntities;
       for (const feature of features) {
         if (moved[feature.id]) {
-          this.solved.set(feature, moved[feature.id]);
+          this.scene.solved.set(feature, moved[feature.id]);
         }
       }
       // The project as it is (not a preview of a change): they are the sketch's curves from now on.
@@ -924,8 +922,8 @@ export class App implements AppContext {
     this.known = now;
     this.view.setBodies(result.bodies);
     this.applyVisibility();
-    this.refreshConstruction(features);
-    this.refreshSketches(features);
+    this.scene.refreshConstruction(features);
+    this.scene.refreshSketches(features);
     // Drop selections that point at geometry that no longer exists.
     this.selection = this.selection.filter((highlight) => {
       if (highlight.kind === 'profile' || highlight.kind === 'curve' || highlight.kind === 'point') {
@@ -980,65 +978,6 @@ export class App implements AppContext {
       this.ui.toast(`${failed.length} step${failed.length > 1 ? 's' : ''} failed to rebuild - see History`, 'error');
     }
     this.shownErrors = errs;
-  }
-
-  private refreshConstruction(features: readonly Feature[] = this.store.doc.features): void {
-    const result = this.result;
-    if (!result) {
-      return;
-    }
-    const hidden = new Set(this.store.doc.hidden);
-    // Isolating: only what's isolated (or was made since) shows.
-    const shown = (id: string) => !hidden.has(id) && (!this.isolated || this.isolated.includes(id));
-    this.view.setConstruction(result.planes.filter(plane => shown(plane.id)), result.axes.filter(a => shown(a.id)));
-    this.view.setImages(features.filter((feature): feature is ImageFeature => feature.type === 'image' && !feature.suppressed && !feature.rolledBack && shown(feature.id)));
-  }
-
-  /** The sketch being edited: which curves its constraints hold completely (worked out once per change). */
-  private definedCache: { entities: unknown; constraints: unknown; defined: Set<string> | undefined; all: boolean } | null = null;
-
-  private definedOf(sketch: SketchFeature): Set<string> | undefined {
-    const definedCache = this.definedCache;
-    if (definedCache && definedCache.entities === sketch.entities && definedCache.constraints === sketch.constraints) {
-      return definedCache.defined;
-    }
-    const defined = definedCurves(sketch.entities, sketch.constraints ?? []);
-    const all = !!defined?.all && sketch.entities.some(e => !e.construction);
-    // Just became fully defined: say so (the curves have turned green).
-    if (all && definedCache && !definedCache.all) {
-      this.ui.toast('Sketch fully defined');
-    }
-    this.definedCache = { entities: sketch.entities, constraints: sketch.constraints, defined: defined?.defined, all };
-
-    return defined?.defined;
-  }
-
-  /** Sketches hidden (after use) that were shown again: meant to be used again, so tappable through bodies. */
-  private revealed = new Set<string>();
-  private wasHidden = new Set<string>();
-
-  private refreshSketches(features: readonly Feature[] = this.store.doc.features): void {
-    const hidden = new Set(this.store.doc.hidden);
-    for (const id of this.wasHidden) {
-      if (!hidden.has(id)) {
-        this.revealed.add(id);
-      }
-    }
-    for (const id of hidden) {
-      this.revealed.delete(id);
-    }
-    this.wasHidden = hidden;
-    const iso = this.isolatedWithSketches();
-    const sketches = features
-      .filter((feature): feature is SketchFeature => feature.type === 'sketch' && !feature.suppressed && !feature.rolledBack && ((!hidden.has(feature.id) && (!iso || iso.includes(feature.id))) || feature.id === this.tool.activeSketch))
-      .map(feature => ({ ...feature, entities: this.solved.get(feature) ?? feature.entities, plane: this.result?.sketchPlanes[feature.id] ?? feature.plane, boundary: this.result?.sketchBoundaries[feature.id] }))
-      .map(sketch => (sketch.id === this.tool.activeSketch ? { ...sketch, defined: this.definedOf(sketch) } : sketch));
-    // Drawn but not made into anything yet: shown through bodies, and a tap on it finds it there
-    // (a pocket sketched on a plane through the middle of a body is inside it). The same
-    // for one used, hidden, and shown again in Items: the pocket's sketch shown to fill
-    // the pocket with a core couldn't be tapped through the frame round it.
-    const used = new Set(features.filter(feature => !feature.suppressed && !feature.rolledBack).flatMap(sketchesUsed));
-    this.view.setSketches(sketches, this.tool.activeSketch, new Set(sketches.filter(sketch => !used.has(sketch.id) || this.revealed.has(sketch.id)).map(sketch => sketch.id)));
   }
 
   private refreshHighlights(): void {
