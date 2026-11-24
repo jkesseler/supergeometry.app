@@ -104,3 +104,36 @@ export function TwoTapButton({ armKey, title, class: className, html, onConfirm 
 
   return <button ref={buttonRef} type="button" class={className} title={title} dangerouslySetInnerHTML={{ __html: html }} />;
 }
+
+interface RefButtonProps {
+  /** The icon, as SVG markup. */
+  html: string;
+  title: string;
+  onClick: () => void;
+}
+
+/** A small button in a floating window's bar. */
+export function RefButton({ html, title, onClick }: RefButtonProps) {
+  return <button type="button" class="ref-btn" title={title} aria-label={title} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/**
+ * Follows a pressed pointer: `onMove` for each move, `onEnd` when it is lifted
+ * or cancelled (the end event's type says which). The element keeps the pointer.
+ */
+export function trackPointer(target: HTMLElement, event: PointerEvent, onMove: (moveEvent: PointerEvent) => void, onEnd: (endEvent: PointerEvent) => void): void {
+  try {
+    target.setPointerCapture(event.pointerId);
+  } catch {
+    // (a pointer already gone)
+  }
+  const end = (endEvent: PointerEvent) => {
+    target.removeEventListener('pointermove', onMove);
+    target.removeEventListener('pointerup', end);
+    target.removeEventListener('pointercancel', end);
+    onEnd(endEvent);
+  };
+  target.addEventListener('pointermove', onMove);
+  target.addEventListener('pointerup', end);
+  target.addEventListener('pointercancel', end);
+}
