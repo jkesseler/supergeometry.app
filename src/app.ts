@@ -24,15 +24,13 @@ import { variableTags } from './doc/varAnchors';
 import { numpadVariables } from './ui/numpad';
 import { WebWindow } from './ui/webWindow';
 import { RefImages } from './ui/refImages';
-import { createVariable, insertFile, insertImage, acceptFor } from './io/insert';
+import { createVariable, insertFile, insertImage } from './io/insert';
 import { editedStep } from './doc/freeformEdits';
-import { emptyDoc } from './doc/types';
 import { findAction, openCommandSearch, showShortcuts } from './ui/commands';
 import { showAbout } from './ui/about';
-import { showLibrary } from './ui/library';
-import { currentProjectId, forgetProject, keepProject, libraryEntries, newProjectId, projectText, renameProject, setCurrentProject } from './doc/library';
+import { libraryEntries } from './doc/library';
 import { SUPPORT, openSupport } from './ui/support';
-import { DocStore, parseProject } from './doc/store';
+import { DocStore } from './doc/store';
 import { ImprintOp, WrapOp } from './tools/wrapOps';
 import { PlanesAxisOp, TwoPointAxisOp, surfaceAxis } from './tools/axisOps';
 import { CurvePointPlaneOp, EdgeAnglePlaneOp, FacePointPlaneOp, ThreePointPlaneOp } from './tools/planeOps';
@@ -45,7 +43,7 @@ import { definedCurves } from './sketch/constraints';
 import { keepSizes } from './doc/unitChange';
 import { bodiesOf, edgeRefOf, edgesOfFace, faceRefOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from './tools/tool';
 import { setupRightColumn } from './ui/panels';
-import { el, UI } from './ui/ui';
+import { UI } from './ui/ui';
 import { Sentence } from './ui/sentence';
 import { Ghost } from './tools/ghost';
 import { arrangement, drawnRegions, materialRegions } from './sketch/regions';
@@ -59,13 +57,14 @@ import { icons } from './ui/icons';
 import { Updates } from './ui/update';
 import { Offline } from './ui/offline';
 import { Install } from './ui/install';
-import { Exporter, canShareType, download } from './app/exporting';
+import { Exporter, canShareType } from './app/exporting';
+import { Projects } from './app/projects';
 import { isHeadset, screenClass } from './device';
 import { Viewport } from './view/viewport';
 import { VRMode, vrSupported } from './view/xr';
 import type { ToolItem } from './ui/ui';
 import type { RegenResult } from './kernel/protocol';
-import type { EdgeFeature, EdgeRef, ExtrudeFeature, ExtrudeSource, Feature, FillToPlaneFeature, ImageFeature, LoftFeature, PathRef, PinDef, PlaneDef, PlaneFeature, ProjectDoc, RevolveFeature, ShellFeature, SketchEntity, SketchFeature, SplitFeature, SweepFeature, TransformFeature, Units, Vec3 } from './doc/types';
+import type { EdgeFeature, EdgeRef, ExtrudeFeature, ExtrudeSource, Feature, FillToPlaneFeature, ImageFeature, LoftFeature, PathRef, PinDef, PlaneDef, PlaneFeature, RevolveFeature, ShellFeature, SketchEntity, SketchFeature, SplitFeature, SweepFeature, TransformFeature, Units, Vec3 } from './doc/types';
 
 /** The page's own title, from index.html (it names the app for search results). */
 const PAGE_TITLE = document.title;
@@ -76,6 +75,7 @@ export class App implements AppContext {
   readonly kernel = new KernelClient();
   readonly view: Viewport;
   readonly ui = new UI();
+  private readonly projects = new Projects(this);
   private readonly exporter = new Exporter(this);
   /** The sentence bar: the pick, then what it offers, on one line - the way to the tools. */
   sentence!: Sentence;
@@ -95,12 +95,12 @@ export class App implements AppContext {
   varsOn = false;
   private varTags!: VariableTags;
   private hover: Sel | null = null;
-  private selectTool: SelectTool;
+  selectTool: SelectTool;
   /** The headset mode (its pictures can be checked on the page: vr.snapshot). */
   vr: VRMode | null = null;
   tool: Tool;
   /** The tutorial begun (More > Tutorial, and the welcome window's button). */
-  private startTutorial: () => void = () => {};
+  startTutorial: () => void = () => {};
   /** The tutorial (for the debug handle: a test steps it by hand where the browser draws seldom). */
   tutorial: Tutorial | null = null;
   private shownErrors = '';
@@ -343,10 +343,10 @@ export class App implements AppContext {
     this.tool.enter?.();
 
     this.ui.setStatus('Loading geometry kernel…');
-    const loaded = this.store.load().then(() => this.attachLibrary());
+    const loaded = this.store.load().then(() => this.projects.attach());
     // Every visit starts at the projects, with a welcome: shown as soon as the
     // projects are read, while the geometry kernel is still loading behind it.
-    void loaded.then(() => this.showProjects(true, true));
+    void loaded.then(() => this.projects.show(true, true));
     Promise.all([this.kernel.ready, loaded])
       .then(async () => {
         this.ui.setStatus(null);
@@ -355,10 +355,10 @@ export class App implements AppContext {
         // A project never pictured (kept before it was ever drawn) showed a
         // blank shape on its card: now that it's drawn, it gets its picture -
         // in the welcome window too, if that's still open.
-        const entry = (await libraryEntries()).find(e => e.id === this.projectId);
+        const entry = (await libraryEntries()).find(e => e.id === this.projects.projectId);
         if (entry && !entry.thumb && this.store.features.length) {
-          await this.keepInLibrary(JSON.stringify(this.store.doc), true);
-          const thumb = (await libraryEntries()).find(e => e.id === this.projectId)?.thumb;
+          await this.projects.keep(JSON.stringify(this.store.doc), true);
+          const thumb = (await libraryEntries()).find(e => e.id === this.projects.projectId)?.thumb;
           const pic = document.querySelector<HTMLElement>('.library-card.current .library-pic');
           if (thumb && pic && !pic.querySelector('img')) {
             const img = document.createElement('img');
@@ -1954,7 +1954,7 @@ export class App implements AppContext {
     cam.lookAlong(normal, xDir);
   }
 
-  private fit(): void {
+  fit(): void {
     this.view.fitAll();
   }
 
@@ -2014,7 +2014,7 @@ export class App implements AppContext {
     // The welcome window (and File → Open) has a Full screen button too (a
     // browser only allows it from a tap). Everywhere but an app that already
     // has the whole screen; where a browser has none (iPhone), it says how.
-    this.fullscreen = !matchMedia('(display-mode: fullscreen)').matches ? { isFull, toggle: () => (isFull() ? void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.()) : goFull()) } : null;
+    this.projects.fullscreen = !matchMedia('(display-mode: fullscreen)').matches ? { isFull, toggle: () => (isFull() ? void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.()) : goFull()) } : null;
     // Help and Tutorial: placeholders for now.
     // A newer build out? More pulses and its Update item says NEW.
     this.updates = new Updates(() => this.store.flush());
@@ -2063,7 +2063,7 @@ export class App implements AppContext {
       faces: body => (this.view.body(body)?.faces ?? []).map(faceInfo => ({ center: faceInfo.center, normal: faceInfo.normal, type: faceInfo.type })),
       bodies: () => this.view.bodyList.map(b => b.id),
       eye: () => this.view.cam.camera.position,
-      newProject: () => this.newProject(),
+      newProject: () => this.projects.newProject(),
       setUp: () => (sketchVariant('circle', 'center'), sketchSides(6)),
       closePanels: () => (this.ui.toggleHistory(false), this.items.toggle(false)),
       zoomTo: (mm, px) => {
@@ -2170,8 +2170,8 @@ export class App implements AppContext {
         menu.hidden = true;
         fn();
       });
-    item('m-new', () => void this.newProject());
-    item('m-open', () => void this.showProjects());
+    item('m-new', () => void this.projects.newProject());
+    item('m-open', () => void this.projects.show());
     item('m-save', () => this.exporter.save());
     item('m-stl', () => void this.exporter.export('stl'));
     item('m-step', () => void this.exporter.export('step'));
@@ -2362,7 +2362,7 @@ export class App implements AppContext {
     (document.getElementById('redo-btn') as HTMLButtonElement).disabled = t ? !t.canRedo : !this.store.canRedo;
   }
 
-  private updates!: Updates;
+  updates!: Updates;
 
   /** More → Update: asked first (it reloads the app), with the option to save a copy. */
   private async confirmReset(): Promise<void> {
@@ -2383,227 +2383,5 @@ export class App implements AppContext {
       await new Promise(resolve => setTimeout(resolve, 800));
     }
     await this.updates.reset();
-  }
-
-  /**
-   * New project: the current one can be saved (downloaded) or discarded
-   * first. Then the app checks for a newer version and, if there is one,
-   * clears its cached files and reloads - a new project starts on the latest.
-   */
-  private async newProject(): Promise<void> {
-    const was = this.store.features.length ? this.store.doc.name : null;
-    await this.switchProject(emptyDoc(), newProjectId());
-    if (was) {
-      this.ui.toast(`“${was}” is kept in File → Open`);
-    }
-    // The first minute makes something: a new project opens in a sketch on the floor with Line on, as every new
-    // sketch does - tap, tap, back to the start: a shape; Exit pulses, the shape is pulled up.
-    if (!this.store.features.length && this.tool === this.selectTool) {
-      this.setTool(new SketchTool(this, { plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, kind: 'line' }));
-    }
-    if (await this.updates.check()) {
-      await this.updates.reset();
-    }
-  }
-
-  // ------------------------------------------------------------ library
-
-  /** Which library project is open; null until the saved project is read. */
-  private projectId: string | null = null;
-  /** The open project has an entry in the library (an empty new one doesn't, yet). */
-  private projectKept = false;
-
-  /** Startup: the open project is the library's current one (work from before the library is kept now). */
-  private async attachLibrary(): Promise<void> {
-    let id = await currentProjectId();
-    if (!id) {
-      id = newProjectId();
-      await setCurrentProject(id);
-    }
-    this.projectId = id;
-    this.projectKept = (await libraryEntries()).some(e => e.id === id);
-    // The library's copy follows when the app goes to the background (the
-    // autosave holds the newest state meanwhile, and is copied in at the next
-    // start if need be) - no extra saving or drawing while modelling.
-    this.store.onSaved = text => document.visibilityState === 'hidden' && void this.keepInLibrary(text);
-    // Its newest state is the autosave (a page closed mid-save left the library a step behind).
-    const text = JSON.stringify(this.store.doc);
-    // (No picture: nothing is drawn yet.)
-    if ((this.projectKept || this.store.features.length) && (await projectText(id)) !== text) {
-      this.projectKept = true;
-      await keepProject(id, this.store.doc.name, text);
-    }
-  }
-
-  /** The open project into the library: with a new picture of the view now and then (it costs a moment). */
-  private async keepInLibrary(text: string, picture = false): Promise<void> {
-    const id = this.projectId;
-    if (!id || (!this.projectKept && !this.store.features.length)) {
-      return;
-    }
-    // A new picture: opening the gallery, leaving the project, or the app going to the background.
-    const snap = picture || document.visibilityState === 'hidden';
-    this.projectKept = true;
-    await keepProject(id, this.store.doc.name, text, snap ? this.viewPicture() : undefined);
-  }
-
-  /** A small picture of the model (as the view looks at it, framed to fit), for the library. */
-  private viewPicture(): string | undefined {
-    try {
-      return this.view.snapshot(320, 240, getComputedStyle(document.body).backgroundColor || '#2b2d31');
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** Close the open project (it's kept, with a fresh picture) and open another. */
-  private async switchProject(doc: ProjectDoc, id: string): Promise<void> {
-    this.setTool(null);
-    this.setSection(null);
-    this.isolate(null);
-    if (this.projectId) {
-      await this.keepInLibrary(JSON.stringify(this.store.doc), true);
-    }
-    const kept = (await libraryEntries()).some(e => e.id === id);
-    await setCurrentProject(id);
-    // The id and the document change together: an autosave due meanwhile went to the old project.
-    this.projectId = id;
-    this.projectKept = kept;
-    // The last one's rebuild, if it is still going, is no use now: dropped, not waited for
-    // (opening a small project while a guitar was still being built took the guitar's 90 s).
-    if (this.kernel.running) {
-      this.kernel.stop();
-    }
-    this.store.openDoc(doc);
-    // A new one starts from the default view (not looking up from below, as the last was left).
-    if (!doc.features.length) {
-      this.view.cam.iso();
-    }
-    setTimeout(() => this.fit(), 400);
-  }
-
-  /** File → Open: the projects kept on this device, and Open file… for any other. */
-  /** Full screen from the projects window (null: not offered here). */
-  private fullscreen: { isFull(): boolean; toggle(): void } | null = null;
-
-  private async showProjects(welcome = false, starting = false): Promise<void> {
-    // The open one with its picture as it looks now (starting: nothing has changed, nor is it drawn yet).
-    if (this.projectId && !starting) {
-      await this.keepInLibrary(JSON.stringify(this.store.doc), true);
-    }
-    const entries = await libraryEntries();
-    showLibrary(entries, this.projectId, {
-      open: id => void this.openKept(id),
-      tutorial: () => (this.tutorialAsked(), this.startTutorial()),
-      newProject: () => void this.newProject(),
-      openFile: () => this.open(),
-      download: id => void this.downloadKept(id),
-      remove: id => forgetProject(id),
-      rename: async (id, current) => {
-        const name = (await this.ui.dialog('Rename project', [{ key: 'name', label: 'Name', value: current }]))?.name.trim();
-        if (!name || name === current) {
-          return null;
-        }
-        // The open one through its document (the top bar and its autosave follow).
-        if (id === this.projectId) {
-          this.store.commit(draft => (draft.name = name));
-        } else {
-          await renameProject(id, name);
-        }
-
-        return name;
-      }
-    }, { welcome, fullscreen: this.fullscreen, onClose: welcome ? () => this.offerTutorial() : undefined });
-  }
-
-  /** The tutorial has been offered on this device (or begun): it isn't offered again. */
-  private tutorialAsked(): void {
-    try {
-      localStorage.setItem('sg.tutorialAsked', '1');
-    } catch {
-      /* a private window: asked again next time */
-    }
-  }
-
-  /**
-   * The first time the app is opened on a device, once the welcome window is closed: would they like the tutorial?
-   * Asked once, whatever the answer (More > Tutorial has it from then on). (Asked for: "a popup only for the first
-   * time someone opens the app, after they close the welcome window, that asks them if they want to start the
-   * tutorial".)
-   */
-  private offerTutorial(): void {
-    let asked = true;
-    try {
-      asked = localStorage.getItem('sg.tutorialAsked') === '1';
-    } catch {
-      /* no storage: not offered (it would be offered every time) */
-    }
-    if (asked) {
-      return;
-    }
-    this.tutorialAsked();
-    // (After what closing the window started - a new project, a file being opened - has had its turn.)
-    setTimeout(() => {
-      // (The welcome window was closed by its own Tutorial button: the tutorial is running, there is nothing to
-      // ask - the question came up over it, where the tutorial lets nothing be tapped but its lit spot. Reported:
-      // "now i cant do the tutorial on PC. i cant click draw", in a private window - a first visit.)
-      if (this.tutorial?.running) {
-        return;
-      }
-      const back = el('div', 'dialog-back');
-      const box = el('div', 'dialog tutorial-ask');
-      box.append(el('div', 'panel-title', 'New here?'), el('div', 'tutorial-ask-text', 'The tutorial builds a bolt and the nut that fits it with you, one tap at a time. It takes a few minutes.'));
-      const row = el('div', 'dialog-actions');
-      const no = el('button', 'text-btn', 'Not now');
-      const yes = el('button', 'text-btn primary', 'Start the tutorial');
-      const close = () => back.remove();
-      no.addEventListener('click', close);
-      yes.addEventListener('click', () => (close(), this.startTutorial()));
-      row.append(no, yes);
-      box.append(row, el('div', 'tutorial-ask-note', 'It is under More > Tutorial whenever you want it.'));
-      back.append(box);
-      document.body.append(back);
-    }, 350);
-  }
-
-  private async openKept(id: string): Promise<void> {
-    const text = await projectText(id);
-    if (!text) {
-      return this.ui.toast("That project couldn't be read", 'error');
-    }
-    try {
-      await this.switchProject(parseProject(text), id);
-    } catch (err) {
-      this.ui.toast(`Could not open: ${(err as Error).message}`, 'error');
-    }
-  }
-
-  private async downloadKept(id: string): Promise<void> {
-    const text = await projectText(id);
-    const e = (await libraryEntries()).find(libraryEntry => libraryEntry.id === id);
-    if (text && e) {
-      download(new Blob([text], { type: 'application/json' }), `${e.name}.super`);
-    }
-  }
-
-  private open(): void {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = acceptFor('.super,.tessel,application/json');
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) {
-        return;
-      }
-      try {
-        const doc = parseProject(await file.text());
-        doc.name = file.name.replace(/\.(super|tessel)$/i, '');
-        // A project of its own in the library (the open one is kept as it was).
-        await this.switchProject(doc, newProjectId());
-      } catch (err) {
-        this.ui.toast(`Could not open: ${(err as Error).message}`, 'error');
-      }
-    };
-    input.click();
   }
 }
