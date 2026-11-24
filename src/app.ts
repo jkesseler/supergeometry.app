@@ -4,9 +4,8 @@ import { BooleanOp } from './tools/booleanOp';
 import { SelectTool } from './tools/select';
 import { sectionPlane, SectionTool, type SectionState } from './tools/section';
 import { FreeformTool } from './tools/freeform';
-import { entityWorldPolylines } from './sketch/curves';
-import { add, dist, scale, xDirFor } from './geom';
-import { bodyCenter, AxisOp, ConnectOp, EdgeOp, ExtrudeOp, FillOp, FillToPlaneOp, ThreadOp, ImageOp, LoftOp, MidplaneOp, MoveFaceOp, PlaneOp, ReplaceFaceOp, ScaleFaceOp, ScaleOp, ScaleRefOp, RevolveOp, ShellOp, SplitOp, SweepOp, TransformOp } from './tools/ops';
+import { add, dist, scale } from './geom';
+import { bodyCenter, AxisOp, ConnectOp, EdgeOp, ExtrudeOp, FillOp, FillToPlaneOp, ThreadOp, ImageOp, LoftOp, MidplaneOp, PlaneOp, ReplaceFaceOp, ScaleOp, RevolveOp, ShellOp, SplitOp, SweepOp, TransformOp } from './tools/ops';
 import { faceFreeformTool } from './tools/faceFreeform';
 import { OffsetEdgeOp } from './tools/offsetEdge';
 import { ItemsPanel } from './ui/items';
@@ -17,7 +16,6 @@ import { MeasureTool } from './tools/measure';
 import { PinLayer } from './tools/annotate';
 import { settings } from './settings';
 import { KernelClient } from './kernel/client';
-import { freeformBodies } from './doc/freeformCopies';
 import { VariablesTool } from './tools/variablesTool';
 import { VariableTags } from './tools/variableTags';
 import { variableTags } from './doc/varAnchors';
@@ -25,13 +23,12 @@ import { numpadVariables } from './ui/numpad';
 import { WebWindow } from './ui/webWindow';
 import { RefImages } from './ui/refImages';
 import { createVariable, insertFile, insertImage } from './io/insert';
-import { editedStep } from './doc/freeformEdits';
 import { findAction, openCommandSearch, showShortcuts } from './ui/commands';
 import { showAbout } from './ui/about';
 import { libraryEntries } from './doc/library';
 import { SUPPORT, openSupport } from './ui/support';
 import { DocStore } from './doc/store';
-import { ImprintOp, WrapOp } from './tools/wrapOps';
+import { WrapOp } from './tools/wrapOps';
 import { PlanesAxisOp, TwoPointAxisOp, surfaceAxis } from './tools/axisOps';
 import { CurvePointPlaneOp, EdgeAnglePlaneOp, FacePointPlaneOp, ThreePointPlaneOp } from './tools/planeOps';
 import { circleAxis } from './tools/slots';
@@ -58,13 +55,14 @@ import { Updates } from './ui/update';
 import { Offline } from './ui/offline';
 import { Install } from './ui/install';
 import { Exporter, canShareType } from './app/exporting';
+import { History } from './app/history';
 import { Projects } from './app/projects';
 import { isHeadset, screenClass } from './device';
 import { Viewport } from './view/viewport';
 import { VRMode, vrSupported } from './view/xr';
 import type { ToolItem } from './ui/ui';
 import type { RegenResult } from './kernel/protocol';
-import type { EdgeFeature, EdgeRef, ExtrudeFeature, ExtrudeSource, Feature, FillToPlaneFeature, ImageFeature, LoftFeature, PathRef, PinDef, PlaneDef, PlaneFeature, RevolveFeature, ShellFeature, SketchEntity, SketchFeature, SplitFeature, SweepFeature, TransformFeature, Units, Vec3 } from './doc/types';
+import type { EdgeRef, ExtrudeSource, Feature, ImageFeature, PathRef, PinDef, PlaneDef, SketchEntity, SketchFeature, Units, Vec3 } from './doc/types';
 
 /** The page's own title, from index.html (it names the app for search results). */
 const PAGE_TITLE = document.title;
@@ -76,6 +74,7 @@ export class App implements AppContext {
   readonly view: Viewport;
   readonly ui = new UI();
   private readonly projects = new Projects(this);
+  private readonly history = new History(this);
   private readonly exporter = new Exporter(this);
   /** The sentence bar: the pick, then what it offers, on one line - the way to the tools. */
   sentence!: Sentence;
@@ -560,7 +559,7 @@ export class App implements AppContext {
     } else {
       this.refreshSketches();
     }
-    this.renderHistory();
+    this.history.render();
     // Drawing goes straight on to 3D: the shape just closed is picked as the sketch is left, so its arrow is up
     // already - drag it, no tap on the shape first. (The last shape made of the sketch's curves: the one just drawn.)
     if (closed && this.tool === this.selectTool && !this.selection.length) {
@@ -983,10 +982,10 @@ export class App implements AppContext {
     // (Once: the selection tool's own refresh was run a second time after this.)
     this.tool.refresh?.();
     this.showPose();
-    this.renderHistory();
+    this.history.render();
     this.items.render(result);
     this.showVariableTags();
-    const open = this.openBodies(result);
+    const open = this.history.openBodies(result);
     this.ui.setWarning(
       open.length
         ? `⚠ ${open.length === 1 ? (this.store.doc.names?.[open[0].id] ?? open[0].name) : `${open.length} bodies`} not closed - ${open.reduce((total, b) => total + b.openEdges.length, 0)} open edge(s) shown in orange`
@@ -1068,362 +1067,8 @@ export class App implements AppContext {
     this.view.setHighlights(this.selection, this.hover);
   }
 
-  // ------------------------------------------------------------ history
-
-  /**
-   * Bodies with open edges - except freeform surfaces that are meant to be
-   * open sheets (not thickened): those aren't a problem.
-   */
-  private openBodies(result: RegenResult | null) {
-    return (result?.bodies ?? []).filter((b) => {
-      if (!b.openEdges?.length) {
-        return false;
-      }
-      // A surface on purpose (or a copy of one) isn't meant to be closed.
-      const feature = this.store.find(b.id);
-      const ff = feature?.type === 'freeform' ? editedStep<typeof feature>(this.store.features, feature.id) : freeformBodies(this.store.features).get(b.id)?.feature;
-
-      return !(ff?.surface && !ff.thickness);
-    });
-  }
-
-  /** What the History rows were last made from (everything a row shows). */
-  private historyShown = '';
-
-  private renderHistory(): void {
-    const warnings = new Map<string, string>();
-    for (const b of this.openBodies(this.result)) {
-      warnings.set(b.id.split(':')[0], `${b.name}: not closed - ${b.openEdges.length} open edge(s)`);
-    }
-    for (const featureError of this.result?.notes ?? []) {
-      warnings.set(featureError.featureId, warnings.has(featureError.featureId) ? `${warnings.get(featureError.featureId)} ${featureError.message}` : featureError.message);
-    }
-    // The same rows as are there: left as they are (every step of a drag's
-    // preview rebuilt the whole list - 5 ms for 200 steps, far more on a phone).
-    const doc = this.store.doc;
-    const shown = JSON.stringify([
-      doc.features.map(feature => [feature.id, feature.name, feature.type, feature.suppressed ? 1 : 0, feature.rolledBack ? 1 : 0, feature.type === 'sketch' ? (feature.log ?? 0) : 0]),
-      this.result?.errors ?? [],
-      this.tool.editingId ?? this.tool.activeSketch ?? null,
-      [...warnings],
-      doc.hidden,
-      doc.historyGroups ?? []
-    ]);
-    if (shown === this.historyShown) {
-      return;
-    }
-    this.historyShown = shown;
-    // The rows are rebuilt: a hover on an old row is over.
-    this.view.setStepHover(null);
-    this.ui.renderHistory(this.store.doc.features, this.result?.errors ?? [], this.tool.editingId ?? this.tool.activeSketch ?? null, {
-      edit: (id, pick) => this.editFeature(id, pick),
-      hover: id => this.view.setStepHover(id ? this.stepTargets(id) : null),
-      toggle: (id) => {
-        const feature = this.store.find(id);
-        if (feature) {
-          this.store.update(id, { suppressed: !feature.suppressed });
-        }
-      },
-      isHidden: id => this.store.doc.hidden.includes(id),
-      toggleHidden: id => this.store.commit(draft => (draft.hidden = draft.hidden.includes(id) ? draft.hidden.filter(hiddenId => hiddenId !== id) : [...draft.hidden, id])),
-      remove: (id) => {
-        if (this.tool !== this.selectTool) {
-          this.setTool(null);
-        }
-        this.store.remove(id);
-      },
-      groups: this.store.doc.historyGroups ?? [],
-      setGroups: next => this.store.commit(draft => (draft.historyGroups = next.length ? next : undefined)),
-      suppress: (ids, off) =>
-        this.store.commit((draft) => {
-          for (const feature of draft.features) {
-            if (ids.includes(feature.id)) {
-              feature.suppressed = off || undefined;
-            }
-          }
-        }),
-      askName: async (title, current) => (await this.ui.dialog(title, [{ key: 'name', label: 'Name', value: current }]))?.name.trim() || null,
-      breakAfter: id => this.breakAfter(id),
-      merge: () => void this.mergeHistory()
-    }, warnings);
-  }
-
-  /**
-   * The History's breakpoint: the steps after `id` off (the model as it was
-   * there) until it's removed (null). New steps go in at the breakpoint.
-   */
-  private breakAfter(id: string | null): void {
-    if (this.tool !== this.selectTool) {
-      this.setTool(null);
-    }
-    const at = id ? this.store.features.findIndex(feature => feature.id === id) : Infinity;
-    const later = id ? this.store.features.length - 1 - at : 0;
-    if (id && !later) {
-      return void this.ui.toast("It's the last step - there's nothing after it to roll back");
-    }
-    this.store.commit((draft) => {
-      draft.features.forEach((feature, i) => {
-        if (i > at) {
-          feature.rolledBack = true;
-        } else {
-          delete feature.rolledBack;
-        }
-      });
-    });
-    this.ui.toast(id ? `Rolled back to here: ${later} later step${later === 1 ? '' : 's'} off until you remove the breakpoint` : 'Breakpoint removed: every step is on again');
-  }
-
-  /**
-   * Merge: the history flattened into the bodies as they are now (each kept
-   * as its exact shape, its name, colour and material kept). Sketches and
-   * variables can stay; every other step goes. Undo takes it back.
-   */
-  private async mergeHistory(): Promise<void> {
-    const bodies = this.view.bodyList;
-    if (!bodies.length) {
-      return void this.ui.toast('There are no bodies yet - nothing to merge into');
-    }
-    const off = this.store.features.filter(feature => feature.rolledBack || feature.suppressed).length;
-    const answers = await this.ui.dialog(
-      'Merge history',
-      [
-        { key: 'sketches', label: 'Keep the sketches', value: '1', check: true },
-        { key: 'variables', label: 'Keep the variables', value: '1', check: true }
-      ],
-      `Every step becomes the bodies as they are now: they can't be edited by their steps any more.${off ? ` The ${off} step${off === 1 ? '' : 's'} switched off or after the breakpoint go too.` : ''} Undo takes it back.`
-    );
-    if (!answers) {
-      return;
-    }
-    if (this.tool !== this.selectTool) {
-      this.setTool(null);
-    }
-    const features = this.store.doc.features.filter(feature => !feature.rolledBack);
-    const made: Feature[] = [];
-    const renamed = new Map<string, string>();
-    for (const b of bodies) {
-      const blob = await this.kernel.export(features, 'step', [b.id]);
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      let bin = '';
-      for (let i = 0; i < bytes.length; i += 0x8000) {
-        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      }
-      // The body keeps its id where it can be a step's (names, colours, folders stay with it).
-      const id = /^[\w-]+$/.test(b.id) && !made.some(feature => feature.id === b.id) ? b.id : this.store.newIdentity('import').id;
-      if (id !== b.id) {
-        renamed.set(b.id, id);
-      }
-      const name = this.store.doc.names[b.id] ?? b.name;
-      made.push({ id, name, type: 'import', format: 'step', fileName: `${name}.step`, data: btoa(bin) });
-    }
-    const keepSketches = !!answers.sketches;
-    const keepVars = !!answers.variables;
-    this.store.commit((draft) => {
-      const sketches = keepSketches
-        ? draft.features.flatMap((feature): Feature[] => {
-          if (feature.type !== 'sketch' || feature.rolledBack) {
-            return [];
-          }
-          // Nothing left to follow: a merged body has no steps to point at.
-          const sketch: SketchFeature = { ...feature, attachedTo: undefined, outlineOffsets: undefined, links: undefined };
-          sketch.constraints = sketch.constraints?.filter(constraint => !/"(ref|lnk)-/.test(JSON.stringify(constraint)));
-          if (!keepVars) {
-            delete sketch.exprs;
-          }
-
-          return [sketch];
-        })
-        : [];
-      draft.features = [...made, ...sketches];
-      if (!keepVars) {
-        draft.variables = [];
-      }
-      draft.historyGroups = undefined;
-      const re = (id: string) => renamed.get(id) ?? id;
-      const reKeys = <T>(record: Record<string, T> | undefined) => (record ? Object.fromEntries(Object.entries(record).map(([key, x]) => [re(key), x])) : record);
-      draft.names = reKeys(draft.names)!;
-      draft.colors = reKeys(draft.colors);
-      draft.opacity = reKeys(draft.opacity);
-      draft.materials = reKeys(draft.materials);
-      draft.hidden = draft.hidden.map(re);
-      draft.folders = draft.folders?.map(folder => ({ ...folder, items: folder.items.map(re) }));
-    });
-    this.ui.toast(`History merged: ${made.length} bod${made.length === 1 ? 'y' : 'ies'}${keepSketches ? ', the sketches kept' : ''}`);
-  }
-
-  /** What a History step works on: its bodies (made or changed), sketches, and the edges it names. */
-  private stepTargets(id: string): { bodies: string[]; lines: Vec3[][] } {
-    const feature = this.store.find(id);
-    const bodies = new Set<string>();
-    const sketches = new Set<string>();
-    const edges: [Vec3, Vec3][] = [];
-    if (!feature) {
-      return { bodies: [], lines: [] };
-    }
-    if (feature.type === 'sketch') {
-      sketches.add(feature.id);
-    }
-    // Bodies this step made (its own id, or copies "id:…").
-    for (const b of this.result?.bodies ?? []) {
-      if (b.id === feature.id || b.id.startsWith(`${feature.id}:`)) {
-        bodies.add(b.id);
-      }
-    }
-    const walk = (value: unknown, key = ''): void => {
-      if (Array.isArray(value)) {
-        return value.forEach(item => walk(item, key));
-      }
-      if (!value || typeof value !== 'object') {
-        if (typeof value === 'string' && (key === 'body' || key === 'bodies' || key === 'target')) {
-          bodies.add(value);
-        }
-        if (typeof value === 'string' && key === 'sketch') {
-          sketches.add(value);
-        }
-
-        return;
-      }
-      const record = value as Record<string, unknown>;
-      // An edge reference: draw the edge itself.
-      if (Array.isArray(record.mid) && Array.isArray(record.dir) && typeof record.length === 'number') {
-        const mid = record.mid as Vec3;
-        const dir = record.dir as Vec3;
-        const halfLength = (record.length as number) / 2;
-        edges.push([[mid[0] - dir[0] * halfLength, mid[1] - dir[1] * halfLength, mid[2] - dir[2] * halfLength], [mid[0] + dir[0] * halfLength, mid[1] + dir[1] * halfLength, mid[2] + dir[2] * halfLength]]);
-      }
-      for (const [key, x] of Object.entries(record)) {
-        if (key !== 'exprs') {
-          walk(x, key);
-        }
-      }
-    };
-    walk(feature);
-    // Only what's still there.
-    const have = new Set((this.result?.bodies ?? []).map(b => b.id));
-    // Sketch curves in 3D.
-    const lines: Vec3[][] = [...edges];
-    for (const sid of sketches) {
-      const plane = this.sketchPlane(sid);
-      const sk = this.store.find<SketchFeature>(sid);
-      if (!plane || !sk) {
-        continue;
-      }
-      for (const e of sk.entities) {
-        lines.push(...entityWorldPolylines(e, plane));
-      }
-    }
-
-    return { bodies: [...bodies].filter(b => have.has(b)), lines };
-  }
-
   editStep(id: string): void {
-    this.editFeature(id);
-  }
-
-  private editFeature(id: string, pick?: string[]): void {
-    const existing = this.store.find(id);
-    if (!existing) {
-      return;
-    }
-    this.setSelection([]);
-    // What the step works on can be off screen (or under History): once its
-    // tool shows its picks, bring them into view. A sketch frames itself.
-    if (existing.type !== 'sketch') {
-      const before = this.tool;
-      setTimeout(() => this.tool !== before && this.view.keepInView(), 400);
-    }
-    switch (existing.type) {
-      case 'boolean':
-        // Subtract / Intersect open their tool (picks, Keep options); Union has nothing to set.
-        if (existing.op !== 'union') {
-          return this.setTool(new BooleanOp(this, existing.op, existing.target, existing.tools, existing));
-        }
-        break;
-      case 'sketch': {
-        // (From one of its steps in History: open with what that step made picked, ready to change.)
-        const tool = new SketchTool(this, { sketchId: existing.id });
-        this.setTool(tool);
-        if (pick?.length) {
-          tool.stopDrawing();
-          tool.preselect(pick);
-        }
-
-        return;
-      }
-      case 'extrude':
-        return this.setTool(new ExtrudeOp(this, existing.source, existing as ExtrudeFeature));
-      case 'fillet':
-      case 'chamfer':
-        return this.setTool(new EdgeOp(this, existing.type, existing.edges, existing as EdgeFeature));
-      case 'revolve':
-        return this.setTool(new RevolveOp(this, existing.source, existing as RevolveFeature));
-      case 'sweep':
-        return this.setTool(new SweepOp(this, existing.source, existing as SweepFeature));
-      case 'loft':
-        return this.setTool(new LoftOp(this, existing.sections, [], existing as LoftFeature));
-      case 'shell':
-        return this.setTool(new ShellOp(this, existing.body, existing.faces, existing as ShellFeature));
-      case 'split':
-        return this.setTool(new SplitOp(this, existing.body, existing as SplitFeature));
-      case 'fillToPlane':
-        return this.setTool(new FillToPlaneOp(this, existing.body, existing as FillToPlaneFeature));
-      case 'fill':
-        return this.setTool(new FillOp(this, existing.boundary, existing));
-      case 'imprint':
-        return this.setTool(new ImprintOp(this, existing.source ? { source: existing.source } : { edges: existing.edges ?? [] }, existing));
-      case 'wrap':
-        return this.setTool(new WrapOp(this, existing.source, existing));
-      case 'thread':
-        return this.setTool(new ThreadOp(this, existing.face, existing.round ?? { r: 5, hole: false }, existing));
-      case 'plane':
-        return this.setTool(new PlaneOp(this, existing.plane, existing.face, existing as PlaneFeature));
-      case 'transform': {
-        if (existing.op.kind === 'scale' && existing.op.ref) {
-          return this.setTool(new ScaleRefOp(this, existing.bodies, existing as TransformFeature));
-        }
-        if (existing.op.kind === 'scale' || existing.op.kind === 'scaleXYZ') {
-          return this.setTool(new ScaleOp(this, existing.op.kind === 'scaleXYZ', existing.bodies, existing as TransformFeature));
-        }
-
-        return this.setTool(new TransformOp(this, existing.op.kind, existing.bodies, existing as TransformFeature));
-      }
-      case 'scaleFace':
-        return this.setTool(new ScaleFaceOp(this, existing.face, { origin: existing.face.center, normal: existing.face.normal, xDir: existing.u }, existing));
-      case 'replaceFace':
-        return this.setTool(new ReplaceFaceOp(this, existing.face, existing));
-      case 'image':
-        return this.setTool(new ImageOp(this, existing as ImageFeature));
-      // (Opened from History: that step itself is edited.)
-      case 'freeform':
-        return this.setTool(new FreeformTool(this, { feature: existing, keep: { inPlace: true } }));
-      case 'freeformEdit': {
-        // The shape as this edit left it; Done keeps the change in this step.
-        const t = editedStep(this.store.features, existing.target, existing.id);
-        if (t?.type === 'freeform') {
-          return this.setTool(new FreeformTool(this, { feature: t, keep: { edit: existing.id } }));
-        }
-        if (t?.type === 'faceFreeform') {
-          const tool = faceFreeformTool(this, null, t, { edit: existing.id });
-
-          return tool ? this.setTool(tool) : undefined;
-        }
-
-        return this.ui.toast('The freeform this edits is gone');
-      }
-      case 'connect':
-        return this.setTool(new ConnectOp(this, [], existing));
-      case 'faceFreeform':
-        return this.setTool(faceFreeformTool(this, null, existing, { inPlace: true }));
-      case 'moveFace': {
-        const target = existing.face ? { face: existing.face, plane: { origin: existing.face.center, normal: existing.face.normal, xDir: xDirFor(existing.face.normal) } } : existing.edge ? { edge: existing.edge } : existing.vertex ? { vertex: existing.vertex } : null;
-        if (target) {
-          return this.setTool(new MoveFaceOp(this, target, existing));
-        }
-        break;
-      }
-      default:
-        this.ui.toast(`${existing.name} has no values to edit. You can suppress or delete it.`);
-    }
+    this.history.edit(id);
   }
 
   // ------------------------------------------------------------ menus
