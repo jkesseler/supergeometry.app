@@ -2321,7 +2321,7 @@ form.dialog {
   object-fit: cover;
   display: block;
 }
-.library-pic > svg {
+.library-pic svg {
   width: 36px;
   height: 36px;
   opacity: 0.6;

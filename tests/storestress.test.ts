@@ -139,4 +139,31 @@ const random = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fff
   check('undoing 50 steps of it is quick', (performance.now() - tu) / 50 < 60, `${((performance.now() - tu) / 50).toFixed(1)} ms per undo`);
 }
 
+// ------------------------------------------ jumping through the history
+{
+  const store = new DocStore();
+  const states: string[] = [JSON.stringify(store.doc)];
+  for (let i = 0; i < 6; i++) {
+    store.add({ ...store.newIdentity('extrude'), type: 'extrude', source: { kind: 'profile', sketch: 's', regions: [] }, distance: i + 1, mode: 'new' } as Feature);
+    states.push(JSON.stringify(store.doc));
+  }
+  check('the history holds every state', store.historyLength === 7 && store.historyPosition === 6);
+  store.jumpTo(2);
+  check('jumping back gives that state', JSON.stringify(store.doc) === states[2] && store.historyPosition === 2 && store.historyLength === 7);
+  store.jumpTo(5);
+  check('jumping forward gives that state', JSON.stringify(store.doc) === states[5] && store.historyPosition === 5);
+  store.jumpTo(99);
+  store.jumpTo(-1);
+  check('a place outside the history changes nothing', JSON.stringify(store.doc) === states[5]);
+  store.jumpTo(3);
+  store.undo();
+  check('undo after a jump goes one step back', JSON.stringify(store.doc) === states[2]);
+  store.redo();
+  store.redo();
+  check('redo after a jump goes forward', JSON.stringify(store.doc) === states[4]);
+  store.jumpTo(1);
+  store.add({ ...store.newIdentity('extrude'), type: 'extrude', source: { kind: 'profile', sketch: 's', regions: [] }, distance: 77, mode: 'new' } as Feature);
+  check('a new step after a jump drops what was ahead', store.historyLength === 3 && !store.canRedo);
+}
+
 process.exit(failed ? 1 : 0);

@@ -299,6 +299,28 @@ export class DocStore {
     return this.redoStack.length > 0;
   }
 
+  /** How many states the history holds (the one now included). */
+  get historyLength(): number {
+    return this.undoStack.length + 1 + this.redoStack.length;
+  }
+  /** Where the document now is in the history: 0 is the oldest state. */
+  get historyPosition(): number {
+    return this.undoStack.length;
+  }
+
+  /** Go straight to a state of the history (see historyPosition); the rest stays undoable and redoable. */
+  jumpTo(position: number): void {
+    const timeline = [...this.undoStack, pack(this.doc), ...[...this.redoStack].reverse()];
+    if (!Number.isInteger(position) || position < 0 || position >= timeline.length || position === this.undoStack.length) {
+      return;
+    }
+    this.lastMerge = null;
+    this.undoStack = timeline.slice(0, position);
+    this.redoStack = timeline.slice(position + 1).reverse();
+    this.doc = unpack(timeline[position]);
+    this.changed();
+  }
+
   undo(): void {
     const prev = this.undoStack.pop();
     if (!prev) {
