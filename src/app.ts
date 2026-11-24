@@ -23,7 +23,6 @@ import { numpadVariables } from './ui/numpad';
 import { WebWindow } from './ui/webWindow';
 import { RefImages } from './ui/refImages';
 import { createVariable, insertFile, insertImage } from './io/insert';
-import { findAction, openCommandSearch, showShortcuts } from './ui/commands';
 import { showAbout } from './ui/about';
 import { libraryEntries } from './doc/library';
 import { SUPPORT, openSupport } from './ui/support';
@@ -56,6 +55,7 @@ import { Offline } from './ui/offline';
 import { Install } from './ui/install';
 import { Exporter, canShareType } from './app/exporting';
 import { History } from './app/history';
+import { Keys } from './app/keys';
 import { Projects } from './app/projects';
 import { isHeadset, screenClass } from './device';
 import { Viewport } from './view/viewport';
@@ -75,7 +75,8 @@ export class App implements AppContext {
   readonly ui = new UI();
   private readonly projects = new Projects(this);
   private readonly history = new History(this);
-  private readonly exporter = new Exporter(this);
+  private readonly keys = new Keys(this);
+  readonly exporter = new Exporter(this);
   /** The sentence bar: the pick, then what it offers, on one line - the way to the tools. */
   sentence!: Sentence;
   /** The look ahead a tool under the pointer is showing on the model (see ghost.ts). */
@@ -85,7 +86,7 @@ export class App implements AppContext {
   /** Pictures to look at while modelling, each in a window over the model (under the buttons). */
   readonly refImages = new RefImages((text, kind) => this.ui.toast(text, kind));
   readonly web = new WebWindow();
-  private input: InputRouter;
+  input: InputRouter;
   result: RegenResult | null = null;
   selection: Sel[] = [];
   section: SectionState | null = null;
@@ -329,12 +330,7 @@ export class App implements AppContext {
     }
 
     this.store.onChange(() => this.docChanged());
-    window.addEventListener('keydown', e => this.onKey(e));
-    this.view.canvas.addEventListener('pointermove', (e) => {
-      const rect = this.view.canvas.getBoundingClientRect();
-      this.pointerAt = [e.clientX - rect.left, e.clientY - rect.top];
-    });
-    this.view.canvas.addEventListener('pointerleave', () => (this.pointerAt = null));
+    this.keys.attach();
     // A phone may drop the page once it's in the background: save now, undo steps included.
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void this.store.flush());
     window.addEventListener('pagehide', () => void this.store.flush());
@@ -1396,142 +1392,6 @@ export class App implements AppContext {
     ];
   }
 
-  private onKey(e: KeyboardEvent): void {
-    // Typing while holding a drag sets an exact value; Enter applies it and finishes.
-    // (Checked first: a panel field may still have focus from before the drag.)
-    if (this.input.dragging && this.tool.dragKey?.(e)) {
-      e.preventDefault();
-      (document.activeElement as HTMLElement | null)?.blur?.();
-      if (e.key === 'Enter') {
-        this.input.endDrag();
-      }
-
-      return;
-    }
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-      return;
-    }
-    const mod = e.ctrlKey || e.metaKey;
-    const key = e.key.toLowerCase();
-    if (mod && key === 'z') {
-      e.preventDefault();
-      if (e.shiftKey) {
-        this.redo();
-      } else {
-        this.undo();
-      }
-
-      return;
-    }
-    if (mod && key === 'y') {
-      e.preventDefault();
-      this.redo();
-
-      return;
-    }
-    // Select Through: pick what's behind the faces in front.
-    if (mod && e.shiftKey && key === 's') {
-      e.preventDefault();
-      this.view.setSelectThrough(!this.view.selectThrough);
-      this.ui.toast(this.view.selectThrough ? 'Select Through on: edges and sketches behind the faces can be picked' : 'Select Through off');
-
-      return;
-    }
-    if (mod && key === 's') {
-      e.preventDefault();
-      this.exporter.save();
-
-      return;
-    }
-    // Everything: Ctrl+A (the bodies, or with none the sketches' shapes; in a sketch, its curves).
-    if (mod && !e.shiftKey && key === 'a') {
-      e.preventDefault();
-      this.tool.selectAll?.();
-
-      return;
-    }
-    // Search commands: Ctrl+F anywhere (X too, outside a sketch - see below).
-    if (mod && key === 'f') {
-      e.preventDefault();
-      this.searchCommands();
-
-      return;
-    }
-    // The standard views: Ctrl (or Alt, where the browser keeps Ctrl+1… for its tabs) + 1 to 7.
-    if ((mod || e.altKey) && /^[1-7]$/.test(e.key)) {
-      e.preventDefault();
-      this.viewByNumber(Number(e.key));
-
-      return;
-    }
-    if (this.tool.key?.(e)) {
-      e.preventDefault();
-
-      return;
-    }
-    // Space over a face: zoom to it.
-    if (key === ' ' && !mod && this.pointerAt) {
-      const hit = this.view.pick(this.pointerAt[0], this.pointerAt[1], { edges: false, planes: false, profiles: false });
-      if (hit?.kind === 'face' && this.view.zoomToFace(hit.body, hit.face)) {
-        e.preventDefault();
-      }
-
-      return;
-    }
-    if (this.tool !== this.selectTool) {
-      return;
-    }
-    // The booleans: Ctrl+U / B / I.
-    if (mod && !e.shiftKey && (key === 'u' || key === 'b' || key === 'i')) {
-      if (this.runCommand([{ u: 'Union', b: 'Subtract', i: 'Intersect' }[key]])) {
-        e.preventDefault();
-      }
-
-      return;
-    }
-    if (mod || e.altKey) {
-      return;
-    }
-    if (key === 'x') {
-      return void (e.preventDefault(), this.searchCommands());
-    }
-    if (e.key === '?') {
-      return void showShortcuts();
-    }
-    const none = !this.selection.length;
-    if (key === 's' && none) {
-      return void this.setTool(new SketchTool(this));
-    }
-    if (key === 'f' && none) {
-      return void this.fit();
-    }
-    // A drawing tool's letter with nothing picked: a sketch, with that tool (once its plane is picked).
-    const draw: Record<string, 'line' | 'arc' | 'circle' | 'rect' | 'polygon' | 'spline' | 'offset' | 'trim'> = { l: 'line', a: 'arc', c: 'circle', r: 'rect', g: 'polygon', i: 'spline', o: 'offset', t: 'trim' };
-    if (draw[key] && none && !e.shiftKey) {
-      return void this.setTool(new SketchTool(this, { kind: draw[key] }));
-    }
-    // A modeling tool's letter: that tool, for what's picked (or waiting for it).
-    const tools: Record<string, string[]> = {
-      e: ['Extrude', 'Offset Face'],
-      f: ['Fillet'],
-      h: ['Shell'],
-      m: ['Move/Rotate'],
-      n: ['Translate'],
-      p: ['Project as Sketch'],
-      s: ['Scale', 'Scale Sketch'],
-      v: ['Revolve'],
-      w: ['Sweep'],
-      o: ['Offset Edge']
-    };
-    if (tools[key] && !e.shiftKey && this.runCommand(tools[key])) {
-      e.preventDefault();
-    }
-  }
-
-  /** Where the pointer was last over the view (Space zooms to the face there). */
-  private pointerAt: [number, number] | null = null;
-
   /** The picked sketch curves and edges, as paths (one per sketch, one per body): what Fill starts with. */
   private pickedCurves(): PathRef[] {
     const out: PathRef[] = [];
@@ -1558,45 +1418,6 @@ export class App implements AppContext {
     }
 
     return out;
-  }
-
-  /** Run the first of these commands that's offered now (the picked thing's tools first). */
-  private runCommand(labels: string[]): boolean {
-    const hit = findAction(this.ui.offered(), this.mainTools(), labels);
-    if (!hit) {
-      return false;
-    }
-    hit.item.run!();
-
-    return true;
-  }
-
-  private searchCommands(): void {
-    openCommandSearch(
-      () => this.ui.offered(),
-      () => [...this.mainTools(), { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'menu', shortcut: '?', run: () => showShortcuts() }]
-    );
-  }
-
-  /** 1 the default view; 2-7 front, back, top, bottom, right, left. */
-  private viewByNumber(viewNumber: number): void {
-    const cam = this.view.cam;
-    if (viewNumber === 1) {
-      cam.iso();
-      this.view.fitAll();
-
-      return;
-    }
-    const views: [Vec3, Vec3?][] = [
-      [[0, -1, 0]],
-      [[0, 1, 0], [-1, 0, 0]],
-      [[0, 0, 1]],
-      [[0, 0, -1]],
-      [[1, 0, 0], [0, 1, 0]],
-      [[-1, 0, 0], [0, -1, 0]]
-    ];
-    const [normal, xDir] = views[viewNumber - 2];
-    cam.lookAlong(normal, xDir);
   }
 
   fit(): void {
@@ -1966,7 +1787,7 @@ export class App implements AppContext {
    * those back, and leaves the project alone while it's open - Ctrl+Z used to
    * throw the whole cage edit away and undo the step before it too.
    */
-  private undo(): void {
+  undo(): void {
     if (this.tool.undo) {
       if (!this.tool.undo()) {
         this.ui.toast('Nothing to undo in this edit yet (Cancel leaves it unchanged)');
@@ -1984,7 +1805,7 @@ export class App implements AppContext {
     }
     this.store.undo();
   }
-  private redo(): void {
+  redo(): void {
     if (this.tool.redo) {
       this.tool.redo();
 
