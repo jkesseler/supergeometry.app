@@ -3,10 +3,13 @@
 import { sketchesUsed } from '../tools/featureOp';
 import { definedCurves } from '../sketch/constraints';
 import type { Feature, ImageFeature, SketchEntity, SketchFeature } from '../doc/types';
+import type { RegenResult } from '../kernel/protocol';
 import type { App } from '../app';
 
 export class Scene {
   constructor(private app: App) {}
+
+  private shownErrors = '';
 
   /** Sketches the engine moved the curves of (they follow a body): those curves, by the sketch as it was sent. */
   solved = new WeakMap<Feature, SketchEntity[]>();
@@ -68,5 +71,115 @@ export class Scene {
     // the pocket with a core couldn't be tapped through the frame round it.
     const used = new Set(features.filter(feature => !feature.suppressed && !feature.rolledBack).flatMap(sketchesUsed));
     this.app.view.setSketches(sketches, this.app.tool.activeSketch, new Set(sketches.filter(sketch => !used.has(sketch.id) || this.revealed.has(sketch.id)).map(sketch => sketch.id)));
+  }
+
+  apply(result: RegenResult, features: readonly Feature[]): void {
+    this.app.result = result;
+    this.solved = new WeakMap();
+    if (result.sketchEntities) {
+      const moved = result.sketchEntities;
+      for (const feature of features) {
+        if (moved[feature.id]) {
+          this.solved.set(feature, moved[feature.id]);
+        }
+      }
+      // The project as it is (not a preview of a change): they are the sketch's curves from now on.
+      if (features === this.app.store.doc.features) {
+        this.app.store.adopt((draft) => {
+          for (const feature of draft.features) {
+            if (feature.type === 'sketch' && moved[feature.id]) {
+              feature.entities = moved[feature.id];
+            }
+          }
+        });
+        features = this.app.store.doc.features;
+      }
+    }
+    // Which patterns a step used whole, as it was made: kept with it (they stay whole when a count changes).
+    if (result.whole && features === this.app.store.doc.features) {
+      const whole = result.whole;
+      this.app.store.adopt((draft) => {
+        for (const feature of draft.features) {
+          if ((feature.type === 'boolean' || feature.type === 'delete') && whole[feature.id] && !feature.whole) {
+            feature.whole = whole[feature.id];
+          }
+        }
+      });
+      features = this.app.store.doc.features;
+    }
+    const now = new Set([...result.bodies.map(b => b.id), ...features.map(feature => feature.id)]);
+    if (this.app.isolated) {
+      // Made while isolating (a copy, a new sketch or plane): it belongs with what's shown.
+      if (this.app.known) {
+        for (const id of now) {
+          if (!this.app.known.has(id)) {
+            this.app.isolated.push(id);
+          }
+        }
+      }
+      this.app.isolated = this.app.isolated.filter(id => now.has(id));
+      if (!this.app.isolated.some(id => result.bodies.some(b => b.id === id))) {
+        this.app.isolated = null;
+      }
+    }
+    this.app.known = now;
+    this.app.view.setBodies(result.bodies);
+    this.app.applyVisibility();
+    this.refreshConstruction(features);
+    this.refreshSketches(features);
+    // Drop selections that point at geometry that no longer exists.
+    this.app.selection = this.app.selection.filter((highlight) => {
+      if (highlight.kind === 'profile' || highlight.kind === 'curve' || highlight.kind === 'point') {
+        return !!this.app.store.find(highlight.sketch) || features.some(feature => feature.id === highlight.sketch);
+      }
+      if (highlight.kind === 'plane' || highlight.kind === 'axis') {
+        return !!this.app.view.planeOf(highlight.id) || !!this.app.view.axisOf(highlight.id);
+      }
+      if (highlight.kind === 'image') {
+        return features.some(feature => feature.id === highlight.id);
+      }
+      if (highlight.kind === 'origin') {
+        return true;
+      }
+      const b = this.app.view.body(highlight.body);
+      if (!b) {
+        return false;
+      }
+      if (highlight.kind === 'face') {
+        return highlight.face < b.faces.length;
+      }
+      if (highlight.kind === 'edge') {
+        return highlight.edge < b.edges.length;
+      }
+      if (highlight.kind === 'vertex') {
+        return !!this.app.view.vertexOf(highlight.body, highlight.vertex);
+      }
+
+      return true;
+    });
+    this.app.refreshHighlights();
+    // (Once: the selection tool's own refresh was run a second time after this.app.)
+    this.app.tool.refresh?.();
+    this.app.showPose();
+    this.app.history.render();
+    this.app.items.render(result);
+    this.app.showVariableTags();
+    const open = this.app.history.openBodies(result);
+    this.app.ui.setWarning(
+      open.length
+        ? `⚠ ${open.length === 1 ? (this.app.store.doc.names?.[open[0].id] ?? open[0].name) : `${open.length} bodies`} not closed - ${open.reduce((total, b) => total + b.openEdges.length, 0)} open edge(s) shown in orange`
+        : this.app.store.problems[0]
+          ? `⚠ ${this.app.store.problems[0]}`
+          : null
+    );
+    // (Steps of the project only: one being tried - a Delete Face its
+    // neighbours can't close - isn't in History, and says why itself.)
+    const ids = new Set(this.app.store.features.map(feature => feature.id));
+    const failed = result.errors.filter(e => ids.has(e.featureId));
+    const errs = failed.map(e => e.featureId + e.message).join();
+    if (errs && errs !== this.shownErrors && this.app.tool === this.app.selectTool) {
+      this.app.ui.toast(`${failed.length} step${failed.length > 1 ? 's' : ''} failed to rebuild - see History`, 'error');
+    }
+    this.shownErrors = errs;
   }
 }

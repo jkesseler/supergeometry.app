@@ -1,7 +1,6 @@
 import { SelectTool } from './tools/select';
 import { sectionPlane, SectionTool, type SectionState } from './tools/section';
-import { add, dist, scale } from './geom';
-import { bodyCenter, ThreadOp } from './tools/ops';
+import { bodyCenter } from './tools/ops';
 import { ItemsPanel } from './ui/items';
 import { PinLayer } from './tools/annotate';
 import { settings } from './settings';
@@ -19,7 +18,7 @@ import { SketchTool } from './tools/sketch';
 import { Tutorial } from './ui/tutorial';
 import { AssemblyTool } from './assembly/assemblyTool';
 import { keepSizes } from './doc/unitChange';
-import { bodiesOf, faceRefOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from './tools/tool';
+import { bodiesOf, sameSel, sourceFrame, sourcesOf, type AppContext, type Sel, type Tool } from './tools/tool';
 import { setupRightColumn } from './ui/panels';
 import { UI } from './ui/ui';
 import { Sentence } from './ui/sentence';
@@ -33,6 +32,8 @@ import { Updates } from './ui/update';
 import { Exporter } from './app/exporting';
 import { History } from './app/history';
 import { Keys } from './app/keys';
+import { startThread } from './app/thread';
+import { Undoing } from './app/undoing';
 import { Scene } from './app/scene';
 import { itemsHost, sentenceHost, setupBusy, setupVR, variableTagHost } from './app/setup';
 import { Menus } from './app/menus';
@@ -51,8 +52,9 @@ export class App implements AppContext {
   readonly view: Viewport;
   readonly ui = new UI();
   readonly projects = new Projects(this);
-  private readonly history = new History(this);
+  readonly history = new History(this);
   private readonly keys = new Keys(this);
+  private readonly undoing = new Undoing(this);
   private readonly scene = new Scene(this);
   private readonly menus = new Menus(this);
   private readonly topbar = new Topbar(this);
@@ -83,7 +85,6 @@ export class App implements AppContext {
   startTutorial: () => void = () => {};
   /** The tutorial (for the debug handle: a test steps it by hand where the browser draws seldom). */
   tutorial: Tutorial | null = null;
-  private shownErrors = '';
   private pinLayer: PinLayer;
   items: ItemsPanel;
 
@@ -180,7 +181,7 @@ export class App implements AppContext {
    * arrows and sizes are there). Assemblies itself shows its own. (Asked for: "when i click OK, it resets to the
    * original stance".)
    */
-  private showPose(): void {
+  showPose(): void {
     if (this.tool instanceof AssemblyTool) {
       return;
     }
@@ -338,52 +339,8 @@ export class App implements AppContext {
     }
   }
 
-  /** Thread the selected round face (a shank or a hole). */
   startThread(): void {
-    let highlight = this.selection[0];
-    // A round edge (a hole's rim): the round face of the same radius it bounds.
-    if (highlight?.kind === 'edge') {
-      const body = this.view.body(highlight.body);
-      const e = body?.edges[highlight.edge];
-      if (body && e?.type === 'CIRCLE') {
-        const center = scale(add(e.start, e.mid), 0.5);
-        const radius = dist(e.start, e.mid) / 2;
-        let best = -1;
-        let bestD = Infinity;
-        body.faces.forEach((face, i) => {
-          if (!face.round || Math.abs(face.round.r - radius) > radius * 1e-4) {
-            return;
-          }
-          const distance = dist(face.center, center);
-          if (distance < bestD) {
-            (bestD = distance), (best = i);
-          }
-        });
-        if (best >= 0) {
-          highlight = { kind: 'face', body: highlight.body, face: best };
-        }
-      }
-    }
-    // Any other edge (a revolved shank's seam runs right along its top): the
-    // round face under the finger.
-    const at = this.selectTool.tapPoint;
-    if (highlight?.kind === 'edge' && at) {
-      const body = highlight.body;
-      const under = this.view.facesAt(at.x, at.y).find(face => face.kind === 'face' && face.body === body && this.view.body(body)?.faces[face.face]?.round);
-      if (under?.kind === 'face') {
-        highlight = { kind: 'face', body, face: under.face };
-      }
-    }
-    if (highlight?.kind !== 'face') {
-      return void this.ui.toast('Threads go on round faces: tap a shank or a hole');
-    }
-    const info = this.view.body(highlight.body)?.faces[highlight.face];
-    const ref = faceRefOf(this, highlight);
-    if (!info?.round || !ref) {
-      return void this.ui.toast('Threads go on round faces: tap a shank or a hole');
-    }
-    this.setSelection([highlight]);
-    this.setTool(new ThreadOp(this, ref, info.round));
+    startThread(this);
   }
 
   setSection(sectionState: SectionState | null): void {
@@ -414,7 +371,7 @@ export class App implements AppContext {
   }
 
   /** Bodies and features seen at the last rebuild: anything new while isolating joins the isolated set. */
-  private known: Set<string> | null = null;
+  known: Set<string> | null = null;
 
   revealInItems(ids: string[]): void {
     this.items.reveal(ids);
@@ -459,7 +416,7 @@ export class App implements AppContext {
   }
 
   /** Hidden (Items) + not isolated → invisible and unpickable. */
-  private applyVisibility(): void {
+  applyVisibility(): void {
     const hidden = new Set(this.store.doc.hidden);
     if (this.isolated) {
       for (const b of this.result?.bodies ?? []) {
@@ -502,7 +459,7 @@ export class App implements AppContext {
   async preview(features: Feature[]): Promise<RegenResult | null> {
     const result = await this.kernel.regenerate(features);
     if (result) {
-      this.apply(result, features);
+      this.scene.apply(result, features);
     }
 
     return result;
@@ -523,7 +480,7 @@ export class App implements AppContext {
     const steps = JSON.stringify([this.store.doc.features, this.store.doc.variables]);
     // (Only the project's own model: one a tool is trying out is not the project's.)
     if (this.result && this.result === this.made && !this.regenerating && steps === this.madeFor) {
-      return this.apply(this.result, this.store.doc.features);
+      return this.scene.apply(this.result, this.store.doc.features);
     }
     this.madeFor = steps;
     void this.regenerate();
@@ -535,7 +492,7 @@ export class App implements AppContext {
   private regenerating = 0;
 
   /** The tags where the variables act on the model as it is now (Variables on). */
-  private showVariableTags(): void {
+  showVariableTags(): void {
     if (this.varsOn && this.result) {
       this.varTags.set(variableTags(this.store.doc.variables, this.store.doc.features, this.result));
     }
@@ -595,124 +552,14 @@ export class App implements AppContext {
       this.regenerating--;
     }
     if (result) {
-      ((this.made = result), this.apply(result, features));
+      ((this.made = result), this.scene.apply(result, features));
     } else {
       // Not made - stopped, or overtaken: the next change asks again, whatever it is.
       this.madeFor = '';
     }
   }
 
-  private apply(result: RegenResult, features: readonly Feature[]): void {
-    this.result = result;
-    this.scene.solved = new WeakMap();
-    if (result.sketchEntities) {
-      const moved = result.sketchEntities;
-      for (const feature of features) {
-        if (moved[feature.id]) {
-          this.scene.solved.set(feature, moved[feature.id]);
-        }
-      }
-      // The project as it is (not a preview of a change): they are the sketch's curves from now on.
-      if (features === this.store.doc.features) {
-        this.store.adopt((draft) => {
-          for (const feature of draft.features) {
-            if (feature.type === 'sketch' && moved[feature.id]) {
-              feature.entities = moved[feature.id];
-            }
-          }
-        });
-        features = this.store.doc.features;
-      }
-    }
-    // Which patterns a step used whole, as it was made: kept with it (they stay whole when a count changes).
-    if (result.whole && features === this.store.doc.features) {
-      const whole = result.whole;
-      this.store.adopt((draft) => {
-        for (const feature of draft.features) {
-          if ((feature.type === 'boolean' || feature.type === 'delete') && whole[feature.id] && !feature.whole) {
-            feature.whole = whole[feature.id];
-          }
-        }
-      });
-      features = this.store.doc.features;
-    }
-    const now = new Set([...result.bodies.map(b => b.id), ...features.map(feature => feature.id)]);
-    if (this.isolated) {
-      // Made while isolating (a copy, a new sketch or plane): it belongs with what's shown.
-      if (this.known) {
-        for (const id of now) {
-          if (!this.known.has(id)) {
-            this.isolated.push(id);
-          }
-        }
-      }
-      this.isolated = this.isolated.filter(id => now.has(id));
-      if (!this.isolated.some(id => result.bodies.some(b => b.id === id))) {
-        this.isolated = null;
-      }
-    }
-    this.known = now;
-    this.view.setBodies(result.bodies);
-    this.applyVisibility();
-    this.scene.refreshConstruction(features);
-    this.scene.refreshSketches(features);
-    // Drop selections that point at geometry that no longer exists.
-    this.selection = this.selection.filter((highlight) => {
-      if (highlight.kind === 'profile' || highlight.kind === 'curve' || highlight.kind === 'point') {
-        return !!this.store.find(highlight.sketch) || features.some(feature => feature.id === highlight.sketch);
-      }
-      if (highlight.kind === 'plane' || highlight.kind === 'axis') {
-        return !!this.view.planeOf(highlight.id) || !!this.view.axisOf(highlight.id);
-      }
-      if (highlight.kind === 'image') {
-        return features.some(feature => feature.id === highlight.id);
-      }
-      if (highlight.kind === 'origin') {
-        return true;
-      }
-      const b = this.view.body(highlight.body);
-      if (!b) {
-        return false;
-      }
-      if (highlight.kind === 'face') {
-        return highlight.face < b.faces.length;
-      }
-      if (highlight.kind === 'edge') {
-        return highlight.edge < b.edges.length;
-      }
-      if (highlight.kind === 'vertex') {
-        return !!this.view.vertexOf(highlight.body, highlight.vertex);
-      }
-
-      return true;
-    });
-    this.refreshHighlights();
-    // (Once: the selection tool's own refresh was run a second time after this.)
-    this.tool.refresh?.();
-    this.showPose();
-    this.history.render();
-    this.items.render(result);
-    this.showVariableTags();
-    const open = this.history.openBodies(result);
-    this.ui.setWarning(
-      open.length
-        ? `⚠ ${open.length === 1 ? (this.store.doc.names?.[open[0].id] ?? open[0].name) : `${open.length} bodies`} not closed - ${open.reduce((total, b) => total + b.openEdges.length, 0)} open edge(s) shown in orange`
-        : this.store.problems[0]
-          ? `⚠ ${this.store.problems[0]}`
-          : null
-    );
-    // (Steps of the project only: one being tried - a Delete Face its
-    // neighbours can't close - isn't in History, and says why itself.)
-    const ids = new Set(this.store.features.map(feature => feature.id));
-    const failed = result.errors.filter(e => ids.has(e.featureId));
-    const errs = failed.map(e => e.featureId + e.message).join();
-    if (errs && errs !== this.shownErrors && this.tool === this.selectTool) {
-      this.ui.toast(`${failed.length} step${failed.length > 1 ? 's' : ''} failed to rebuild - see History`, 'error');
-    }
-    this.shownErrors = errs;
-  }
-
-  private refreshHighlights(): void {
+  refreshHighlights(): void {
     this.view.setHighlights(this.selection, this.hover);
   }
 
@@ -738,52 +585,20 @@ export class App implements AppContext {
     this.view.fitAll();
   }
 
-  // ------------------------------------------------------------ files
-
-  /**
-   * Undo: a tool with steps of its own (a freeform cage being shaped) takes
-   * those back, and leaves the project alone while it's open - Ctrl+Z used to
-   * throw the whole cage edit away and undo the step before it too.
-   */
   undo(): void {
-    if (this.tool.undo) {
-      if (!this.tool.undo()) {
-        this.ui.toast('Nothing to undo in this edit yet (Cancel leaves it unchanged)');
-      }
-
-      return this.updateUndo();
-    }
-    if (this.tool instanceof SketchTool) {
-      if (this.tool.undoPoint()) {
-        return;
-      }
-      this.tool.stopDrawing();
-    } else if (this.tool !== this.selectTool) {
-      this.setTool(null);
-    }
-    this.store.undo();
+    this.undoing.undo();
   }
+
   redo(): void {
-    if (this.tool.redo) {
-      this.tool.redo();
-
-      return this.updateUndo();
-    }
-    if (this.tool instanceof SketchTool) {
-      this.tool.stopDrawing();
-    } else if (this.tool !== this.selectTool) {
-      this.setTool(null);
-    }
-    this.store.redo();
+    this.undoing.redo();
   }
+
   refreshUndo(): void {
-    this.updateUndo();
+    this.undoing.update();
   }
 
   updateUndo(): void {
-    const t = this.tool?.undo ? this.tool : null;
-    (document.getElementById('undo-btn') as HTMLButtonElement).disabled = t ? !t.canUndo : !this.store.canUndo;
-    (document.getElementById('redo-btn') as HTMLButtonElement).disabled = t ? !t.canRedo : !this.store.canRedo;
+    this.undoing.update();
   }
 
   updates!: Updates;
