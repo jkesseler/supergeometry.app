@@ -25,11 +25,10 @@ import { UI } from './ui/ui';
 import { Sentence } from './ui/sentence';
 import { Ghost } from './tools/ghost';
 import { arrangement, drawnRegions, materialRegions } from './sketch/regions';
-import { setUnits, setVariables, fmtLen } from './units';
+import { setUnits, setVariables } from './units';
 import { InputRouter } from './view/input';
 import { ViewCube } from './view/viewcube';
 import { PivotButton } from './ui/pivot';
-import { icons } from './ui/icons';
 import { Updates } from './ui/update';
 import { Exporter } from './app/exporting';
 import { History } from './app/history';
@@ -205,95 +204,6 @@ export class App implements AppContext {
     }
     this.hover = highlight;
     this.refreshHighlights();
-  }
-
-  /**
-   * Print / Share: is the model fit to print (each body closed, no hair-thin
-   * faces, one piece), and the files to take it away as. (Export was only in
-   * File, under names a first-timer does not know.)
-   */
-  async printShare(): Promise<void> {
-    const back = document.createElement('div');
-    back.className = 'dialog-back';
-    const box = document.createElement('div');
-    box.className = 'dialog print-share';
-    const head = document.createElement('div');
-    head.className = 'library-head';
-    const title = document.createElement('div');
-    title.className = 'panel-title';
-    title.textContent = 'Print / Share';
-    const x = document.createElement('button');
-    x.className = 'icon-btn library-close';
-    x.title = 'Close';
-    x.innerHTML = icons.close;
-    const close = () => back.remove();
-    x.addEventListener('click', close);
-    head.append(title, x);
-    const check = document.createElement('div');
-    check.className = 'print-check';
-    check.textContent = 'Checking the model…';
-    const row = document.createElement('div');
-    row.className = 'print-files';
-    const file = (label: string, note: string, run: () => void) => {
-      const b = document.createElement('button');
-      b.className = 'text-btn print-file';
-      b.type = 'button';
-      const element = document.createElement('b');
-      element.textContent = label;
-      const span = document.createElement('span');
-      span.textContent = note;
-      b.append(element, span);
-      b.addEventListener('click', () => (close(), run()));
-      row.append(b);
-    };
-    file('3MF', 'For 3D printing (keeps sizes and colours)', () => void this.exporter.export3mf());
-    file('STL', 'For 3D printing (every slicer opens it)', () => void this.exporter.export('stl'));
-    file('STEP', 'For other CAD programs', () => void this.exporter.export('step'));
-    file('Picture', 'A PNG of the view as it is now', () => this.ui.runRight('shot'));
-    box.append(head, check, row);
-    back.append(box);
-    back.addEventListener('pointerdown', e => e.target === back && close());
-    box.addEventListener('keydown', e => e.key === 'Escape' && close());
-    document.body.append(back);
-    try {
-      const health = await this.kernel.health(this.store.doc.features);
-      if (!back.isConnected) {
-        return;
-      }
-      const hidden = new Set(this.store.doc.hidden ?? []);
-      const bodies = health.filter(bodyHealth => !hidden.has(bodyHealth.id));
-      const bad = bodies.filter(body => !body.healthy);
-      check.replaceChildren();
-      const line = (text: string, ok: boolean) => {
-        const element = document.createElement('div');
-        element.className = ok ? 'print-ok' : 'print-warn';
-        element.textContent = text;
-        check.append(element);
-      };
-      if (!bodies.length) {
-        line('Nothing to print yet: there is no solid body.', false);
-      } else if (!bad.length) {
-        line(bodies.length === 1 ? 'Ready to print: the body is closed and solid.' : `Ready to print: all ${bodies.length} bodies are closed and solid.`, true);
-      }
-      for (const bodyHealth of bad) {
-        const why = [bodyHealth.openEdges ? 'it is not closed (open edges)' : '', bodyHealth.thin ? 'it has hair-thin faces' : '', bodyHealth.pinched ? 'parts of it only touch along an edge' : '', bodyHealth.solids > 1 ? `it is ${bodyHealth.solids} separate pieces` : '', !bodyHealth.valid ? 'its shape has a fault' : ''].filter(Boolean);
-        line(`${bodyHealth.name}: ${why.join(', ') || 'it may not print as it is'}. Modify, Fix, Repair Body may mend it.`, false);
-      }
-      if (bodies.length) {
-        const lo = [Infinity, Infinity, Infinity];
-        const hi = [-Infinity, -Infinity, -Infinity];
-        for (const body of bodies) {
-          for (let axis = 0; axis < 3; axis++) {
-            ((lo[axis] = Math.min(lo[axis], body.box[0][axis])), (hi[axis] = Math.max(hi[axis], body.box[1][axis])));
-          }
-        }
-        line(`Size: ${[0, 1, 2].map(axis => fmtLen(hi[axis] - lo[axis], 1)).join(' x ')}`, true);
-      }
-    } catch {
-      if (back.isConnected) {
-        check.textContent = 'The model could not be checked. The files can still be saved.';
-      }
-    }
   }
 
   /** Where the last thing picked is on the model (the sentence bar's thread runs to it). */

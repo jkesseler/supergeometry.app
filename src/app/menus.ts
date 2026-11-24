@@ -345,7 +345,7 @@ export class Menus {
           run: () => this.app.isolate(bodiesOf(this.app.selection))
         },
       // The way out with what was made: is it fit to print, and the files to take it away as.
-      { id: 'printShare', label: 'Print / Share', icon: 'share', run: () => void this.app.printShare() }
+      { id: 'printShare', label: 'Print / Share', icon: 'share', run: () => this.app.exporter.printShare() }
     ];
   }
 

@@ -5,6 +5,7 @@ import { glb } from '../io/formats';
 import { sketchToSVG } from '../io/svg';
 import { exportThreeMF, zip } from '../io/threemf';
 import { bodiesOf } from '../tools/tool';
+import { showPrintShare } from '../ui/printShare';
 import type { App } from '../app';
 import type { ExportFormat } from '../kernel/protocol';
 import type { SketchFeature } from '../doc/types';
@@ -214,6 +215,24 @@ export class Exporter {
     } finally {
       this.app.ui.setStatus(null);
     }
+  }
+
+  /** Print / Share: is the model fit to print, and the files to take it away as. */
+  printShare(): void {
+    const { app } = this;
+    showPrintShare({
+      checkModel: async () => {
+        const hidden = new Set(app.store.doc.hidden ?? []);
+
+        return (await app.kernel.health(app.store.doc.features)).filter(body => !hidden.has(body.id));
+      },
+      files: [
+        { label: '3MF', note: 'For 3D printing (keeps sizes and colours)', run: () => this.export3mf() },
+        { label: 'STL', note: 'For 3D printing (every slicer opens it)', run: () => this.export('stl') },
+        { label: 'STEP', note: 'For other CAD programs', run: () => this.export('step') },
+        { label: 'Picture', note: 'A PNG of the view as it is now', run: () => app.ui.runRight('shot') }
+      ]
+    });
   }
 }
 
