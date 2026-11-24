@@ -24,6 +24,11 @@ export function TextButton({ label, keyHint, isPrimary, isDisabled, onClick }: T
 
 interface TextFieldProps {
   className?: string;
+  /** Shown at first, and again whenever it changes unless the box has the focus. */
+  value?: string;
+  inputMode?: 'decimal' | 'numeric' | 'text';
+  /** Fires when the box is left changed. */
+  onChange?: (value: string) => void;
   isMultiline?: boolean;
   placeholder?: string;
   maxLength?: number;
@@ -32,21 +37,36 @@ interface TextFieldProps {
 }
 
 /** The app's typing box (see textField.ts) as a component. */
-export function TextField({ className, isMultiline, placeholder, maxLength, onInput, onReady }: TextFieldProps) {
+export function TextField({ className, value, inputMode, isMultiline, placeholder, maxLength, onInput, onChange, onReady }: TextFieldProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
   const fieldRef = useRef<TextFieldElement | undefined>(undefined);
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     const field = textField(className, { multiline: isMultiline });
     fieldRef.current = field;
     field.addEventListener('input', () => onInputRef.current?.(field.value));
+    field.addEventListener('change', () => onChangeRef.current?.(field.value));
+    if (inputMode) {
+      field.inputMode = inputMode;
+    }
+    if (value !== undefined) {
+      field.value = value;
+    }
     hostRef.current!.append(field);
     onReady?.(field);
 
     return () => field.remove();
   }, []);
+
+  useEffect(() => {
+    if (fieldRef.current && value !== undefined && document.activeElement !== fieldRef.current) {
+      fieldRef.current.value = value;
+    }
+  }, [value]);
 
   useEffect(() => {
     if (fieldRef.current) {
