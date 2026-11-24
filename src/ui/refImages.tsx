@@ -7,7 +7,9 @@
 // becomes a window of its own, and dropped on another window's bar it joins it.
 // They are kept on this device (not in the project) until closed.
 
+import { render as mount } from 'preact';
 import { idbGet, idbSet } from '../doc/store';
+import { RefButton } from './components';
 import { icons } from './icons';
 
 interface Ref {
@@ -16,9 +18,13 @@ interface Ref {
 }
 
 interface Win {
-  el: HTMLElement;
+  host: HTMLElement;
+  /** The window's parts, set once it is drawn. */
+  root: HTMLElement;
   bar: HTMLElement;
   tabs: HTMLElement;
+  body: HTMLElement;
+  grip: HTMLElement;
   img: HTMLImageElement;
   refs: Ref[];
   active: number;
@@ -27,6 +33,14 @@ interface Win {
   w: number;
   h: number;
   min: boolean;
+  /** Where it is among the others (higher: in front). */
+  z: number;
+  /** Another window's tab is over its bar. */
+  isDropTarget: boolean;
+  /** The tab being dragged out of it. */
+  draggedTab: number | null;
+  /** The picture shown now (a new one starts whole). */
+  shownSrc: string | null;
   /** The picture zoomed in its window: how much, and moved how far from the middle (px). */
   zoom: { k: number; x: number; y: number };
   /** Fingers on the picture now (two pinch it: the window stops moving). */
@@ -47,30 +61,92 @@ const KEY = 'sg-ref-images';
 /** Big enough to read a drawing, small enough to keep (a phone photo is 4000 px). */
 const MAX = 2048;
 const BAR = 34;
-/** Where a window is among the others (higher: in front). */
-const zOf = (floatingWindow: Win) => +(floatingWindow.el.style.getPropertyValue('--z') || 0);
+const zOf = (floatingWindow: Win) => floatingWindow.z;
 const MIN_W = 160;
 /** As far as a picture zooms in its window. */
 const MAX_ZOOM = 12;
 const MIN_H = 120;
 
-const div = (cls: string) => {
-  const element = document.createElement('div');
-  element.className = cls;
-
-  return element;
-};
-const button = (cls: string, icon: string, title: string) => {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = cls;
-  b.innerHTML = icon;
-  b.title = title;
-  b.setAttribute('aria-label', title);
-
-  return b;
-};
 const clamp = (value: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, value));
+
+interface RefWindowViewProps {
+  win: Win;
+  onFront: () => void;
+  onAdd: () => void;
+  onFold: () => void;
+  onClose: () => void;
+  onTabDown: (event: PointerEvent, index: number) => void;
+}
+
+function RefWindowView({ win, onFront, onAdd, onFold, onClose, onTabDown }: RefWindowViewProps) {
+  const ref = win.refs[win.active];
+  const zoom = win.zoom;
+  const style = {
+    left: `${Math.round(win.x)}px`,
+    top: `${Math.round(win.y)}px`,
+    '--z': String(win.z),
+    // (Minimized: just as wide as its tabs and the three buttons.)
+    width: win.min ? '' : `${Math.round(win.w)}px`,
+    height: win.min ? '' : `${Math.round(win.h)}px`
+  };
+  const className = ['ref-win', win.min && 'min', win.refs.length === 1 && 'single', zoom.k > 1 && 'zoomed'].filter(Boolean).join(' ');
+
+  return (
+    <div ref={(element) => {
+      if (element) {
+        win.root = element; 
+      } 
+    }} class={className} style={style} onPointerDownCapture={onFront}>
+      <div
+        ref={(element) => {
+          if (element) {
+            win.bar = element; 
+          } 
+        }}
+        class={`ref-bar${win.isDropTarget ? ' drop' : ''}`}
+        // (A double click on the bar minimizes or restores it, as the button does.)
+        onDblClick={event => !(event.target as HTMLElement).closest('button, .ref-tab') && onFold()}
+      >
+        <div ref={(element) => {
+          if (element) {
+            win.tabs = element; 
+          } 
+        }} class="ref-tabs">
+          {win.refs.map((tab, index) => (
+            <div key={index} class={`ref-tab${index === win.active ? ' on' : ''}${win.draggedTab === index ? ' dragged' : ''}`} title={tab.name} onPointerDown={event => onTabDown(event, index)}>
+              {tab.name}
+            </div>
+          ))}
+        </div>
+        <RefButton html={icons.insert} title="Add a picture" onClick={onAdd} />
+        <RefButton html={win.min ? icons.restore : icons.minimize} title={win.min ? 'Restore' : 'Minimize'} onClick={onFold} />
+        <RefButton html={icons.close} title={win.refs.length > 1 ? 'Close this picture' : 'Close'} onClick={onClose} />
+      </div>
+      <div ref={(element) => {
+        if (element) {
+          win.body = element; 
+        } 
+      }} class="ref-body">
+        <img
+          ref={(element) => {
+            if (element) {
+              win.img = element; 
+            } 
+          }}
+          src={ref?.src}
+          draggable={false}
+          alt=""
+          style={{ transform: zoom.k === 1 ? '' : `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.k})` }}
+        />
+      </div>
+      <div ref={(element) => {
+        if (element) {
+          win.grip = element; 
+        } 
+      }} class="ref-grip" />
+    </div>
+  );
+}
 
 export class RefImages {
   private wins: Win[] = [];
@@ -80,7 +156,7 @@ export class RefImages {
   private z = 0;
   /** Where the windows are: over the model, under every button (a window moved about never hides them). */
   private readonly layer = (() => {
-    const element = div('');
+    const element = document.createElement('div');
     element.id = 'ref-layer';
     document.body.append(element);
 
@@ -137,75 +213,50 @@ export class RefImages {
   }
 
   private make(refs: Ref[], at: { x: number; y: number; w: number; h: number }, active = 0, min = false): Win {
-    const el = div('ref-win');
-    const bar = div('ref-bar');
-    const tabs = div('ref-tabs');
-    const add = button('ref-btn', icons.insert, 'Add a picture');
-    const fold = button('ref-btn', icons.minimize, 'Minimize');
-    const close = button('ref-btn', icons.close, 'Close');
-    bar.append(tabs, add, fold, close);
-    const body = div('ref-body');
-    const img = document.createElement('img');
-    img.draggable = false;
-    img.alt = '';
-    const grip = div('ref-grip');
-    body.append(img);
-    el.append(bar, body, grip);
-    this.layer.append(el);
-    const win: Win = { el, bar, tabs, img, refs, active, min, ...at, zoom: { k: 1, x: 0, y: 0 }, fingers: 0 };
+    const win = { host: document.createElement('div'), refs, active, min, ...at, z: 0, isDropTarget: false, draggedTab: null, shownSrc: null, zoom: { k: 1, x: 0, y: 0 }, fingers: 0 } as unknown as Win;
+    this.layer.append(win.host);
     this.wins.push(win);
-
-    el.addEventListener('pointerdown', () => this.front(win), true);
-    add.addEventListener('click', () => ((this.last = win), void this.open()));
-    fold.addEventListener('click', () => {
-      win.min = !win.min;
-      this.draw(win);
-      this.save();
-    });
-    close.addEventListener('click', () => this.closeTab(win, win.active, true));
-    this.dragBy(bar, win, e => !(e.target as HTMLElement).closest('button, .ref-tab'));
+    this.paint(win);
+    this.dragBy(win.bar, win, e => !(e.target as HTMLElement).closest('button, .ref-tab'));
     // (The picture itself is a handle too: the bar is a small target, a finger's
     // especially. Zoomed in, it moves the picture in its window instead.)
-    this.zoomBy(body, win);
-    this.dragBy(body, win, () => win.zoom.k <= 1 && win.fingers < 2);
-    this.resizeBy(grip, win);
-    // (A double click on the bar minimizes or restores it, as the button does.)
-    bar.addEventListener('dblclick', (e) => {
-      if ((e.target as HTMLElement).closest('button, .ref-tab')) {
-        return;
-      }
-      fold.click();
-    });
+    this.zoomBy(win.body, win);
+    this.dragBy(win.body, win, () => win.zoom.k <= 1 && win.fingers < 2);
+    this.resizeBy(win.grip, win);
     this.draw(win);
     this.front(win);
 
     return win;
   }
 
+  private paint(win: Win): void {
+    mount(
+      <RefWindowView
+        win={win}
+        onFront={() => this.front(win)}
+        onAdd={() => {
+          this.last = win;
+          void this.open();
+        }}
+        onFold={() => {
+          win.min = !win.min;
+          this.draw(win);
+          this.save();
+        }}
+        onClose={() => this.closeTab(win, win.active, true)}
+        onTabDown={(event, index) => this.tabDrag(event, win, index)}
+      />,
+      win.host
+    );
+  }
+
   private draw(win: Win): void {
     win.active = clamp(win.active, 0, win.refs.length - 1);
-    win.el.classList.toggle('min', win.min);
-    win.el.classList.toggle('single', win.refs.length === 1);
-    const fold = win.bar.querySelectorAll('.ref-btn')[1] as HTMLElement;
-    fold.innerHTML = win.min ? icons.restore : icons.minimize;
-    fold.title = fold.ariaLabel = win.min ? 'Restore' : 'Minimize';
-    const close = win.bar.querySelectorAll('.ref-btn')[2] as HTMLElement;
-    close.title = win.refs.length > 1 ? 'Close this picture' : 'Close';
-    win.tabs.replaceChildren(
-      ...win.refs.map((ref, i) => {
-        const t = div(`ref-tab${i === win.active ? ' on' : ''}`);
-        t.textContent = ref.name;
-        t.title = ref.name;
-        this.tabDrag(t, win, i);
-
-        return t;
-      })
-    );
     const ref = win.refs[win.active];
-    if (ref && win.img.getAttribute('src') !== ref.src) {
-      win.img.src = ref.src;
+    if (ref && win.shownSrc !== ref.src) {
+      win.shownSrc = ref.src;
       // (Another picture: it starts whole again.)
-      this.zoomTo(win, 1, 0, 0);
+      win.zoom = { k: 1, x: 0, y: 0 };
     }
     this.fit(win);
   }
@@ -224,23 +275,20 @@ export class RefImages {
     }
     win.x = clamp(win.x, 8 - win.w + 80, innerWidth - 80);
     win.y = clamp(win.y, 0, innerHeight - BAR);
-    const style = win.el.style;
-    style.left = `${Math.round(win.x)}px`;
-    style.top = `${Math.round(win.y)}px`;
-    // (Minimized: just as wide as its tabs and the three buttons.)
-    style.width = win.min ? '' : `${Math.round(win.w)}px`;
-    style.height = win.min ? '' : `${Math.round(win.h)}px`;
+    this.paint(win);
   }
 
   private front(win: Win): void {
     this.last = win;
-    win.el.style.setProperty('--z', String(++this.z));
+    win.z = ++this.z;
+    this.paint(win);
   }
 
   private closeTab(win: Win, i: number, save: boolean): void {
     win.refs.splice(i, 1);
     if (!win.refs.length) {
-      win.el.remove();
+      mount(null, win.host);
+      win.host.remove();
       this.wins = this.wins.filter(floatingWindow => floatingWindow !== win);
       if (this.last === win) {
         this.last = this.wins[this.wins.length - 1] ?? null;
@@ -376,12 +424,10 @@ export class RefImages {
   /** The picture at `zoom`, moved (x, y) from the middle - kept so some of it is always in the window. */
   private zoomTo(win: Win, zoom: number, x: number, y: number): void {
     zoom = clamp(zoom, 1, MAX_ZOOM);
-    const halfWidth = (win.img.offsetWidth * zoom) / 2;
-    const halfHeight = (win.img.offsetHeight * zoom) / 2;
+    const halfWidth = ((win.img?.offsetWidth ?? 0) * zoom) / 2;
+    const halfHeight = ((win.img?.offsetHeight ?? 0) * zoom) / 2;
     win.zoom = zoom <= 1.001 ? { k: 1, x: 0, y: 0 } : { k: zoom, x: clamp(x, -halfWidth, halfWidth), y: clamp(y, -halfHeight, halfHeight) };
-    const z = win.zoom;
-    win.img.style.transform = z.k === 1 ? '' : `translate(${z.x}px, ${z.y}px) scale(${z.k})`;
-    win.el.classList.toggle('zoomed', z.k > 1);
+    this.paint(win);
   }
 
   private resizeBy(grip: HTMLElement, win: Win): void {
@@ -416,70 +462,75 @@ export class RefImages {
    * along it); let go anywhere else, it is a window of its own there (the only
    * tab of a window: the window goes there).
    */
-  private tabDrag(tab: HTMLElement, win: Win, i: number): void {
-    tab.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) {
+  private tabDrag(e: PointerEvent, win: Win, i: number): void {
+    if (e.button !== 0) {
+      return;
+    }
+    const tab = e.currentTarget as HTMLElement;
+    e.preventDefault();
+    tab.setPointerCapture(e.pointerId);
+    // Minimized, its tabs are all there is of it: dragged, the window goes with them; a tap opens it.
+    if (win.min) {
+      return this.moveMinimized(tab, win, i, e);
+    }
+    const start = { x: e.clientX, y: e.clientY };
+    const off = tab.getBoundingClientRect();
+    let ghost: HTMLElement | null = null;
+    const setDropTarget = (over: Win | null) => {
+      for (const other of this.wins) {
+        if (other.isDropTarget !== (other === over)) {
+          other.isDropTarget = other === over;
+          this.paint(other);
+        }
+      }
+    };
+    const move = (event: PointerEvent) => {
+      if (!ghost && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8) {
         return;
       }
-      e.preventDefault();
-      tab.setPointerCapture(e.pointerId);
-      // Minimized, its tabs are all there is of it: dragged, the window goes with them; a tap opens it.
-      if (win.min) {
-        return this.moveMinimized(tab, win, i, e);
+      if (!ghost) {
+        ghost = document.createElement('div');
+        ghost.className = 'ref-tab on ref-ghost';
+        ghost.textContent = tab.textContent;
+        document.body.append(ghost);
+        win.draggedTab = i;
+        this.paint(win);
       }
-      const start = { x: e.clientX, y: e.clientY };
-      const off = tab.getBoundingClientRect();
-      let ghost: HTMLElement | null = null;
-      const move = (event: PointerEvent) => {
-        if (!ghost && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8) {
-          return;
-        }
-        if (!ghost) {
-          ghost = div('ref-tab on ref-ghost');
-          ghost.textContent = tab.textContent;
-          document.body.append(ghost);
-          tab.classList.add('dragged');
-        }
-        ghost.style.left = `${event.clientX - (start.x - off.left)}px`;
-        ghost.style.top = `${event.clientY - (start.y - off.top)}px`;
-        const over = this.barAt(event.clientX, event.clientY);
-        for (const win of this.wins) {
-          win.bar.classList.toggle('drop', win === over);
-        }
-      };
-      const up = (event: PointerEvent) => {
-        tab.removeEventListener('pointermove', move);
-        tab.removeEventListener('pointerup', up);
-        tab.removeEventListener('pointercancel', cancel);
-        for (const win of this.wins) {
-          win.bar.classList.remove('drop');
-        }
-        if (!ghost) {
-          win.active = i;
-          win.min = false;
-          this.draw(win);
-          this.save();
+      ghost.style.left = `${event.clientX - (start.x - off.left)}px`;
+      ghost.style.top = `${event.clientY - (start.y - off.top)}px`;
+      setDropTarget(this.barAt(event.clientX, event.clientY));
+    };
+    const finish = () => {
+      tab.removeEventListener('pointermove', move);
+      tab.removeEventListener('pointerup', up);
+      tab.removeEventListener('pointercancel', cancel);
+      setDropTarget(null);
+      ghost?.remove();
+      win.draggedTab = null;
+    };
+    const up = (event: PointerEvent) => {
+      const wasDragged = !!ghost;
+      finish();
+      if (!wasDragged) {
+        win.active = i;
+        win.min = false;
+        this.draw(win);
+        this.save();
 
-          return;
-        }
-        ghost.remove();
-        tab.classList.remove('dragged');
-        this.dropTab(win, i, event.clientX, event.clientY, event.clientX - (start.x - off.left), event.clientY - (start.y - off.top));
-      };
-      const cancel = () => {
-        tab.removeEventListener('pointermove', move);
-        tab.removeEventListener('pointerup', up);
-        tab.removeEventListener('pointercancel', cancel);
-        ghost?.remove();
-        tab.classList.remove('dragged');
-        for (const win of this.wins) {
-          win.bar.classList.remove('drop');
-        }
-      };
-      tab.addEventListener('pointermove', move);
-      tab.addEventListener('pointerup', up);
-      tab.addEventListener('pointercancel', cancel);
-    });
+        return;
+      }
+      this.dropTab(win, i, event.clientX, event.clientY, event.clientX - (start.x - off.left), event.clientY - (start.y - off.top));
+      if (this.wins.includes(win)) {
+        this.paint(win);
+      }
+    };
+    const cancel = () => {
+      finish();
+      this.paint(win);
+    };
+    tab.addEventListener('pointermove', move);
+    tab.addEventListener('pointerup', up);
+    tab.addEventListener('pointercancel', cancel);
   }
 
   private moveMinimized(tab: HTMLElement, win: Win, i: number, e: PointerEvent): void {
