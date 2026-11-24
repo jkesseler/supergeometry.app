@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "supergeometry-dev",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+      "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
         "dev",
@@ -16,7 +16,7 @@
     },
     {
       "name": "supergeometry-preview",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+      "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
         "preview",
@@ -29,7 +29,7 @@
     },
     {
       "name": "supergeometry-test",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+      "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
         "preview",
@@ -42,7 +42,7 @@
     },
     {
       "name": "supergeometry-side",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+      "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
         "dev",
