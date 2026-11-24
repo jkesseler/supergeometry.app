@@ -1,9 +1,7 @@
-import { FeatureOp } from './tools/featureOp';
 import { SelectTool } from './tools/select';
 import { sectionPlane, SectionTool, type SectionState } from './tools/section';
-import { FreeformTool } from './tools/freeform';
 import { add, dist, scale } from './geom';
-import { bodyCenter, ThreadOp, TransformOp } from './tools/ops';
+import { bodyCenter, ThreadOp } from './tools/ops';
 import { ItemsPanel } from './ui/items';
 import { PinLayer } from './tools/annotate';
 import { settings } from './settings';
@@ -17,7 +15,6 @@ import { RefImages } from './ui/refImages';
 import { createVariable } from './io/insert';
 import { libraryEntries } from './doc/library';
 import { DocStore } from './doc/store';
-import { isTouchDevice } from './device';
 import { SketchTool } from './tools/sketch';
 import { Tutorial } from './ui/tutorial';
 import { AssemblyTool } from './assembly/assemblyTool';
@@ -28,9 +25,8 @@ import { UI } from './ui/ui';
 import { Sentence } from './ui/sentence';
 import { Ghost } from './tools/ghost';
 import { arrangement, drawnRegions, materialRegions } from './sketch/regions';
-import { evaluate, setUnits, setVariables, fmtLen } from './units';
+import { setUnits, setVariables, fmtLen } from './units';
 import { InputRouter } from './view/input';
-import { pickTolerance } from './device';
 import { ViewCube } from './view/viewcube';
 import { PivotButton } from './ui/pivot';
 import { icons } from './ui/icons';
@@ -39,12 +35,13 @@ import { Exporter } from './app/exporting';
 import { History } from './app/history';
 import { Keys } from './app/keys';
 import { Scene } from './app/scene';
+import { itemsHost, sentenceHost, setupBusy, setupVR, variableTagHost } from './app/setup';
 import { Menus } from './app/menus';
 import { Topbar } from './app/topbar';
 import { Projects } from './app/projects';
 import { isHeadset, screenClass } from './device';
 import { Viewport } from './view/viewport';
-import { VRMode, vrSupported } from './view/xr';
+import { VRMode } from './view/xr';
 import type { ToolItem } from './ui/ui';
 import type { RegenResult } from './kernel/protocol';
 import type { Feature, PinDef, PlaneDef, SketchEntity, SketchFeature, Units, Vec3 } from './doc/types';
@@ -64,9 +61,9 @@ export class App implements AppContext {
   /** The sentence bar: the pick, then what it offers, on one line - the way to the tools. */
   sentence!: Sentence;
   /** The look ahead a tool under the pointer is showing on the model (see ghost.ts). */
-  private peekGhost: Ghost | null = null;
+  peekGhost: Ghost | null = null;
   /** Where the view was last tapped (the sentence bar starts a sketch tool that acts where it is tapped right there). */
-  private lastTapAt: { x: number; y: number; type: 'mouse' | 'pen' | 'touch' } | null = null;
+  lastTapAt: { x: number; y: number; type: 'mouse' | 'pen' | 'touch' } | null = null;
   /** Pictures to look at while modelling, each in a window over the model (under the buttons). */
   readonly refImages = new RefImages((text, kind) => this.ui.toast(text, kind));
   readonly web = new WebWindow();
@@ -97,30 +94,7 @@ export class App implements AppContext {
     this.selectTool = new SelectTool(this);
     this.tool = this.selectTool;
     this.input.handler = this.tool;
-    this.sentence = new Sentence({
-      ui: this.ui,
-      view: this.view,
-      mainTools: () => this.mainTools(),
-      selection: () => this.selection,
-      mode: () => (this.tool === this.selectTool ? 'model' : this.tool instanceof SketchTool ? 'sketch' : this.tool instanceof FreeformTool ? 'freeform' : 'tool'),
-      sketchPicked: () => (this.tool instanceof SketchTool ? this.tool.pickedCount : 0),
-      waiting: () => (this.tool === this.selectTool ? this.selectTool.waiting : null),
-      peek: (segs) => {
-        this.peekGhost?.dispose();
-        this.peekGhost = segs ? new Ghost(this.view, segs) : null;
-      },
-      pick: sel => this.setSelection(sel),
-      adding: () => this.selectTool.adding,
-      setAdding: on => ((this.selectTool.adding = on), this.sentence.changed()),
-      stopWaiting: () => this.selectTool.stopWaiting(),
-      anchor: () => this.pickAnchor(),
-      retap: () => {
-        const lastTapAt = this.lastTapAt;
-        if (lastTapAt) {
-          this.tool.tap?.({ x: lastTapAt.x, y: lastTapAt.y, type: lastTapAt.type, shift: false, tol: pickTolerance(lastTapAt.type) }, 1);
-        }
-      }
-    });
+    this.sentence = new Sentence(sentenceHost(this));
     canvas.addEventListener(
       'pointerup',
       (e) => {
@@ -133,43 +107,7 @@ export class App implements AppContext {
     if (isHeadset) {
       document.body.classList.add('headset');
     }
-    // A spinner while the geometry engine works on something that takes a moment.
-    const busy = document.createElement('div');
-    busy.id = 'busy';
-    busy.hidden = true;
-    busy.innerHTML = '<span class="spinner"></span><span>Working…</span><button type="button" class="busy-stop" title="Stop - takes back the last change">Stop</button>';
-    document.body.append(busy);
-    busy.querySelector('.busy-stop')!.addEventListener('click', () => this.stopWork());
-    let busyTimer = 0;
-    let busyWatch = 0;
-    this.kernel.onBusy = (on) => {
-      clearTimeout(busyTimer);
-      clearInterval(busyWatch);
-      // Only for waits you would notice (not every quick preview while dragging).
-      if (on) {
-        busyTimer = window.setTimeout(() => {
-          if (!this.kernel.busy) {
-            return;
-          }
-          busy.hidden = false;
-          // Shown only while there is work: looked at again as it stands, so it can never stay up over nothing
-          // (asked for: "sometimes the working icon still is showing even if there's nothing to work on").
-          busyWatch = window.setInterval(() => {
-            if (this.kernel.busy) {
-              return;
-            }
-            busy.hidden = true;
-            clearInterval(busyWatch);
-          }, 400);
-        }, 300);
-      } else {
-        busy.hidden = true;
-      }
-    };
-    this.kernel.onLost = () => {
-      this.ui.toast('The geometry engine stopped and was started again - the last change may need doing again', 'error');
-      void this.regenerate();
-    };
+    setupBusy(this);
     const cube = new ViewCube(this.view);
     document.getElementById('viewcube-host')!.append(cube.el);
     // The orbit centre button sits at the cube's bottom left (Views at its bottom right).
@@ -182,131 +120,15 @@ export class App implements AppContext {
         return b ? [this.store.doc.names?.[id] ?? b.name ?? 'Body'] : [];
       });
     setupRightColumn(this.ui, this.view, this.store, units => this.setUnits(units), isolatedNames);
-    // VR only in a headset's own browser (never on a computer, headset connected or not). A viewer: the model as a real thing in your room.
-    // On a phone or tablet it's AR: the model in the room through the camera.
-    const handheld = isTouchDevice && !isHeadset;
-    const vr: VRMode = (this.vr = new VRMode({
-      renderer: this.view.renderer,
-      handheld,
-      scene: this.view.scene,
-      bounds: () => this.view.modelBounds(),
-      xray: () => {
-        const on = settings.value.shader !== 'xray';
-        settings.set('shader', on ? 'xray' : 'shaded');
-
-        return on ? 'X-Ray' : 'Shaded';
-      },
-      edges: () => {
-        const on = !settings.value.showEdges;
-        settings.set('showEdges', on);
-
-        return on ? 'Edges shown' : 'Edges hidden';
-      },
-      looks: () => ({ xray: settings.value.shader === 'xray' ? 'Shaded' : 'X-Ray', edges: settings.value.showEdges ? 'Hide Edges' : 'Show Edges' }),
-      beforeFrame: () => this.view.xrFrame(),
-      onEnter: () => {
-        this.setTool(null);
-        this.setSelection([]);
-        this.view.xrMode(true);
-      },
-      onExit: () => this.view.xrMode(false)
-    }));
-    // In the top bar, where it's seen, in a headset; under More on a phone or tablet (when its browser can show AR); never on a computer.
-    const vrBtn = document.getElementById('vr-btn')!;
-    if (handheld) {
-      vrBtn.textContent = 'Enter AR';
-      vrBtn.title = 'See the model in your room through the camera';
-      // A phone or tablet: under More (History has its place in the top bar).
-      vrBtn.className = '';
-      vrBtn.addEventListener('click', () => (document.getElementById('more-menu')!.hidden = true));
-      document.getElementById('more-menu')!.prepend(vrBtn);
-    }
-    const checkVR = () => void vrSupported(handheld).then(ok => (vrBtn.hidden = !isHeadset && !(handheld && ok)));
-    if (isTouchDevice) {
-      checkVR();
-      (navigator as Navigator & { xr?: EventTarget }).xr?.addEventListener('devicechange', checkVR);
-    } else {
-      vrBtn.remove();
-    }
-    vrBtn.addEventListener('click', async () => {
-      if (!(await vrSupported(handheld))) {
-        return this.ui.toast(handheld ? "This browser can't show AR - try Chrome" : "This browser can't open VR here - open superGeometry.app in the headset's own browser");
-      }
-      vr.enter().catch((e: unknown) => this.ui.toast(`${handheld ? 'AR' : 'VR'} didn't start: ${e instanceof Error ? e.message : e}`));
-    });
+    setupVR(this);
     this.pinLayer = new PinLayer(this.view);
-    this.varTags = new VariableTags(this.view, {
-      variables: () => this.store.doc.variables,
-      check: (name, expr, kind) => {
-        const list = this.store.doc.variables;
-        setVariables(list.map(variable => (variable.name === name ? { name, expr } : variable)));
-        try {
-          return evaluate(expr, 'number') === null ? null : evaluate(name, kind);
-        } finally {
-          setVariables(list);
-        }
-      },
-      setVariable: (name, expr) => {
-        const list = this.store.doc.variables;
-        const next = list.map(variable => (variable.name === name ? { name, expr } : variable));
-        setVariables(next);
-        const bad = next.some(variable => evaluate(variable.expr) === null);
-        setVariables(list);
-        if (bad) {
-          return false;
-        }
-        if (list.find(variable => variable.name === name)?.expr !== expr) {
-          this.store.commit(draft => (draft.variables = next));
-        }
-
-        return true;
-      }
-    });
+    this.varTags = new VariableTags(this.view, variableTagHost(this));
     // ƒx buttons on number fields create named variables.
     this.ui.variableFactory = current => createVariable(this, current);
     this.ui.variableNames = () => this.store.doc.variables.map(variable => variable.name);
     numpadVariables({ names: () => this.store.doc.variables.map(variable => variable.name), create: value => createVariable(this, value) });
     settings.onChange(() => this.showPins());
-    this.items = new ItemsPanel(this.store, {
-      // A phone: like taps in the view, each body tapped in Items joins the
-      // selection (tapped again, it leaves) - Subtract needs two bodies, and
-      // the second one replaced the first.
-      selectBody: (id) => {
-        if (this.tool === this.selectTool && this.selectTool.pickFromList({ kind: 'body', body: id })) {
-          return;
-        }
-        // A pattern (mirror, move…) under way: the body joins it, or leaves it.
-        // (After the first body the view's taps go to its direction: four
-        // pockets to pattern across could only be had by starting again.)
-        if (this.tool instanceof TransformOp && this.tool.toggleBody(id)) {
-          return;
-        }
-        // Subtract, Shell… waiting for a body: it takes this one.
-        if (this.tool instanceof FeatureOp && this.tool.pickBody(id)) {
-          return;
-        }
-        this.togglePick({ kind: 'body', body: id });
-      },
-      editSketch: id => this.setTool(new SketchTool(this, { sketchId: id })),
-      selectPlane: id => this.togglePick({ kind: 'plane', id }),
-      deleteBody: id => this.store.add({ ...this.store.newIdentity('delete'), type: 'delete', bodies: [id] }),
-      deleteFeature: id => this.store.remove(id),
-      selectImage: id => this.togglePick({ kind: 'image', id }),
-      rename: async (id, current, isBody) => {
-        const answers = await this.ui.dialog('Rename', [{ key: 'name', label: 'Name', value: current }]);
-        const name = answers?.name.trim();
-        if (!name) {
-          return;
-        }
-        if (isBody) {
-          this.store.commit(draft => (draft.names = { ...(draft.names ?? {}), [id]: name }));
-        } else {
-          this.store.update(id, { name });
-        }
-      },
-      askName: async (title, current) => (await this.ui.dialog(title, [{ key: 'name', label: 'Name', value: current }]))?.name.trim() || null,
-      isolated: () => this.isolatedWithSketches()
-    });
+    this.items = new ItemsPanel(this.store, itemsHost(this));
     // Computers and tablets start with Items open (phones: History only, there's no room for both).
     // (A phone on its side is wider than 720 px but only ~375 tall: Items would cover a third of it.)
     if (screenClass() !== 'phone') {
@@ -475,7 +297,7 @@ export class App implements AppContext {
   }
 
   /** Where the last thing picked is on the model (the sentence bar's thread runs to it). */
-  private pickAnchor(): Vec3 | null {
+  pickAnchor(): Vec3 | null {
     const sel = this.selection;
     const highlight = sel[sel.length - 1];
     if (!highlight) {
@@ -689,7 +511,7 @@ export class App implements AppContext {
   }
 
   /** A pick from the Items list: it joins what's picked (picked already: it leaves), as taps in the view do. */
-  private togglePick(highlight: Sel): void {
+  togglePick(highlight: Sel): void {
     // (Another tool's highlights aren't picks.)
     const had = this.tool === this.selectTool ? this.selection : [];
     this.setTool(null);
@@ -752,7 +574,7 @@ export class App implements AppContext {
    * change that started it is taken back (a live preview is cancelled; a
    * committed change is undone).
    */
-  private stopWork(): void {
+  stopWork(): void {
     const running = this.kernel.running;
     const committed = !running || running === this.store.doc.features;
     this.kernel.stop();
@@ -853,7 +675,7 @@ export class App implements AppContext {
     }
   }
 
-  private async regenerate(): Promise<void> {
+  async regenerate(): Promise<void> {
     const features = this.store.doc.features;
     this.regenerating++;
     let result: RegenResult | null = null;
