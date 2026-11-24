@@ -1,4 +1,3 @@
-import { Vector3 } from 'three';
 import { FeatureOp, sketchesUsed } from './tools/featureOp';
 import { BooleanOp } from './tools/booleanOp';
 import { SelectTool } from './tools/select';
@@ -23,17 +22,15 @@ import { numpadVariables } from './ui/numpad';
 import { WebWindow } from './ui/webWindow';
 import { RefImages } from './ui/refImages';
 import { createVariable, insertFile, insertImage } from './io/insert';
-import { showAbout } from './ui/about';
 import { libraryEntries } from './doc/library';
-import { SUPPORT, openSupport } from './ui/support';
 import { DocStore } from './doc/store';
 import { WrapOp } from './tools/wrapOps';
 import { PlanesAxisOp, TwoPointAxisOp, surfaceAxis } from './tools/axisOps';
 import { CurvePointPlaneOp, EdgeAnglePlaneOp, FacePointPlaneOp, ThreePointPlaneOp } from './tools/planeOps';
 import { circleAxis } from './tools/slots';
 import { isTouchDevice } from './device';
-import { SketchTool, sketchSides, sketchVariant } from './tools/sketch';
-import { Tutorial, type TutorialHost } from './ui/tutorial';
+import { SketchTool } from './tools/sketch';
+import { Tutorial } from './ui/tutorial';
 import { AssemblyTool } from './assembly/assemblyTool';
 import { definedCurves } from './sketch/constraints';
 import { keepSizes } from './doc/unitChange';
@@ -48,14 +45,12 @@ import { InputRouter } from './view/input';
 import { pickTolerance } from './device';
 import { ViewCube } from './view/viewcube';
 import { PivotButton } from './ui/pivot';
-import { HelpPanel } from './ui/help';
 import { icons } from './ui/icons';
 import { Updates } from './ui/update';
-import { Offline } from './ui/offline';
-import { Install } from './ui/install';
-import { Exporter, canShareType } from './app/exporting';
+import { Exporter } from './app/exporting';
 import { History } from './app/history';
 import { Keys } from './app/keys';
+import { Topbar } from './app/topbar';
 import { Projects } from './app/projects';
 import { isHeadset, screenClass } from './device';
 import { Viewport } from './view/viewport';
@@ -64,18 +59,15 @@ import type { ToolItem } from './ui/ui';
 import type { RegenResult } from './kernel/protocol';
 import type { EdgeRef, ExtrudeSource, Feature, ImageFeature, PathRef, PinDef, PlaneDef, SketchEntity, SketchFeature, Units, Vec3 } from './doc/types';
 
-/** The page's own title, from index.html (it names the app for search results). */
-const PAGE_TITLE = document.title;
-
-
 export class App implements AppContext {
   readonly store = new DocStore();
   readonly kernel = new KernelClient();
   readonly view: Viewport;
   readonly ui = new UI();
-  private readonly projects = new Projects(this);
+  readonly projects = new Projects(this);
   private readonly history = new History(this);
   private readonly keys = new Keys(this);
+  private readonly topbar = new Topbar(this);
   readonly exporter = new Exporter(this);
   /** The sentence bar: the pick, then what it offers, on one line - the way to the tools. */
   sentence!: Sentence;
@@ -334,7 +326,7 @@ export class App implements AppContext {
     // A phone may drop the page once it's in the background: save now, undo steps included.
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void this.store.flush());
     window.addEventListener('pagehide', () => void this.store.flush());
-    this.wireTopbar();
+    this.topbar.attach();
     this.tool.enter?.();
 
     this.ui.setStatus('Loading geometry kernel…');
@@ -880,9 +872,8 @@ export class App implements AppContext {
     }
     if (result) {
       ((this.made = result), this.apply(result, features));
-    }
-    // (Not made - stopped, or overtaken: the next change asks again, whatever it is.)
-    else {
+    } else {
+      // Not made - stopped, or overtaken: the next change asks again, whatever it is.
       this.madeFor = '';
     }
   }
@@ -1426,362 +1417,6 @@ export class App implements AppContext {
 
   // ------------------------------------------------------------ files
 
-  private wireTopbar(): void {
-    const on = (id: string, fn: () => void) => document.getElementById(id)!.addEventListener('click', fn);
-    const menu = document.getElementById('file-menu')!;
-    const more = document.getElementById('more-menu')!;
-    // Phones: one thing open at a time at the left - a menu closes Items.
-    // Phones: one thing open at a time - a menu takes the place of Items and of History.
-    const phoneItemsAway = () => {
-      if (window.innerWidth > 720) {
-        return;
-      }
-      if (document.getElementById('items')!.classList.contains('open')) {
-        this.items.toggle(false);
-      }
-      if (document.body.classList.contains('history-open')) {
-        this.ui.toggleHistory(false);
-      }
-    };
-    on('file-btn', () => ((more.hidden = true), menu.toggleAttribute('hidden'), !menu.hidden && phoneItemsAway()));
-    on('more-btn', () => ((menu.hidden = true), more.toggleAttribute('hidden'), !more.hidden && phoneItemsAway()));
-    on('history-btn', () => ((menu.hidden = more.hidden = true), this.ui.toggleHistory()));
-    document.getElementById('m-version')!.textContent = `Version ${__APP_VERSION__}`;
-    const moreItem = (id: string, fn: () => void) => on(id, () => ((more.hidden = true), fn()));
-    // Fullscreen (the label follows the state; Esc also leaves it).
-    const fs = document.getElementById('m-fullscreen')!;
-    const doc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
-    const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
-    const isFull = () => !!(document.fullscreenElement ?? doc.webkitFullscreenElement);
-    const paint = () => {
-      fs.firstChild!.textContent = isFull() ? 'Exit fullscreen' : 'Fullscreen';
-      // Tablets draw their own close button at the top left in fullscreen: the top bar makes room.
-      document.body.classList.toggle('is-fullscreen', isFull());
-    };
-    document.addEventListener('fullscreenchange', paint);
-    document.addEventListener('webkitfullscreenchange', paint);
-    const goFull = () => {
-      if (root.requestFullscreen) {
-        void root.requestFullscreen().catch(() => this.ui.toast("This browser won't go fullscreen here"));
-      } else if (root.webkitRequestFullscreen) {
-        root.webkitRequestFullscreen();
-      }
-      // iPhone Safari has no fullscreen for pages: the Home Screen app is.
-      else {
-        this.ui.toast('Tip: Share → Add to Home Screen opens superGeometry.app full screen');
-      }
-    };
-    moreItem('m-fullscreen', () => {
-      if (isFull()) {
-        return void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.());
-      }
-      goFull();
-    });
-    // The welcome window (and File → Open) has a Full screen button too (a
-    // browser only allows it from a tap). Everywhere but an app that already
-    // has the whole screen; where a browser has none (iPhone), it says how.
-    this.projects.fullscreen = !matchMedia('(display-mode: fullscreen)').matches ? { isFull, toggle: () => (isFull() ? void (document.exitFullscreen?.() ?? doc.webkitExitFullscreen?.()) : goFull()) } : null;
-    // Help and Tutorial: placeholders for now.
-    // A newer build out? More pulses and its Update item says NEW.
-    this.updates = new Updates(() => this.store.flush());
-    moreItem('m-update', () => void this.confirmReset());
-    // Phones and tablets: an offer to add the app to the home screen (More → Install app too).
-    const install = new Install(t => this.ui.toast(t));
-    const inst = document.getElementById('m-install')!;
-    document.getElementById('more-btn')!.addEventListener('click', () => (inst.hidden = !install.available));
-    moreItem('m-install', () => install.offer(true));
-    // Help: a panel explaining every button (toggle it from More → Help).
-    const help = new HelpPanel();
-    moreItem('m-help', () => help.toggle());
-    // The guide text (what to tap next): on or off.
-    // (Each a switch on its row - they said On or Off in words. Asked for: "make the two buttons (guide text and
-    // offline mode) have a toggle icon. I don't like how right now it's only on or off in text".)
-    const switchOf = (id: string, on: boolean) => {
-      const b = document.getElementById(id)!;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-checked', String(on));
-    };
-    const paintHints = () => switchOf('m-hints', settings.value.showHints);
-    paintHints();
-    // (Also switched off by the × on the guide text itself.)
-    settings.onChange(paintHints);
-    moreItem('m-hints', () => {
-      settings.set('showHints', !settings.value.showHints);
-      paintHints();
-      this.ui.refreshHint();
-    });
-    // Offline mode: the app kept on this device, so it works with no connection.
-    const offlineState = document.getElementById('m-offline-state')!;
-    // (Its switch; beside it only how far the download is while it runs.)
-    const offline = new Offline((t, kind) => this.ui.toast(t, kind), state => ((offlineState.textContent = state === 'On' || state === 'Off' ? '' : state), switchOf('m-offline', settings.value.offline)));
-    this.updates.offline = { get on() {
-      return settings.value.offline; 
-    }, download: fresh => offline.download(fresh) };
-    moreItem('m-offline', () => void offline.toggle());
-    // The tutorial: a first part, built one lit tap at a time (see ui/tutorial.ts).
-    const tutorial = new Tutorial({
-      tool: () => this.tool as unknown as ReturnType<TutorialHost['tool']>,
-      selection: () => this.selection,
-      setSelection: sel => this.setSelection(sel),
-      features: () => this.store.features,
-      toScreen: point => this.view.toScreen(new Vector3(point[0], point[1], point[2])),
-      canvas: () => this.view.canvas,
-      faces: body => (this.view.body(body)?.faces ?? []).map(faceInfo => ({ center: faceInfo.center, normal: faceInfo.normal, type: faceInfo.type })),
-      bodies: () => this.view.bodyList.map(b => b.id),
-      eye: () => this.view.cam.camera.position,
-      newProject: () => this.projects.newProject(),
-      setUp: () => (sketchVariant('circle', 'center'), sketchSides(6)),
-      closePanels: () => (this.ui.toggleHistory(false), this.items.toggle(false)),
-      zoomTo: (mm, px) => {
-        const now = this.view.cam.worldPerPixel(this.view.height);
-        const want = mm / px;
-        const off = this.view.cam.target.lengthSq() > 1e-12;
-        // (Asked for each frame until the first circle is drawn: nothing is done when the view is there already.)
-        if (!(now > 0) || (!off && Math.abs(now / want - 1) < 1e-3)) {
-          return;
-        }
-        this.view.cam.target.set(0, 0, 0);
-        this.view.cam.zoom(want / now);
-        this.view.requestRender();
-      },
-      chamferAt: (z) => {
-        const t = this.tool as unknown as { id: string; feature?: { edges: EdgeRef[] }; edgeSels?(): Sel[]; update?(): void };
-        const body = t.feature?.edges[0]?.body;
-        if (t.id !== 'chamfer' || !t.feature || !body) {
-          return;
-        }
-        const flat = (point: Vec3) => Math.abs(point[2] - z) < 1e-6;
-        // (Once: with them chamfered, the body as it is shown has new edges at that height - the cuts' own.)
-        if (t.feature.edges.some(e => flat(e.mid))) {
-          return;
-        }
-        const have = (midpoint: Vec3) => t.feature!.edges.some(e => e.body === body && Math.hypot(e.mid[0] - midpoint[0], e.mid[1] - midpoint[1], e.mid[2] - midpoint[2]) < 1e-6);
-        let added = false;
-        (this.view.body(body)?.edges ?? []).forEach((e, i) => {
-          if (e.type !== 'LINE' || !flat(e.start) || !flat(e.end) || have(e.mid)) {
-            return;
-          }
-          const ref = edgeRefOf(this, { body, edge: i });
-          if (ref) {
-            (t.feature!.edges.push(ref), (added = true));
-          }
-        });
-        if (!added) {
-          return;
-        }
-        if (t.edgeSels) {
-          this.setSelection(t.edgeSels());
-        }
-        t.update?.();
-      },
-      plainTaps: on => void (this.input.plainTaps = on),
-      exact: (kind, centre, edge) => void (this.tool instanceof SketchTool && this.tool.exact(kind, centre, edge)),
-      setNumber: (field, mm) => {
-        const t = this.tool as unknown as { id: string; feature?: Record<string, unknown>; render?(): void; update?(): void; setPitch?(v: number): void };
-        if (!t.feature || t.id !== { clearance: 'boolean', distance: 'extrude', start: 'extrude', pitch: 'thread' }[field]) {
-          return;
-        }
-        // (A thread: a plain right-hand one of one start, whatever the thread made last on a rod this size was.)
-        if (field === 'pitch') {
-          t.feature.left = undefined;
-          t.feature.starts = undefined;
-          t.setPitch?.(mm);
-
-          return;
-        }
-        t.feature[field] = mm;
-        t.render?.();
-        t.update?.();
-      }
-    });
-    this.tutorial = tutorial;
-    moreItem('m-tutorial', () => this.startTutorial());
-    this.startTutorial = () => {
-      // (The question whether to start it, should it be up: answered.)
-      document.querySelector('.dialog.tutorial-ask')?.closest('.dialog-back')?.remove();
-      void tutorial.start();
-    };
-    // About: the README, in the app. Support links open in a new tab (no access back to this page).
-    moreItem('m-about', () => showAbout());
-    // Feedback: a bug report, suggestion or discussion, posted on r/supergeometry (Reddit's page, in a new tab).
-    // (Loaded on the first tap: most visits never open it.)
-    moreItem('m-feedback', () => void import('./ui/feedback').then(({ showFeedback }) => showFeedback()));
-    // Support: a short list of ways (each opens in a new tab). One without a link yet says so.
-    const donateList = document.getElementById('m-donate-list')!;
-    on('m-donate', () => {
-      donateList.hidden = !donateList.hidden;
-      document.getElementById('m-donate-arrow')!.textContent = donateList.hidden ? '▸' : '▾';
-    });
-    for (const { id, url } of SUPPORT) {
-      const b = document.getElementById(`m-support-${id}`);
-      if (!b) {
-        continue;
-      }
-      if (!url) {
-        b.querySelector('.menu-soon')!.textContent = 'soon';
-        b.classList.add('disabled');
-      }
-      moreItem(`m-support-${id}`, () => (url ? openSupport(url) : this.ui.toast('Coming soon')));
-    }
-    document.addEventListener('pointerdown', (e) => {
-      if (!(e.target as HTMLElement).closest('#file-menu, #file-btn')) {
-        menu.hidden = true;
-      }
-      if (!(e.target as HTMLElement).closest('#more-menu, #more-btn')) {
-        more.hidden = true;
-      }
-    });
-    const item = (id: string, fn: () => void) =>
-      on(id, () => {
-        menu.hidden = true;
-        fn();
-      });
-    item('m-new', () => void this.projects.newProject());
-    item('m-open', () => void this.projects.show());
-    item('m-save', () => this.exporter.save());
-    item('m-stl', () => void this.exporter.export('stl'));
-    item('m-step', () => void this.exporter.export('step'));
-    item('m-3mf', () => void this.exporter.export3mf());
-    item('m-glb', () => void this.exporter.exportGLB());
-    item('m-each', () => {
-      // Which format each body is saved in: a menu where the File menu was.
-      const rect = document.getElementById('file-btn')!.getBoundingClientRect();
-      const row = (format: 'stl' | 'step' | '3mf' | 'glb', label: string) => ({ label, run: () => void this.exporter.exportEach(format) });
-      this.ui.menu(rect.left, rect.bottom + 4, [row('stl', 'Each body as STL'), row('step', 'Each body as STEP'), row('3mf', 'Each body as 3MF'), row('glb', 'Each body as GLB')]);
-    });
-    item('m-dxf', () => this.exporter.exportDXF());
-    item('m-svg', () => this.exporter.exportDXF('download', 'svg'));
-    // A share button at the right of each export (and Save): straight to the share sheet.
-    // Only for the file types this browser will really share (Chrome on Android,
-    // for one, refuses 3D and CAD files: a button there would only download).
-    {
-      const shares: [string, string, () => void][] = [
-        ['m-save', 'super', () => this.exporter.save('share')],
-        ['m-stl', 'stl', () => void this.exporter.export('stl', 'share')],
-        ['m-step', 'step', () => void this.exporter.export('step', 'share')],
-        ['m-3mf', '3mf', () => void this.exporter.export3mf('share')],
-        ['m-glb', 'glb', () => void this.exporter.exportGLB('share')],
-        ['m-dxf', 'dxf', () => this.exporter.exportDXF('share')],
-        ['m-svg', 'svg', () => this.exporter.exportDXF('share', 'svg')]
-      ];
-      // Android's share sheet turns these files away or mangles them: downloads only there.
-      const android = /Android/i.test(navigator.userAgent);
-      for (const [id, ext, run] of shares) {
-        if (android || !canShareType(ext)) {
-          continue;
-        }
-        const btn = document.getElementById(id)!;
-        const sh = document.createElement('span');
-        sh.className = 'menu-share';
-        sh.setAttribute('role', 'button');
-        sh.title = 'Share';
-        sh.innerHTML = icons.share;
-        sh.addEventListener('click', (e) => {
-          e.stopPropagation();
-          menu.hidden = true;
-          run();
-        });
-        btn.append(sh);
-      }
-    }
-    on('undo-btn', () => this.undo());
-    on('redo-btn', () => this.redo());
-    this.store.onChange(() => this.updateUndo());
-    this.updateUndo();
-
-    // Project name: click and type; Enter or leaving the field renames.
-    // (Editable text, not an input: a phone's browser hung its autofill bar -
-    // passwords, cards, addresses - over the screen for an input.)
-    const name = document.getElementById('project-name') as HTMLElement;
-    name.contentEditable = 'plaintext-only';
-    if (name.contentEditable !== 'plaintext-only') {
-      name.contentEditable = 'true';
-    }
-    const typed = () => (name.textContent ?? '').replace(/\s+/g, ' ').trim();
-    const show = () => {
-      if (document.activeElement !== name) {
-        name.textContent = this.store.doc.name;
-      }
-      // A new, unnamed project keeps the page's own title (what search results show).
-      document.title = this.store.doc.name === 'Untitled' ? PAGE_TITLE : `${this.store.doc.name} – superGeometry.app`;
-    };
-    const rename = () => {
-      const value = typed();
-      if (value && value !== this.store.doc.name) {
-        this.store.commit(draft => (draft.name = value));
-      }
-      name.textContent = this.store.doc.name;
-      name.scrollLeft = 0;
-    };
-    name.addEventListener('blur', rename);
-    // On a small screen, while it is being renamed, it opens over the buttons
-    // beside it (File, Items, History, More) to the bar's end; they stay where
-    // they are under it, kept in place by a spot of its old width.
-    const spot = document.createElement('span');
-    spot.className = 'project-name-spot';
-    name.addEventListener('focus', () => {
-      if (!matchMedia('(max-width: 720px), (pointer: coarse)').matches) {
-        return;
-      }
-      const bar = name.parentElement!;
-      spot.style.width = `${name.offsetWidth}px`;
-      spot.style.marginRight = getComputedStyle(name).marginRight;
-      const left = name.offsetLeft;
-      name.before(spot);
-      name.classList.add('wide');
-      name.style.left = `${left}px`;
-      name.style.width = `${bar.clientWidth - left - 4}px`;
-    });
-    name.addEventListener('blur', () => {
-      if (!name.classList.contains('wide')) {
-        return;
-      }
-      name.classList.remove('wide');
-      name.style.left = name.style.width = '';
-      spot.remove();
-    });
-    name.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key === 'Enter') {
-        e.preventDefault(), name.blur();
-      }
-      if (e.key === 'Escape') {
-        (name.textContent = this.store.doc.name), name.blur();
-      }
-    });
-    // Pasted: as plain text on one line.
-    name.addEventListener('paste', (e) => {
-      e.preventDefault();
-      document.execCommand('insertText', false, (e.clipboardData?.getData('text/plain') ?? '').replace(/\s+/g, ' '));
-    });
-    // A mouse selects the whole name to type over; a finger gets the caret
-    // where it tapped (selecting all brought up the phone's Cut / Copy bar).
-    name.addEventListener('focus', () => {
-      if (!matchMedia('(pointer: fine)').matches) {
-        return;
-      }
-      requestAnimationFrame(() => {
-        if (document.activeElement !== name) {
-          return;
-        }
-        const range = document.createRange();
-        range.selectNodeContents(name);
-        getSelection()?.removeAllRanges();
-        getSelection()?.addRange(range);
-      });
-    });
-    this.store.onChange(show);
-    show();
-    // The saved mark at the end of the name: a tick once every change is on this device.
-    const mark = () => {
-      const saved = this.store.saved;
-      name.classList.toggle('saving', !saved);
-      name.title = `Project name - click to rename\n${saved ? 'Saved on this device' : 'Saving…'}`;
-    };
-    this.store.onSavedState(mark);
-    mark();
-  }
-
   /**
    * Undo: a tool with steps of its own (a freeform cage being shaped) takes
    * those back, and leaves the project alone while it's open - Ctrl+Z used to
@@ -1822,7 +1457,7 @@ export class App implements AppContext {
     this.updateUndo();
   }
 
-  private updateUndo(): void {
+  updateUndo(): void {
     const t = this.tool?.undo ? this.tool : null;
     (document.getElementById('undo-btn') as HTMLButtonElement).disabled = t ? !t.canUndo : !this.store.canUndo;
     (document.getElementById('redo-btn') as HTMLButtonElement).disabled = t ? !t.canRedo : !this.store.canRedo;
@@ -1831,7 +1466,7 @@ export class App implements AppContext {
   updates!: Updates;
 
   /** More → Update: asked first (it reloads the app), with the option to save a copy. */
-  private async confirmReset(): Promise<void> {
+  async confirmReset(): Promise<void> {
     const choice = await this.ui.ask(
       'Update?',
       'The app reloads with its newest version. Your project stays on this device - you can also save a copy to a file first.',
