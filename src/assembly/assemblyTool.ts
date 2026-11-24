@@ -85,10 +85,10 @@ export class AssemblyTool implements Tool {
     // Where the parts were left (asked for: "if i click on assembly again ... it doesnt show what i made before").
     this.values = { ...(this.app.store.doc.pose?.values ?? {}) };
     this.exploded = this.app.store.doc.pose?.exploded ?? 0;
-    const s = this.start;
+    const start = this.start;
     this.start = undefined;
-    if (s && s.a.body !== s.b.body) {
-      this.make(this.pickOf(s.a.body, s.a.face), this.pickOf(s.b.body, s.b.face));
+    if (start && start.a.body !== start.b.body) {
+      this.make(this.pickOf(start.a.body, start.a.face), this.pickOf(start.b.body, start.b.face));
     } else {
       this.render();
     }
@@ -107,11 +107,11 @@ export class AssemblyTool implements Tool {
     if (JSON.stringify(pose) === JSON.stringify(this.app.store.doc.pose)) {
       return;
     }
-    this.app.store.commit((d) => {
+    this.app.store.commit((draft) => {
       if (pose) {
-        d.pose = pose;
+        draft.pose = pose;
       } else {
-        delete d.pose;
+        delete draft.pose;
       }
     });
   }
@@ -197,18 +197,18 @@ export class AssemblyTool implements Tool {
     if (was && was.key === b.key) {
       return was;
     }
-    const P = b.positions;
+    const positions = b.positions;
     const lo: Vec3 = [Infinity, Infinity, Infinity];
     const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < P.length; i += 3) {
-      for (let k = 0; k < 3; k++) {
-        (lo[k] = Math.min(lo[k], P[i + k])), (hi[k] = Math.max(hi[k], P[i + k]));
+    for (let i = 0; i < positions.length; i += 3) {
+      for (let axis = 0; axis < 3; axis++) {
+        (lo[axis] = Math.min(lo[axis], positions[i + axis])), (hi[axis] = Math.max(hi[axis], positions[i + axis]));
       }
     }
-    const m = { key: b.key, center: scale(add(lo, hi), 0.5), size: len(sub(hi, lo)) / 2 };
-    this.measured.set(body, m);
+    const measured = { key: b.key, center: scale(add(lo, hi), 0.5), size: len(sub(hi, lo)) / 2 };
+    this.measured.set(body, measured);
 
-    return m;
+    return measured;
   }
 
   private poses(): Map<string, Mat4> {
@@ -217,9 +217,9 @@ export class AssemblyTool implements Tool {
     const sizes: Record<string, number> = {};
     if (this.exploded > 0) {
       for (const b of bodies) {
-        const m = this.measure(b);
-        if (m) {
-          (centers[b] = m.center), (sizes[b] = m.size);
+        const measured = this.measure(b);
+        if (measured) {
+          (centers[b] = measured.center), (sizes[b] = measured.size);
         }
       }
     }
@@ -246,12 +246,12 @@ export class AssemblyTool implements Tool {
   private standing(poses: Map<string, Mat4>): Map<string, Mat4> {
     const ids = this.bodies.filter(b => !this.app.view.isHidden(b));
     const out = new Map<string, Mat4>();
-    const I: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const matrix: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
         const a = poses.get(ids[i]);
         const b = poses.get(ids[j]);
-        out.set(`${ids[i]}|${ids[j]}`, a || b ? mul(inverse(a ?? I), b ?? I) : I);
+        out.set(`${ids[i]}|${ids[j]}`, a || b ? mul(inverse(a ?? matrix), b ?? matrix) : matrix);
       }
     }
 
@@ -261,18 +261,18 @@ export class AssemblyTool implements Tool {
   /** The pairs of bodies run into each other, of those in `pairs` (all of them; or only those that stand otherwise than in `than`). */
   private clashes(pairs: Map<string, Mat4>, than?: Map<string, Mat4>, skip?: Set<string>): Set<string> {
     const out = new Set<string>();
-    for (const [key, m] of pairs) {
+    for (const [key, pair] of pairs) {
       if (skip?.has(key)) {
         continue;
       }
       const was = than?.get(key);
-      if (was && was.every((v, i) => Math.abs(v - m[i]) < 1e-9)) {
+      if (was && was.every((value, i) => Math.abs(value - pair[i]) < 1e-9)) {
         continue;
       }
       const [a, b] = key.split('|');
       const sa = this.solid(a);
       const sb = this.solid(b);
-      if (sa && sb && penetrates(sa, sb, m, CONTACT_TOL)) {
+      if (sa && sb && penetrates(sa, sb, pair, CONTACT_TOL)) {
         out.add(key);
       }
     }
@@ -299,7 +299,7 @@ export class AssemblyTool implements Tool {
   /** The line of the joint that is open, drawn through the model (with the body that carries it, when that moved). */
   private placeAxis(poses: Map<string, Mat4>): void {
     this.dropAxis();
-    const j0 = this.joints.find(x => x.id === this.editing);
+    const j0 = this.joints.find(joint => joint.id === this.editing);
     if (!j0 || j0.type === 'fixed' || this.mode !== 'edit') {
       return;
     }
@@ -307,12 +307,12 @@ export class AssemblyTool implements Tool {
     const t = tree(this.liveJoints(), this.bodies, this.app.store.doc.ground);
     const child = t.up.get(j.b)?.joint.id === j.id ? j.b : j.a;
     const parent = t.up.get(child)?.parent;
-    const m = (parent && poses.get(parent)) || null;
-    const o = m ? apply(m, j.origin) : j.origin;
-    const a = norm(m ? turn(m, j.axis) : j.axis);
+    const matrix = (parent && poses.get(parent)) || null;
+    const origin = matrix ? apply(matrix, j.origin) : j.origin;
+    const a = norm(matrix ? turn(matrix, j.axis) : j.axis);
     const reach = Math.max(this.measure(j.a)?.size ?? 10, this.measure(j.b)?.size ?? 10) * 1.6;
-    const g = new BufferGeometry().setFromPoints([new Vector3(...add(o, scale(a, -reach))), new Vector3(...add(o, scale(a, reach)))]);
-    this.axisLine = new Line(g, new LineBasicMaterial({ color: AXIS_COLOR, depthTest: false, transparent: true }));
+    const geometry = new BufferGeometry().setFromPoints([new Vector3(...add(origin, scale(a, -reach))), new Vector3(...add(origin, scale(a, reach)))]);
+    this.axisLine = new Line(geometry, new LineBasicMaterial({ color: AXIS_COLOR, depthTest: false, transparent: true }));
     this.axisLine.renderOrder = 60;
     this.app.view.overlay.add(this.axisLine);
     this.app.view.requestRender();
@@ -327,61 +327,61 @@ export class AssemblyTool implements Tool {
    */
   private centroid(body: string, face: number): Vec3 | null {
     const b = this.app.view.body(body);
-    const f = b?.faces[face];
-    const g = b?.faceGroups.find(x => x.face === face);
-    if (!b || !f?.plane || !g) {
+    const faceInfo = b?.faces[face];
+    const faceGroup = b?.faceGroups.find(faceGroup => faceGroup.face === face);
+    if (!b || !faceInfo?.plane || !faceGroup) {
       return null;
     }
-    const P = b.positions;
-    const I = b.indices;
-    const x = norm(f.plane.xDir);
-    const y = norm(cross(f.plane.normal, f.plane.xDir));
-    const o = f.plane.origin;
+    const positions = b.positions;
+    const indices = b.indices;
+    const x = norm(faceInfo.plane.xDir);
+    const y = norm(cross(faceInfo.plane.normal, faceInfo.plane.xDir));
+    const origin = faceInfo.plane.origin;
     let u0 = Infinity;
     let u1 = -Infinity;
     let v0 = Infinity;
     let v1 = -Infinity;
-    for (let k = g.start; k < g.start + g.count; k++) {
-      const i = I[k];
-      const d: Vec3 = [P[3 * i] - o[0], P[3 * i + 1] - o[1], P[3 * i + 2] - o[2]];
-      const u = dot(d, x);
-      const v = dot(d, y);
-      u0 = Math.min(u0, u);
-      u1 = Math.max(u1, u);
-      v0 = Math.min(v0, v);
-      v1 = Math.max(v1, v);
+    for (let start = faceGroup.start; start < faceGroup.start + faceGroup.count; start++) {
+      const i = indices[start];
+      const offset: Vec3 = [positions[3 * i] - origin[0], positions[3 * i + 1] - origin[1], positions[3 * i + 2] - origin[2]];
+      const alongX = dot(offset, x);
+      const alongY = dot(offset, y);
+      u0 = Math.min(u0, alongX);
+      u1 = Math.max(u1, alongX);
+      v0 = Math.min(v0, alongY);
+      v1 = Math.max(v1, alongY);
     }
     if (!(u1 >= u0)) {
       return null;
     }
     // (On the face's own plane: the drawn points are kept to seven digits, the plane is exact.)
-    const n = norm(f.plane.normal);
-    const flat = add(add(o, scale(x, (u0 + u1) / 2)), scale(y, (v0 + v1) / 2));
+    const normal = norm(faceInfo.plane.normal);
+    const flat = add(add(origin, scale(x, (u0 + u1) / 2)), scale(y, (v0 + v1) / 2));
 
-    return add(flat, scale(n, dot(sub(f.center, flat), n)));
+    return add(flat, scale(normal, dot(sub(faceInfo.center, flat), normal)));
   }
 
   private pickOf(body: string, face: number): Pick {
-    const f = this.app.view.body(body)?.faces[face];
+    const faceInfo = this.app.view.body(body)?.faces[face];
     let line: PickLine | null = null;
-    if (f?.round) {
+    if (faceInfo?.round) {
       const ax = roundAxis(this.app, body, face);
       if (ax) {
         line = { origin: ax.origin, dir: ax.dir, round: true };
       }
-    } else if (f?.plane) {
-      line = { origin: this.centroid(body, face) ?? f.center, dir: f.normal, round: false };
+    } else if (faceInfo?.plane) {
+      line = { origin: this.centroid(body, face) ?? faceInfo.center, dir: faceInfo.normal, round: false };
     }
     // Any other face that is turned round a line - a thread's flank, a cone: that line, found from its points.
-    else if (f) {
+    else if (faceInfo) {
       const b = this.app.view.body(body)!;
-      const g = b.faceGroups.find(x => x.face === face);
-      if (g) {
+      const faceGroup = b.faceGroups.find(faceGroup => faceGroup.face === face);
+      if (faceGroup) {
         const seen = new Set<number>();
         const pts: Vec3[] = [];
         const nrm: Vec3[] = [];
-        for (let k = g.start; k < g.start + g.count; k++) {
-          const i = b.indices[k];
+        for (let start = faceGroup.start; start < faceGroup.start + faceGroup.count; start++) {
+          const i = b.indices[start];
           if (seen.has(i)) {
             continue;
           }
@@ -399,44 +399,44 @@ export class AssemblyTool implements Tool {
     return { body, face, line };
   }
 
-  private faceAt(p: ToolPointer): { body: string; face: number; point: Vec3 } | null {
-    const h = this.app.view.facesAt(p.x, p.y)[0];
+  private faceAt(pointer: ToolPointer): { body: string; face: number; point: Vec3 } | null {
+    const firstFace = this.app.view.facesAt(pointer.x, pointer.y)[0];
 
-    return h && h.kind === 'face' ? { body: h.body, face: h.face, point: h.point } : null;
+    return firstFace && firstFace.kind === 'face' ? { body: firstFace.body, face: firstFace.face, point: firstFace.point } : null;
   }
 
-  hover(p: ToolPointer | null): void {
+  hover(pointer: ToolPointer | null): void {
     if (this.mode !== 'add') {
       return this.app.setHover(null);
     }
-    const h = p ? this.faceAt(p) : null;
-    this.app.setHover(h ? { kind: 'face', body: h.body, face: h.face } : null);
+    const hit = pointer ? this.faceAt(pointer) : null;
+    this.app.setHover(hit ? { kind: 'face', body: hit.body, face: hit.face } : null);
   }
 
-  tap(p: ToolPointer): void {
-    const h = this.faceAt(p);
+  tap(pointer: ToolPointer): void {
+    const face = this.faceAt(pointer);
     if (this.mode === 'add') {
-      if (!h) {
+      if (!face) {
         return;
       }
       if (!this.first) {
-        this.first = this.pickOf(h.body, h.face);
-        this.app.setSelection([{ kind: 'face', body: h.body, face: h.face }]);
+        this.first = this.pickOf(face.body, face.face);
+        this.app.setSelection([{ kind: 'face', body: face.body, face: face.face }]);
 
         return this.render();
       }
-      if (h.body === this.first.body) {
+      if (face.body === this.first.body) {
         return this.app.ui.toast('Tap a face of another part: a joint is between two');
       }
 
-      return this.make(this.first, this.pickOf(h.body, h.face));
+      return this.make(this.first, this.pickOf(face.body, face.face));
     }
     // A part tapped: the joint that holds it is opened. Nothing tapped: back to the list.
-    if (!h) {
+    if (!face) {
       return this.mode === 'edit' ? this.toList() : undefined;
     }
     const t = tree(this.liveJoints(), this.bodies, this.app.store.doc.ground);
-    const j = t.up.get(h.body)?.joint ?? this.joints.find(x => x.a === h.body || x.b === h.body);
+    const j = t.up.get(face.body)?.joint ?? this.joints.find(joint => joint.a === face.body || joint.b === face.body);
     if (j) {
       this.open(j.id);
     } else {
@@ -447,20 +447,20 @@ export class AssemblyTool implements Tool {
   // ------------------------------------------------------------------ joints made and changed
 
   private change(mutate: (joints: Joint[]) => void): void {
-    this.app.store.commit((d) => {
-      d.joints ??= [];
-      mutate(d.joints);
-      if (!d.joints.length) {
-        delete d.joints;
+    this.app.store.commit((draft) => {
+      draft.joints ??= [];
+      mutate(draft.joints);
+      if (!draft.joints.length) {
+        delete draft.joints;
       }
     });
   }
 
-  private patch(id: string, p: Partial<Joint>): void {
+  private patch(id: string, changes: Partial<Joint>): void {
     this.change((js) => {
-      const j = js.find(x => x.id === id);
+      const j = js.find(joint => joint.id === id);
       if (j) {
-        Object.assign(j, p);
+        Object.assign(j, changes);
       }
     });
     this.show();
@@ -469,21 +469,21 @@ export class AssemblyTool implements Tool {
 
   /** The pitch of a thread on either body (mm for each full turn), when one of them is threaded. */
   private threadOn(a: string, b: string): number | undefined {
-    const t = this.app.store.doc.features.find((f): f is ThreadFeature => f.type === 'thread' && !f.suppressed && (f.face.body === a || f.face.body === b));
+    const t = this.app.store.doc.features.find((feature): feature is ThreadFeature => feature.type === 'thread' && !feature.suppressed && (feature.face.body === a || feature.face.body === b));
 
     return t ? t.pitch * (t.starts ?? 1) : undefined;
   }
 
   private make(a: Pick, b: Pick): void {
-    const p = propose(a.line, b.line, this.threadOn(a.body, b.body));
-    const n = this.joints.length + 1;
+    const proposal = propose(a.line, b.line, this.threadOn(a.body, b.body));
+    const jointNumber = this.joints.length + 1;
     const refA = faceRefOf(this.app, a.line ? a : b) ?? undefined;
     const refB = faceRefOf(this.app, a.line ? b : a) ?? undefined;
-    const joint: Joint = { id: uid(), name: `Joint ${n}`, type: p.type, a: a.body, b: b.body, origin: p.origin, axis: p.axis, ...(p.pitch ? { pitch: p.pitch } : {}), ...(refA ? { refA } : {}), ...(refB ? { refB } : {}) };
+    const joint: Joint = { id: uid(), name: `Joint ${jointNumber}`, type: proposal.type, a: a.body, b: b.body, origin: proposal.origin, axis: proposal.axis, ...(proposal.pitch ? { pitch: proposal.pitch } : {}), ...(refA ? { refA } : {}), ...(refB ? { refB } : {}) };
     this.change(js => js.push(joint));
     this.first = null;
     this.app.setSelection([]);
-    this.app.ui.toast(`${JOINT_NAMES[p.type]} joint: ${this.nameOf(a.body)} and ${this.nameOf(b.body)}`);
+    this.app.ui.toast(`${JOINT_NAMES[proposal.type]} joint: ${this.nameOf(a.body)} and ${this.nameOf(b.body)}`);
     this.open(joint.id);
   }
 
@@ -519,14 +519,14 @@ export class AssemblyTool implements Tool {
     this.patch(j.id, { type, pitch, min: undefined, max: undefined, ...(type === 'fixed' ? { drive: undefined } : {}) });
   }
 
-  private setValue(j: Joint, v: number): void {
-    const d = driverOf(this.liveJoints(), j.id);
-    if (!d || !d.ratio) {
+  private setValue(j: Joint, value: number): void {
+    const driver = driverOf(this.liveJoints(), j.id);
+    if (!driver || !driver.ratio) {
       return;
     }
-    this.values[d.joint.id] = v / d.ratio;
+    this.values[driver.joint.id] = value / driver.ratio;
     // (Kept in its limits: what is stored is where it is.)
-    this.values[d.joint.id] = effective(this.liveJoints(), this.values)[d.joint.id] ?? 0;
+    this.values[driver.joint.id] = effective(this.liveJoints(), this.values)[driver.joint.id] ?? 0;
     this.show();
   }
 
@@ -536,91 +536,91 @@ export class AssemblyTool implements Tool {
     if (this.mode === 'add' || this.exploded > 0) {
       return false;
     }
-    const h = this.faceAt(from);
-    if (!h) {
+    const face = this.faceAt(from);
+    if (!face) {
       return false;
     }
     const joints = this.liveJoints();
     const t = tree(joints, this.bodies, this.app.store.doc.ground);
     // The joint that lets it move: its own, or - held fast to another part - that part's.
-    let body = h.body;
+    let body = face.body;
     let up = t.up.get(body);
     while (up && up.joint.type === 'fixed') {
       (body = up.parent), (up = t.up.get(body));
     }
     if (!up) {
-      if (joints.some(j => j.a === h.body || j.b === h.body)) {
+      if (joints.some(j => j.a === face.body || j.b === face.body)) {
         this.app.ui.toast('That part stands still: drag the part that moves against it');
       }
 
       return false;
     }
-    const d = driverOf(joints, up.joint.id);
-    if (!d || !d.ratio) {
+    const driver = driverOf(joints, up.joint.id);
+    if (!driver || !driver.ratio) {
       return false;
     }
     const poses = this.poses();
-    const m = poses.get(up.parent) ?? null;
-    const origin = m ? apply(m, up.joint.origin) : up.joint.origin;
-    const axis = norm(m ? turn(m, up.joint.axis) : up.joint.axis);
+    const matrix = poses.get(up.parent) ?? null;
+    const origin = matrix ? apply(matrix, up.joint.origin) : up.joint.origin;
+    const axis = norm(matrix ? turn(matrix, up.joint.axis) : up.joint.axis);
     // Stop on contact: what is in each other already is left to be (parts modelled into each other, or touching).
     const stood = stopOnContact ? this.standing(poses) : new Map<string, Mat4>();
     const inEachOther = stopOnContact ? this.clashes(stood) : new Set<string>();
-    this.dragging = { from, joint: up.joint, driver: d.joint, ratio: d.ratio, sign: up.joint.b === body ? 1 : -1, v0: effective(joints, this.values)[up.joint.id] ?? 0, grab: h.point, origin, axis, turned: 0, last: null, inEachOther, stood, free: this.values[d.joint.id] ?? 0 };
+    this.dragging = { from, joint: up.joint, driver: driver.joint, ratio: driver.ratio, sign: up.joint.b === body ? 1 : -1, v0: effective(joints, this.values)[up.joint.id] ?? 0, grab: face.point, origin, axis, turned: 0, last: null, inEachOther, stood, free: this.values[driver.joint.id] ?? 0 };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
-    const g = this.dragging;
-    if (!g) {
+  drag(pointer: ToolPointer): void {
+    const dragging = this.dragging;
+    if (!dragging) {
       return;
     }
     let moved: number;
-    if (g.joint.type === 'slide') {
-      moved = axisDrag(this.app.view, g.grab, g.axis, g.from, p);
+    if (dragging.joint.type === 'slide') {
+      moved = axisDrag(this.app.view, dragging.grab, dragging.axis, dragging.from, pointer);
     } else {
       // Round the line. Seen along it (enough): by where the pointer is on the plane across it, turn by turn.
       // Seen from the side: by how far the pointer went the way the grabbed point goes round.
-      const centre = add(g.origin, scale(g.axis, dot(sub(g.grab, g.origin), g.axis)));
-      const arm = sub(g.grab, centre);
-      const ray = this.app.view.pointerRay(p.x, p.y);
-      const facing = dot(ray.d, g.axis);
+      const centre = add(dragging.origin, scale(dragging.axis, dot(sub(dragging.grab, dragging.origin), dragging.axis)));
+      const arm = sub(dragging.grab, centre);
+      const ray = this.app.view.pointerRay(pointer.x, pointer.y);
+      const facing = dot(ray.d, dragging.axis);
       if (Math.abs(facing) > 0.3 && len(arm) > 1e-6) {
-        const s = dot(sub(centre, ray.o), g.axis) / facing;
-        const at = sub(add(ray.o, scale(ray.d, s)), centre);
-        const prev = g.last ?? arm;
-        g.turned += (Math.atan2(dot(cross(prev, at), g.axis), dot(prev, at)) * 180) / Math.PI;
-        g.last = at;
-        moved = g.turned;
+        const distance = dot(sub(centre, ray.o), dragging.axis) / facing;
+        const at = sub(add(ray.o, scale(ray.d, distance)), centre);
+        const prev = dragging.last ?? arm;
+        dragging.turned += (Math.atan2(dot(cross(prev, at), dragging.axis), dot(prev, at)) * 180) / Math.PI;
+        dragging.last = at;
+        moved = dragging.turned;
       } else {
-        const r = len(arm) || 1;
-        moved = (axisDrag(this.app.view, g.grab, norm(cross(g.axis, arm)), g.from, p) / r) * (180 / Math.PI);
+        const armLength = len(arm) || 1;
+        moved = (axisDrag(this.app.view, dragging.grab, norm(cross(dragging.axis, arm)), dragging.from, pointer) / armLength) * (180 / Math.PI);
       }
     }
-    const want = g.v0 + g.sign * moved;
-    this.values[g.driver.id] = want / g.ratio;
+    const want = dragging.v0 + dragging.sign * moved;
+    this.values[dragging.driver.id] = want / dragging.ratio;
     // (Kept in the limits: what is stored is what it is, so the next drag starts from there.)
-    let v = effective(this.liveJoints(), this.values);
-    this.values[g.driver.id] = v[g.driver.id];
+    let values = effective(this.liveJoints(), this.values);
+    this.values[dragging.driver.id] = values[dragging.driver.id];
     // Stop on contact: a move that runs a part into another goes only as far as it can - found by halving, between
     // the last value nothing was run into at and the one asked for.
     let stopped = false;
     if (stopOnContact) {
       const hits = (value: number): boolean => {
-        this.values[g.driver.id] = value;
+        this.values[dragging.driver.id] = value;
 
-        return this.clashes(this.standing(this.poses()), g.stood, g.inEachOther).size > 0;
+        return this.clashes(this.standing(this.poses()), dragging.stood, dragging.inEachOther).size > 0;
       };
-      const asked = this.values[g.driver.id];
+      const asked = this.values[dragging.driver.id];
       // (The way there is gone in steps - a millimetre, or three degrees, of the dragged joint - so a part is not
       // carried through another and out of its far side by one long move.)
-      const pace = (g.joint.type === 'slide' ? 1 : 3) / Math.abs(g.ratio || 1);
-      const steps = Math.min(40, Math.max(1, Math.ceil(Math.abs(asked - g.free) / pace)));
-      let lo = g.free;
+      const pace = (dragging.joint.type === 'slide' ? 1 : 3) / Math.abs(dragging.ratio || 1);
+      const steps = Math.min(40, Math.max(1, Math.ceil(Math.abs(asked - dragging.free) / pace)));
+      let lo = dragging.free;
       let hi: number | null = null;
       for (let i = 1; i <= steps; i++) {
-        const at = g.free + ((asked - g.free) * i) / steps;
+        const at = dragging.free + ((asked - dragging.free) * i) / steps;
         if (hits(at)) {
           hi = at;
           break;
@@ -639,13 +639,13 @@ export class AssemblyTool implements Tool {
           }
         }
       }
-      this.values[g.driver.id] = lo;
-      g.free = this.values[g.driver.id];
-      v = effective(this.liveJoints(), this.values);
+      this.values[dragging.driver.id] = lo;
+      dragging.free = this.values[dragging.driver.id];
+      values = effective(this.liveJoints(), this.values);
     }
     this.show();
-    const now = v[g.joint.id] ?? 0;
-    this.app.ui.setLabel(p.x, p.y, `${g.joint.type === 'slide' ? fmtLen(now) : `${+now.toFixed(1)}°`}${stopped ? ' · contact' : ''}`);
+    const now = values[dragging.joint.id] ?? 0;
+    this.app.ui.setLabel(pointer.x, pointer.y, `${dragging.joint.type === 'slide' ? fmtLen(now) : `${+now.toFixed(1)}°`}${stopped ? ' · contact' : ''}`);
   }
 
   up(): void {
@@ -659,11 +659,11 @@ export class AssemblyTool implements Tool {
   }
 
   breakOff(): void {
-    const g = this.dragging;
-    if (!g) {
+    const dragging = this.dragging;
+    if (!dragging) {
       return;
     }
-    this.values[g.driver.id] = (g.v0 * 1) / g.ratio;
+    this.values[dragging.driver.id] = (dragging.v0 * 1) / dragging.ratio;
     this.dragging = null;
     this.app.ui.setLabel(0, 0, null);
     this.show();
@@ -687,29 +687,29 @@ export class AssemblyTool implements Tool {
 
       return;
     }
-    const j0 = this.mode === 'edit' ? joints.find(x => x.id === this.editing) : undefined;
+    const j0 = this.mode === 'edit' ? joints.find(joint => joint.id === this.editing) : undefined;
     if (j0) {
       const j = j0;
       const turns = j.type === 'hinge' || j.type === 'screw';
       const now = effective(this.liveJoints(), this.values)[j.id] ?? 0;
       const limited = j.min !== undefined || j.max !== undefined;
-      const others = joints.filter(x => x.id !== j.id && x.type !== 'fixed' && x.drive?.joint !== j.id);
+      const others = joints.filter(joint => joint.id !== j.id && joint.type !== 'fixed' && joint.drive?.joint !== j.id);
       const items: PanelItem[] = [{ type: 'choice', label: 'Type', list: true, options: (Object.keys(JOINT_NAMES) as JointType[]).map(id => ({ id, label: JOINT_NAMES[id] })), value: j.type, onChange: id => this.setType(j, id as JointType) }];
       if (j.type !== 'fixed') {
-        items.push({ type: 'number', label: turns ? 'Angle' : 'Distance', value: now, kind: turns ? 'angle' : 'length', onInput: v => (this.setValue(j, v), this.save(), this.render()) });
+        items.push({ type: 'number', label: turns ? 'Angle' : 'Distance', value: now, kind: turns ? 'angle' : 'length', onInput: value => (this.setValue(j, value), this.save(), this.render()) });
         if (j.type === 'screw') {
-          items.push({ type: 'number', label: 'Pitch', value: j.pitch ?? 1.5, kind: 'length', min: 0.01, onInput: v => v > 0 && this.patch(j.id, { pitch: v }) });
+          items.push({ type: 'number', label: 'Pitch', value: j.pitch ?? 1.5, kind: 'length', min: 0.01, onInput: pitch => pitch > 0 && this.patch(j.id, { pitch: pitch }) });
         }
         items.push({ type: 'toggle', label: 'Limits', value: limited, onChange: on => this.patch(j.id, on ? { min: turns ? 0 : 0, max: turns ? 90 : 20 } : { min: undefined, max: undefined }) });
         if (limited) {
-          items.push({ type: 'number', label: 'From', value: j.min ?? 0, kind: turns ? 'angle' : 'length', onInput: v => this.patch(j.id, { min: Math.min(v, j.max ?? v) }) });
-          items.push({ type: 'number', label: 'To', value: j.max ?? 0, kind: turns ? 'angle' : 'length', onInput: v => this.patch(j.id, { max: Math.max(v, j.min ?? v) }) });
+          items.push({ type: 'number', label: 'From', value: j.min ?? 0, kind: turns ? 'angle' : 'length', onInput: value => this.patch(j.id, { min: Math.min(value, j.max ?? value) }) });
+          items.push({ type: 'number', label: 'To', value: j.max ?? 0, kind: turns ? 'angle' : 'length', onInput: value => this.patch(j.id, { max: Math.max(value, j.min ?? value) }) });
         }
         items.push({ type: 'button', label: 'Flip', icon: 'flip', onClick: () => this.patch(j.id, { axis: scale(j.axis, -1) }) });
         if (others.length) {
-          items.push({ type: 'choice', label: 'Follows', list: true, options: [{ id: '', label: 'Nothing' }, ...others.map(x => ({ id: x.id, label: x.name }))], value: j.drive?.joint ?? '', onChange: id => this.patch(j.id, { drive: id ? { joint: id, ratio: j.drive?.ratio ?? 1 } : undefined }) });
+          items.push({ type: 'choice', label: 'Follows', list: true, options: [{ id: '', label: 'Nothing' }, ...others.map(other => ({ id: other.id, label: other.name }))], value: j.drive?.joint ?? '', onChange: id => this.patch(j.id, { drive: id ? { joint: id, ratio: j.drive?.ratio ?? 1 } : undefined }) });
           if (j.drive) {
-            items.push({ type: 'number', label: 'Ratio', value: j.drive.ratio, kind: 'number', onInput: v => v && this.patch(j.id, { drive: { joint: j.drive!.joint, ratio: v } }) });
+            items.push({ type: 'number', label: 'Ratio', value: j.drive.ratio, kind: 'number', onInput: ratio => ratio && this.patch(j.id, { drive: { joint: j.drive!.joint, ratio: ratio } }) });
           }
         }
       }
@@ -725,7 +725,7 @@ export class AssemblyTool implements Tool {
             icon: 'trash',
             run: () => {
               this.change((js) => {
-                const i = js.findIndex(x => x.id === j.id);
+                const i = js.findIndex(joint => joint.id === j.id);
                 if (i >= 0) {
                   js.splice(i, 1);
                 }
@@ -746,17 +746,17 @@ export class AssemblyTool implements Tool {
       return;
     }
     this.mode = 'list';
-    const held = [...new Set(joints.flatMap(x => [x.a, x.b]))].filter(b => this.app.view.body(b));
+    const held = [...new Set(joints.flatMap(joint => [joint.a, joint.b]))].filter(b => this.app.view.body(b));
     const ground = this.app.store.doc.ground && held.includes(this.app.store.doc.ground) ? this.app.store.doc.ground : (tree(joints, this.bodies).roots[0] ?? '');
-    const moved = this.exploded > 0 || Object.values(this.values).some(v => Math.abs(v) > 1e-9);
+    const moved = this.exploded > 0 || Object.values(this.values).some(value => Math.abs(value) > 1e-9);
     const items: PanelItem[] = [
       { type: 'button', label: 'Add joint', icon: 'assembly', primary: !joints.length, onClick: () => (this.home(), (this.mode = 'add'), (this.first = null), this.render()) },
-      { type: 'chips', label: 'Joints', empty: 'None yet', chips: joints.map(x => ({ label: `${x.name} · ${JOINT_NAMES[x.type]}`, title: `${this.nameOf(x.a)} and ${this.nameOf(x.b)}`, onClick: () => this.open(x.id) })) }
+      { type: 'chips', label: 'Joints', empty: 'None yet', chips: joints.map(joint => ({ label: `${joint.name} · ${JOINT_NAMES[joint.type]}`, title: `${this.nameOf(joint.a)} and ${this.nameOf(joint.b)}`, onClick: () => this.open(joint.id) })) }
     ];
     if (joints.length) {
-      items.push({ type: 'slider', label: 'Explode', value: Math.round(this.exploded * 100), min: 0, max: 100, step: 1, show: v => `${v}%`, onInput: v => ((this.exploded = v / 100), this.show()) });
+      items.push({ type: 'slider', label: 'Explode', value: Math.round(this.exploded * 100), min: 0, max: 100, step: 1, show: percent => `${percent}%`, onInput: percent => ((this.exploded = percent / 100), this.show()) });
       if (held.length > 1) {
-        items.push({ type: 'choice', label: 'Stands still', list: true, options: held.map(b => ({ id: b, label: this.nameOf(b) })), value: ground, onChange: id => (this.app.store.commit(d => void (d.ground = id)), this.show(), this.render()) });
+        items.push({ type: 'choice', label: 'Stands still', list: true, options: held.map(b => ({ id: b, label: this.nameOf(b) })), value: ground, onChange: id => (this.app.store.commit(draft => void (draft.ground = id)), this.show(), this.render()) });
       }
       items.push({ type: 'toggle', label: 'Stop on contact', value: stopOnContact, onChange: on => ((stopOnContact = on), this.render()) });
       if (moved) {

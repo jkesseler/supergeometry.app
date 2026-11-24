@@ -25,10 +25,10 @@ for (const [name, entities, plane] of cases) {
   try {
     const arr = arrangement(entities);
     const faces = regionFaces(entities, plane, arr.regions.map(regionRef));
-    const out = faces.map((f, i) => {
-      const s = basicFaceExtrusion(f, new Vector(plane.normal).multiply(5));
+    const out = faces.map((face, i) => {
+      const solid = basicFaceExtrusion(face, new Vector(plane.normal).multiply(5));
 
-      return `${measureArea(f).toFixed(2)}/${arr.regions[i].area.toFixed(2)}:${s.faces.length}f`;
+      return `${measureArea(face).toFixed(2)}/${arr.regions[i].area.toFixed(2)}:${solid.faces.length}f`;
     });
     console.log('ok  ', name, out.join(' '));
   } catch (e) {

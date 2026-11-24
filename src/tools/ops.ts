@@ -46,10 +46,10 @@ const anyBody = (app: AppContext, self?: string) => app.view.bodyList.some(b => 
  */
 function modeChoice<M extends Mode>(get: () => M, set: (m: M) => void, rerender: () => void, plain = false, auto?: () => string): PanelItem {
   const effect = auto?.();
-  const options = (plain ? MODES.filter(m => m.id !== 'intersect') : MODES).map(m => (m.id === 'auto' && effect ? { id: m.id, label: `Auto: ${effect}` } : m));
+  const options = (plain ? MODES.filter(mode => mode.id !== 'intersect') : MODES).map(mode => (mode.id === 'auto' && effect ? { id: mode.id, label: `Auto: ${effect}` } : mode));
   const now = get();
 
-  return { type: 'choice', label: 'Operation', options, value: now, onChange: m => (set(m as M), rerender()) };
+  return { type: 'choice', label: 'Operation', options, value: now, onChange: mode => (set(mode as M), rerender()) };
 }
 
 /** What Auto does for a revolve, sweep or loft: adds to the body it is drawn on, else a body of its own. */
@@ -98,17 +98,17 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
       this.slots = [this.upToSlot()];
     }
     if (source.kind === 'face') {
-      const k = faceIndexOf(app, source.face);
-      if (k !== null) {
-        this.thick = oppositeFace(app, source.face.body, k);
+      const faceIndex = faceIndexOf(app, source.face);
+      if (faceIndex !== null) {
+        this.thick = oppositeFace(app, source.face.body, faceIndex);
       }
     }
     this.measure = this.thick ? (opts.measure ?? 'total') : 'offset';
     // A digit typed on a selected face: the value so far (Total: the wall it leaves).
     if (opts.typed !== undefined && opts.distance === undefined && !existing) {
-      const v = Number(opts.typed);
-      if (Number.isFinite(v) && v > 0) {
-        this.feature.distance = this.measure === 'total' && this.thick ? v - this.thick.distance : v;
+      const value = Number(opts.typed);
+      if (Number.isFinite(value) && value > 0) {
+        this.feature.distance = this.measure === 'total' && this.thick ? value - this.thick.distance : value;
       }
     }
     if (opts.expr && !existing) {
@@ -122,14 +122,14 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
 
   /** A variable picked for the value: total thickness = that variable (or the offset, in Offset mode). */
   private useVariable(name: string): void {
-    const v = evaluate(name, 'length');
-    if (v === null) {
+    const value = evaluate(name, 'length');
+    if (value === null) {
       return;
     }
     const total = this.measure === 'total' && this.thick;
-    const d = total ? v - this.thick!.distance : v;
+    const distance = total ? value - this.thick!.distance : value;
     this.feature.exprs = { ...(this.feature.exprs ?? {}), distance: total ? `${name} - ${Math.round(this.thick!.distance * 1e6) / 1e6}mm` : name };
-    this.setDistance(d);
+    this.setDistance(distance);
     this.render();
   }
 
@@ -145,7 +145,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
       ]);
     } else if (!this.existing) {
       const src = this.feature.source;
-      const sections: ExtrudeSource[] = src.kind === 'profile' ? src.regions.map(r => ({ ...src, regions: [r] })) : [src];
+      const sections: ExtrudeSource[] = src.kind === 'profile' ? src.regions.map(region => ({ ...src, regions: [region] })) : [src];
       this.app.ui.setTools([
         ...(screenClass() === 'phone' ? [{ id: 'cancel', label: 'Cancel', icon: 'close' as const, shortcut: 'Esc', run: () => this.cancel() }] : []),
         { id: 'extrude', label: 'Extrude', icon: 'extrude', active: true, sub: 'drag the arrow', run: () => {} },
@@ -166,19 +166,19 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
       value: this.shown(),
       modes: this.thick ? [{ id: 'total', label: 'Total' }, { id: 'offset', label: 'Offset' }] : undefined,
       mode: this.measure,
-      onMode: (m) => {
-        this.measure = m as 'total' | 'offset';
+      onMode: (mode) => {
+        this.measure = mode as 'total' | 'offset';
         this.dim?.setValue(this.shown());
         this.onDraftChanged();
       },
-      onInput: (v, text) => {
+      onInput: (value, text) => {
         const total = this.measure === 'total' && this.thick;
         this.typedInto('distance', text, t => (total ? `${t} - ${Math.round(this.thick!.distance * 1e6) / 1e6}mm` : t));
-        this.setDistance(total ? v - this.thick!.distance : v);
+        this.setDistance(total ? value - this.thick!.distance : value);
       },
       onCommit: () => this.done(),
       onPin: () => this.pin(),
-      variables: this.app.store.doc.variables.map(v => v.name),
+      variables: this.app.store.doc.variables.map(variable => variable.name),
       onVariable: name => this.useVariable(name),
       typed: this.opts.typed,
       focus: this.opts.typed !== undefined
@@ -246,7 +246,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
   protected items(): PanelItem[] {
     const src = this.feature.source;
     // Symmetric: what's typed goes each way (30 typed made a clamp 60 wide, the box said "Distance").
-    const distance = this.num(this.feature.symmetric && !this.offsetsFace() ? 'Each side' : 'Distance', 'distance', 'length', { onInput: v => this.setDistance(v), inBox: true });
+    const distance = this.num(this.feature.symmetric && !this.offsetsFace() ? 'Each side' : 'Distance', 'distance', 'length', { onInput: value => this.setDistance(value), inBox: true });
     // (No Join / Cut / New or taper: those make it an extrusion.)
     if (this.offsetsFace()) {
       return [distance];
@@ -276,7 +276,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
       ...(anyBody(this.app, this.feature.id)
         ? [modeChoice(
           () => this.feature.mode,
-          m => this.setMode(m),
+          mode => this.setMode(mode),
           () => this.render(),
           false,
           () => (this.shownEffect = this.autoEffect())
@@ -299,9 +299,9 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
         // fraction it stands for ("(…) / 100"), shown as typed.
         expr: /^\((.*)\) \/ 100$/.exec(this.feature.exprs?.taper ?? '')?.[1] ?? (this.feature.exprs?.taper ? `(${this.feature.exprs.taper}) * 100` : undefined),
         onExpr: (x: string | null) => this.typedInto('taper', x ?? '', t => `(${t}) / 100`),
-        onInput: (v: number) => {
+        onInput: (value: number) => {
           // Up to 10 times as big (a lamp shade from a narrow neck flares more than 3 times).
-          const t = Math.min(1000, v) / 100;
+          const t = Math.min(1000, value) / 100;
           this.feature.taper = Math.abs(t - 1) < 1e-9 ? undefined : t;
           this.onDraftChanged();
         }
@@ -309,15 +309,15 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
     ];
   }
 
-  private setMode(m: Mode): void {
-    this.feature.mode = m;
+  private setMode(mode: Mode): void {
+    this.feature.mode = mode;
     // Through all with no way picked yet: a cut goes into the body.
     if (this.feature.extent === 'through' && !this.throughFlipped) {
-      this.feature.distance = this.throughInto(m) ? -1 : 1;
+      this.feature.distance = this.throughInto(mode) ? -1 : 1;
     }
     // A new body from a face (a spire on a tower): its own height is what's typed,
     // not the total through the body - 68 typed came out 102 down into the tower.
-    if (m === 'new' && this.measure === 'total') {
+    if (mode === 'new' && this.measure === 'total') {
       this.measure = 'offset';
       this.dim?.setMode('offset');
       this.dim?.setValue(this.shown());
@@ -336,11 +336,11 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
   private opsSig = '';
 
   private showOps(): void {
-    const f = this.feature;
-    const fromFace = (f.source.kind === 'face' || !!f.target) && (f.extent ?? 'distance') === 'distance' && !f.symmetric;
-    const out = f.distance >= 0;
-    const now = f.mode === 'auto' ? ({ Add: 'join', Cut: 'cut', 'New body': 'new' } as Record<string, Mode>)[this.autoEffect()] ?? 'auto' : f.mode;
-    const sig = fromFace && f.distance !== 0 ? `${out}|${now}` : '';
+    const feature = this.feature;
+    const fromFace = (feature.source.kind === 'face' || !!feature.target) && (feature.extent ?? 'distance') === 'distance' && !feature.symmetric;
+    const out = feature.distance >= 0;
+    const now = feature.mode === 'auto' ? ({ Add: 'join', Cut: 'cut', 'New body': 'new' } as Record<string, Mode>)[this.autoEffect()] ?? 'auto' : feature.mode;
+    const sig = fromFace && feature.distance !== 0 ? `${out}|${now}` : '';
     if (sig === this.opsSig) {
       return;
     }
@@ -350,8 +350,8 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
     if (!sig) {
       return;
     }
-    const pick = (m: Mode) => () => {
-      this.setMode(m);
+    const pick = (mode: Mode) => () => {
+      this.setMode(mode);
       this.setHint();
       this.render();
     };
@@ -367,8 +367,8 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
           { id: 'new', label: 'New body', icon: 'newBody' }
         ]
     ).map(it => ({ ...it, icon: it.icon as ToolItem['icon'], active: it.id === now, run: pick(it.id as Mode) }));
-    const n = this.frame.normal;
-    this.ops = QuickActions.of(this.app.view, items, this.frame.base, { facing: out ? n : [-n[0], -n[1], -n[2]], hideBack: false });
+    const normal = this.frame.normal;
+    this.ops = QuickActions.of(this.app.view, items, this.frame.base, { facing: out ? normal : [-normal[0], -normal[1], -normal[2]], hideBack: false });
   }
 
   /**
@@ -376,8 +376,8 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
    * plane), where it starts, and how much its sides lean (a draft).
    */
   private extentItems(): PanelItem[] {
-    const f = this.feature;
-    const ext = f.extent ?? 'distance';
+    const feature = this.feature;
+    const ext = feature.extent ?? 'distance';
 
     return [
       {
@@ -386,7 +386,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
         // (Through all: through the bodies there are - with none, not offered.)
         options: [
           { id: 'distance', label: 'Distance' },
-          ...(ext === 'through' || anyBody(this.app, f.id) ? [{ id: 'through', label: 'Through all' }] : []),
+          ...(ext === 'through' || anyBody(this.app, feature.id) ? [{ id: 'through', label: 'Through all' }] : []),
           { id: 'to', label: 'Up to' }
         ],
         value: ext,
@@ -394,18 +394,18 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
       },
       // Through all: which way (the arrow's).
       ...(ext === 'through'
-        ? [{ type: 'button' as const, label: 'Flip direction', onClick: () => ((this.throughFlipped = true), (f.distance = -(f.distance || 1)), this.onDraftChanged(), this.render(), this.update()) }]
+        ? [{ type: 'button' as const, label: 'Flip direction', onClick: () => ((this.throughFlipped = true), (feature.distance = -(feature.distance || 1)), this.onDraftChanged(), this.render(), this.update()) }]
         : [])
     ];
   }
 
   /** Where it starts (from the shape, along its normal) and how far its sides lean. */
   private startDraftItems(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
 
     return [
-      this.num('Start', 'start', 'length', { onInput: v => ((f.start = v || undefined), this.onDraftChanged(), this.update()) }),
-      this.num('Draft angle', 'draft', 'angle', { onInput: v => ((f.draft = v || undefined), this.update()) })
+      this.num('Start', 'start', 'length', { onInput: value => ((feature.start = value || undefined), this.onDraftChanged(), this.update()) }),
+      this.num('Draft angle', 'draft', 'angle', { onInput: value => ((feature.draft = value || undefined), this.update()) })
     ];
   }
 
@@ -427,25 +427,25 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
   }
 
   private setExtent(ext: 'distance' | 'through' | 'to'): void {
-    const f = this.feature;
-    f.extent = ext === 'distance' ? undefined : ext;
+    const feature = this.feature;
+    feature.extent = ext === 'distance' ? undefined : ext;
     if (ext !== 'to') {
-      f.to = undefined;
+      feature.to = undefined;
     }
     // Up to: a face or plane to pick (the next tap takes it).
     this.slots = ext === 'to' ? [this.upToSlot()] : [];
-    this.active = ext === 'to' && !f.to ? 0 : -1;
-    if (ext === 'to' && f.symmetric) {
-      f.symmetric = undefined;
+    this.active = ext === 'to' && !feature.to ? 0 : -1;
+    if (ext === 'to' && feature.symmetric) {
+      feature.symmetric = undefined;
     }
-    if (ext === 'distance' && !f.distance) {
-      f.distance = lastExtrude.distance;
+    if (ext === 'distance' && !feature.distance) {
+      feature.distance = lastExtrude.distance;
     }
     // Through all, no way picked yet: a cut goes into the body (a sketch on a
     // face faces out of it: a hole "through all" went off into the air, cut nothing).
     // (So does Auto on a body's face: up off it, Through all only made a tower 350 high.)
-    if (ext === 'through' && !this.throughFlipped && (!f.distance || this.throughInto(f.mode))) {
-      f.distance = this.throughInto(f.mode) ? -1 : 1;
+    if (ext === 'through' && !this.throughFlipped && (!feature.distance || this.throughInto(feature.mode))) {
+      feature.distance = this.throughInto(feature.mode) ? -1 : 1;
     }
     this.onDraftChanged();
     this.render();
@@ -472,16 +472,16 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
       pick: { profiles: false, edges: false, planes: true },
       presets: [
         ...['XY', 'XZ', 'YZ'].map(id => ({ label: id, apply: () => take({ plane: this.app.view.planeOf(id)! }, `${id} plane`, null) })),
-        ...this.app.view.construction.planes.map(c => ({ label: c.name, apply: () => take({ plane: c.plane }, c.name, null) }))
+        ...this.app.view.construction.planes.map(plane => ({ label: plane.name, apply: () => take({ plane: plane.plane }, plane.name, null) }))
       ],
       shows: () => (shown ? [shown] : []),
       accept: (hit) => {
         if (hit.kind === 'plane') {
-          const p = this.app.view.planeOf(hit.id);
-          if (!p) {
+          const plane = this.app.view.planeOf(hit.id);
+          if (!plane) {
             return false;
           }
-          take({ plane: p }, ['XY', 'XZ', 'YZ'].includes(hit.id) ? `${hit.id} plane` : 'Plane', { kind: 'plane', id: hit.id });
+          take({ plane: plane }, ['XY', 'XZ', 'YZ'].includes(hit.id) ? `${hit.id} plane` : 'Plane', { kind: 'plane', id: hit.id });
 
           return true;
         }
@@ -513,7 +513,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
     }
     this.feature.source = { ...src, regions: regs.map(regionRef) };
     this.frame = sourceFrame(this.app, this.feature.source);
-    this.app.setSelection(regs.map(r => ({ kind: 'profile' as const, sketch: src.sketch, region: r.index })));
+    this.app.setSelection(regs.map(region => ({ kind: 'profile' as const, sketch: src.sketch, region: region.index })));
     this.app.ui.toast(`${regs.length} shapes`);
     this.onDraftChanged();
   }
@@ -538,12 +538,12 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
     super.exit();
   }
 
-  hover(p: ToolPointer | null): void {
-    const on = !!p && (!!this.dragging || this.handle.hit(p));
+  hover(pointer: ToolPointer | null): void {
+    const on = !!pointer && (!!this.dragging || this.handle.hit(pointer));
     this.handle.setHot(on);
     this.app.view.canvas.style.cursor = on ? 'grab' : '';
     if (!on) {
-      super.hover(p);
+      super.hover(pointer);
     }
   }
 
@@ -552,7 +552,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
    * (on a phone a tapped region opens Extrude straight away): it joins the
    * profile - tapped again, it leaves. So several regions go up together.
    */
-  tap(p: ToolPointer, count = 1): void {
+  tap(pointer: ToolPointer, count = 1): void {
     // The second tap of a double tap on a shape: open its sketch to edit it
     // (the first tap already opened Extrude, which took the second as "leave
     // the profile" - double-tapping to edit a shape worked only now and then).
@@ -560,12 +560,12 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
       // On its outline or inside it (the middle of a 7 × 2 blade section is
       // too far from its edges for a finger): the piece of it nearest the tap.
       // (Worked out on the sketch's plane: its curves aren't picked while Extrude is open.)
-      const sk = this.app.store.doc.features.find((f): f is SketchFeature => f.id === (this.feature.source as { sketch: string }).sketch && f.type === 'sketch');
-      const at = sk && this.app.view.rayToPlane(p.x, p.y, sk.plane);
+      const sk = this.app.store.doc.features.find((feature): feature is SketchFeature => feature.id === (this.feature.source as { sketch: string }).sketch && feature.type === 'sketch');
+      const at = sk && this.app.view.rayToPlane(pointer.x, pointer.y, sk.plane);
       if (sk && at) {
         const y = cross(sk.plane.normal, sk.plane.xDir);
-        const d = sub(at, sk.plane.origin);
-        const uv = [dot(d, sk.plane.xDir), dot(d, y)];
+        const offset = sub(at, sk.plane.origin);
+        const uv = [dot(offset, sk.plane.xDir), dot(offset, y)];
         let best: { id: string; d: number } | null = null;
         for (const e of sk.entities) {
           for (const poly of entityPolylines(e)) {
@@ -590,10 +590,10 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
         }
       }
     }
-    if (this.feature.distance === 0 && this.regionTap(p)) {
+    if (this.feature.distance === 0 && this.regionTap(pointer)) {
       return;
     }
-    super.tap(p);
+    super.tap(pointer);
   }
 
   protected regionsChanged(): void {
@@ -615,17 +615,17 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
    * before the tool is open. (On a phone a tap on a shape opens Extrude at once: the next thing a hand does is drag
    * the shape - which turned the view.)
    */
-  dragStart(p: ToolPointer): boolean {
+  dragStart(pointer: ToolPointer): boolean {
     if (this.dragging || this.feature.extent === 'to' || this.feature.extent === 'through') {
       return false;
     }
     const src = this.feature.source;
-    const hit = this.app.view.pick(p.x, p.y, { planes: false, axes: false, edgeTolPx: p.tol });
+    const hit = this.app.view.pick(pointer.x, pointer.y, { planes: false, axes: false, edgeTolPx: pointer.tol });
     const mine = src.kind === 'profile' ? hit?.kind === 'profile' && hit.sketch === src.sketch : hit?.kind === 'face' && hit.body === src.face.body && faceIndexOf(this.app, src.face) === hit.face;
     if (!mine) {
       return false;
     }
-    this.dragging = { from: p, d0: this.feature.distance };
+    this.dragging = { from: pointer, d0: this.feature.distance };
     this.handle.setHot(true);
 
     return true;
@@ -639,15 +639,15 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
     return this;
   }
 
-  down(p: ToolPointer): boolean {
+  down(pointer: ToolPointer): boolean {
     if (this.grabbed) {
       this.grabbed = false;
-      this.dragging = { from: p, d0: this.feature.distance };
+      this.dragging = { from: pointer, d0: this.feature.distance };
       this.handle.setHot(true);
 
       return true;
     }
-    if (!this.handle.hit(p)) {
+    if (!this.handle.hit(pointer)) {
       return false;
     }
     // The second tap of a double tap on a small shape lands on the arrow just
@@ -655,26 +655,26 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
     if (this.feature.distance === 0 && performance.now() - this.openedAt < 450) {
       return false;
     }
-    this.dragging = { from: p, d0: this.feature.distance };
+    this.dragging = { from: pointer, d0: this.feature.distance };
     this.handle.setHot(true);
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     if (!this.dragging) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     } // a typed value wins over the pointer
     const { d0, from } = this.dragging;
-    const raw = d0 + axisDrag(this.app.view, add(this.frame.base, scale(this.frame.normal, d0)), this.frame.normal, from, p);
+    const raw = d0 + axisDrag(this.app.view, add(this.frame.base, scale(this.frame.normal, d0)), this.frame.normal, from, pointer);
     const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4);
     this.typedInto('distance', '');
     this.setDistance(Math.round(raw / step) * step);
-    this.app.ui.setLabel(p.x, p.y, `${this.measure === 'total' && this.thick ? 'Total ' : ''}${fmtLen(this.shown())}  · type a value`);
+    this.app.ui.setLabel(pointer.x, pointer.y, `${this.measure === 'total' && this.thick ? 'Total ' : ''}${fmtLen(this.shown())}  · type a value`);
   }
 
   up(): void {
@@ -694,7 +694,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
 
     return this.typing.key(e, {
       kind: 'length',
-      apply: v => this.setDistance(this.measure === 'total' && this.thick ? v - this.thick.distance : v),
+      apply: value => this.setDistance(this.measure === 'total' && this.thick ? value - this.thick.distance : value),
       commit: () => ((this.dragging = null), this.done()),
       cancel: () => this.setDistance(dr.d0)
     });
@@ -702,14 +702,14 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
 
   /** What Auto does with the extrude as it is now. */
   private autoEffect(): string {
-    const f = this.feature;
-    const into = f.distance < 0;
+    const feature = this.feature;
+    const into = feature.distance < 0;
     // On a face of a body (a sketch on it, or the face itself pushed): out adds to it, in cuts it.
-    if (f.target || f.source.kind === 'face') {
+    if (feature.target || feature.source.kind === 'face') {
       return into ? 'Cut' : 'Add';
     }
     // On its own: going - it cuts what it runs into (a new body if nothing); + a new body (made before: a cut either way).
-    if (!f.byDirection) {
+    if (!feature.byDirection) {
       return this.app.view.bodyList.length ? 'Cut or new' : 'New body';
     }
 
@@ -720,8 +720,8 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
   private shownEffect = '';
   private exited = false;
 
-  private setDistance(d: number): void {
-    this.feature.distance = d;
+  private setDistance(distance: number): void {
+    this.feature.distance = distance;
     // Auto now does the other thing (dragged through the shape's plane, or
     // typed below 0): the Operation says so. (Against what it says, not the
     // distance before: the box writes the value in first - -8 typed for a
@@ -736,7 +736,7 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
         queueMicrotask(() => this.render());
       }
     }
-    this.app.ui.updatePanelValues([d]);
+    this.app.ui.updatePanelValues([distance]);
     this.dim?.setValue(this.shown());
     this.update();
     this.showOps();
@@ -777,25 +777,25 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
  */
 function withCircleKin(app: AppContext, edges: EdgeRef[]): EdgeRef[] {
   const out = [...edges];
-  const has = (body: string, m: Vec3) => out.some(e => e.body === body && Math.hypot(...sub(e.mid, m)) < 1e-6);
+  const has = (body: string, midpoint: Vec3) => out.some(e => e.body === body && Math.hypot(...sub(e.mid, midpoint)) < 1e-6);
   for (const e of edges) {
     const all = app.view.body(e.body)?.edges;
-    const me = all?.find(x => Math.hypot(...sub(x.mid, e.mid)) < 1e-6);
+    const me = all?.find(edgeInfo => Math.hypot(...sub(edgeInfo.mid, e.mid)) < 1e-6);
     if (!all || !me || me.type !== 'CIRCLE') {
       continue;
     }
     // The circle through its ends and middle (a whole circle, its ends one point, is already whole).
     const a = sub(me.start, me.end), b = sub(me.mid, me.end);
-    const n = cross(a, b);
-    const nn = dot(n, n);
+    const normal = cross(a, b);
+    const nn = dot(normal, normal);
     if (nn < 1e-12 || Math.hypot(...a) < 1e-6) {
       continue;
     }
-    const c = add(me.end, scale(cross(sub(scale(b, dot(a, a)), scale(a, dot(b, b))), n), 1 / (2 * nn)));
-    const r = Math.hypot(...sub(me.mid, c));
-    const axis = norm(n);
-    const tol = 1e-5 * Math.max(1, r);
-    const on = (q: Vec3) => Math.abs(Math.hypot(...sub(q, c)) - r) < tol && Math.abs(dot(sub(q, c), axis)) < tol;
+    const center = add(me.end, scale(cross(sub(scale(b, dot(a, a)), scale(a, dot(b, b))), normal), 1 / (2 * nn)));
+    const radius = Math.hypot(...sub(me.mid, center));
+    const axis = norm(normal);
+    const tol = 1e-5 * Math.max(1, radius);
+    const on = (q: Vec3) => Math.abs(Math.hypot(...sub(q, center)) - radius) < tol && Math.abs(dot(sub(q, center), axis)) < tol;
     for (const x of all) {
       if (x.type !== 'CIRCLE' || !on(x.start) || !on(x.mid) || !on(x.end) || has(e.body, x.mid)) {
         continue;
@@ -821,8 +821,8 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
     // Started from a variable: the size is that variable (and follows it when it changes).
     // Started by typing: the first digit is the size so far.
     const t = typed !== undefined && !variable ? Number(typed) : NaN;
-    const v = variable ? evaluate(variable, 'length') : t > 0 ? t : null;
-    super(app, { ...app.store.newIdentity(kind), type: kind, edges: existing ? edges : withCircleKin(app, edges), radius: v ?? 1, ...(variable && v !== null ? { exprs: { radius: variable } } : {}) }, existing);
+    const value = variable ? evaluate(variable, 'length') : t > 0 ? t : null;
+    super(app, { ...app.store.newIdentity(kind), type: kind, edges: existing ? edges : withCircleKin(app, edges), radius: value ?? 1, ...(variable && value !== null ? { exprs: { radius: variable } } : {}) }, existing);
     this.id = kind;
     this.typed = typed;
     this.names = { fillet: existing?.type === 'fillet' ? existing.name : app.store.newIdentity('fillet').name, chamfer: existing?.type === 'chamfer' ? existing.name : app.store.newIdentity('chamfer').name };
@@ -850,13 +850,13 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
     // Fillet: one radius, or one that runs from a start radius to an end one.
     // Chamfer: the same distance along both faces, or a different one along each.
-    const fillet = f.type === 'fillet';
-    const two = fillet ? f.radius2 !== undefined : f.distance2 !== undefined;
-    const word = f.chord ? 'width' : 'radius';
-    const size = this.num(fillet ? (two ? `Start ${word}` : f.chord ? 'Width' : 'Radius') : two ? 'Distance 1' : 'Distance', 'radius', 'length', { min: 0.0001, onInput: v => this.setRadius(v), inBox: true });
+    const fillet = feature.type === 'fillet';
+    const two = fillet ? feature.radius2 !== undefined : feature.distance2 !== undefined;
+    const word = feature.chord ? 'width' : 'radius';
+    const size = this.num(fillet ? (two ? `Start ${word}` : feature.chord ? 'Width' : 'Radius') : two ? 'Distance 1' : 'Distance', 'radius', 'length', { min: 0.0001, onInput: value => this.setRadius(value), inBox: true });
     // Fillet size: the radius, or the chord - straight across the round, face to face.
     // Round (circular) or Smooth (G2: the bend eases in from the faces).
     const blend: PanelItem = {
@@ -866,17 +866,17 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
         { id: 'round', label: 'Round' },
         { id: 'g2', label: 'Smooth (G2)' }
       ],
-      value: f.g2 ? 'g2' : 'round',
+      value: feature.g2 ? 'g2' : 'round',
       onChange: (id) => {
-        f.g2 = id === 'g2' || undefined;
-        if (f.g2) {
-          ((f.radius2 = undefined), (f.chord = undefined), (f.flip = undefined));
+        feature.g2 = id === 'g2' || undefined;
+        if (feature.g2) {
+          ((feature.radius2 = undefined), (feature.chord = undefined), (feature.flip = undefined));
         }
         this.render();
         this.update();
       }
     };
-    if (fillet && f.g2) {
+    if (fillet && feature.g2) {
       return [blend, size];
     }
     const sizeBy: PanelItem[] = fillet
@@ -889,9 +889,9 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
             { id: 'radius', label: 'Radius' },
             { id: 'chord', label: 'Chord width' }
           ],
-          value: f.chord ? 'chord' : 'radius',
+          value: feature.chord ? 'chord' : 'radius',
           onChange: (id) => {
-            f.chord = id === 'chord' || undefined;
+            feature.chord = id === 'chord' || undefined;
             this.render();
             this.update();
           }
@@ -916,14 +916,14 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
         onChange: (id) => {
           if (id === 'two') {
             if (fillet) {
-              f.radius2 = f.radius2 ?? roundSig(f.radius / 2);
+              feature.radius2 = feature.radius2 ?? roundSig(feature.radius / 2);
             } else {
-              f.distance2 = f.distance2 ?? f.radius;
+              feature.distance2 = feature.distance2 ?? feature.radius;
             }
           } else {
-            f.distance2 = undefined;
-            f.radius2 = undefined;
-            f.flip = undefined;
+            feature.distance2 = undefined;
+            feature.radius2 = undefined;
+            feature.flip = undefined;
           }
           this.render();
           this.update();
@@ -934,11 +934,11 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
       ...(two
         ? [
           fillet ? this.num(`End ${word}`, 'radius2', 'length', { min: 0.0001 }) : this.num('Distance 2', 'distance2', 'length', { min: 0.0001 }),
-          { type: 'button' as const, label: fillet ? 'Flip ends' : 'Flip sides', icon: 'flip' as const, onClick: () => ((f.flip = !f.flip || undefined), this.update()) }
+          { type: 'button' as const, label: fillet ? 'Flip ends' : 'Flip sides', icon: 'flip' as const, onClick: () => ((feature.flip = !feature.flip || undefined), this.update()) }
         ]
         : []),
       // (Setback is for a corner where three rounded edges meet: offered once three are picked, or while it is set.)
-      ...(fillet && ((f.edges?.length ?? 0) >= 3 || (f.setback ?? 0) > 0) ? [this.num('Corner setback', 'setback', 'length', { min: 0 })] : [])
+      ...(fillet && ((feature.edges?.length ?? 0) >= 3 || (feature.setback ?? 0) > 0) ? [this.num('Corner setback', 'setback', 'length', { min: 0 })] : [])
     ];
   }
 
@@ -961,24 +961,24 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
       boxGap: 40,
       dir: this.axis,
       value: this.feature.radius,
-      onInput: (v, text) => {
-        if (!(v > 0)) {
+      onInput: (value, text) => {
+        if (!(value > 0)) {
           return;
         }
         this.typedInto('radius', text);
-        this.setRadius(v);
+        this.setRadius(value);
       },
       onCommit: () => this.done(),
       typed: this.typed,
       focus: this.typed !== undefined,
-      variables: this.app.store.doc.variables.map(v => v.name),
+      variables: this.app.store.doc.variables.map(variable => variable.name),
       onVariable: (name) => {
-        const v = evaluate(name, 'length');
-        if (v === null || v <= 0) {
+        const value = evaluate(name, 'length');
+        if (value === null || value <= 0) {
           return;
         }
         this.feature.exprs = { ...(this.feature.exprs ?? {}), radius: name };
-        this.setRadius(v);
+        this.setRadius(value);
         this.render();
       }
     });
@@ -993,8 +993,8 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
   }
 
   /** Tapping edges while filleting adds/removes them. */
-  tap(p: ToolPointer): void {
-    const hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, profiles: false, planes: false, axes: false, vertices: false });
+  tap(pointer: ToolPointer): void {
+    const hit = this.app.view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol, profiles: false, planes: false, axes: false, vertices: false });
     // A picked edge, tapped again: dropped. Its preview has rounded it away
     // (the view shows the result), so it's found by where it was - when it's
     // nearer the finger than any edge the view has there (the lip's other top
@@ -1002,11 +1002,11 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
     // chamfer's own new edge beside where the first was is not).
     {
       const shown = hit?.kind === 'edge' ? this.app.view.body(hit.body)?.edges[hit.edge] : undefined;
-      const hitD = shown ? this.screenDist(shown, p.x, p.y) : Infinity;
+      const hitD = shown ? this.screenDist(shown, pointer.x, pointer.y) : Infinity;
       // (A face under the finger: a picked edge counts only right by it - on a
       // plate's 8 mm side, seen at a slant, its rounded top edge was always
       // within a finger's reach, so the side never got added.)
-      let again = this.pickedNear(p.x, p.y, Math.min(hit?.kind === 'face' ? p.tol / 3 : p.tol, hitD));
+      let again = this.pickedNear(pointer.x, pointer.y, Math.min(hit?.kind === 'face' ? pointer.tol / 3 : pointer.tol, hitD));
       // Or the edge where its preview's rounding meets a face (a 1 mm round's,
       // a hair nearer the finger than the edge it rounds: it was added, not
       // the edge dropped) - along it, the radius off it.
@@ -1033,9 +1033,9 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
     const own = (steps?: string[]) => !!steps?.includes(this.feature.id);
     if (hit.kind === 'face') {
       const refs = edgesOfFace(this.app, hit.body, hit.face)
-        .filter(k => !this.app.view.body(hit.body)?.edges[k]?.seam)
-        .flatMap(k => edgeRefOf(this.app, { body: hit.body, edge: k }) ?? []);
-      const at = (r: EdgeRef) => this.feature.edges.findIndex(e => e.body === r.body && Math.hypot(...sub(e.mid, r.mid)) < 1e-6);
+        .filter(edgeIndex => !this.app.view.body(hit.body)?.edges[edgeIndex]?.seam)
+        .flatMap(edgeIndex => edgeRefOf(this.app, { body: hit.body, edge: edgeIndex }) ?? []);
+      const at = (edgeRef: EdgeRef) => this.feature.edges.findIndex(e => e.body === edgeRef.body && Math.hypot(...sub(e.mid, edgeRef.mid)) < 1e-6);
       if (!refs.length) {
         return;
       }
@@ -1044,8 +1044,8 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
       // mistake couldn't be undone). It's that face when every edge it shows
       // is a picked one's rounded border (or picked itself): those are
       // dropped. (Not the face beside a picked edge: its other edges aren't.)
-      const was = refs.map(r => (at(r) >= 0 ? at(r) : this.roundedInto(r)));
-      if (refs.some(r => at(r) < 0) && was.every(i => i >= 0)) {
+      const was = refs.map(ref => (at(ref) >= 0 ? at(ref) : this.roundedInto(ref)));
+      if (refs.some(ref => at(ref) < 0) && was.every(i => i >= 0)) {
         const drop = new Set(was);
         this.feature.edges = this.feature.edges.filter((_, i) => !drop.has(i));
         this.app.setSelection(this.edgeSels());
@@ -1053,16 +1053,16 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
 
         return;
       }
-      if (refs.every(r => at(r) >= 0)) {
-        this.feature.edges = this.feature.edges.filter(e => !refs.some(r => r.body === e.body && Math.hypot(...sub(e.mid, r.mid)) < 1e-6));
+      if (refs.every(ref => at(ref) >= 0)) {
+        this.feature.edges = this.feature.edges.filter(e => !refs.some(ref => ref.body === e.body && Math.hypot(...sub(e.mid, ref.mid)) < 1e-6));
       } else {
         // (Not a picked edge's rounded border, as the preview shows it: the
         // face beside a picked edge brought it in as an edge of its own.)
-        const kin = withCircleKin(this.app, refs.filter(r => at(r) < 0 && this.roundedInto(r) < 0 && !own(r.steps)));
+        const kin = withCircleKin(this.app, refs.filter(ref => at(ref) < 0 && this.roundedInto(ref) < 0 && !own(ref.steps)));
         this.groupKin(kin);
-        for (const r of kin) {
-          if (at(r) < 0) {
-            this.feature.edges.push(r);
+        for (const edgeRef of kin) {
+          if (at(edgeRef) < 0) {
+            this.feature.edges.push(edgeRef);
           }
         }
       }
@@ -1092,12 +1092,12 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
       this.dropWithKin(i);
     } else {
       // (With the rest of its circle, where the circle is in pieces.)
-      const have = (m: Vec3) => this.feature.edges.some(e => e.body === hit.body && Math.hypot(...sub(e.mid, m)) < 1e-6);
+      const have = (midpoint: Vec3) => this.feature.edges.some(e => e.body === hit.body && Math.hypot(...sub(e.mid, midpoint)) < 1e-6);
       const kin = withCircleKin(this.app, [{ body: hit.body, mid: info.mid, dir: info.dir, length: info.length, ...(info.steps ? { steps: info.steps } : {}) }]);
       this.groupKin(kin);
-      for (const r of kin) {
-        if (!have(r.mid)) {
-          this.feature.edges.push(r);
+      for (const edgeRef of kin) {
+        if (!have(edgeRef.mid)) {
+          this.feature.edges.push(edgeRef);
         }
       }
     }
@@ -1108,24 +1108,24 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
 
   /** The picked straight edge whose preview's round (or cut) `e` is a border of: parallel, the size off it; else -1. */
   private roundedInto(e: { mid: Vec3; dir: Vec3 }): number {
-    const r = this.feature.radius;
-    const d = norm(e.dir);
+    const radius = this.feature.radius;
+    const direction = norm(e.dir);
 
-    return this.feature.edges.findIndex((x) => {
-      const xd = norm(x.dir);
-      if (Math.abs(dot(xd, d)) < 0.9999) {
+    return this.feature.edges.findIndex((edge) => {
+      const xd = norm(edge.dir);
+      if (Math.abs(dot(xd, direction)) < 0.9999) {
         return false;
       }
-      const off = len(cross(sub(e.mid, x.mid), xd));
+      const off = len(cross(sub(e.mid, edge.mid), xd));
 
       // (Along it too: not the next edge over that happens to be in line.)
-      return Math.abs(off - r) < 1e-3 * Math.max(1, r) && Math.abs(dot(sub(e.mid, x.mid), xd)) < x.length / 2;
+      return Math.abs(off - radius) < 1e-3 * Math.max(1, radius) && Math.abs(dot(sub(e.mid, edge.mid), xd)) < edge.length / 2;
     });
   }
 
   /** A picked edge dropped, and the other pieces of its circle with it (found before the preview rounded them away). */
   private dropWithKin(i: number): void {
-    const key = (e: EdgeRef) => `${e.body}:${e.mid.map(v => v.toFixed(5)).join(',')}`;
+    const key = (e: EdgeRef) => `${e.body}:${e.mid.map(value => value.toFixed(5)).join(',')}`;
     const group = this.kinGroups.get(key(this.feature.edges[i]));
     this.feature.edges = this.feature.edges.filter((e, j) => j !== i && (group === undefined || this.kinGroups.get(key(e)) !== group));
   }
@@ -1134,7 +1134,7 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
   private kinGroups = new Map<string, number>();
 
   private groupKin(edges: EdgeRef[]): void {
-    const key = (e: EdgeRef) => `${e.body}:${e.mid.map(v => v.toFixed(5)).join(',')}`;
+    const key = (e: EdgeRef) => `${e.body}:${e.mid.map(value => value.toFixed(5)).join(',')}`;
     for (const e of edges) {
       if (this.kinGroups.has(key(e))) {
         continue;
@@ -1143,9 +1143,9 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
       if (kin.length < 2) {
         continue;
       }
-      const g = this.kinGroups.size + 1;
-      for (const k of kin) {
-        this.kinGroups.set(key(k), g);
+      const groupNumber = this.kinGroups.size + 1;
+      for (const edgeRef of kin) {
+        this.kinGroups.set(key(edgeRef), groupNumber);
       }
     }
   }
@@ -1177,11 +1177,11 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
   /** How far (px) a screen point is from an edge drawn as the line through its middle along its direction. */
   private screenDist(e: { mid: Vec3; dir: Vec3; length?: number }, x: number, y: number): number {
     const view = this.app.view;
-    const d = norm(e.dir);
+    const direction = norm(e.dir);
     const half = (e.length ?? 0) / 2;
     const straight = Math.abs(len(e.dir)) > 0 && half > 0;
-    const a = view.toScreen(straight ? sub(e.mid, scale(d, half)) : e.mid);
-    const b = view.toScreen(straight ? add(e.mid, scale(d, half)) : e.mid);
+    const a = view.toScreen(straight ? sub(e.mid, scale(direction, half)) : e.mid);
+    const b = view.toScreen(straight ? add(e.mid, scale(direction, half)) : e.mid);
     if (!a || !b) {
       return Infinity;
     }
@@ -1195,9 +1195,9 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
   private edgeSels(): Sel[] {
     return this.feature.edges.flatMap((e) => {
       const b = this.app.view.body(e.body);
-      const k = b?.edges.findIndex(x => Math.hypot(...sub(x.mid, e.mid)) < 1e-6) ?? -1;
+      const edgeIndex = b?.edges.findIndex(edge => Math.hypot(...sub(edge.mid, e.mid)) < 1e-6) ?? -1;
 
-      return k >= 0 ? [{ kind: 'edge', body: e.body, edge: k } as Sel] : [];
+      return edgeIndex >= 0 ? [{ kind: 'edge', body: e.body, edge: edgeIndex } as Sel] : [];
     });
   }
 
@@ -1215,35 +1215,35 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
     return this;
   }
 
-  down(p: ToolPointer): boolean {
+  down(pointer: ToolPointer): boolean {
     const first = this.fromEdge && !this.existing;
     this.fromEdge = false;
     if (first) {
-      this.dragging = { from: p, r0: 0 };
+      this.dragging = { from: pointer, r0: 0 };
 
       return true;
     }
-    if (!this.handle.hit(p)) {
+    if (!this.handle.hit(pointer)) {
       return false;
     }
-    this.dragging = { from: p, r0: this.signed(), onDot: true };
+    this.dragging = { from: pointer, r0: this.signed(), onDot: true };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     if (!this.dragging) {
       return;
     }
-    if (Math.hypot(p.x - this.dragging.from.x, p.y - this.dragging.from.y) > 4) {
+    if (Math.hypot(pointer.x - this.dragging.from.x, pointer.y - this.dragging.from.y) > 4) {
       this.dragging.moved = true;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
     const { r0, from } = this.dragging;
-    const raw = r0 + axisDrag(this.app.view, add(this.origin, scale(this.axis, r0)), this.axis, from, p);
+    const raw = r0 + axisDrag(this.app.view, add(this.origin, scale(this.axis, r0)), this.axis, from, pointer);
     const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 3);
     // Outward: a fillet; pulled in past the edge: a chamfer.
     const kind = raw >= 0 ? 'fillet' : 'chamfer';
@@ -1254,20 +1254,20 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
     }
     this.typedInto('radius', '');
     this.setRadius(Math.max(step, Math.round(Math.abs(raw) / step) * step));
-    this.app.ui.setLabel(p.x, p.y, `${kind === 'fillet' ? 'Fillet' : 'Chamfer'} ${fmtLen(this.feature.radius)}  · type a value`);
+    this.app.ui.setLabel(pointer.x, pointer.y, `${kind === 'fillet' ? 'Fillet' : 'Chamfer'} ${fmtLen(this.feature.radius)}  · type a value`);
   }
 
   up(): void {
-    const d = this.dragging;
+    const dragging = this.dragging;
     this.dragging = null;
     this.typing.reset();
     this.app.ui.setLabel(0, 0, null);
     // The dot only touched, not dragged: a tap (on a lip 6 mm deep the dot on
     // one top edge sits a finger's width from the other, which took no taps there).
     // (Right on the dot it stays a touch of the dot.)
-    const g = d?.onDot && !d.moved ? this.handle.grabPoint() : null;
-    if (g && Math.hypot(g[0] - d!.from.x, g[1] - d!.from.y) > 14) {
-      this.tap(d!.from);
+    const grab = dragging?.onDot && !dragging.moved ? this.handle.grabPoint() : null;
+    if (grab && Math.hypot(grab[0] - dragging!.from.x, grab[1] - dragging!.from.y) > 14) {
+      this.tap(dragging!.from);
     }
   }
 
@@ -1281,16 +1281,16 @@ export class EdgeOp extends FeatureOp<EdgeFeature> {
 
     return this.typing.key(e, {
       kind: 'length',
-      apply: v => v > 0 && this.setRadius(v),
+      apply: value => value > 0 && this.setRadius(value),
       commit: () => ((this.dragging = null), this.done()),
       cancel: () => this.setRadius(dr.r0)
     });
   }
 
-  private setRadius(r: number): void {
-    this.feature.radius = r;
-    this.app.ui.updatePanelValues([r]);
-    this.dim?.setValue(r);
+  private setRadius(radius: number): void {
+    this.feature.radius = radius;
+    this.app.ui.updatePanelValues([radius]);
+    this.dim?.setValue(radius);
     this.update();
   }
 
@@ -1309,7 +1309,7 @@ function outwardOf(app: AppContext, e: EdgeRef): Vec3 | null {
     return null;
   }
   const tol = Math.max(1e-6, e.length * 1e-4);
-  const ns = b.faces.filter(f => f.plane && Math.abs(dot(f.normal, e.dir)) < 1e-4 && Math.abs(dot(f.normal, sub(e.mid, f.center))) < tol).map(f => f.normal);
+  const ns = b.faces.filter(face => face.plane && Math.abs(dot(face.normal, e.dir)) < 1e-4 && Math.abs(dot(face.normal, sub(e.mid, face.center))) < tol).map(face => face.normal);
   if (ns.length < 2) {
     return null;
   }
@@ -1347,8 +1347,8 @@ export class RevolveOp extends FeatureOp<RevolveFeature> {
   protected items(): PanelItem[] {
     return [
       this.num('Angle', 'angle', 'angle'),
-      this.num('Travel', 'travel', 'length', { onInput: v => this.setTravel(v), inBox: true }),
-      ...(anyBody(this.app, this.feature.id) ? [modeChoice(() => this.feature.mode, m => ((this.feature.mode = m), this.update()), () => this.render(), false, () => autoAddsOrNew(this.feature.target))] : [])
+      this.num('Travel', 'travel', 'length', { onInput: value => this.setTravel(value), inBox: true }),
+      ...(anyBody(this.app, this.feature.id) ? [modeChoice(() => this.feature.mode, bodyMode => ((this.feature.mode = bodyMode), this.update()), () => this.render(), false, () => autoAddsOrNew(this.feature.target))] : [])
     ];
   }
 
@@ -1366,68 +1366,68 @@ export class RevolveOp extends FeatureOp<RevolveFeature> {
   /** Where the profile sits on the axis (the arrow starts there). */
   private axisBase(): Vec3 {
     const { origin, dir } = this.feature.axis;
-    const d = norm(dir);
-    const c = sourceFrame(this.app, this.feature.source).base;
+    const direction = norm(dir);
+    const base = sourceFrame(this.app, this.feature.source).base;
 
-    return add(origin, scale(d, dot(sub(c, origin), d)));
+    return add(origin, scale(direction, dot(sub(base, origin), direction)));
   }
 
   protected onDraftChanged(): void {
     if (!this.axisSet) {
       return;
     }
-    const d = norm(this.feature.axis.dir);
+    const direction = norm(this.feature.axis.dir);
     const base = this.axisBase();
     const travel = this.feature.travel ?? 0;
     if (!this.handle) {
       this.handle = new Handle(this.app.view, 'arrow');
-      this.dim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 96, dir: d, value: travel, onInput: (v, text) => (this.typedInto('travel', text), this.setTravel(v)), onCommit: () => this.done() });
+      this.dim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 96, dir: direction, value: travel, onInput: (value, text) => (this.typedInto('travel', text), this.setTravel(value)), onCommit: () => this.done() });
     }
-    const tip = add(base, scale(d, travel));
-    this.handle.set(tip, travel < 0 ? scale(d, -1) : d);
+    const tip = add(base, scale(direction, travel));
+    this.handle.set(tip, travel < 0 ? scale(direction, -1) : direction);
     this.dim!.set(base, tip);
   }
 
-  private setTravel(v: number): void {
-    this.feature.travel = v || undefined;
+  private setTravel(value: number): void {
+    this.feature.travel = value || undefined;
     // Travelling with just a part of a turn is fine; a full turn is the usual start for a thread.
-    this.app.ui.updatePanelValues([this.feature.angle, v]);
-    this.dim?.setValue(v);
+    this.app.ui.updatePanelValues([this.feature.angle, value]);
+    this.dim?.setValue(value);
     this.update();
   }
 
-  hover(p: ToolPointer | null): void {
-    const on = !!p && !!this.handle && (!!this.dragging || this.handle.hit(p));
+  hover(pointer: ToolPointer | null): void {
+    const on = !!pointer && !!this.handle && (!!this.dragging || this.handle.hit(pointer));
     this.handle?.setHot(on);
     if (!on) {
-      super.hover(p);
+      super.hover(pointer);
     }
   }
 
-  down(p: ToolPointer): boolean {
-    if (!this.handle?.hit(p)) {
+  down(pointer: ToolPointer): boolean {
+    if (!this.handle?.hit(pointer)) {
       return false;
     }
-    this.dragging = { from: p, t0: this.feature.travel ?? 0 };
+    this.dragging = { from: pointer, t0: this.feature.travel ?? 0 };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
-    const d = norm(this.feature.axis.dir);
-    const raw = dr.t0 + axisDrag(this.app.view, add(this.axisBase(), scale(d, dr.t0)), d, dr.from, p);
+    const direction = norm(this.feature.axis.dir);
+    const raw = dr.t0 + axisDrag(this.app.view, add(this.axisBase(), scale(direction, dr.t0)), direction, dr.from, pointer);
     const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4);
     this.typedInto('travel', '');
     this.setTravel(Math.round(raw / step) * step);
-    this.app.ui.setLabel(p.x, p.y, `Travel ${fmtLen(this.feature.travel ?? 0)}  · type a value`);
+    this.app.ui.setLabel(pointer.x, pointer.y, `Travel ${fmtLen(this.feature.travel ?? 0)}  · type a value`);
   }
 
   up(): void {
@@ -1445,7 +1445,7 @@ export class RevolveOp extends FeatureOp<RevolveFeature> {
 
     return this.typing.key(e, {
       kind: 'length',
-      apply: v => this.setTravel(v),
+      apply: value => this.setTravel(value),
       commit: () => ((this.dragging = null), this.done()),
       cancel: () => this.setTravel(dr.t0)
     });
@@ -1464,7 +1464,7 @@ export class SweepOp extends FeatureOp<SweepFeature> {
       this.path = existing.path;
     }
     this.moreRegions = true;
-    this.slots = [pathSlot(app, () => this.path, p => ((this.path = p), (this.feature.path = p)))];
+    this.slots = [pathSlot(app, () => this.path, pathRef => ((this.path = pathRef), (this.feature.path = pathRef)))];
   }
 
   protected hint(): string {
@@ -1473,31 +1473,31 @@ export class SweepOp extends FeatureOp<SweepFeature> {
 
   /** The path turns a corner somewhere: more than one piece, or a polyline. */
   private cornered(): boolean {
-    const p = this.path;
-    if (!p) {
+    const path = this.path;
+    if (!path) {
       return false;
     }
-    if (p.kind === 'edges') {
-      return p.edges.length > 1;
+    if (path.kind === 'edges') {
+      return path.edges.length > 1;
     }
-    if (p.entities.length > 1) {
+    if (path.entities.length > 1) {
       return true;
     }
-    const sk = this.app.store.features.find(f => f.id === p.sketch) as { entities?: { id: string; kind: string }[] } | undefined;
+    const sk = this.app.store.features.find(feature => feature.id === path.sketch) as { entities?: { id: string; kind: string }[] } | undefined;
 
-    return sk?.entities?.find(e => e.id === p.entities[0])?.kind === 'polyline';
+    return sk?.entities?.find(e => e.id === path.entities[0])?.kind === 'polyline';
   }
 
   protected items(): PanelItem[] {
     // (Nothing to set before there is a path: how the shape goes along it comes once it has one.)
-    const p = this.path;
-    if (!p || (p.kind === 'sketch' ? !p.entities.length : !p.edges.length)) {
+    const path = this.path;
+    if (!path || (path.kind === 'sketch' ? !path.entities.length : !path.edges.length)) {
       return [];
     }
 
     return [
-      { type: 'number', label: 'End size', value: this.feature.scale ?? 1, kind: 'number', min: 0.01, onInput: v => ((this.feature.scale = v > 0 ? v : 1), this.update()) },
-      { type: 'number', label: 'Twist', value: this.feature.twist ?? 0, kind: 'angle', onInput: v => ((this.feature.twist = v || undefined), this.update()) },
+      { type: 'number', label: 'End size', value: this.feature.scale ?? 1, kind: 'number', min: 0.01, onInput: value => ((this.feature.scale = value > 0 ? value : 1), this.update()) },
+      { type: 'number', label: 'Twist', value: this.feature.twist ?? 0, kind: 'angle', onInput: value => ((this.feature.twist = value || undefined), this.update()) },
       {
         type: 'choice',
         label: 'Profile position',
@@ -1506,7 +1506,7 @@ export class SweepOp extends FeatureOp<SweepFeature> {
           { id: 'start', label: "On the path's start" }
         ],
         value: this.feature.position ?? 'auto',
-        onChange: v => ((this.feature.position = v === 'start' ? 'start' : undefined), this.update())
+        onChange: value => ((this.feature.position = value === 'start' ? 'start' : undefined), this.update())
       },
       {
         type: 'choice',
@@ -1516,7 +1516,7 @@ export class SweepOp extends FeatureOp<SweepFeature> {
           { id: 'parallel', label: 'Parallel to profile' }
         ],
         value: this.feature.orientation ?? 'normal',
-        onChange: v => ((this.feature.orientation = v === 'parallel' ? 'parallel' : undefined), this.update())
+        onChange: value => ((this.feature.orientation = value === 'parallel' ? 'parallel' : undefined), this.update())
       },
       // (Round or mitred where the path turns a corner: only for a path of more than one piece.)
       ...(this.cornered()
@@ -1528,10 +1528,10 @@ export class SweepOp extends FeatureOp<SweepFeature> {
             { id: 'mitre', label: 'Mitre' }
           ],
           value: this.feature.corner ?? 'round',
-          onChange: (v: string) => ((this.feature.corner = v === 'mitre' ? 'mitre' : undefined), this.update())
+          onChange: (value: string) => ((this.feature.corner = value === 'mitre' ? 'mitre' : undefined), this.update())
         }]
         : []),
-      ...(anyBody(this.app, this.feature.id) ? [modeChoice(() => this.feature.mode, m => ((this.feature.mode = m), this.update()), () => this.render(), false, () => autoAddsOrNew(this.feature.target))] : [])
+      ...(anyBody(this.app, this.feature.id) ? [modeChoice(() => this.feature.mode, bodyMode => ((this.feature.mode = bodyMode), this.update()), () => this.render(), false, () => autoAddsOrNew(this.feature.target))] : [])
     ];
   }
 }
@@ -1553,17 +1553,17 @@ export class LoftOp extends FeatureOp<LoftFeature> {
   }
 
   private makeSlots(initial: Sel[] = []): Slot[] {
-    const first = this.slots[0] ?? sectionsSlot(this.app, () => this.feature.sections, s => (this.feature.sections = s), initial);
+    const first = this.slots[0] ?? sectionsSlot(this.app, () => this.feature.sections, sections => (this.feature.sections = sections), initial);
 
     return [first, ...(this.extra.guide ? [this.guideSlot()] : []), ...(this.extra.rails ? [this.railsSlot()] : []), ...(this.extra.conns ? [this.connSlot()] : [])];
   }
 
   /** Guide curves along the sides: each a curve tapped (with the curves joined to it end to end), or an edge. */
   private railsSlot(): Slot {
-    const f = this.feature;
+    const feature = this.feature;
     const app = this.app;
-    const rails = () => f.rails ?? [];
-    const set = (r: PathRef[]) => ((f.rails = r.length ? r : undefined), (f.ruled = false));
+    const rails = () => feature.rails ?? [];
+    const set = (rails: PathRef[]) => ((feature.rails = rails.length ? rails : undefined), (feature.ruled = false));
 
     return {
       label: 'Guide curves',
@@ -1571,16 +1571,16 @@ export class LoftOp extends FeatureOp<LoftFeature> {
       describe: () => (rails().length ? `${rails().length} guide${rails().length > 1 ? 's' : ''}` : 'Tap curves that run through every profile'),
       filled: () => true,
       pick: { profiles: false, curves: true, planes: false, axes: false },
-      shows: () => rails().flatMap(p => (p.kind === 'sketch' ? p.entities.map(entity => ({ kind: 'curve', sketch: p.sketch, entity }) as Sel) : [])),
+      shows: () => rails().flatMap(rail => (rail.kind === 'sketch' ? rail.entities.map(entity => ({ kind: 'curve', sketch: rail.sketch, entity }) as Sel) : [])),
       get presets() {
         return rails().length ? [{ label: 'Clear', apply: () => set([]) }] : [];
       },
       accept: (hit) => {
         if (hit.kind === 'curve') {
           // Tapped again: that guide goes.
-          const i = rails().findIndex(p => p.kind === 'sketch' && p.sketch === hit.sketch && p.entities.includes(hit.entity));
+          const i = rails().findIndex(rail => rail.kind === 'sketch' && rail.sketch === hit.sketch && rail.entities.includes(hit.entity));
           if (i >= 0) {
-            return set(rails().filter((_, k) => k !== i)), true;
+            return set(rails().filter((_, railIndex) => railIndex !== i)), true;
           }
           const sk = app.store.find<SketchFeature>(hit.sketch);
           const chain = sk?.type === 'sketch' ? chainThrough(sk.entities, hit.entity) : [hit.entity];
@@ -1593,8 +1593,8 @@ export class LoftOp extends FeatureOp<LoftFeature> {
           if (!ref) {
             return false;
           }
-          const same = (p: PathRef) => p.kind === 'edges' && JSON.stringify(p.edges[0]) === JSON.stringify(ref);
-          set(rails().some(same) ? rails().filter(p => !same(p)) : [...rails(), { kind: 'edges', edges: [ref] }]);
+          const same = (pathRef: PathRef) => pathRef.kind === 'edges' && JSON.stringify(pathRef.edges[0]) === JSON.stringify(ref);
+          set(rails().some(same) ? rails().filter(rail => !same(rail)) : [...rails(), { kind: 'edges', edges: [ref] }]);
 
           return true;
         }
@@ -1606,17 +1606,17 @@ export class LoftOp extends FeatureOp<LoftFeature> {
 
   /** Connections: a point on each profile in turn (the loft joins them). */
   private connSlot(): Slot {
-    const f = this.feature;
-    const n = () => f.sections.length;
-    const base = pointSlot(this.app, 'Connections', () => null, (p) => {
-      this.pending.push(p);
-      if (this.pending.length >= n()) {
-        f.connections = [...(f.connections ?? []), this.pending];
+    const feature = this.feature;
+    const sectionCount = () => feature.sections.length;
+    const base = pointSlot(this.app, 'Connections', () => null, (point) => {
+      this.pending.push(point);
+      if (this.pending.length >= sectionCount()) {
+        feature.connections = [...(feature.connections ?? []), this.pending];
         this.pending = [];
-        f.ruled = false;
+        feature.ruled = false;
       }
     });
-    const done = () => f.connections?.length ?? 0;
+    const done = () => feature.connections?.length ?? 0;
     const pending = () => this.pending;
     const pendingClear = () => (this.pending = []);
 
@@ -1625,19 +1625,19 @@ export class LoftOp extends FeatureOp<LoftFeature> {
       multi: true,
       describe: () =>
         this.pending.length
-          ? `Now a point on profile ${this.pending.length + 1} of ${n()}`
+          ? `Now a point on profile ${this.pending.length + 1} of ${sectionCount()}`
           : done()
             ? `${done()} connection${done() > 1 ? 's' : ''} - tap a point on profile 1 for another`
             : 'Tap a point on profile 1 (a corner snaps), then one on each next profile',
       filled: () => true,
       get presets() {
-        return done() || pending().length ? [{ label: 'Clear', apply: () => ((f.connections = undefined), (pendingClear())) }] : [];
+        return done() || pending().length ? [{ label: 'Clear', apply: () => ((feature.connections = undefined), (pendingClear())) }] : [];
       }
     };
   }
 
   private continuityItems(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
     const opts = [
       { id: 'free', label: 'Free' },
       { id: 'g1', label: 'Tangent (G1)' },
@@ -1646,7 +1646,7 @@ export class LoftOp extends FeatureOp<LoftFeature> {
     const end = (which: 'start' | 'end'): PanelItem[] => {
       const key = which === 'start' ? 'startContinuity' : 'endContinuity';
       const wkey = which === 'start' ? 'startWeight' : 'endWeight';
-      const on = f[key];
+      const on = feature[key];
 
       return [
         {
@@ -1654,10 +1654,10 @@ export class LoftOp extends FeatureOp<LoftFeature> {
           label: which === 'start' ? 'Start' : 'End',
           options: opts,
           value: on ?? 'free',
-          onChange: v => ((f[key] = v === 'free' ? undefined : (v as 'g1' | 'g2')), this.render(), this.update())
+          onChange: value => ((feature[key] = value === 'free' ? undefined : (value as 'g1' | 'g2')), this.render(), this.update())
         },
         ...(on
-          ? [{ type: 'slider' as const, label: 'Magnitude', value: f[wkey] ?? 1, min: 0.1, max: 3, step: 0.05, show: (v: number) => v.toFixed(2), onInput: (v: number) => ((f[wkey] = v === 1 ? undefined : v), this.update()) }]
+          ? [{ type: 'slider' as const, label: 'Magnitude', value: feature[wkey] ?? 1, min: 0.1, max: 3, step: 0.05, show: (value: number) => value.toFixed(2), onInput: (value: number) => ((feature[wkey] = value === 1 ? undefined : value), this.update()) }]
           : [])
       ];
     };
@@ -1667,7 +1667,7 @@ export class LoftOp extends FeatureOp<LoftFeature> {
 
   /** The optional guide: a curve the body follows from profile to profile. */
   private guideSlot() {
-    return { ...pathSlot(this.app, () => this.feature.guide ?? null, p => (this.feature.guide = p)), label: 'Centre line' };
+    return { ...pathSlot(this.app, () => this.feature.guide ?? null, pathRef => (this.feature.guide = pathRef)), label: 'Centre line' };
   }
 
   protected hint(): string {
@@ -1685,25 +1685,25 @@ export class LoftOp extends FeatureOp<LoftFeature> {
   }
 
   /** An optional slot switched on (and the others it can't go with off) or off. */
-  private toggleExtra(k: 'guide' | 'rails' | 'conns'): void {
-    const f = this.feature;
-    const on = !this.extra[k];
-    this.extra[k] = on;
-    if (on && k === 'guide') {
-      (this.extra.rails = this.extra.conns = false), (f.rails = f.connections = undefined), (f.closed = undefined);
+  private toggleExtra(key: 'guide' | 'rails' | 'conns'): void {
+    const feature = this.feature;
+    const on = !this.extra[key];
+    this.extra[key] = on;
+    if (on && key === 'guide') {
+      (this.extra.rails = this.extra.conns = false), (feature.rails = feature.connections = undefined), (feature.closed = undefined);
     }
-    if (on && k !== 'guide') {
-      (this.extra.guide = false), (f.guide = undefined), (f.closed = undefined);
+    if (on && key !== 'guide') {
+      (this.extra.guide = false), (feature.guide = undefined), (feature.closed = undefined);
     }
     if (!on) {
-      if (k === 'guide') {
-        f.guide = undefined;
+      if (key === 'guide') {
+        feature.guide = undefined;
       }
-      if (k === 'rails') {
-        f.rails = undefined;
+      if (key === 'rails') {
+        feature.rails = undefined;
       }
-      if (k === 'conns') {
-        (f.connections = undefined), (this.pending = []);
+      if (key === 'conns') {
+        (feature.connections = undefined), (this.pending = []);
       }
     }
     this.slots = this.makeSlots();
@@ -1713,20 +1713,20 @@ export class LoftOp extends FeatureOp<LoftFeature> {
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
     const guided = this.extra.guide;
     const held = this.extra.rails || this.extra.conns;
 
     return [
-      ...(f.closed || guided || held ? [] : [{ type: 'toggle' as const, label: 'Straight sides', value: f.ruled, onChange: (v: boolean) => ((f.ruled = v), this.render(), this.update()) }]),
+      ...(feature.closed || guided || held ? [] : [{ type: 'toggle' as const, label: 'Straight sides', value: feature.ruled, onChange: (ruled: boolean) => ((feature.ruled = ruled), this.render(), this.update()) }]),
       // (A closed loop needs three shapes at least: with two it would only come back the way it went.)
-      ...(held || (f.sections.length < 3 && !f.closed) ? [] : [{ type: 'toggle' as const, label: 'Closed loop', value: !!f.closed, onChange: (v: boolean) => ((f.closed = v || undefined), this.render(), this.update()) }]),
+      ...(held || (feature.sections.length < 3 && !feature.closed) ? [] : [{ type: 'toggle' as const, label: 'Closed loop', value: !!feature.closed, onChange: (isOn: boolean) => ((feature.closed = isOn || undefined), this.render(), this.update()) }]),
       // How it leaves the first shape and meets the last (free, tangent, or smoother still).
-      ...(f.closed || guided || held || f.ruled ? [] : this.continuityItems()),
+      ...(feature.closed || guided || held || feature.ruled ? [] : this.continuityItems()),
       { type: 'button', label: guided ? 'Remove centre line' : 'Centre line', icon: guided ? 'close' : 'sweep', onClick: () => this.toggleExtra('guide') },
       { type: 'button', label: this.extra.rails ? 'Remove guide curves' : 'Guide curves', icon: this.extra.rails ? 'close' : 'sweep', onClick: () => this.toggleExtra('rails') },
       { type: 'button', label: this.extra.conns ? 'Remove connections' : 'Connections', icon: this.extra.conns ? 'close' : 'sweep', onClick: () => this.toggleExtra('conns') },
-      ...(anyBody(this.app, this.feature.id) ? [modeChoice(() => this.feature.mode, m => ((this.feature.mode = m), this.update()), () => this.render(), false, () => autoAddsOrNew(this.feature.target))] : [])
+      ...(anyBody(this.app, this.feature.id) ? [modeChoice(() => this.feature.mode, bodyMode => ((this.feature.mode = bodyMode), this.update()), () => this.render(), false, () => autoAddsOrNew(this.feature.target))] : [])
     ];
   }
 }
@@ -1741,9 +1741,9 @@ export class ShellOp extends FeatureOp<ShellFeature> {
 
   constructor(app: AppContext, body: string, faces: FaceRef[], existing?: ShellFeature) {
     super(app, { ...app.store.newIdentity('shell'), type: 'shell', body, faces, thickness: 1 }, existing);
-    this.original = (app.view.body(body)?.faces ?? []).map(f => ({ body, center: f.center, normal: f.normal, area: f.area, ...(f.step ? { step: f.step } : {}), ...(f.curve ? { curve: f.curve } : {}) }));
+    this.original = (app.view.body(body)?.faces ?? []).map(faceInfo => ({ body, center: faceInfo.center, normal: faceInfo.normal, area: faceInfo.area, ...(faceInfo.step ? { step: faceInfo.step } : {}), ...(faceInfo.curve ? { curve: faceInfo.curve } : {}) }));
 
-    this.slots = [facesSlot(app, 'Open faces', () => this.feature.faces, f => (this.feature.faces = f.map(r => this.onOriginal(r))), true)];
+    this.slots = [facesSlot(app, 'Open faces', () => this.feature.faces, faces => (this.feature.faces = faces.map(faceRef => this.onOriginal(faceRef))), true)];
     this.active = 0;
   }
 
@@ -1754,8 +1754,8 @@ export class ShellOp extends FeatureOp<ShellFeature> {
    * face isn't on the body being shelled). The flat face of the body parallel
    * to it, at most a wall away.
    */
-  private onOriginal(r: FaceRef): FaceRef {
-    return r.body === this.feature.body ? faceBeforeShell(this.original, r, this.feature.thickness) : r;
+  private onOriginal(faceRef: FaceRef): FaceRef {
+    return faceRef.body === this.feature.body ? faceBeforeShell(this.original, faceRef, this.feature.thickness) : faceRef;
   }
 
   enter(): void {
@@ -1763,7 +1763,7 @@ export class ShellOp extends FeatureOp<ShellFeature> {
     // Faces to open that are gone (it said "pick the face again"): dropped, so the faces tapped now are used.
     const gone = this.existing ? goneRefs(this.app, this.feature.faces, this.feature.id) : [];
     if (gone.length) {
-      this.feature.faces = this.feature.faces.filter(f => !gone.includes(f));
+      this.feature.faces = this.feature.faces.filter(face => !gone.includes(face));
       this.app.ui.toast(`${gone.length} of the faces it opened ${gone.length > 1 ? 'are' : 'is'} gone - tap the faces to leave open now`);
     }
     this.active = 0;
@@ -1776,7 +1776,7 @@ export class ShellOp extends FeatureOp<ShellFeature> {
   }
 
   protected items(): PanelItem[] {
-    return [this.num('Thickness', 'thickness', 'length', { min: 0.0001, onInput: v => this.setThickness(v), inBox: true })];
+    return [this.num('Thickness', 'thickness', 'length', { min: 0.0001, onInput: value => this.setThickness(value), inBox: true })];
   }
 
   /** The wall thickness, typed on the open face tapped last - and dragged, by the arrow that points into the body there. */
@@ -1786,39 +1786,39 @@ export class ShellOp extends FeatureOp<ShellFeature> {
   private dragging: { from: ToolPointer; t0: number; at: Vec3; into: Vec3 } | null = null;
   private typing = new DragTyping(this.app);
 
-  hover(p: ToolPointer | null): void {
-    const on = !!p && !!this.handle && (!!this.dragging || this.handle.hit(p));
+  hover(pointer: ToolPointer | null): void {
+    const on = !!pointer && !!this.handle && (!!this.dragging || this.handle.hit(pointer));
     this.handle?.setHot(on);
     if (!on) {
-      super.hover(p);
+      super.hover(pointer);
     }
   }
 
-  down(p: ToolPointer): boolean {
-    const f = this.feature.faces[this.feature.faces.length - 1];
-    if (!f || !this.handle?.hit(p)) {
+  down(pointer: ToolPointer): boolean {
+    const lastFace = this.feature.faces[this.feature.faces.length - 1];
+    if (!lastFace || !this.handle?.hit(pointer)) {
       return false;
     }
-    this.dragging = { from: p, t0: this.feature.thickness, at: f.center, into: scale(f.normal, -1) };
+    this.dragging = { from: pointer, t0: this.feature.thickness, at: lastFace.center, into: scale(lastFace.normal, -1) };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
-    const raw = dr.t0 + axisDrag(this.app.view, add(dr.at, scale(dr.into, dr.t0)), dr.into, dr.from, p);
+    const raw = dr.t0 + axisDrag(this.app.view, add(dr.at, scale(dr.into, dr.t0)), dr.into, dr.from, pointer);
     const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4);
     this.typedInto('thickness', '');
     // (A wall has some thickness: never less than a step.)
     this.setThickness(Math.max(step, Math.round(raw / step) * step));
-    this.app.ui.setLabel(p.x, p.y, `Wall ${fmtLen(this.feature.thickness)}  · type a value`);
+    this.app.ui.setLabel(pointer.x, pointer.y, `Wall ${fmtLen(this.feature.thickness)}  · type a value`);
   }
 
   up(): void {
@@ -1836,19 +1836,19 @@ export class ShellOp extends FeatureOp<ShellFeature> {
 
     return this.typing.key(e, {
       kind: 'length',
-      apply: v => this.setThickness(v),
+      apply: value => this.setThickness(value),
       commit: () => ((this.dragging = null), this.done()),
       cancel: () => this.setThickness(dr.t0)
     });
   }
 
-  private setThickness(v: number): void {
-    if (!(v > 0)) {
+  private setThickness(thickness: number): void {
+    if (!(thickness > 0)) {
       return;
     }
-    this.feature.thickness = v;
-    this.app.ui.updatePanelValues([v]);
-    this.dim?.setValue(v);
+    this.feature.thickness = thickness;
+    this.app.ui.updatePanelValues([thickness]);
+    this.dim?.setValue(thickness);
     this.update();
   }
 
@@ -1856,8 +1856,8 @@ export class ShellOp extends FeatureOp<ShellFeature> {
     // The face tapped last: the one being looked at. (On the first, a duct's
     // top, it was hidden from below when its other end was tapped there -
     // turned away - and the thickness was out of reach.)
-    const f = this.feature.faces[this.feature.faces.length - 1];
-    if (!f) {
+    const lastFace = this.feature.faces[this.feature.faces.length - 1];
+    if (!lastFace) {
       this.dim?.dispose();
       this.dim = null;
       this.handle?.dispose();
@@ -1866,7 +1866,7 @@ export class ShellOp extends FeatureOp<ShellFeature> {
       return;
     }
     // (Another face: the box goes with it, and turns away with it.)
-    const key = `${f.body}:${f.center.map(x => x.toFixed(6))}:${f.normal.map(x => x.toFixed(6))}`;
+    const key = `${lastFace.body}:${lastFace.center.map(x => x.toFixed(6))}:${lastFace.normal.map(x => x.toFixed(6))}`;
     if (this.dim && this.dimFace !== key) {
       this.dim.dispose();
       this.dim = null;
@@ -1874,24 +1874,24 @@ export class ShellOp extends FeatureOp<ShellFeature> {
     this.dimFace = key;
     this.dim ??= new DimWidget(this.app.view, {
       noLine: true,
-      facing: f.normal,
+      facing: lastFace.normal,
       value: this.feature.thickness,
-      onInput: (v, text) => {
-        if (!(v > 0)) {
+      onInput: (value, text) => {
+        if (!(value > 0)) {
           return;
         }
         this.typedInto('thickness', text);
-        this.setThickness(v);
+        this.setThickness(value);
       },
       onCommit: () => this.done()
     });
     // Just inside the face: the wall goes inwards from it.
-    const a = add(f.center, scale(f.normal, -this.feature.thickness));
-    this.dim.set(a, f.center);
+    const a = add(lastFace.center, scale(lastFace.normal, -this.feature.thickness));
+    this.dim.set(a, lastFace.center);
     this.dim.setValue(this.feature.thickness);
     // The arrow: at the wall's inner side, pointing further in (dragged in, the wall gets thicker).
     this.handle ??= new Handle(this.app.view, 'arrow');
-    this.handle.set(a, scale(f.normal, -1));
+    this.handle.set(a, scale(lastFace.normal, -1));
   }
 
   exit(): void {
@@ -1955,38 +1955,38 @@ export class TransformOp extends FeatureOp<TransformFeature> {
               : { kind: 'move', translate: [0, 0, 0], rotate: { origin: center, axis: [0, 0, 1], angle: 0 } };
     const label = kind === 'linear' || kind === 'circular' ? 'Pattern' : TITLES[kind].split(' ')[0].replace('/Rotate', '');
     super(app, { ...app.store.newIdentity('transform', copy ? 'Copy' : hole ? 'Hole Pattern' : label), type: 'transform', bodies, copy: kind === 'mirror' || copy, op, ...(hole && (kind === 'linear' || kind === 'circular') ? { hole } : {}) }, existing);
-    const o = this.feature.op;
+    const transformOp = this.feature.op;
     if (existing) {
-      if (o.kind === 'mirror') {
-        this.plane = o.plane;
+      if (transformOp.kind === 'mirror') {
+        this.plane = transformOp.plane;
       }
-      if (o.kind === 'linear') {
-        this.dir = o.dir;
+      if (transformOp.kind === 'linear') {
+        this.dir = transformOp.dir;
       }
-      if (o.kind === 'circular') {
-        this.axis = o.axis;
+      if (transformOp.kind === 'circular') {
+        this.axis = transformOp.axis;
       }
-      if (o.kind === 'move' && o.rotate) {
-        this.axis = { origin: o.rotate.origin, dir: o.rotate.axis };
+      if (transformOp.kind === 'move' && transformOp.rotate) {
+        this.axis = { origin: transformOp.rotate.origin, dir: transformOp.rotate.axis };
       }
     }
     if (kind === 'mirror') {
-      this.slots = [planeSlot(app, 'Mirror plane', () => this.plane, p => ((this.plane = p), ((this.feature.op as { plane: PlaneDef }).plane = p)))];
+      this.slots = [planeSlot(app, 'Mirror plane', () => this.plane, plane => ((this.plane = plane), ((this.feature.op as { plane: PlaneDef }).plane = plane)))];
     }
     if (kind === 'linear') {
-      this.slots = [directionSlot(app, 'Direction', () => this.dir, d => ((this.dir = norm(d)), this.applyDir()))];
+      this.slots = [directionSlot(app, 'Direction', () => this.dir, direction => ((this.dir = norm(direction)), this.applyDir()))];
     }
     // Translate: from a point on it to where that point should go (size unchanged).
     if (kind === 'translate') {
       this.slots = [
-        pointSlot(app, 'From point', () => this.from, p => ((this.from = p), this.applyPoints())),
-        pointSlot(app, 'To point', () => this.to, p => ((this.to = p), this.applyPoints()))
+        pointSlot(app, 'From point', () => this.from, from => ((this.from = from), this.applyPoints())),
+        pointSlot(app, 'To point', () => this.to, to => ((this.to = to), this.applyPoints()))
       ];
     }
     if (kind === 'circular' || kind === 'rotate') {
       this.slots = [axisSlot(app, 'Axis', () => this.axis, a => ((this.axis = a), this.applyAxis()))];
     }
-    this.center = o.kind === 'move' && o.rotate ? o.rotate.origin : center;
+    this.center = transformOp.kind === 'move' && transformOp.rotate ? transformOp.rotate.origin : center;
     if (copy && !existing && linkMode.on) {
       this.feature.link = true;
     }
@@ -1996,8 +1996,8 @@ export class TransformOp extends FeatureOp<TransformFeature> {
     }
     if (kind === 'move') {
       this.gimbal = new Gimbal(app.view);
-      const g = this.gimbal;
-      this.copyToggle = new CopyToggle(app.view, () => g.origin, on => ((this.feature.copy = on), (this.feature.link = on && linkMode.on ? true : undefined), this.render(), this.update()));
+      const gimbal = this.gimbal;
+      this.copyToggle = new CopyToggle(app.view, () => gimbal.origin, on => ((this.feature.copy = on), (this.feature.link = on && linkMode.on ? true : undefined), this.render(), this.update()));
     }
   }
 
@@ -2036,32 +2036,32 @@ export class TransformOp extends FeatureOp<TransformFeature> {
   private to: Vec3 | null = null;
 
   private applyPoints(): void {
-    const o = this.feature.op;
-    if (o.kind === 'move' && this.from && this.to) {
-      o.translate = sub(this.to, this.from);
-      o.rotate = undefined;
+    const op = this.feature.op;
+    if (op.kind === 'move' && this.from && this.to) {
+      op.translate = sub(this.to, this.from);
+      op.rotate = undefined;
     }
   }
 
   /** A finished copy is selected, gimbal and all, so the next drag copies it again. */
   protected done(): void {
-    const f = this.feature;
-    const copied = f.copy && this.ready() && !this.existing && (this.kind === 'move' || this.kind === 'rotate' || this.kind === 'translate' || this.kind === 'mirror' || this.kind === 'scale');
+    const feature = this.feature;
+    const copied = feature.copy && this.ready() && !this.existing && (this.kind === 'move' || this.kind === 'rotate' || this.kind === 'translate' || this.kind === 'mirror' || this.kind === 'scale');
     if (!copied) {
       return super.done();
     }
-    if (f.link) {
-      f.link = true;
+    if (feature.link) {
+      feature.link = true;
     } else {
-      delete f.link;
+      delete feature.link;
     }
     // Unlinked copies of freeforms: freeforms of their own (editing one leaves the other alone).
-    let doc = { ...this.app.store.doc, features: [...this.app.store.features, f] };
+    let doc = { ...this.app.store.doc, features: [...this.app.store.features, feature] };
     const ids = new Map<string, string>();
-    if (!f.link) {
+    if (!feature.link) {
       const tracked = freeformBodies(doc.features);
-      for (const b of f.bodies) {
-        const body = `${f.id}:${b}:0`;
+      for (const b of feature.bodies) {
+        const body = `${feature.id}:${b}:0`;
         if (!tracked.has(body)) {
           continue;
         }
@@ -2071,19 +2071,19 @@ export class TransformOp extends FeatureOp<TransformFeature> {
         }
       }
     }
-    this.app.store.commit((d) => {
-      d.features = doc.features;
-      d.names = doc.names;
-      d.hidden = doc.hidden;
+    this.app.store.commit((draft) => {
+      draft.features = doc.features;
+      draft.names = doc.names;
+      draft.hidden = doc.hidden;
       if (doc.colors) {
-        d.colors = doc.colors;
+        draft.colors = doc.colors;
       }
       if (doc.materials) {
-        d.materials = doc.materials;
+        draft.materials = doc.materials;
       }
     });
     this.app.setTool(null);
-    this.app.setSelection(f.bodies.map(b => ({ kind: 'body' as const, body: ids.get(`${f.id}:${b}:0`) ?? `${f.id}:${b}:0` })));
+    this.app.setSelection(feature.bodies.map(b => ({ kind: 'body' as const, body: ids.get(`${feature.id}:${b}:0`) ?? `${feature.id}:${b}:0` })));
   }
 
   protected hint(): string {
@@ -2100,43 +2100,43 @@ export class TransformOp extends FeatureOp<TransformFeature> {
   }
 
   private applyDir(): void {
-    const o = this.feature.op;
-    if (o.kind === 'linear' && this.dir) {
+    const op = this.feature.op;
+    if (op.kind === 'linear' && this.dir) {
       // A new pattern's spacing (not typed yet) follows the direction: the copies just clear of the bodies.
-      const was = patternSpacing(bodyExtent(this.app, this.feature.bodies, o.dir), 20);
-      if (!this.existing && Math.abs(o.spacing - was) < 1e-9) {
-        o.spacing = patternSpacing(bodyExtent(this.app, this.feature.bodies, this.dir), 20);
+      const was = patternSpacing(bodyExtent(this.app, this.feature.bodies, op.dir), 20);
+      if (!this.existing && Math.abs(op.spacing - was) < 1e-9) {
+        op.spacing = patternSpacing(bodyExtent(this.app, this.feature.bodies, this.dir), 20);
       }
-      o.dir = this.dir;
+      op.dir = this.dir;
     }
-    if (this.kind === 'translate' && o.kind === 'move' && this.dir) {
-      o.translate = scale(this.dir, this.distance);
+    if (this.kind === 'translate' && op.kind === 'move' && this.dir) {
+      op.translate = scale(this.dir, this.distance);
     }
   }
 
   private applyAxis(): void {
-    const o = this.feature.op;
-    if (o.kind === 'circular' && this.axis) {
-      o.axis = this.axis;
+    const op = this.feature.op;
+    if (op.kind === 'circular' && this.axis) {
+      op.axis = this.axis;
     }
-    if (o.kind === 'move' && this.axis) {
-      o.rotate = { origin: this.axis.origin, axis: this.axis.dir, angle: o.rotate?.angle ?? 90 };
+    if (op.kind === 'move' && this.axis) {
+      op.rotate = { origin: this.axis.origin, axis: this.axis.dir, angle: op.rotate?.angle ?? 90 };
     }
   }
 
   protected items(): PanelItem[] {
-    const o = this.feature.op;
+    const op = this.feature.op;
     const up = () => this.update();
-    const copyToggle: PanelItem = { type: 'toggle', label: 'Copy', value: this.feature.copy, onChange: v => ((this.feature.copy = v), this.render(), up()) };
+    const copyToggle: PanelItem = { type: 'toggle', label: 'Copy', value: this.feature.copy, onChange: copy => ((this.feature.copy = copy), this.render(), up()) };
     // With Copy on: Link keeps the copy connected to its original (a freeform
     // copy then changes when either is shaped); off, it is a body of its own.
     const link: PanelItem = {
       type: 'toggle',
       label: 'Link',
       value: !!this.feature.link,
-      onChange: (v) => {
-        linkMode.on = v;
-        this.feature.link = v;
+      onChange: (isOn) => {
+        linkMode.on = isOn;
+        this.feature.link = isOn;
         this.render();
       }
     };
@@ -2147,9 +2147,9 @@ export class TransformOp extends FeatureOp<TransformFeature> {
       type: 'toggle',
       label: 'Link',
       value: !!this.feature.link,
-      onChange: (v) => {
-        linkMode.on = v;
-        if (v) {
+      onChange: (isOn) => {
+        linkMode.on = isOn;
+        if (isOn) {
           this.feature.link = true;
         } else {
           delete this.feature.link;
@@ -2161,8 +2161,8 @@ export class TransformOp extends FeatureOp<TransformFeature> {
     // ΔX ΔY ΔZ: when changing a step opened from History, and on touch screens
     // (with a mouse, moving is dragging or typing while dragging - the numbers
     // are clutter there; a finger has no keyboard mid-drag, so exact moves need them).
-    const deltas = (): PanelItem[] => (this.existing || isTouchDevice ? (['X', 'Y', 'Z'] as const).map((l, i): PanelItem => this.num(`Δ${l}`, `op.translate.${i}`, 'length')) : []);
-    switch (o.kind) {
+    const deltas = (): PanelItem[] => (this.existing || isTouchDevice ? (['X', 'Y', 'Z'] as const).map((axisLabel, i): PanelItem => this.num(`Δ${axisLabel}`, `op.translate.${i}`, 'length')) : []);
+    switch (op.kind) {
       case 'scaleXYZ':
         return [];
       case 'move':
@@ -2173,19 +2173,19 @@ export class TransformOp extends FeatureOp<TransformFeature> {
           // The angle and the point it turns about can use variables (a joint
           // that turns by "a2" about "p2" high, and moves up when an arm gets
           // longer) - set when it's made, and when it's opened again from History.
-          const pivot = (): PanelItem[] => (['X', 'Y', 'Z'] as const).map((l, i): PanelItem => this.num(`Pivot ${l}`, `op.rotate.origin.${i}`, 'length'));
+          const pivot = (): PanelItem[] => (['X', 'Y', 'Z'] as const).map((axisLabel, i): PanelItem => this.num(`Pivot ${axisLabel}`, `op.rotate.origin.${i}`, 'length'));
           if (this.kind === 'rotate') {
-            o.rotate ??= { origin: this.center, axis: [0, 0, 1], angle: 0 };
+            op.rotate ??= { origin: this.center, axis: [0, 0, 1], angle: 0 };
 
             return [this.num('Angle', 'op.rotate.angle', 'angle'), ...(this.axis ? pivot() : []), ...copy];
           }
 
           return [
             ...deltas(),
-            o.rotate
-              ? this.num(`Rotate ${axisName(o.rotate.axis)}`, 'op.rotate.angle', 'angle')
-              : { type: 'number', label: 'Rotate Z', value: 0, kind: 'angle', onExpr: e => this.setExpr('op.rotate.angle', e), onInput: v => ((o.rotate = { origin: this.center, axis: [0, 0, 1], angle: v }), up()) },
-            ...(this.existing && o.rotate?.angle ? pivot() : []),
+            op.rotate
+              ? this.num(`Rotate ${axisName(op.rotate.axis)}`, 'op.rotate.angle', 'angle')
+              : { type: 'number', label: 'Rotate Z', value: 0, kind: 'angle', onExpr: e => this.setExpr('op.rotate.angle', e), onInput: angle => ((op.rotate = { origin: this.center, axis: [0, 0, 1], angle: angle }), up()) },
+            ...(this.existing && op.rotate?.angle ? pivot() : []),
             ...copy
           ];
         }
@@ -2209,9 +2209,9 @@ export class TransformOp extends FeatureOp<TransformFeature> {
   }
 
   protected ready(): boolean {
-    const o = this.feature.op;
+    const op = this.feature.op;
     // An untouched move is not worth a history step.
-    if (this.kind === 'move' && o.kind === 'move' && len(o.translate) < 1e-9 && !o.rotate?.angle && !this.feature.copy) {
+    if (this.kind === 'move' && op.kind === 'move' && len(op.translate) < 1e-9 && !op.rotate?.angle && !this.feature.copy) {
       return false;
     }
 
@@ -2245,68 +2245,68 @@ export class TransformOp extends FeatureOp<TransformFeature> {
     if (!this.axis) {
       return null;
     }
-    const d = norm(this.axis.dir);
-    const foot = add(this.axis.origin, scale(d, dot(sub(this.center, this.axis.origin), d)));
+    const direction = norm(this.axis.dir);
+    const foot = add(this.axis.origin, scale(direction, dot(sub(this.center, this.axis.origin), direction)));
     const out = sub(this.center, foot);
-    const r = len(out);
-    if (r < 1e-6) {
+    const radius = len(out);
+    if (radius < 1e-6) {
       return null;
     }
-    const u = scale(out, 1 / r);
+    const radial = scale(out, 1 / radius);
 
-    return { foot, d, u, v: cross(d, u), r };
+    return { foot, d: direction, u: radial, v: cross(direction, radial), r: radius };
   }
 
-  private setSpacing(v: number): void {
-    const o = this.feature.op;
-    if (o.kind !== 'linear' || !(Math.abs(v) > 1e-9)) {
+  private setSpacing(spacing: number): void {
+    const op = this.feature.op;
+    if (op.kind !== 'linear' || !(Math.abs(spacing) > 1e-9)) {
       return;
     }
-    o.spacing = v;
-    this.app.ui.updatePanelValues([o.count, v]);
-    this.patDim?.setValue(v);
+    op.spacing = spacing;
+    this.app.ui.updatePanelValues([op.count, spacing]);
+    this.patDim?.setValue(spacing);
     this.update();
   }
 
-  private setSpread(v: number): void {
-    const o = this.feature.op;
-    if (o.kind !== 'circular' || !(Math.abs(v) > 1e-9)) {
+  private setSpread(angle: number): void {
+    const op = this.feature.op;
+    if (op.kind !== 'circular' || !(Math.abs(angle) > 1e-9)) {
       return;
     }
-    o.angle = v;
-    this.app.ui.updatePanelValues([o.count, v]);
-    this.patDim?.setValue(v);
+    op.angle = angle;
+    this.app.ui.updatePanelValues([op.count, angle]);
+    this.patDim?.setValue(angle);
     this.update();
   }
 
   protected onDraftChanged(): void {
-    const o = this.feature.op;
-    if (this.gimbal && o.kind === 'move') {
-      this.gimbal.setCenter(add(this.center, o.translate));
+    const op = this.feature.op;
+    if (this.gimbal && op.kind === 'move') {
+      this.gimbal.setCenter(add(this.center, op.translate));
     }
-    if (o.kind === 'linear' && this.dir) {
-      const d = this.dir;
+    if (op.kind === 'linear' && this.dir) {
+      const dir = this.dir;
       if (!this.patHandle) {
         this.patHandle = new Handle(this.app.view, 'arrow');
-        this.patDim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 96, dir: d, value: o.spacing, onInput: (v, text) => (this.typedInto('op.spacing', text), this.setSpacing(v)), onCommit: () => this.done() });
+        this.patDim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 96, dir: dir, value: op.spacing, onInput: (value, text) => (this.typedInto('op.spacing', text), this.setSpacing(value)), onCommit: () => this.done() });
       }
-      const first = add(this.center, scale(d, o.spacing));
-      this.patHandle.set(first, o.spacing < 0 ? scale(d, -1) : d);
+      const first = add(this.center, scale(dir, op.spacing));
+      this.patHandle.set(first, op.spacing < 0 ? scale(dir, -1) : dir);
       this.patDim!.set(this.center, first);
-      this.patDim!.setValue(o.spacing);
-    } else if (o.kind === 'circular' && this.ring()) {
-      const g = this.ring()!;
+      this.patDim!.setValue(op.spacing);
+    } else if (op.kind === 'circular' && this.ring()) {
+      const ring = this.ring()!;
       // (Where the last copy is: a full turn shares the ring out evenly, a part of one ends on its angle.)
-      const full = Math.abs(Math.abs(o.angle) - 360) < 1e-6;
-      const last = ((full ? (o.angle * (o.count - 1)) / o.count : o.angle) * Math.PI) / 180;
-      const at = add(g.foot, add(scale(g.u, g.r * Math.cos(last)), scale(g.v, g.r * Math.sin(last))));
+      const full = Math.abs(Math.abs(op.angle) - 360) < 1e-6;
+      const last = ((full ? (op.angle * (op.count - 1)) / op.count : op.angle) * Math.PI) / 180;
+      const at = add(ring.foot, add(scale(ring.u, ring.r * Math.cos(last)), scale(ring.v, ring.r * Math.sin(last))));
       if (!this.patHandle) {
         this.patHandle = new Handle(this.app.view, 'dot');
-        this.patDim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 40, angle: true, noLine: true, value: o.angle, onInput: (v, text) => (this.typedInto('op.angle', text), this.setSpread(v)), onCommit: () => this.done() });
+        this.patDim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 40, angle: true, noLine: true, value: op.angle, onInput: (value, text) => (this.typedInto('op.angle', text), this.setSpread(value)), onCommit: () => this.done() });
       }
       this.patHandle.set(at);
-      this.patDim!.set(g.foot, at);
-      this.patDim!.setValue(o.angle);
+      this.patDim!.set(ring.foot, at);
+      this.patDim!.setValue(op.angle);
     } else {
       this.dropPatternGrip();
     }
@@ -2315,27 +2315,27 @@ export class TransformOp extends FeatureOp<TransformFeature> {
   /** How the pattern would go along what is under the pointer, before its direction (or axis) is picked. */
   private patGhost: Ghost | null = null;
   private patGhostSig = '';
-  private lookAhead(p: ToolPointer | null): void {
-    const o = this.feature.op;
+  private lookAhead(pointer: ToolPointer | null): void {
+    const op = this.feature.op;
     const view = this.app.view;
     let segs: number[] = [];
     let sig = '';
-    if (p && o.kind === 'linear' && !this.dir) {
-      const hit = view.pick(p.x, p.y, { edgeTolPx: p.tol, profiles: false, planes: false, axes: true, worldAxes: true });
+    if (pointer && op.kind === 'linear' && !this.dir) {
+      const hit = view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol, profiles: false, planes: false, axes: true, worldAxes: true });
       const dir = hit?.kind === 'axis' ? view.axisOf(hit.id)?.plane.normal : hit?.kind === 'edge' ? view.body(hit.body)?.edges[hit.edge]?.dir : hit?.kind === 'face' ? view.body(hit.body)?.faces[hit.face]?.normal : undefined;
       if (dir) {
-        sig = `l|${dir.map(x => x.toFixed(4))}|${o.count}`;
+        sig = `l|${dir.map(x => x.toFixed(4))}|${op.count}`;
         if (sig !== this.patGhostSig) {
-          segs = rowGhost(this.app, this.feature.bodies, dir, patternSpacing(bodyExtent(this.app, this.feature.bodies, norm(dir)), 20), o.count);
+          segs = rowGhost(this.app, this.feature.bodies, dir, patternSpacing(bodyExtent(this.app, this.feature.bodies, norm(dir)), 20), op.count);
         }
       }
-    } else if (p && o.kind === 'circular' && !this.axis) {
-      const hit = view.pick(p.x, p.y, { edgeTolPx: p.tol, profiles: false, planes: false, axes: true, worldAxes: true });
+    } else if (pointer && op.kind === 'circular' && !this.axis) {
+      const hit = view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol, profiles: false, planes: false, axes: true, worldAxes: true });
       const ax = hit?.kind === 'axis' ? view.axisOf(hit.id)?.plane : undefined;
       if (ax) {
-        sig = `c|${ax.origin.map(x => x.toFixed(4))}|${ax.normal.map(x => x.toFixed(4))}|${o.count}|${o.angle}`;
+        sig = `c|${ax.origin.map(x => x.toFixed(4))}|${ax.normal.map(x => x.toFixed(4))}|${op.count}|${op.angle}`;
         if (sig !== this.patGhostSig) {
-          segs = ringGhost(this.app, this.feature.bodies, { origin: ax.origin, dir: ax.normal }, o.angle, o.count);
+          segs = ringGhost(this.app, this.feature.bodies, { origin: ax.origin, dir: ax.normal }, op.angle, op.count);
         }
       }
     }
@@ -2347,19 +2347,19 @@ export class TransformOp extends FeatureOp<TransformFeature> {
     this.patGhost = segs.length ? new Ghost(view, segs) : null;
   }
 
-  hover(p: ToolPointer | null): void {
-    this.lookAhead(p);
+  hover(pointer: ToolPointer | null): void {
+    this.lookAhead(pointer);
     if (this.patHandle) {
-      const on = !!p && (!!this.patDrag || this.patHandle.hit(p));
+      const on = !!pointer && (!!this.patDrag || this.patHandle.hit(pointer));
       this.patHandle.setHot(on);
       if (on) {
         return;
       }
     }
     if (this.gimbal) {
-      this.gimbal.setHot(p && !this.dragging ? this.gimbal.hit(p) : this.dragging?.part ?? null);
+      this.gimbal.setHot(pointer && !this.dragging ? this.gimbal.hit(pointer) : this.dragging?.part ?? null);
     } else {
-      super.hover(p);
+      super.hover(pointer);
     }
   }
 
@@ -2373,19 +2373,19 @@ export class TransformOp extends FeatureOp<TransformFeature> {
     return this;
   }
 
-  down(p: ToolPointer): boolean {
-    const o = this.feature.op;
-    if (this.patHandle?.hit(p) && (o.kind === 'linear' || o.kind === 'circular')) {
-      this.patDrag = { from: p, v0: o.kind === 'linear' ? o.spacing : o.angle };
+  down(pointer: ToolPointer): boolean {
+    const op = this.feature.op;
+    if (this.patHandle?.hit(pointer) && (op.kind === 'linear' || op.kind === 'circular')) {
+      this.patDrag = { from: pointer, v0: op.kind === 'linear' ? op.spacing : op.angle };
       this.patHandle.setHot(true);
 
       return true;
     }
     const flat = Math.abs(this.app.view.cam.viewDir().z) > 0.25;
     const grabbed = this.grabbed;
-    const part: GimbalPart | null | undefined = grabbed ? (flat ? { kind: 'plane', i: 2 } : { kind: 'center' }) : this.gimbal?.hit(p);
+    const part: GimbalPart | null | undefined = grabbed ? (flat ? { kind: 'plane', i: 2 } : { kind: 'center' }) : this.gimbal?.hit(pointer);
     this.grabbed = false;
-    if (!part || o.kind !== 'move') {
+    if (!part || op.kind !== 'move') {
       return false;
     }
     // The dot in the middle, grabbed: it is the point everything turns about, and it is moved - to a corner, onto
@@ -2397,50 +2397,50 @@ export class TransformOp extends FeatureOp<TransformFeature> {
       return true;
     }
     // A different rotation axis than the one already used: start from the current angle 0 on that axis.
-    if (part.kind === 'ring' && o.rotate && o.rotate.angle && axisIndex(o.rotate.axis) !== part.i) {
+    if (part.kind === 'ring' && op.rotate && op.rotate.angle && axisIndex(op.rotate.axis) !== part.i) {
       this.app.ui.toast('One rotation axis per move - press Done, then rotate around the next axis');
 
       return true;
     }
-    this.dragging = { from: p, part, t0: [...o.translate] as Vec3, a0: o.rotate?.angle ?? 0, center: add(this.center, o.translate) };
+    this.dragging = { from: pointer, part, t0: [...op.translate] as Vec3, a0: op.rotate?.angle ?? 0, center: add(this.center, op.translate) };
     this.gimbal!.setHot(part);
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
-    const o = this.feature.op;
+  drag(pointer: ToolPointer): void {
+    const op = this.feature.op;
     const pd = this.patDrag;
-    if (pd && o.kind === 'linear' && this.dir) {
-      this.typing.track(p);
+    if (pd && op.kind === 'linear' && this.dir) {
+      this.typing.track(pointer);
       if (this.typing.active) {
         return;
       }
-      const raw = pd.v0 + axisDrag(this.app.view, add(this.center, scale(this.dir, pd.v0)), this.dir, pd.from, p);
+      const raw = pd.v0 + axisDrag(this.app.view, add(this.center, scale(this.dir, pd.v0)), this.dir, pd.from, pointer);
       const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4);
       this.typedInto('op.spacing', '');
       this.setSpacing(Math.round(raw / step) * step || step);
-      this.app.ui.setLabel(p.x, p.y, `${fmtLen(o.spacing)} apart  · type a value`);
+      this.app.ui.setLabel(pointer.x, pointer.y, `${fmtLen(op.spacing)} apart  · type a value`);
 
       return;
     }
-    if (pd && o.kind === 'circular') {
-      this.typing.track(p);
+    if (pd && op.kind === 'circular') {
+      this.typing.track(pointer);
       if (this.typing.active) {
         return;
       }
-      const g = this.ring();
-      const at = g && this.app.view.rayToPlane(p.x, p.y, { origin: g.foot, normal: g.d, xDir: g.u });
-      if (!g || !at) {
+      const ring = this.ring();
+      const at = ring && this.app.view.rayToPlane(pointer.x, pointer.y, { origin: ring.foot, normal: ring.d, xDir: ring.u });
+      if (!ring || !at) {
         return;
       }
-      const w = sub(at, g.foot);
+      const offset = sub(at, ring.foot);
       // Round the axis from where the bodies are, 0 to 360 (Shift: not snapped to 5 degrees); nearly all the way: a full turn.
-      let a = (Math.atan2(dot(w, g.v), dot(w, g.u)) * 180) / Math.PI;
+      let a = (Math.atan2(dot(offset, ring.v), dot(offset, ring.u)) * 180) / Math.PI;
       if (a <= 0) {
         a += 360;
       }
-      if (!p.shift) {
+      if (!pointer.shift) {
         a = Math.round(a / 5) * 5;
       }
       if (a > 357 || a < 1) {
@@ -2448,79 +2448,79 @@ export class TransformOp extends FeatureOp<TransformFeature> {
       }
       this.typedInto('op.angle', '');
       this.setSpread(a);
-      this.app.ui.setLabel(p.x, p.y, `${Math.round(a * 10) / 10}°${a === 360 ? ' (all the way round)' : ''}  · type a value`);
+      this.app.ui.setLabel(pointer.x, pointer.y, `${Math.round(a * 10) / 10}°${a === 360 ? ' (all the way round)' : ''}  · type a value`);
 
       return;
     }
-    if (this.pivotDrag && o.kind === 'move') {
+    if (this.pivotDrag && op.kind === 'move') {
       const view = this.app.view;
-      const hit = view.pick(p.x, p.y, { profiles: false, planes: false, axes: false, edgeTolPx: Math.max(10, p.tol) });
-      const now = add(this.center, o.translate);
-      const n = view.cam.viewDir().toArray() as Vec3;
+      const hit = view.pick(pointer.x, pointer.y, { profiles: false, planes: false, axes: false, edgeTolPx: Math.max(10, pointer.tol) });
+      const now = add(this.center, op.translate);
+      const viewDir = view.cam.viewDir().toArray() as Vec3;
       const at: Vec3 | null
-        = hit?.kind === 'vertex' ? (view.vertexOf(hit.body, hit.vertex) ?? hit.point) : hit?.kind === 'edge' || hit?.kind === 'face' ? hit.point : view.rayToPlane(p.x, p.y, { origin: now, normal: n, xDir: xDirFor(n) });
+        = hit?.kind === 'vertex' ? (view.vertexOf(hit.body, hit.vertex) ?? hit.point) : hit?.kind === 'edge' || hit?.kind === 'face' ? hit.point : view.rayToPlane(pointer.x, pointer.y, { origin: now, normal: viewDir, xDir: xDirFor(viewDir) });
       if (!at) {
         return;
       }
       this.app.setHover(hit?.kind === 'vertex' ? { kind: 'vertex', body: hit.body, vertex: hit.vertex } : hit?.kind === 'edge' ? { kind: 'edge', body: hit.body, edge: hit.edge } : null);
       // (Where the dot is shown is the centre moved with the body so far.)
-      this.center = sub(at, o.translate);
-      if (o.rotate) {
-        o.rotate.origin = this.center;
+      this.center = sub(at, op.translate);
+      if (op.rotate) {
+        op.rotate.origin = this.center;
       }
       this.gimbal?.setCenter(at);
-      this.app.ui.setLabel(p.x, p.y, hit?.kind === 'vertex' ? 'Centre: on the corner' : hit?.kind === 'edge' ? 'Centre: on the edge' : hit?.kind === 'face' ? 'Centre: on the face' : 'Centre');
-      if (o.rotate?.angle) {
+      this.app.ui.setLabel(pointer.x, pointer.y, hit?.kind === 'vertex' ? 'Centre: on the corner' : hit?.kind === 'edge' ? 'Centre: on the edge' : hit?.kind === 'face' ? 'Centre: on the face' : 'Centre');
+      if (op.rotate?.angle) {
         this.update();
       }
 
       return;
     }
     const dr = this.dragging;
-    if (!dr || o.kind !== 'move') {
+    if (!dr || op.kind !== 'move') {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
     const view = this.app.view;
     const step = niceStep(view.cam.worldPerPixel(view.height) * 4);
-    const snap = (v: number) => (p.shift ? v : Math.round(v / step) * step);
+    const snap = (value: number) => (pointer.shift ? value : Math.round(value / step) * step);
     const part = dr.part;
     if (part.kind === 'axis') {
       const dir = GIMBAL_AXES[part.i];
-      const d = snap(axisDrag(view, dr.center, dir, dr.from, p));
-      o.translate = add(dr.t0, scale(dir, d));
-      this.boxAt(p, fmtLen(d));
+      const distance = snap(axisDrag(view, dr.center, dir, dr.from, pointer));
+      op.translate = add(dr.t0, scale(dir, distance));
+      this.boxAt(pointer, fmtLen(distance));
     } else if (part.kind === 'plane' || part.kind === 'center') {
       // Move in the plane of the square (or the screen plane for the centre).
-      const n: Vec3 = part.kind === 'plane' ? GIMBAL_AXES[part.i] : (view.cam.viewDir().toArray() as Vec3);
-      const plane = { origin: dr.center, normal: n, xDir: xDirFor(n) };
+      const normal: Vec3 = part.kind === 'plane' ? GIMBAL_AXES[part.i] : (view.cam.viewDir().toArray() as Vec3);
+      const plane = { origin: dr.center, normal: normal, xDir: xDirFor(normal) };
       const a = view.rayToPlane(dr.from.x, dr.from.y, plane);
-      const b = view.rayToPlane(p.x, p.y, plane);
+      const b = view.rayToPlane(pointer.x, pointer.y, plane);
       if (!a || !b) {
         return;
       }
-      const d = sub(b, a);
-      o.translate = add(dr.t0, [snap(d[0]), snap(d[1]), snap(d[2])]);
-      this.boxAt(p, fmtLen(len(sub(o.translate, dr.t0))));
+      const delta = sub(b, a);
+      op.translate = add(dr.t0, [snap(delta[0]), snap(delta[1]), snap(delta[2])]);
+      this.boxAt(pointer, fmtLen(len(sub(op.translate, dr.t0))));
     } else {
       const axis = GIMBAL_AXES[part.i];
-      const c = view.toScreen(dr.center);
-      if (!c) {
+      const screenPoint = view.toScreen(dr.center);
+      if (!screenPoint) {
         return;
       }
-      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - c[1], q.x - c[0]);
+      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - screenPoint[1], q.x - screenPoint[0]);
       // Screen y points down, so a visual counter-clockwise turn is a negative atan2 change.
       const facing = dot(axis, view.cam.viewDir().toArray() as Vec3) < 0 ? 1 : -1;
-      let deg = (-(ang(p) - ang(dr.from)) * 180) / Math.PI * facing;
+      let deg = (-(ang(pointer) - ang(dr.from)) * 180) / Math.PI * facing;
       deg = ((deg + 540) % 360) - 180;
-      const total = p.shift ? dr.a0 + deg : Math.round((dr.a0 + deg) / 5) * 5;
-      o.rotate = { origin: this.center, axis, angle: total };
-      this.boxAt(p, `${Math.round(total * 10) / 10}°`);
+      const total = pointer.shift ? dr.a0 + deg : Math.round((dr.a0 + deg) / 5) * 5;
+      op.rotate = { origin: this.center, axis, angle: total };
+      this.boxAt(pointer, `${Math.round(total * 10) / 10}°`);
     }
-    this.app.ui.updatePanelValues([o.translate[0], o.translate[1], o.translate[2], o.rotate?.angle ?? 0]);
+    this.app.ui.updatePanelValues([op.translate[0], op.translate[1], op.translate[2], op.rotate?.angle ?? 0]);
     this.update();
   }
 
@@ -2557,51 +2557,51 @@ export class TransformOp extends FeatureOp<TransformFeature> {
   /** Typed while dragging: distance for arrows/squares/centre, angle for arcs. */
   /** What a typed value does to the part being dragged (typed during the drag, or in its value box after). */
   private dragTarget(): DragTypingTarget | null {
-    const o = this.feature.op;
+    const op = this.feature.op;
     const dr = this.dragging;
-    if (!dr || o.kind !== 'move') {
+    if (!dr || op.kind !== 'move') {
       return null;
     }
     const part = dr.part;
     const refresh = () => {
-      this.app.ui.updatePanelValues([o.translate[0], o.translate[1], o.translate[2], o.rotate?.angle ?? 0]);
+      this.app.ui.updatePanelValues([op.translate[0], op.translate[1], op.translate[2], op.rotate?.angle ?? 0]);
       this.update();
     };
     // Squares/centre: along the direction dragged so far.
-    const dragDir = norm(sub(o.translate, dr.t0));
+    const dragDir = norm(sub(op.translate, dr.t0));
 
     return {
       kind: part.kind === 'ring' ? 'angle' : 'length',
-      apply: (v) => {
+      apply: (value) => {
         if (part.kind === 'ring') {
-          o.rotate = { origin: this.center, axis: GIMBAL_AXES[part.i], angle: dr.a0 + v };
+          op.rotate = { origin: this.center, axis: GIMBAL_AXES[part.i], angle: dr.a0 + value };
         } else if (part.kind === 'axis') {
-          o.translate = add(dr.t0, scale(GIMBAL_AXES[part.i], v));
+          op.translate = add(dr.t0, scale(GIMBAL_AXES[part.i], value));
         } else if (len(dragDir) > 0.5) {
-          o.translate = add(dr.t0, scale(dragDir, v));
+          op.translate = add(dr.t0, scale(dragDir, value));
         }
         refresh();
       },
       commit: () => ((this.dragging = null), this.gimbal?.setHot(null), this.done()),
-      cancel: () => ((o.translate = [...dr.t0] as Vec3), o.rotate && (o.rotate.angle = dr.a0), refresh())
+      cancel: () => ((op.translate = [...dr.t0] as Vec3), op.rotate && (op.rotate.angle = dr.a0), refresh())
     };
   }
 
   /** The drag's value in a box by the pointer (typeable, and it stays after letting go). */
-  private boxAt(p: ToolPointer, text: string): void {
+  private boxAt(pointer: ToolPointer, text: string): void {
     const t = this.dragTarget();
     if (t) {
-      this.typing.box(p, text, t);
+      this.typing.box(pointer, text, t);
     }
   }
 
   dragKey(e: KeyboardEvent): boolean {
     const pd = this.patDrag;
-    const o = this.feature.op;
-    if (pd && (o.kind === 'linear' || o.kind === 'circular')) {
-      const set = (v: number) => (o.kind === 'linear' ? this.setSpacing(v) : this.setSpread(v));
+    const op = this.feature.op;
+    if (pd && (op.kind === 'linear' || op.kind === 'circular')) {
+      const set = (value: number) => (op.kind === 'linear' ? this.setSpacing(value) : this.setSpread(value));
 
-      return this.typing.key(e, { kind: o.kind === 'linear' ? 'length' : 'angle', apply: set, commit: () => ((this.patDrag = null), this.done()), cancel: () => set(pd.v0) });
+      return this.typing.key(e, { kind: op.kind === 'linear' ? 'length' : 'angle', apply: set, commit: () => ((this.patDrag = null), this.done()), cancel: () => set(pd.v0) });
     }
     const t = this.dragTarget();
 
@@ -2640,15 +2640,15 @@ export class MoveFaceOp extends FeatureOp<MoveFaceFeature> {
     if (isVertex) {
       // A point just moves (turning it about itself would do nothing).
       this.axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-      this.gimbal = new Gimbal(app.view, { parts: p => p.kind !== 'ring' });
+      this.gimbal = new Gimbal(app.view, { parts: gimbalPart => gimbalPart.kind !== 'ring' });
       this.center = center;
 
       return;
     }
     if (isFace) {
-      const n = norm(target.plane.normal);
+      const normal = norm(target.plane.normal);
       const x = norm(target.plane.xDir);
-      this.axes = [x, cross(n, x), n];
+      this.axes = [x, cross(normal, x), normal];
     } else {
       this.axes = MoveFaceOp.edgeAxes(target.edge.dir);
     }
@@ -2660,14 +2660,14 @@ export class MoveFaceOp extends FeatureOp<MoveFaceFeature> {
   }
 
   /** An edge's gimbal: across it, and tilting it (along itself changes nothing). */
-  static edgeParts = (p: GimbalPart): boolean => (p.kind === 'axis' && p.i > 0) || (p.kind === 'plane' && p.i === 0) || (p.kind === 'ring' && p.i > 0);
+  static edgeParts = (gimbalPart: GimbalPart): boolean => (gimbalPart.kind === 'axis' && gimbalPart.i > 0) || (gimbalPart.kind === 'plane' && gimbalPart.i === 0) || (gimbalPart.kind === 'ring' && gimbalPart.i > 0);
 
   /** The axes of an edge's gimbal: along it, then two across. */
   static edgeAxes(dir: Vec3): Vec3[] {
-    const d = norm(dir);
-    const u = xDirFor(d);
+    const direction = norm(dir);
+    const xDir = xDirFor(direction);
 
-    return [d, u, cross(d, u)];
+    return [direction, xDir, cross(direction, xDir)];
   }
 
   protected hint(): string {
@@ -2675,16 +2675,16 @@ export class MoveFaceOp extends FeatureOp<MoveFaceFeature> {
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
     // ΔX ΔY ΔZ only when changing a step opened from History.
-    const xyz = this.existing ? (['X', 'Y', 'Z'] as const).map((l, i): PanelItem => this.num(`Δ${l}`, `translate.${i}`, 'length')) : [];
-    if (f.vertex) {
+    const xyz = this.existing ? (['X', 'Y', 'Z'] as const).map((axisLabel, i): PanelItem => this.num(`Δ${axisLabel}`, `translate.${i}`, 'length')) : [];
+    if (feature.vertex) {
       return xyz;
     }
 
     return [
       ...xyz,
-      f.rotate ? this.num('Tilt', 'rotate.angle', 'angle') : { type: 'number', label: 'Tilt', value: 0, kind: 'angle', onExpr: e => this.setExpr('rotate.angle', e), onInput: v => ((f.rotate = { origin: this.center, axis: this.axes[0], angle: v }), this.update()) }
+      feature.rotate ? this.num('Tilt', 'rotate.angle', 'angle') : { type: 'number', label: 'Tilt', value: 0, kind: 'angle', onExpr: e => this.setExpr('rotate.angle', e), onInput: angle => ((feature.rotate = { origin: this.center, axis: this.axes[0], angle: angle }), this.update()) }
     ];
   }
 
@@ -2701,84 +2701,84 @@ export class MoveFaceOp extends FeatureOp<MoveFaceFeature> {
     this.gimbal.setCenter(add(this.center, this.feature.translate));
   }
 
-  hover(p: ToolPointer | null): void {
-    this.gimbal.setHot(p && !this.dragging ? this.gimbal.hit(p) : (this.dragging?.part ?? null));
+  hover(pointer: ToolPointer | null): void {
+    this.gimbal.setHot(pointer && !this.dragging ? this.gimbal.hit(pointer) : (this.dragging?.part ?? null));
   }
 
-  down(p: ToolPointer): boolean {
-    const part = this.gimbal.hit(p);
+  down(pointer: ToolPointer): boolean {
+    const part = this.gimbal.hit(pointer);
     if (!part) {
       return false;
     }
-    const r = this.feature.rotate;
-    if (part.kind === 'ring' && r && r.angle && dot(r.axis, this.axes[part.i]) < 0.999) {
+    const rotate = this.feature.rotate;
+    if (part.kind === 'ring' && rotate && rotate.angle && dot(rotate.axis, this.axes[part.i]) < 0.999) {
       this.app.ui.toast('One tilt axis per move - press Done, then tilt around the next axis');
 
       return true;
     }
-    this.dragging = { from: p, part, t0: [...this.feature.translate] as Vec3, a0: r?.angle ?? 0, center: add(this.center, this.feature.translate) };
+    this.dragging = { from: pointer, part, t0: [...this.feature.translate] as Vec3, a0: rotate?.angle ?? 0, center: add(this.center, this.feature.translate) };
     this.gimbal.setHot(part);
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
-    const f = this.feature;
+  drag(pointer: ToolPointer): void {
+    const feature = this.feature;
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
     const view = this.app.view;
     const step = niceStep(view.cam.worldPerPixel(view.height) * 4);
-    const snap = (v: number) => (p.shift ? v : Math.round(v / step) * step);
+    const snap = (value: number) => (pointer.shift ? value : Math.round(value / step) * step);
     const part = dr.part;
     if (part.kind === 'axis') {
       const dir = this.axes[part.i];
-      const d = snap(axisDrag(view, dr.center, dir, dr.from, p));
-      f.translate = add(dr.t0, scale(dir, d));
-      this.boxAt(p, `${fmtLen(d)}`);
+      const distance = snap(axisDrag(view, dr.center, dir, dr.from, pointer));
+      feature.translate = add(dr.t0, scale(dir, distance));
+      this.boxAt(pointer, `${fmtLen(distance)}`);
     } else if (part.kind === 'center') {
       // Free move in the screen plane.
-      const n = view.cam.viewDir().toArray() as Vec3;
-      const plane = { origin: dr.center, normal: n, xDir: xDirFor(n) };
+      const viewDir = view.cam.viewDir().toArray() as Vec3;
+      const plane = { origin: dr.center, normal: viewDir, xDir: xDirFor(viewDir) };
       const a = view.rayToPlane(dr.from.x, dr.from.y, plane);
-      const b = view.rayToPlane(p.x, p.y, plane);
+      const b = view.rayToPlane(pointer.x, pointer.y, plane);
       if (!a || !b) {
         return;
       }
-      const d = sub(b, a);
-      f.translate = add(dr.t0, [snap(d[0]), snap(d[1]), snap(d[2])]);
-      this.boxAt(p, `${fmtLen(len(sub(f.translate, dr.t0)))}`);    
+      const delta = sub(b, a);
+      feature.translate = add(dr.t0, [snap(delta[0]), snap(delta[1]), snap(delta[2])]);
+      this.boxAt(pointer, `${fmtLen(len(sub(feature.translate, dr.t0)))}`);    
     } else if (part.kind === 'plane') {
-      const n = this.axes[part.i];
-      const plane = { origin: dr.center, normal: n, xDir: xDirFor(n) };
+      const axis = this.axes[part.i];
+      const plane = { origin: dr.center, normal: axis, xDir: xDirFor(axis) };
       const a = view.rayToPlane(dr.from.x, dr.from.y, plane);
-      const b = view.rayToPlane(p.x, p.y, plane);
+      const b = view.rayToPlane(pointer.x, pointer.y, plane);
       if (!a || !b) {
         return;
       }
-      const d = sub(b, a);
-      f.translate = add(dr.t0, [snap(d[0]), snap(d[1]), snap(d[2])]);
-      this.boxAt(p, `${fmtLen(len(sub(f.translate, dr.t0)))}`);
+      const delta = sub(b, a);
+      feature.translate = add(dr.t0, [snap(delta[0]), snap(delta[1]), snap(delta[2])]);
+      this.boxAt(pointer, `${fmtLen(len(sub(feature.translate, dr.t0)))}`);
     } else if (part.kind === 'ring') {
       const axis = this.axes[part.i];
-      const c = view.toScreen(dr.center);
-      if (!c) {
+      const screenPoint = view.toScreen(dr.center);
+      if (!screenPoint) {
         return;
       }
-      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - c[1], q.x - c[0]);
+      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - screenPoint[1], q.x - screenPoint[0]);
       const facing = dot(axis, view.cam.viewDir().toArray() as Vec3) < 0 ? 1 : -1;
-      let deg = ((-(ang(p) - ang(dr.from)) * 180) / Math.PI) * facing;
+      let deg = ((-(ang(pointer) - ang(dr.from)) * 180) / Math.PI) * facing;
       deg = ((deg + 540) % 360) - 180;
-      const total = p.shift ? dr.a0 + deg : Math.round(dr.a0 + deg);
-      f.rotate = { origin: this.center, axis, angle: total };
-      this.boxAt(p, `${Math.round(total * 10) / 10}°`);
+      const total = pointer.shift ? dr.a0 + deg : Math.round(dr.a0 + deg);
+      feature.rotate = { origin: this.center, axis, angle: total };
+      this.boxAt(pointer, `${Math.round(total * 10) / 10}°`);
     }
-    this.app.ui.updatePanelValues([f.translate[0], f.translate[1], f.translate[2], f.rotate?.angle ?? 0]);
+    this.app.ui.updatePanelValues([feature.translate[0], feature.translate[1], feature.translate[2], feature.rotate?.angle ?? 0]);
     this.update();
   }
 
@@ -2794,40 +2794,40 @@ export class MoveFaceOp extends FeatureOp<MoveFaceFeature> {
 
   /** What a typed value does to the part being dragged (typed during the drag, or in its value box after). */
   private dragTarget(): DragTypingTarget | null {
-    const f = this.feature;
+    const feature = this.feature;
     const dr = this.dragging;
     if (!dr) {
       return null;
     }
     const part = dr.part;
     const refresh = () => {
-      this.app.ui.updatePanelValues([f.translate[0], f.translate[1], f.translate[2], f.rotate?.angle ?? 0]);
+      this.app.ui.updatePanelValues([feature.translate[0], feature.translate[1], feature.translate[2], feature.rotate?.angle ?? 0]);
       this.update();
     };
-    const dragDir = norm(sub(f.translate, dr.t0));
+    const dragDir = norm(sub(feature.translate, dr.t0));
 
     return {
       kind: part.kind === 'ring' ? 'angle' : 'length',
-      apply: (v) => {
+      apply: (value) => {
         if (part.kind === 'ring') {
-          f.rotate = { origin: this.center, axis: this.axes[part.i], angle: dr.a0 + v };
+          feature.rotate = { origin: this.center, axis: this.axes[part.i], angle: dr.a0 + value };
         } else if (part.kind === 'axis') {
-          f.translate = add(dr.t0, scale(this.axes[part.i], v));
+          feature.translate = add(dr.t0, scale(this.axes[part.i], value));
         } else if (len(dragDir) > 0.5) {
-          f.translate = add(dr.t0, scale(dragDir, v));
+          feature.translate = add(dr.t0, scale(dragDir, value));
         }
         refresh();
       },
       commit: () => ((this.dragging = null), this.gimbal.setHot(null), this.done()),
-      cancel: () => ((f.translate = [...dr.t0] as Vec3), f.rotate && (f.rotate.angle = dr.a0), refresh())
+      cancel: () => ((feature.translate = [...dr.t0] as Vec3), feature.rotate && (feature.rotate.angle = dr.a0), refresh())
     };
   }
 
   /** The drag's value in a box by the pointer (typeable, and it stays after letting go). */
-  private boxAt(p: ToolPointer, text: string): void {
+  private boxAt(pointer: ToolPointer, text: string): void {
     const t = this.dragTarget();
     if (t) {
-      this.typing.box(p, text, t);
+      this.typing.box(pointer, text, t);
     }
   }
 
@@ -2862,24 +2862,24 @@ export class ScaleOp extends FeatureOp<TransformFeature> {
     const op: TransformFeature['op'] = xyz ? { kind: 'scaleXYZ', center, factors: [1, 1, 1] } : { kind: 'scale', center, factor: 1 };
     super(app, { ...app.store.newIdentity('transform', xyz ? 'Scale XYZ' : 'Scale'), type: 'transform', bodies, copy: false, op }, existing);
     this.xyz = this.feature.op.kind === 'scaleXYZ';
-    this.gimbal = new Gimbal(app.view, { cubes: true, parts: this.xyz ? SCALE_PARTS : p => p.kind === 'center' || p.kind === 'axis' });
+    this.gimbal = new Gimbal(app.view, { cubes: true, parts: this.xyz ? SCALE_PARTS : gimbalPart => gimbalPart.kind === 'center' || gimbalPart.kind === 'axis' });
     this.gimbal.setCenter((this.feature.op as { center: Vec3 }).center);
   }
 
   private get factors(): Vec3 {
-    const o = this.feature.op;
+    const op = this.feature.op;
 
-    return o.kind === 'scaleXYZ' ? o.factors : o.kind === 'scale' ? [o.factor, o.factor, o.factor] : [1, 1, 1];
+    return op.kind === 'scaleXYZ' ? op.factors : op.kind === 'scale' ? [op.factor, op.factor, op.factor] : [1, 1, 1];
   }
 
-  private setFactors(k: Vec3): void {
-    const o = this.feature.op;
-    if (o.kind === 'scaleXYZ') {
-      o.factors = k;
-    } else if (o.kind === 'scale') {
-      o.factor = k[0];
+  private setFactors(factors: Vec3): void {
+    const op = this.feature.op;
+    if (op.kind === 'scaleXYZ') {
+      op.factors = factors;
+    } else if (op.kind === 'scale') {
+      op.factor = factors[0];
     }
-    this.app.ui.updatePanelValues(this.xyz ? k : [k[0]]);
+    this.app.ui.updatePanelValues(this.xyz ? factors : [factors[0]]);
     this.update();
   }
 
@@ -2891,14 +2891,14 @@ export class ScaleOp extends FeatureOp<TransformFeature> {
 
   protected items(): PanelItem[] {
     if (this.xyz) {
-      return (['X', 'Y', 'Z'] as const).map((l, i): PanelItem => this.num(`Scale ${l}`, `op.factors.${i}`, 'number', { min: 0.0001 }));
+      return (['X', 'Y', 'Z'] as const).map((axisLabel, i): PanelItem => this.num(`Scale ${axisLabel}`, `op.factors.${i}`, 'number', { min: 0.0001 }));
     }
 
-    return [this.num('Factor', 'op.factor', 'number', { min: 0.0001 }), { type: 'toggle', label: 'Copy', value: this.feature.copy, onChange: v => ((this.feature.copy = v), this.render(), this.update()) }];
+    return [this.num('Factor', 'op.factor', 'number', { min: 0.0001 }), { type: 'toggle', label: 'Copy', value: this.feature.copy, onChange: copy => ((this.feature.copy = copy), this.render(), this.update()) }];
   }
 
   protected ready(): boolean {
-    return this.factors.some(k => Math.abs(k - 1) > 1e-9) || this.feature.copy;
+    return this.factors.some(factor => Math.abs(factor - 1) > 1e-9) || this.feature.copy;
   }
 
   exit(): void {
@@ -2906,58 +2906,58 @@ export class ScaleOp extends FeatureOp<TransformFeature> {
     super.exit();
   }
 
-  hover(p: ToolPointer | null): void {
-    this.gimbal.setHot(p && !this.dragging ? this.gimbal.hit(p) : (this.dragging?.part ?? null));
+  hover(pointer: ToolPointer | null): void {
+    this.gimbal.setHot(pointer && !this.dragging ? this.gimbal.hit(pointer) : (this.dragging?.part ?? null));
   }
 
-  down(p: ToolPointer): boolean {
-    const part = this.gimbal.hit(p);
+  down(pointer: ToolPointer): boolean {
+    const part = this.gimbal.hit(pointer);
     if (!part) {
       return false;
     }
-    const c = this.app.view.toScreen(this.gimbal.origin);
+    const screenPoint = this.app.view.toScreen(this.gimbal.origin);
     // Distance of the press from the centre on screen = "factor 1" for this drag.
-    const r0 = c ? Math.max(24, Math.hypot(p.x - c[0], p.y - c[1])) : 60;
-    this.dragging = { part, from: p, k0: [...this.factors] as Vec3, r0 };
+    const r0 = screenPoint ? Math.max(24, Math.hypot(pointer.x - screenPoint[0], pointer.y - screenPoint[1])) : 60;
+    this.dragging = { part, from: pointer, k0: [...this.factors] as Vec3, r0 };
     this.gimbal.setHot(part);
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
     const view = this.app.view;
-    const c = view.toScreen(this.gimbal.origin);
-    if (!c) {
+    const screenPoint = view.toScreen(this.gimbal.origin);
+    if (!screenPoint) {
       return;
     }
-    let f: number;
+    let factor: number;
     if (dr.part.kind === 'axis') {
       // Along the axis on screen: how far the handle has been pulled out or pushed in.
       const pxPerUnit = view.cam.worldPerPixel(view.height);
-      const along = axisDrag(view, this.gimbal.origin, GIMBAL_AXES[dr.part.i], dr.from, p) / pxPerUnit;
-      f = (dr.r0 + along) / dr.r0;
+      const along = axisDrag(view, this.gimbal.origin, GIMBAL_AXES[dr.part.i], dr.from, pointer) / pxPerUnit;
+      factor = (dr.r0 + along) / dr.r0;
     } else {
-      f = Math.hypot(p.x - c[0], p.y - c[1]) / dr.r0;
+      factor = Math.hypot(pointer.x - screenPoint[0], pointer.y - screenPoint[1]) / dr.r0;
     }
-    f = Math.max(0.01, p.shift ? f : Math.round(f * 100) / 100);
-    const k = [...dr.k0] as Vec3;
+    factor = Math.max(0.01, pointer.shift ? factor : Math.round(factor * 100) / 100);
+    const factors = [...dr.k0] as Vec3;
     if (dr.part.kind === 'axis' && this.xyz) {
-      k[dr.part.i] = dr.k0[dr.part.i] * f;
+      factors[dr.part.i] = dr.k0[dr.part.i] * factor;
     } else {
       for (let i = 0; i < 3; i++) {
-        k[i] = dr.k0[i] * f;
+        factors[i] = dr.k0[i] * factor;
       }
     }
-    this.setFactors(k);
-    this.boxAt(p, `×${(dr.part.kind === 'axis' && this.xyz ? k[dr.part.i] : k[0]).toFixed(2)}`);
+    this.setFactors(factors);
+    this.boxAt(pointer, `×${(dr.part.kind === 'axis' && this.xyz ? factors[dr.part.i] : factors[0]).toFixed(2)}`);
   }
 
   up(): void {
@@ -2976,17 +2976,17 @@ export class ScaleOp extends FeatureOp<TransformFeature> {
 
     return {
       kind: 'number',
-      apply: (v) => {
-        if (v <= 0) {
+      apply: (value) => {
+        if (value <= 0) {
           return;
         }
-        const k = [...dr.k0] as Vec3;
+        const factors = [...dr.k0] as Vec3;
         if (dr.part.kind === 'axis' && this.xyz) {
-          k[dr.part.i] = v;
+          factors[dr.part.i] = value;
         } else {
-          k.fill(v);
+          factors.fill(value);
         }
-        this.setFactors(k);
+        this.setFactors(factors);
       },
       commit: () => ((this.dragging = null), this.gimbal.setHot(null), this.done()),
       cancel: () => this.setFactors(dr.k0)
@@ -2994,10 +2994,10 @@ export class ScaleOp extends FeatureOp<TransformFeature> {
   }
 
   /** The drag's value in a box by the pointer (typeable, and it stays after letting go). */
-  private boxAt(p: ToolPointer, text: string): void {
+  private boxAt(pointer: ToolPointer, text: string): void {
     const t = this.dragTarget();
     if (t) {
-      this.typing.box(p, text, t);
+      this.typing.box(pointer, text, t);
     }
   }
 
@@ -3021,13 +3021,13 @@ export class ScaleRefOp extends FeatureOp<TransformFeature> {
 
   constructor(app: AppContext, bodies: string[], existing?: TransformFeature) {
     super(app, { ...app.store.newIdentity('transform', 'Scale'), type: 'transform', bodies, copy: false, op: { kind: 'scale', center: [0, 0, 0], factor: 1 } }, existing);
-    const o = this.feature.op;
-    if (o.kind === 'scale' && o.ref) {
-      [this.a, this.b] = o.ref;
+    const op = this.feature.op;
+    if (op.kind === 'scale' && op.ref) {
+      [this.a, this.b] = op.ref;
     }
     this.slots = [
-      pointSlot(app, 'First point (stays put)', () => this.a, p => ((this.a = p), this.placed())),
-      pointSlot(app, 'Second point', () => this.b, p => ((this.b = p), this.placed()))
+      pointSlot(app, 'First point (stays put)', () => this.a, point => ((this.a = point), this.placed())),
+      pointSlot(app, 'Second point', () => this.b, point => ((this.b = point), this.placed()))
     ];
   }
 
@@ -3037,13 +3037,13 @@ export class ScaleRefOp extends FeatureOp<TransformFeature> {
   }
 
   private placed(): void {
-    const o = this.feature.op;
-    if (o.kind !== 'scale' || !this.a) {
+    const op = this.feature.op;
+    if (op.kind !== 'scale' || !this.a) {
       return;
     }
-    o.center = this.a;
+    op.center = this.a;
     if (this.b) {
-      o.ref = [this.a, this.b];
+      op.ref = [this.a, this.b];
     }
   }
 
@@ -3052,37 +3052,37 @@ export class ScaleRefOp extends FeatureOp<TransformFeature> {
   }
 
   protected items(): PanelItem[] {
-    const o = this.feature.op;
-    if (o.kind !== 'scale' || this.d0 < 1e-9) {
+    const op = this.feature.op;
+    if (op.kind !== 'scale' || this.d0 < 1e-9) {
       return [];
     }
 
     return [
-      { type: 'number', label: 'Distance', value: this.d0 * o.factor, kind: 'length', onInput: v => this.setLength(v) },
+      { type: 'number', label: 'Distance', value: this.d0 * op.factor, kind: 'length', onInput: value => this.setLength(value) },
       this.num('Factor', 'op.factor', 'number', { min: 0.0001, onInput: () => (this.dim?.setValue(this.d0 * (this.feature.op as { factor: number }).factor), this.update()) })
     ];
   }
 
-  private setLength(v: number): void {
-    const o = this.feature.op;
-    if (o.kind !== 'scale' || !(v > 0) || this.d0 < 1e-9) {
+  private setLength(value: number): void {
+    const op = this.feature.op;
+    if (op.kind !== 'scale' || !(value > 0) || this.d0 < 1e-9) {
       return;
     }
-    o.factor = v / this.d0;
-    this.app.ui.updatePanelValues([v, o.factor]);
+    op.factor = value / this.d0;
+    this.app.ui.updatePanelValues([value, op.factor]);
     this.update();
   }
 
   protected ready(): boolean {
-    const o = this.feature.op;
+    const op = this.feature.op;
 
-    return super.ready() && this.d0 > 1e-9 && o.kind === 'scale' && Math.abs(o.factor - 1) > 1e-9;
+    return super.ready() && this.d0 > 1e-9 && op.kind === 'scale' && Math.abs(op.factor - 1) > 1e-9;
   }
 
   /** Both points: the dimension between them, its value box ready to type into. */
   protected onDraftChanged(): void {
-    const o = this.feature.op;
-    if (!this.a || !this.b || this.d0 < 1e-9 || o.kind !== 'scale') {
+    const op = this.feature.op;
+    if (!this.a || !this.b || this.d0 < 1e-9 || op.kind !== 'scale') {
       this.dim?.dispose();
       this.dim = null;
 
@@ -3090,13 +3090,13 @@ export class ScaleRefOp extends FeatureOp<TransformFeature> {
     }
     const fresh = !this.dim;
     this.dim ??= new DimWidget(this.app.view, {
-      value: this.d0 * o.factor,
+      value: this.d0 * op.factor,
       focus: true,
-      onInput: v => (this.setLength(v), this.app.ui.updatePanelValues([v, (this.feature.op as { factor: number }).factor])),
+      onInput: value => (this.setLength(value), this.app.ui.updatePanelValues([value, (this.feature.op as { factor: number }).factor])),
       onCommit: () => this.done()
     });
     // Where the second point ends up: the line between them grows with the body.
-    this.dim.set(this.a, add(this.a, scale(sub(this.b, this.a), o.factor)));
+    this.dim.set(this.a, add(this.a, scale(sub(this.b, this.a), op.factor)));
     if (fresh) {
       this.render();
     }
@@ -3120,12 +3120,12 @@ export class ScaleFaceOp extends FeatureOp<ScaleFaceFeature> {
   private typing = new DragTyping(this.app);
 
   constructor(app: AppContext, face: FaceRef, plane: PlaneDef, existing?: ScaleFaceFeature) {
-    const n = norm(plane.normal);
-    const u = norm(plane.xDir);
-    super(app, { ...app.store.newIdentity('scaleFace'), type: 'scaleFace', face, u, factors: [1, 1] }, existing);
+    const normal = norm(plane.normal);
+    const xAxis = norm(plane.xDir);
+    super(app, { ...app.store.newIdentity('scaleFace'), type: 'scaleFace', face, u: xAxis, factors: [1, 1] }, existing);
     const uu = norm(this.feature.u);
-    this.axes = [uu, cross(n, uu), n];
-    this.gimbal = new Gimbal(app.view, { axes: this.axes, cubes: true, parts: p => p.kind === 'center' || (p.kind === 'axis' && p.i < 2) });
+    this.axes = [uu, cross(normal, uu), normal];
+    this.gimbal = new Gimbal(app.view, { axes: this.axes, cubes: true, parts: gimbalPart => gimbalPart.kind === 'center' || (gimbalPart.kind === 'axis' && gimbalPart.i < 2) });
     this.gimbal.setCenter(face.center);
   }
 
@@ -3136,21 +3136,21 @@ export class ScaleFaceOp extends FeatureOp<ScaleFaceFeature> {
   protected items(): PanelItem[] {
     // Along which way, said in X / Y / Z when it lines up ("U" and "V" mean
     // nothing to a beginner narrowing a pylon's top along the engine).
-    const along = (d: Vec3) => {
-      const k = d.findIndex(x => Math.abs(x) > 0.999);
+    const along = (direction: Vec3) => {
+      const axis = direction.findIndex(x => Math.abs(x) > 0.999);
 
-      return k >= 0 ? ` (along ${'XYZ'[k]})` : '';
+      return axis >= 0 ? ` (along ${'XYZ'[axis]})` : '';
     };
-    const v = cross(this.feature.face.normal, this.feature.u);
+    const vAxis = cross(this.feature.face.normal, this.feature.u);
 
     return [
       this.num(`Scale U${along(this.feature.u)}`, 'factors.0', 'number', { min: 0.0001 }),
-      this.num(`Scale V${along(v)}`, 'factors.1', 'number', { min: 0.0001 })
+      this.num(`Scale V${along(vAxis)}`, 'factors.1', 'number', { min: 0.0001 })
     ];
   }
 
   protected ready(): boolean {
-    return this.feature.factors.some(k => Math.abs(k - 1) > 1e-9);
+    return this.feature.factors.some(factor => Math.abs(factor - 1) > 1e-9);
   }
 
   exit(): void {
@@ -3158,53 +3158,53 @@ export class ScaleFaceOp extends FeatureOp<ScaleFaceFeature> {
     super.exit();
   }
 
-  hover(p: ToolPointer | null): void {
-    this.gimbal.setHot(p && !this.dragging ? this.gimbal.hit(p) : (this.dragging?.part ?? null));
+  hover(pointer: ToolPointer | null): void {
+    this.gimbal.setHot(pointer && !this.dragging ? this.gimbal.hit(pointer) : (this.dragging?.part ?? null));
   }
 
-  down(p: ToolPointer): boolean {
-    const part = this.gimbal.hit(p);
+  down(pointer: ToolPointer): boolean {
+    const part = this.gimbal.hit(pointer);
     if (!part) {
       return false;
     }
-    const c = this.app.view.toScreen(this.gimbal.origin);
-    const r0 = c ? Math.max(24, Math.hypot(p.x - c[0], p.y - c[1])) : 60;
-    this.dragging = { part, from: p, k0: [...this.feature.factors] as [number, number], r0 };
+    const screenPoint = this.app.view.toScreen(this.gimbal.origin);
+    const r0 = screenPoint ? Math.max(24, Math.hypot(pointer.x - screenPoint[0], pointer.y - screenPoint[1])) : 60;
+    this.dragging = { part, from: pointer, k0: [...this.feature.factors] as [number, number], r0 };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
     const view = this.app.view;
-    const c = view.toScreen(this.gimbal.origin);
-    if (!c) {
+    const screenPoint = view.toScreen(this.gimbal.origin);
+    if (!screenPoint) {
       return;
     }
-    let f: number;
+    let factor: number;
     if (dr.part.kind === 'axis') {
-      f = (dr.r0 + axisDrag(view, this.gimbal.origin, this.axes[dr.part.i], dr.from, p) / view.cam.worldPerPixel(view.height)) / dr.r0;
+      factor = (dr.r0 + axisDrag(view, this.gimbal.origin, this.axes[dr.part.i], dr.from, pointer) / view.cam.worldPerPixel(view.height)) / dr.r0;
     } else {
-      f = Math.hypot(p.x - c[0], p.y - c[1]) / dr.r0;
+      factor = Math.hypot(pointer.x - screenPoint[0], pointer.y - screenPoint[1]) / dr.r0;
     }
-    f = Math.max(0.01, p.shift ? f : Math.round(f * 100) / 100);
-    const k: [number, number] = [...dr.k0];
+    factor = Math.max(0.01, pointer.shift ? factor : Math.round(factor * 100) / 100);
+    const factors: [number, number] = [...dr.k0];
     if (dr.part.kind === 'axis') {
-      k[dr.part.i as 0 | 1] = dr.k0[dr.part.i as 0 | 1] * f;
+      factors[dr.part.i as 0 | 1] = dr.k0[dr.part.i as 0 | 1] * factor;
     } else {
-      ((k[0] = dr.k0[0] * f), (k[1] = dr.k0[1] * f));
+      ((factors[0] = dr.k0[0] * factor), (factors[1] = dr.k0[1] * factor));
     }
-    this.feature.factors = k;
-    this.app.ui.updatePanelValues(k);
+    this.feature.factors = factors;
+    this.app.ui.updatePanelValues(factors);
     this.update();
-    this.boxAt(p, `×${(dr.part.kind === 'axis' ? k[dr.part.i as 0 | 1] : k[0]).toFixed(2)}`);
+    this.boxAt(pointer, `×${(dr.part.kind === 'axis' ? factors[dr.part.i as 0 | 1] : factors[0]).toFixed(2)}`);
   }
 
   up(): void {
@@ -3222,18 +3222,18 @@ export class ScaleFaceOp extends FeatureOp<ScaleFaceFeature> {
 
     return {
       kind: 'number',
-      apply: (v) => {
-        if (v <= 0) {
+      apply: (value) => {
+        if (value <= 0) {
           return;
         }
-        const k: [number, number] = [...dr.k0];
+        const factors: [number, number] = [...dr.k0];
         if (dr.part.kind === 'axis') {
-          k[dr.part.i as 0 | 1] = v;
+          factors[dr.part.i as 0 | 1] = value;
         } else {
-          ((k[0] = v), (k[1] = v));
+          ((factors[0] = value), (factors[1] = value));
         }
-        this.feature.factors = k;
-        this.app.ui.updatePanelValues(k);
+        this.feature.factors = factors;
+        this.app.ui.updatePanelValues(factors);
         this.update();
       },
       commit: () => ((this.dragging = null), this.done()),
@@ -3242,10 +3242,10 @@ export class ScaleFaceOp extends FeatureOp<ScaleFaceFeature> {
   }
 
   /** The drag's value in a box by the pointer (typeable, and it stays after letting go). */
-  private boxAt(p: ToolPointer, text: string): void {
+  private boxAt(pointer: ToolPointer, text: string): void {
     const t = this.dragTarget();
     if (t) {
-      this.typing.box(p, text, t);
+      this.typing.box(pointer, text, t);
     }
   }
 
@@ -3283,7 +3283,7 @@ export class ReplaceFaceOp extends FeatureOp<ReplaceFaceFeature> {
 }
 
 function axisIndex(a: Vec3): number {
-  return a.findIndex(v => Math.abs(v) > 0.99);
+  return a.findIndex(value => Math.abs(value) > 0.99);
 }
 
 function axisName(a?: Vec3): string {
@@ -3295,12 +3295,12 @@ export function bodyExtent(app: AppContext, bodies: string[], dir: Vec3): number
   let lo = Infinity;
   let hi = -Infinity;
   for (const id of bodies) {
-    const p = app.view.body(id)?.positions;
-    if (!p) {
+    const positions = app.view.body(id)?.positions;
+    if (!positions) {
       continue;
     }
-    for (let i = 0; i < p.length; i += 3) {
-      const t = p[i] * dir[0] + p[i + 1] * dir[1] + p[i + 2] * dir[2];
+    for (let i = 0; i < positions.length; i += 3) {
+      const t = positions[i] * dir[0] + positions[i + 1] * dir[1] + positions[i + 2] * dir[2];
       if (t < lo) {
         lo = t;
       }
@@ -3314,7 +3314,7 @@ export function bodyExtent(app: AppContext, bodies: string[], dir: Vec3): number
 }
 
 export function bodyCenter(app: AppContext, bodies: string[]): Vec3 {
-  const pts = bodies.flatMap(id => app.view.body(id)?.faces.map(f => f.center) ?? []);
+  const pts = bodies.flatMap(id => app.view.body(id)?.faces.map(face => face.center) ?? []);
   if (!pts.length) {
     return [0, 0, 0];
   }
@@ -3334,8 +3334,8 @@ export class ImageOp extends FeatureOp<ImageFeature> {
   constructor(app: AppContext, existing: ImageFeature) {
     super(app, existing, existing);
     this.aspect = existing.height / existing.width;
-    const p = existing.plane;
-    this.gimbal = new Gimbal(app.view, { axes: [p.xDir, cross(p.normal, p.xDir), p.normal], parts: IN_PLANE });
+    const plane = existing.plane;
+    this.gimbal = new Gimbal(app.view, { axes: [plane.xDir, cross(plane.normal, plane.xDir), plane.normal], parts: IN_PLANE });
   }
 
   protected hint(): string {
@@ -3350,9 +3350,9 @@ export class ImageOp extends FeatureOp<ImageFeature> {
     const pl = this.feature.plane;
     const on = ([['floor', GROUND], ['front', FRONT], ['side', RIGHT]] as const).find(([, q]) => Math.abs(dot(q.normal, pl.normal)) > 0.999)?.[0] ?? '';
     const y = cross(pl.normal, pl.xDir);
-    const place = (u: number, v: number, base = pl) => {
+    const place = (along: number, across: number, base = pl) => {
       const yy = cross(base.normal, base.xDir);
-      this.feature.plane = { ...base, origin: add(add(scale(base.xDir, u), scale(yy, v)), scale(base.normal, dot(pl.origin, pl.normal) * (base === pl ? 1 : 0))) };
+      this.feature.plane = { ...base, origin: add(add(scale(base.xDir, along), scale(yy, across)), scale(base.normal, dot(pl.origin, pl.normal) * (base === pl ? 1 : 0))) };
       this.onDraftChanged();
       this.update();
     };
@@ -3361,10 +3361,10 @@ export class ImageOp extends FeatureOp<ImageFeature> {
 
     return [
       { type: 'choice', label: 'On', options: [{ id: 'floor', label: 'Floor' }, { id: 'front', label: 'Front' }, { id: 'side', label: 'Side' }], value: on, onChange: id => (place(u0, v0, { floor: GROUND, front: FRONT, side: RIGHT }[id as 'floor']), this.render()) },
-      { type: 'number', label: 'X', value: u0, kind: 'length', onInput: v => place(v, dot(this.feature.plane.origin, cross(this.feature.plane.normal, this.feature.plane.xDir))) },
-      { type: 'number', label: 'Y', value: v0, kind: 'length', onInput: v => place(dot(this.feature.plane.origin, this.feature.plane.xDir), v) },
-      this.num('Width', 'width', 'length', { min: 0.001, onInput: v => ((this.feature.height = v * this.aspect), this.update()) }),
-      { type: 'number', label: 'Opacity', value: this.feature.opacity, kind: 'number', min: 0.05, onInput: v => ((this.feature.opacity = Math.min(1, v)), this.update()) }
+      { type: 'number', label: 'X', value: u0, kind: 'length', onInput: value => place(value, dot(this.feature.plane.origin, cross(this.feature.plane.normal, this.feature.plane.xDir))) },
+      { type: 'number', label: 'Y', value: v0, kind: 'length', onInput: value => place(dot(this.feature.plane.origin, this.feature.plane.xDir), value) },
+      this.num('Width', 'width', 'length', { min: 0.001, onInput: value => ((this.feature.height = value * this.aspect), this.update()) }),
+      { type: 'number', label: 'Opacity', value: this.feature.opacity, kind: 'number', min: 0.05, onInput: value => ((this.feature.opacity = Math.min(1, value)), this.update()) }
     ];
   }
 
@@ -3377,21 +3377,21 @@ export class ImageOp extends FeatureOp<ImageFeature> {
     super.exit();
   }
 
-  hover(p: ToolPointer | null): void {
-    this.gimbal.setHot(p && !this.dragging ? this.gimbal.hit(p) : null);
+  hover(pointer: ToolPointer | null): void {
+    this.gimbal.setHot(pointer && !this.dragging ? this.gimbal.hit(pointer) : null);
   }
 
-  down(p: ToolPointer): boolean {
-    const part = this.gimbal.hit(p);
+  down(pointer: ToolPointer): boolean {
+    const part = this.gimbal.hit(pointer);
     if (!part) {
       return false;
     }
-    this.dragging = { from: p, part, origin: [...this.feature.plane.origin] as Vec3, xDir: [...this.feature.plane.xDir] as Vec3 };
+    this.dragging = { from: pointer, part, origin: [...this.feature.plane.origin] as Vec3, xDir: [...this.feature.plane.xDir] as Vec3 };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
@@ -3399,27 +3399,27 @@ export class ImageOp extends FeatureOp<ImageFeature> {
     const view = this.app.view;
     const pl = { ...this.feature.plane, origin: dr.origin };
     if (dr.part.kind === 'ring') {
-      const c = view.toScreen(dr.origin);
-      if (!c) {
+      const screenPoint = view.toScreen(dr.origin);
+      if (!screenPoint) {
         return;
       }
-      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - c[1], q.x - c[0]);
+      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - screenPoint[1], q.x - screenPoint[0]);
       const facing = dot(pl.normal, view.cam.viewDir().toArray() as Vec3) < 0 ? 1 : -1;
-      const a = -(ang(p) - ang(dr.from)) * facing;
+      const a = -(ang(pointer) - ang(dr.from)) * facing;
       const y = cross(pl.normal, dr.xDir);
       this.feature.plane = { ...this.feature.plane, xDir: norm(add(scale(dr.xDir, Math.cos(a)), scale(y, Math.sin(a)))) };
     } else {
       const a = view.rayToPlane(dr.from.x, dr.from.y, pl);
-      const b = view.rayToPlane(p.x, p.y, pl);
+      const b = view.rayToPlane(pointer.x, pointer.y, pl);
       if (!a || !b) {
         return;
       }
-      let d = sub(b, a);
+      let delta = sub(b, a);
       if (dr.part.kind === 'axis') {
         const ax = this.gimbal.axes[dr.part.i];
-        d = scale(ax, dot(d, ax));
+        delta = scale(ax, dot(delta, ax));
       }
-      this.feature.plane = { ...this.feature.plane, origin: add(dr.origin, d) };
+      this.feature.plane = { ...this.feature.plane, origin: add(dr.origin, delta) };
     }
     this.update();
   }
@@ -3432,12 +3432,12 @@ export class ImageOp extends FeatureOp<ImageFeature> {
 
 // ------------------------------------------------------------- move plane
 
-/** v turned by ang (radians) about the unit axis k. */
-function turn(v: Vec3, k: Vec3, ang: number): Vec3 {
-  const c = Math.cos(ang);
-  const s = Math.sin(ang);
+/** `vector` turned by ang (radians) about the unit `axis`. */
+function turn(vector: Vec3, axis: Vec3, ang: number): Vec3 {
+  const cos = Math.cos(ang);
+  const sin = Math.sin(ang);
 
-  return add(add(scale(v, c), scale(cross(k, v), s)), scale(k, dot(k, v) * (1 - c)));
+  return add(add(scale(vector, cos), scale(cross(axis, vector), sin)), scale(axis, dot(axis, vector) * (1 - cos)));
 }
 
 /**
@@ -3479,7 +3479,7 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
   }
 
   protected items(): PanelItem[] {
-    return [{ type: 'toggle', label: 'Copy', value: this.copy, onChange: v => ((this.copy = copyMode.on = v), this.render(), this.update()) }];
+    return [{ type: 'toggle', label: 'Copy', value: this.copy, onChange: isOn => ((this.copy = copyMode.on = isOn), this.render(), this.update()) }];
   }
 
   protected ready(): boolean {
@@ -3495,30 +3495,30 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
   /** The plane after the move: turned about the pivot, then moved. */
   private apply(): void {
     const b = this.base;
-    const o = this.existing!;
+    const existing = this.existing!;
     const t = this.turned;
-    const rot = (v: Vec3) => (t && t.angle ? turn(v, t.axis, (t.angle * Math.PI) / 180) : v);
-    const d = this.worldMove();
-    const f = this.feature;
+    const rot = (vector: Vec3) => (t && t.angle ? turn(vector, t.axis, (t.angle * Math.PI) / 180) : vector);
+    const move = this.worldMove();
+    const feature = this.feature;
     if (!this.detached && !t?.angle && Math.hypot(this.moved[0], this.moved[1]) < 1e-9) {
       // Only along the normal: just its offset changes (a plane on a face stays on it).
-      f.face = o.face;
-      f.plane = o.plane;
-      f.offset = o.offset + this.moved[2];
+      feature.face = existing.face;
+      feature.plane = existing.plane;
+      feature.offset = existing.offset + this.moved[2];
     } else {
-      f.face = undefined;
-      f.offset = 0;
-      f.plane = { origin: add(add(this.pivot, rot(sub(b.origin, this.pivot))), d), xDir: norm(rot(b.xDir)), normal: norm(rot(b.normal)) };
+      feature.face = undefined;
+      feature.offset = 0;
+      feature.plane = { origin: add(add(this.pivot, rot(sub(b.origin, this.pivot))), move), xDir: norm(rot(b.xDir)), normal: norm(rot(b.normal)) };
     }
-    if (f.exprs?.offset) {
-      delete f.exprs.offset;
-      if (!Object.keys(f.exprs).length) {
-        f.exprs = undefined;
+    if (feature.exprs?.offset) {
+      delete feature.exprs.offset;
+      if (!Object.keys(feature.exprs).length) {
+        feature.exprs = undefined;
       }
     }
-    const at = add(this.pivot, d);
+    const at = add(this.pivot, move);
     this.gimbal.setCenter(at);
-    this.app.view.showPlaneAt(this.copy ? this.copyId.id : o.id, at, o.id);
+    this.app.view.showPlaneAt(this.copy ? this.copyId.id : existing.id, at, existing.id);
   }
 
   protected onDraftChanged(): void {
@@ -3538,15 +3538,15 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
     if (!this.ready()) {
       return this.app.setTool(null);
     }
-    const f = this.copy ? this.copied() : this.feature;
+    const plane = this.copy ? this.copied() : this.feature;
     if (this.copy) {
-      this.app.store.add(f);
+      this.app.store.add(plane);
     } else {
-      this.app.store.update(f.id, f);
+      this.app.store.update(plane.id, plane);
     }
     this.app.setTool(null);
     // Selected, gimbal and all: the next drag moves (or copies) it again.
-    this.app.setSelection([{ kind: 'plane', id: f.id }]);
+    this.app.setSelection([{ kind: 'plane', id: plane.id }]);
   }
 
   exit(): void {
@@ -3555,12 +3555,12 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
     super.exit();
   }
 
-  hover(p: ToolPointer | null): void {
-    this.gimbal.setHot(p && !this.dragging ? this.gimbal.hit(p) : this.dragging?.part ?? null);
+  hover(pointer: ToolPointer | null): void {
+    this.gimbal.setHot(pointer && !this.dragging ? this.gimbal.hit(pointer) : this.dragging?.part ?? null);
   }
 
-  down(p: ToolPointer): boolean {
-    const part = this.gimbal.hit(p);
+  down(pointer: ToolPointer): boolean {
+    const part = this.gimbal.hit(pointer);
     if (!part) {
       return false;
     }
@@ -3576,58 +3576,58 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
       this.gimbal = new Gimbal(this.app.view, { axes: planeAxes(this.base) });
       this.gimbal.setCenter(this.pivot);
     }
-    this.dragging = { from: p, part, t0: [...this.moved] as Vec3, turned: this.turned && { ...this.turned } };
+    this.dragging = { from: pointer, part, t0: [...this.moved] as Vec3, turned: this.turned && { ...this.turned } };
     this.gimbal.setHot(part);
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
     const view = this.app.view;
     const step = niceStep(view.cam.worldPerPixel(view.height) * 4);
-    const snap = (v: number) => (p.shift ? v : Math.round(v / step) * step);
+    const snap = (value: number) => (pointer.shift ? value : Math.round(value / step) * step);
     const part = dr.part;
     const ax = this.gimbal.axes;
     const at = add(this.pivot, add(add(scale(ax[0], dr.t0[0]), scale(ax[1], dr.t0[1])), scale(ax[2], dr.t0[2])));
     if (part.kind === 'axis') {
-      const d = snap(axisDrag(view, at, ax[part.i], dr.from, p));
+      const distance = snap(axisDrag(view, at, ax[part.i], dr.from, pointer));
       this.moved = [...dr.t0] as Vec3;
-      this.moved[part.i] += d;
-      this.boxAt(p, fmtLen(d));
+      this.moved[part.i] += distance;
+      this.boxAt(pointer, fmtLen(distance));
     } else if (part.kind === 'plane' || part.kind === 'center') {
       // In the square's plane (the screen's for the centre).
-      const n: Vec3 = part.kind === 'plane' ? ax[part.i] : (view.cam.viewDir().toArray() as Vec3);
-      const pl = { origin: at, normal: n, xDir: xDirFor(n) };
+      const normal: Vec3 = part.kind === 'plane' ? ax[part.i] : (view.cam.viewDir().toArray() as Vec3);
+      const pl = { origin: at, normal: normal, xDir: xDirFor(normal) };
       const a = view.rayToPlane(dr.from.x, dr.from.y, pl);
-      const b = view.rayToPlane(p.x, p.y, pl);
+      const b = view.rayToPlane(pointer.x, pointer.y, pl);
       if (!a || !b) {
         return;
       }
-      const d = sub(b, a);
-      this.moved = [0, 1, 2].map(i => dr.t0[i] + snap(dot(d, ax[i]))) as Vec3;
-      this.boxAt(p, fmtLen(len(sub(this.moved, dr.t0))));
+      const delta = sub(b, a);
+      this.moved = [0, 1, 2].map(i => dr.t0[i] + snap(dot(delta, ax[i]))) as Vec3;
+      this.boxAt(pointer, fmtLen(len(sub(this.moved, dr.t0))));
     } else {
       const axis = ax[part.i];
-      const c = view.toScreen(at);
-      if (!c) {
+      const screenPoint = view.toScreen(at);
+      if (!screenPoint) {
         return;
       }
-      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - c[1], q.x - c[0]);
+      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - screenPoint[1], q.x - screenPoint[0]);
       // Screen y points down, so a visual counter-clockwise turn is a negative atan2 change.
       const facing = dot(axis, view.cam.viewDir().toArray() as Vec3) < 0 ? 1 : -1;
-      let deg = ((-(ang(p) - ang(dr.from)) * 180) / Math.PI) * facing;
+      let deg = ((-(ang(pointer) - ang(dr.from)) * 180) / Math.PI) * facing;
       deg = ((deg + 540) % 360) - 180;
       const a0 = dr.turned?.angle ?? 0;
-      this.turned = { axis, angle: p.shift ? a0 + deg : Math.round((a0 + deg) / 5) * 5 };
-      this.boxAt(p, `${Math.round(this.turned.angle * 10) / 10}°`);
+      this.turned = { axis, angle: pointer.shift ? a0 + deg : Math.round((a0 + deg) / 5) * 5 };
+      this.boxAt(pointer, `${Math.round(this.turned.angle * 10) / 10}°`);
     }
     this.update();
   }
@@ -3651,14 +3651,14 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
 
     return {
       kind: part.kind === 'ring' ? 'angle' : 'length',
-      apply: (v) => {
+      apply: (value) => {
         if (part.kind === 'ring') {
-          this.turned = { axis: this.gimbal.axes[part.i], angle: (dr.turned?.angle ?? 0) + v };
+          this.turned = { axis: this.gimbal.axes[part.i], angle: (dr.turned?.angle ?? 0) + value };
         } else if (part.kind === 'axis') {
           this.moved = [...dr.t0] as Vec3;
-          this.moved[part.i] += v;
+          this.moved[part.i] += value;
         } else if (len(dragDir) > 0.5) {
-          this.moved = add(dr.t0, scale(dragDir, v));
+          this.moved = add(dr.t0, scale(dragDir, value));
         }
         this.update();
       },
@@ -3667,10 +3667,10 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
     };
   }
 
-  private boxAt(p: ToolPointer, text: string): void {
+  private boxAt(pointer: ToolPointer, text: string): void {
     const t = this.dragTarget();
     if (t) {
-      this.typing.box(p, text, t);
+      this.typing.box(pointer, text, t);
     }
   }
 
@@ -3682,8 +3682,8 @@ export class PlaneMoveOp extends FeatureOp<PlaneFeature> {
 }
 
 /** A plane's own gimbal axes: its x, its y and its normal. */
-export function planeAxes(p: PlaneDef): Vec3[] {
-  return [p.xDir, cross(p.normal, p.xDir), p.normal];
+export function planeAxes(plane: PlaneDef): Vec3[] {
+  return [plane.xDir, cross(plane.normal, plane.xDir), plane.normal];
 }
 
 // ------------------------------------------------------------------- split
@@ -3695,39 +3695,39 @@ export class SplitOp extends FeatureOp<SplitFeature> {
   constructor(app: AppContext, body: string, existing?: SplitFeature, plane?: PlaneDef) {
     super(app, { ...app.store.newIdentity('split'), type: 'split', body, plane: plane ?? { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] } }, existing);
     this.plane = existing && !existing.noPlane ? existing.plane : (plane ?? null);
-    const f = this.feature;
-    const first = planeSlot(app, 'Split with', () => this.plane, p => ((this.plane = p), (f.plane = p), (f.noPlane = undefined)));
+    const feature = this.feature;
+    const first = planeSlot(app, 'Split with', () => this.plane, plane => ((this.plane = plane), (feature.plane = plane), (feature.noPlane = undefined)));
     // More planes at once (a body cut in slices).
-    const more = planeSlot(app, 'More planes', () => f.planes?.at(-1) ?? null, p => (f.planes = [...(f.planes ?? []), p]));
-    const own = (b: string) => b === f.id || b.startsWith(`${f.id}:`);
+    const more = planeSlot(app, 'More planes', () => feature.planes?.at(-1) ?? null, plane => (feature.planes = [...(feature.planes ?? []), plane]));
+    const own = (b: string) => b === feature.id || b.startsWith(`${feature.id}:`);
     const tools: Slot = {
       label: 'Split with bodies',
       multi: true,
-      describe: () => (f.tools?.length ? `${f.tools.length} bod${f.tools.length > 1 ? 'ies' : 'y'}` : 'Optional - tap bodies to cut along'),
+      describe: () => (feature.tools?.length ? `${feature.tools.length} bod${feature.tools.length > 1 ? 'ies' : 'y'}` : 'Optional - tap bodies to cut along'),
       filled: () => true,
       pick: { profiles: false, planes: false, axes: false },
-      shows: () => (f.tools ?? []).map(b => ({ kind: 'body' as const, body: b })),
+      shows: () => (feature.tools ?? []).map(b => ({ kind: 'body' as const, body: b })),
       rejectHint: 'Tap another body',
       accept: (hit) => {
         const b = hit.kind === 'face' || hit.kind === 'edge' || hit.kind === 'vertex' ? hit.body : null;
-        if (!b || b === f.body || own(b)) {
+        if (!b || b === feature.body || own(b)) {
           return false;
         }
-        const t = f.tools ?? [];
-        f.tools = t.includes(b) ? t.filter(x => x !== b) : [...t, b];
-        if (!f.tools.length) {
-          f.tools = undefined;
+        const t = feature.tools ?? [];
+        feature.tools = t.includes(b) ? t.filter(tool => tool !== b) : [...t, b];
+        if (!feature.tools.length) {
+          feature.tools = undefined;
         }
-        f.noPlane = !this.plane || undefined;
+        feature.noPlane = !this.plane || undefined;
 
         return true;
       }
     };
     // (Bodies to cut along: only when there is another body to cut along.)
-    const others = !!f.tools?.length || app.view.bodyList.some(b => b.id !== body && !own(b.id));
+    const others = !!feature.tools?.length || app.view.bodyList.some(b => b.id !== body && !own(b.id));
     this.slots = [
       first,
-      { ...more, multi: true, describe: () => (f.planes?.length ? `${f.planes.length} more` : 'Optional - tap more planes or flat faces'), filled: () => true },
+      { ...more, multi: true, describe: () => (feature.planes?.length ? `${feature.planes.length} more` : 'Optional - tap more planes or flat faces'), filled: () => true },
       ...(others ? [tools] : [])
     ];
   }
@@ -3757,17 +3757,17 @@ export class ConnectOp extends FeatureOp<ConnectFeature> {
   private picked: (Sel | null)[] = [null, null];
 
   constructor(app: AppContext, faces: Sel[], existing?: ConnectFeature) {
-    const refs = faces.flatMap(s => (s.kind === 'face' ? [faceRefOf(app, s)] : [])).filter((r): r is FaceRef => !!r);
+    const refs = faces.flatMap(face => (face.kind === 'face' ? [faceRefOf(app, face)] : [])).filter((faceRef): faceRef is FaceRef => !!faceRef);
     super(app, { ...app.store.newIdentity('connect'), type: 'connect', faces: [refs[0], refs[1]] as [FaceRef, FaceRef], mode: 'auto', bulge: 1, size: 1 }, existing);
     if (!existing) {
       this.picked = [faces[0] ?? null, faces[1] ?? null];
     }
-    const slot = (k: 0 | 1, label: string): Slot => ({
+    const slot = (index: 0 | 1, label: string): Slot => ({
       label,
-      describe: () => (this.feature.faces[k] ? '1 face' : 'Tap a face'),
-      filled: () => !!this.feature.faces[k],
+      describe: () => (this.feature.faces[index] ? '1 face' : 'Tap a face'),
+      filled: () => !!this.feature.faces[index],
       pick: { profiles: false, edges: false, planes: false, axes: false },
-      shows: () => (this.picked[k] ? [this.picked[k]!] : []),
+      shows: () => (this.picked[index] ? [this.picked[index]!] : []),
       rejectHint: 'Tap a face',
       accept: (hit) => {
         if (hit.kind !== 'face') {
@@ -3777,15 +3777,15 @@ export class ConnectOp extends FeatureOp<ConnectFeature> {
         if (!ref) {
           return false;
         }
-        this.picked[k] = { kind: 'face', body: hit.body, face: hit.face };
-        this.feature.faces[k] = ref;
+        this.picked[index] = { kind: 'face', body: hit.body, face: hit.face };
+        this.feature.faces[index] = ref;
 
         return true;
       }
     });
     // A curve for the bridge to follow (a spline drawn from one face to the
     // other), if there is one: without, it bows from face to face by Bend.
-    const guide = pathSlot(app, () => this.feature.guide ?? null, p => (this.feature.guide = p));
+    const guide = pathSlot(app, () => this.feature.guide ?? null, pathRef => (this.feature.guide = pathRef));
     this.slots = [slot(0, 'From'), slot(1, 'To'), { ...guide, label: 'Guide', describe: () => (this.feature.guide ? guide.describe() : 'None - tap a sketch curve for the bridge to follow') }];
   }
 
@@ -3801,15 +3801,15 @@ export class ConnectOp extends FeatureOp<ConnectFeature> {
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
 
     return [
-      ...(anyBody(this.app, f.id) ? [modeChoice(() => f.mode, m => (f.mode = m), () => (this.render(), this.update()), true)] : []),
+      ...(anyBody(this.app, feature.id) ? [modeChoice(() => feature.mode, mode => (feature.mode = mode), () => (this.render(), this.update()), true)] : []),
       // Without a guide it bows out by Bend; with one, the guide can be let go again.
-      ...(f.guide
-        ? [{ type: 'button' as const, label: 'No guide', icon: 'close' as const, onClick: () => ((f.guide = undefined), this.render(), this.update()) }]
-        : [{ type: 'slider' as const, label: 'Bend', value: f.bulge ?? 1, min: 0.2, max: 2.5, step: 0.05, show: (v: number) => v.toFixed(2), onInput: (v: number) => ((f.bulge = v), this.update()) }]),
-      { type: 'slider', label: 'Size', value: f.size ?? 1, min: 0.1, max: 1, step: 0.01, show: v => `${Math.round(v * 100)}%`, onInput: v => ((f.size = v), this.update()) }
+      ...(feature.guide
+        ? [{ type: 'button' as const, label: 'No guide', icon: 'close' as const, onClick: () => ((feature.guide = undefined), this.render(), this.update()) }]
+        : [{ type: 'slider' as const, label: 'Bend', value: feature.bulge ?? 1, min: 0.2, max: 2.5, step: 0.05, show: (value: number) => value.toFixed(2), onInput: (bulge: number) => ((feature.bulge = bulge), this.update()) }]),
+      { type: 'slider', label: 'Size', value: feature.size ?? 1, min: 0.1, max: 1, step: 0.01, show: value => `${Math.round(value * 100)}%`, onInput: size => ((feature.size = size), this.update()) }
     ];
   }
 }
@@ -3826,8 +3826,8 @@ export class FillOp extends FeatureOp<FillFeature> {
   constructor(app: AppContext, boundary: PathRef[] = [], existing?: FillFeature) {
     super(app, { ...app.store.newIdentity('fill'), type: 'fill', boundary }, existing);
     this.slots = [
-      curvesSlot(app, 'Boundary', () => this.feature.boundary, p => (this.feature.boundary = p)),
-      curvesSlot(app, 'Guides', () => this.feature.guides ?? [], p => (this.feature.guides = p.length ? p : undefined), true)
+      curvesSlot(app, 'Boundary', () => this.feature.boundary, paths => (this.feature.boundary = paths)),
+      curvesSlot(app, 'Guides', () => this.feature.guides ?? [], paths => (this.feature.guides = paths.length ? paths : undefined), true)
     ];
   }
 
@@ -3836,8 +3836,8 @@ export class FillOp extends FeatureOp<FillFeature> {
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
-    const edges = f.boundary.flatMap(p => (p.kind === 'edges' ? p.edges : []));
+    const feature = this.feature;
+    const edges = feature.boundary.flatMap(pathRef => (pathRef.kind === 'edges' ? pathRef.edges : []));
     const opts = [
       { id: 'g0', label: 'Touch (G0)' },
       { id: 'g1', label: 'Tangent (G1)' },
@@ -3850,9 +3850,9 @@ export class FillOp extends FeatureOp<FillFeature> {
       type: 'choice',
       label: edges.length > 1 ? 'At body edges (all)' : 'At body edges',
       options: opts,
-      value: f.continuity ?? 'g0',
+      value: feature.continuity ?? 'g0',
       // (Setting all of them clears the ones set edge by edge.)
-      onChange: v => ((f.continuity = v === 'g0' ? undefined : (v as 'g1' | 'g2')), (f.edgeContinuity = undefined), this.render(), this.update())
+      onChange: value => ((feature.continuity = value === 'g0' ? undefined : (value as 'g1' | 'g2')), (feature.edgeContinuity = undefined), this.render(), this.update())
     };
     if (edges.length < 2) {
       return [all];
@@ -3863,14 +3863,14 @@ export class FillOp extends FeatureOp<FillFeature> {
     return [
       all,
       ...edges.map(
-        (r, i): PanelItem => ({
+        (edge, i): PanelItem => ({
           type: 'choice',
-          label: `Edge ${i + 1}${names[r.body] ? ` (${names[r.body]})` : ''}`,
+          label: `Edge ${i + 1}${names[edge.body] ? ` (${names[edge.body]})` : ''}`,
           options: opts,
-          value: f.edgeContinuity?.[fillEdgeKey(r)] ?? f.continuity ?? 'g0',
-          onChange: (v) => {
-            const next = { ...(f.edgeContinuity ?? {}), [fillEdgeKey(r)]: v as 'g0' | 'g1' | 'g2' };
-            f.edgeContinuity = next;
+          value: feature.edgeContinuity?.[fillEdgeKey(edge)] ?? feature.continuity ?? 'g0',
+          onChange: (value) => {
+            const next = { ...(feature.edgeContinuity ?? {}), [fillEdgeKey(edge)]: value as 'g0' | 'g1' | 'g2' };
+            feature.edgeContinuity = next;
             this.update();
           }
         })
@@ -3892,7 +3892,7 @@ export class FillToPlaneOp extends FeatureOp<FillToPlaneFeature> {
   constructor(app: AppContext, body: string, existing?: FillToPlaneFeature, plane?: PlaneDef) {
     super(app, { ...app.store.newIdentity('fillToPlane'), type: 'fillToPlane', body, plane: plane ?? { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] } }, existing);
     this.plane = existing?.plane ?? plane ?? null;
-    this.slots = [planeSlot(app, 'Fill to', () => this.plane, p => ((this.plane = p), (this.feature.plane = p)))];
+    this.slots = [planeSlot(app, 'Fill to', () => this.plane, plane => ((this.plane = plane), (this.feature.plane = plane)))];
   }
 
   protected hint(): string {
@@ -3950,11 +3950,11 @@ export class ThreadOp extends FeatureOp<ThreadFeature> {
 
   protected items(): PanelItem[] {
     return [
-      this.num('Pitch', 'pitch', 'length', { min: 0.05, onInput: v => this.setPitch(v) }),
+      this.num('Pitch', 'pitch', 'length', { min: 0.05, onInput: value => this.setPitch(value) }),
       // How many threads side by side: 1 is a bolt's; 2 to 4, a jar lid's - on in half a turn or a quarter, the
       // crests still a pitch apart.
-      { type: 'number', label: 'Starts', value: this.feature.starts ?? 1, kind: 'int', min: 1, onInput: v => ((this.feature.starts = v > 1 ? Math.min(8, Math.round(v)) : undefined), this.render(), this.update()) },
-      { type: 'toggle', label: 'Left-hand', value: !!this.feature.left, onChange: v => ((this.feature.left = v || undefined), this.remember(), this.render(), this.update()) }
+      { type: 'number', label: 'Starts', value: this.feature.starts ?? 1, kind: 'int', min: 1, onInput: value => ((this.feature.starts = value > 1 ? Math.min(8, Math.round(value)) : undefined), this.render(), this.update()) },
+      { type: 'toggle', label: 'Left-hand', value: !!this.feature.left, onChange: isOn => ((this.feature.left = isOn || undefined), this.remember(), this.render(), this.update()) }
     ];
   }
 
@@ -3962,13 +3962,13 @@ export class ThreadOp extends FeatureOp<ThreadFeature> {
     return this.feature.pitch > 0;
   }
 
-  private setPitch(v: number): void {
-    if (!(v > 0)) {
+  private setPitch(pitch: number): void {
+    if (!(pitch > 0)) {
       return;
     }
-    this.feature.pitch = v;
+    this.feature.pitch = pitch;
     this.remember();
-    this.app.ui.updatePanelValues([v]);
+    this.app.ui.updatePanelValues([pitch]);
     this.update();
   }
 }
@@ -3976,21 +3976,21 @@ export class ThreadOp extends FeatureOp<ThreadFeature> {
 // ------------------------------------------------------------ construction
 
 /** What a plane is made from, by name: "XZ plane", "Plane 02", "Face of Body 1". */
-function baseName(app: AppContext, f: PlaneFeature): string | undefined {
-  if (f.face) {
-    return faceOfName(app, f.face.body);
+function baseName(app: AppContext, plane: PlaneFeature): string | undefined {
+  if (plane.face) {
+    return faceOfName(app, plane.face.body);
   }
-  const same = (p: PlaneDef) => len(sub(p.origin, f.plane.origin)) < 1e-6 && dot(norm(p.normal), norm(f.plane.normal)) > 1 - 1e-9;
+  const same = (candidatePlane: PlaneDef) => len(sub(candidatePlane.origin, plane.plane.origin)) < 1e-6 && dot(norm(candidatePlane.normal), norm(plane.plane.normal)) > 1 - 1e-9;
   const origin = ['XY', 'XZ', 'YZ'].find((id) => {
-    const p = app.view.planeOf(id);
+    const originPlane = app.view.planeOf(id);
 
-    return p && same(p);
+    return originPlane && same(originPlane);
   });
   if (origin) {
     return `${origin} plane`;
   }
 
-  return app.view.construction.planes.find(c => c.id !== f.id && same(c.plane))?.name;
+  return app.view.construction.planes.find(constructionInfo => constructionInfo.id !== plane.id && same(constructionInfo.plane))?.name;
 }
 
 export class PlaneOp extends FeatureOp<PlaneFeature> {
@@ -4002,13 +4002,13 @@ export class PlaneOp extends FeatureOp<PlaneFeature> {
     this.base = existing ? existing.plane : base;
     // Being edited: not from itself, nor from a plane made after it (that
     // one is built from this one, or comes later in the history).
-    const at = existing ? app.store.doc.features.findIndex(x => x.id === existing.id) : -1;
+    const at = existing ? app.store.doc.features.findIndex(feature => feature.id === existing.id) : -1;
     const skip = (id: string) => {
-      const k = app.store.doc.features.findIndex(x => x.id === id);
+      const index = app.store.doc.features.findIndex(feature => feature.id === id);
 
-      return at >= 0 && k >= at;
+      return at >= 0 && index >= at;
     };
-    this.slots = [planeSlot(app, 'From', () => this.base, (p, f) => ((this.base = p), (this.feature.plane = p), (this.feature.face = f)), { named: existing ? baseName(app, existing) : undefined, skip })];
+    this.slots = [planeSlot(app, 'From', () => this.base, (plane, faceRef) => ((this.base = plane), (this.feature.plane = plane), (this.feature.face = faceRef)), { named: existing ? baseName(app, existing) : undefined, skip })];
   }
 
   private handle: Handle | null = null;
@@ -4021,7 +4021,7 @@ export class PlaneOp extends FeatureOp<PlaneFeature> {
   }
 
   protected items(): PanelItem[] {
-    return [this.num('Offset', 'offset', 'length', { onInput: v => this.setOffset(v), inBox: true })];
+    return [this.num('Offset', 'offset', 'length', { onInput: value => this.setOffset(value), inBox: true })];
   }
 
   enter(): void {
@@ -4048,7 +4048,7 @@ export class PlaneOp extends FeatureOp<PlaneFeature> {
         boxGap: 96,
         dir: b.normal,
         value: this.feature.offset,
-        onInput: (v, text) => (this.typedInto('offset', text), this.setOffset(v)),
+        onInput: (value, text) => (this.typedInto('offset', text), this.setOffset(value)),
         onCommit: () => this.done()
       });
     }
@@ -4058,45 +4058,45 @@ export class PlaneOp extends FeatureOp<PlaneFeature> {
     this.dim!.set(b.origin, top);
   }
 
-  private setOffset(v: number): void {
-    this.feature.offset = v;
-    this.app.ui.updatePanelValues([v]);
-    this.dim?.setValue(v);
+  private setOffset(offset: number): void {
+    this.feature.offset = offset;
+    this.app.ui.updatePanelValues([offset]);
+    this.dim?.setValue(offset);
     this.update();
   }
 
-  hover(p: ToolPointer | null): void {
-    const on = !!p && !!this.handle && (!!this.dragging || this.handle.hit(p));
+  hover(pointer: ToolPointer | null): void {
+    const on = !!pointer && !!this.handle && (!!this.dragging || this.handle.hit(pointer));
     this.handle?.setHot(on);
     if (!on) {
-      super.hover(p);
+      super.hover(pointer);
     }
   }
 
-  down(p: ToolPointer): boolean {
-    if (!this.handle?.hit(p)) {
+  down(pointer: ToolPointer): boolean {
+    if (!this.handle?.hit(pointer)) {
       return false;
     }
-    this.dragging = { from: p, d0: this.feature.offset };
+    this.dragging = { from: pointer, d0: this.feature.offset };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     const b = this.base;
     if (!dr || !b) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
-    const raw = dr.d0 + axisDrag(this.app.view, add(b.origin, scale(b.normal, dr.d0)), b.normal, dr.from, p);
+    const raw = dr.d0 + axisDrag(this.app.view, add(b.origin, scale(b.normal, dr.d0)), b.normal, dr.from, pointer);
     const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4);
     this.typedInto('offset', '');
     this.setOffset(Math.round(raw / step) * step);
-    this.app.ui.setLabel(p.x, p.y, `${fmtLen(this.feature.offset)}  · type a value`);
+    this.app.ui.setLabel(pointer.x, pointer.y, `${fmtLen(this.feature.offset)}  · type a value`);
   }
 
   up(): void {
@@ -4114,7 +4114,7 @@ export class PlaneOp extends FeatureOp<PlaneFeature> {
 
     return this.typing.key(e, {
       kind: 'length',
-      apply: v => this.setOffset(v),
+      apply: value => this.setOffset(value),
       commit: () => ((this.dragging = null), this.done()),
       cancel: () => this.setOffset(dr.d0)
     });
@@ -4138,16 +4138,16 @@ export class MidplaneOp extends FeatureOp<PlaneFeature> {
   constructor(app: AppContext) {
     super(app, { ...app.store.newIdentity('plane', 'Midplane'), type: 'plane', kind: 'mid', plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, offset: 0 });
     const apply = () => {
-      const m = this.a && this.b ? midplane(this.a, this.b) : null;
-      if (m) {
-        this.feature.plane = m;
+      const plane = this.a && this.b ? midplane(this.a, this.b) : null;
+      if (plane) {
+        this.feature.plane = plane;
       } else if (this.a && this.b) {
         this.app.ui.toast('The two planes must be parallel');
       }
     };
     this.slots = [
-      planeSlot(app, 'First', () => this.a, p => ((this.a = p), apply())),
-      planeSlot(app, 'Second', () => this.b, p => ((this.b = p), apply()))
+      planeSlot(app, 'First', () => this.a, plane => ((this.a = plane), apply())),
+      planeSlot(app, 'Second', () => this.b, plane => ((this.b = plane), apply()))
     ];
   }
 

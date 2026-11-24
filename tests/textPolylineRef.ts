@@ -14,7 +14,7 @@ export type TextAlign = 'left' | 'center' | 'right';
 /** `text` with its capitals `size` tall, its baseline through `at` (aligned there by `align`), turned `angle` radians. */
 export function polylineOutlines(
   refSteps: number,
-  f: Font,
+  font: Font,
   text: string,
   at: Vec2,
   size: number,
@@ -22,12 +22,12 @@ export function polylineOutlines(
   align: TextAlign = 'left'
 ): SketchEntity[] {
   // opentype sizes are em: scale so capitals are `size` tall (the font says how tall its caps are).
-  const os2 = (f.tables as { os2?: { sCapHeight?: number } }).os2;
-  const cap = os2?.sCapHeight ? os2.sCapHeight / f.unitsPerEm : 0.711;
+  const os2 = (font.tables as { os2?: { sCapHeight?: number } }).os2;
+  const cap = os2?.sCapHeight ? os2.sCapHeight / font.unitsPerEm : 0.711;
   const fontSize = size / cap;
   // Lay glyphs out ourselves: opentype's text shaper chokes on some of Roboto's
   // substitution tables ("substFormat 2 not supported").
-  const scale = fontSize / f.unitsPerEm;
+  const scale = fontSize / font.unitsPerEm;
   const commands: {
     type: string;
     x?: number;
@@ -40,13 +40,13 @@ export function polylineOutlines(
   let x = 0;
   let prev: ReturnType<Font['charToGlyph']> | null = null;
   for (const ch of text) {
-    const g = f.charToGlyph(ch);
+    const glyph = font.charToGlyph(ch);
     if (prev) {
-      x += f.getKerningValue(prev, g) * scale;
+      x += font.getKerningValue(prev, glyph) * scale;
     }
-    commands.push(...g.getPath(x, 0, fontSize).commands);
-    x += (g.advanceWidth ?? 0) * scale;
-    prev = g;
+    commands.push(...glyph.getPath(x, 0, fontSize).commands);
+    x += (glyph.advanceWidth ?? 0) * scale;
+    prev = glyph;
   }
   const path = { commands } as {
     commands: Array<{
@@ -62,48 +62,48 @@ export function polylineOutlines(
   const contours: Vec2[][] = [];
   let cur: Vec2[] = [];
   let last: Vec2 = [0, 0];
-  const push = (p: Vec2) => {
-    cur.push(p);
-    last = p;
+  const push = (point: Vec2) => {
+    cur.push(point);
+    last = point;
   };
   // (the app used 8)
   const steps = refSteps;
-  for (const c of path.commands) {
-    if (c.type === 'M') {
+  for (const command of path.commands) {
+    if (command.type === 'M') {
       if (cur.length > 2) {
         contours.push(cur);
       }
       cur = [];
-      push([c.x, -c.y]);
-    } else if (c.type === 'L') {
-      push([c.x, -c.y]);
-    } else if (c.type === 'Q') {
+      push([command.x, -command.y]);
+    } else if (command.type === 'L') {
+      push([command.x, -command.y]);
+    } else if (command.type === 'Q') {
       const p0 = last;
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        const u = 1 - t;
+        const oneMinusT = 1 - t;
         push([
-          u * u * p0[0] + 2 * u * t * c.x1 + t * t * c.x,
-          u * u * p0[1] + 2 * u * t * -c.y1 + t * t * -c.y
+          oneMinusT * oneMinusT * p0[0] + 2 * oneMinusT * t * command.x1 + t * t * command.x,
+          oneMinusT * oneMinusT * p0[1] + 2 * oneMinusT * t * -command.y1 + t * t * -command.y
         ]);
       }
-    } else if (c.type === 'C') {
+    } else if (command.type === 'C') {
       const p0 = last;
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        const u = 1 - t;
+        const oneMinusT = 1 - t;
         push([
-          u * u * u * p0[0]
-            + 3 * u * u * t * c.x1
-            + 3 * u * t * t * c.x2
-            + t * t * t * c.x,
-          u * u * u * p0[1]
-            + 3 * u * u * t * -c.y1
-            + 3 * u * t * t * -c.y2
-            + t * t * t * -c.y
+          oneMinusT * oneMinusT * oneMinusT * p0[0]
+            + 3 * oneMinusT * oneMinusT * t * command.x1
+            + 3 * oneMinusT * t * t * command.x2
+            + t * t * t * command.x,
+          oneMinusT * oneMinusT * oneMinusT * p0[1]
+            + 3 * oneMinusT * oneMinusT * t * -command.y1
+            + 3 * oneMinusT * t * t * -command.y2
+            + t * t * t * -command.y
         ]);
       }
-    } else if (c.type === 'Z') {
+    } else if (command.type === 'Z') {
       if (cur.length > 2) {
         contours.push(cur);
       }
@@ -118,7 +118,7 @@ export function polylineOutlines(
   // Centred / right: by the ink, not the advance (a "1" is mostly side bearing).
   let dx = 0;
   if (align !== 'left' && contours.length) {
-    const xs = contours.flat().map(p => p[0]);
+    const xs = contours.flat().map(contour => contour[0]);
     const lo = Math.min(...xs), hi = Math.max(...xs);
     dx = align === 'center' ? -(lo + hi) / 2 : -hi;
   }
@@ -130,15 +130,15 @@ export function polylineOutlines(
   return contours
     .map((raw) => {
       const pts: Vec2[] = [];
-      for (const p of raw) {
+      for (const point of raw) {
         if (
           !pts.length
           || Math.hypot(
-            p[0] - pts[pts.length - 1][0],
-            p[1] - pts[pts.length - 1][1]
+            point[0] - pts[pts.length - 1][0],
+            point[1] - pts[pts.length - 1][1]
           ) > tiny
         ) {
-          pts.push(p);
+          pts.push(point);
         }
       }
       // …and the closing point repeating the first.

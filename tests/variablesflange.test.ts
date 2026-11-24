@@ -12,33 +12,33 @@ import type { Shape3D } from 'replicad';
 const fresh = () => JSON.parse(readFileSync(new URL('./fixtures/flange-variables.json', import.meta.url), 'utf8')) as ProjectDoc;
 type V = { od: number; bore: number; thick: number; wall: number; hubH: number; n: number; boltD: number; cham: number };
 /** The flange's volume: the disc, the hub, the bore through both, n bolt holes, the chamfer round the top. */
-const formula = (v: V) => {
-  const hubD = v.bore + 2 * v.wall;
+const formula = (values: V) => {
+  const hubD = values.bore + 2 * values.wall;
 
-  return (Math.PI / 4) * ((v.od ** 2 - v.bore ** 2) * v.thick + (hubD ** 2 - v.bore ** 2) * v.hubH - v.n * v.boltD ** 2 * v.thick) - Math.PI * v.cham ** 2 * (v.od / 2 - v.cham / 3);
+  return (Math.PI / 4) * ((values.od ** 2 - values.bore ** 2) * values.thick + (hubD ** 2 - values.bore ** 2) * values.hubH - values.n * values.boltD ** 2 * values.thick) - Math.PI * values.cham ** 2 * (values.od / 2 - values.cham / 3);
 };
 
 let doc = fresh();
 const now: V = { od: 160, bore: 40, thick: 20, wall: 10, hubH: 45, n: 6, boltD: 13, cham: 3 };
-const put = (name: string, expr: string) => (doc.variables.find(v => v.name === name)!.expr = expr);
+const put = (name: string, expr: string) => (doc.variables.find(variable => variable.name === name)!.expr = expr);
 
 async function built(): Promise<{ vol: number; sound: boolean; count: number; errors: string[]; problems: string[] }> {
   const problems = resolveDoc(doc);
   const { errors } = await after(doc.features as Feature[]);
   const all = [...bodies().values()] as Shape3D[];
 
-  return { vol: all.reduce((s, b) => s + volume(b), 0), sound: all.every(b => health(b).healthy), count: all.length, errors, problems };
+  return { vol: all.reduce((total, b) => total + volume(b), 0), sound: all.every(b => health(b).healthy), count: all.length, errors, problems };
 }
 
 async function expect(name: string, change: Partial<Record<keyof V, string>>, values: Partial<V>): Promise<void> {
-  for (const [k, e] of Object.entries(change)) {
-    put(k, e as string);
+  for (const [key, e] of Object.entries(change)) {
+    put(key, e as string);
   }
   Object.assign(now, values);
   const t = performance.now();
-  const r = await built();
+  const result = await built();
   const want = formula(now);
-  check(name, near(r.vol, want, 0.02) && r.sound && r.count === 1 && !r.errors.length && !r.problems.length, `${r.vol.toFixed(2)} mm³ (the formula: ${want.toFixed(2)}), ${Math.round(performance.now() - t)} ms${r.errors.length ? ' ' + r.errors.join('; ') : ''}${r.problems.length ? ' ' + r.problems.join('; ') : ''}`);
+  check(name, near(result.vol, want, 0.02) && result.sound && result.count === 1 && !result.errors.length && !result.problems.length, `${result.vol.toFixed(2)} mm³ (the formula: ${want.toFixed(2)}), ${Math.round(performance.now() - t)} ms${result.errors.length ? ' ' + result.errors.join('; ') : ''}${result.problems.length ? ' ' + result.problems.join('; ') : ''}`);
 }
 
 await expect('as it was built', {}, {});
@@ -56,27 +56,27 @@ await expect('the thickness a quarter of the bore; the bolts half an inch', { th
 await expect('the count worked out: as many as fit 45 apart round the bolt circle', { n: 'floor(pi * pcd / 45 mm)' }, { n: Math.floor((Math.PI * ((300 + 110 + 28) / 2)) / 45) });
 // Awkward values, then back: nothing is left broken.
 put('n', '0');
-let r = await built();
-check('no holes at all (0): it says so at the pattern, and nothing else', r.errors.length === 1 && /count/i.test(r.errors[0]), r.errors);
+let rebuilt = await built();
+check('no holes at all (0): it says so at the pattern, and nothing else', rebuilt.errors.length === 1 && /count/i.test(rebuilt.errors[0]), rebuilt.errors);
 put('bore', '400 mm');
 put('n', '6');
-r = await built();
-check('a bore bigger than the flange: still a sound body, no crash', r.count >= 1 && r.sound, `${r.count} bodies, ${r.errors.join('; ')}`);
+rebuilt = await built();
+check('a bore bigger than the flange: still a sound body, no crash', rebuilt.count >= 1 && rebuilt.sound, `${rebuilt.count} bodies, ${rebuilt.errors.join('; ')}`);
 await expect('and back: as the formula says again', { bore: '110 mm', n: '16', thick: '24 mm', boltD: '18 mm' }, { bore: 110, n: 16, thick: 24, boltD: 18 });
 
 // The project's unit changed: nothing changes size, in any unit and back.
 doc = fresh();
 Object.assign(now, { od: 160, bore: 40, thick: 20, wall: 10, hubH: 45, n: 6, boltD: 13, cham: 3 });
-for (const v of doc.variables) {
-  v.expr = v.expr.replace(/^(\d+(?:\.\d+)?) mm$/, '$1');
+for (const variable of doc.variables) {
+  variable.expr = variable.expr.replace(/^(\d+(?:\.\d+)?) mm$/, '$1');
 }
 put('wall', '10 mm');
 let unit: Units = 'mm';
 for (const to of ['in', 'cm', 'mm'] as Units[]) {
-  const k = keepSizes(doc, unit, to);
+  const kept = keepSizes(doc, unit, to);
   doc.units = unit = to;
   await expect(`the unit changed to ${to}: the same flange`, {}, {});
-  check('  (no formula lost; n still a plain 6)', !k.lost && doc.variables.find(v => v.name === 'n')!.expr === '6', doc.variables.map(v => `${v.name}=${v.expr}`).join(', '));
+  check('  (no formula lost; n still a plain 6)', !kept.lost && doc.variables.find(variable => variable.name === 'n')!.expr === '6', doc.variables.map(variable => `${variable.name}=${variable.expr}`).join(', '));
 }
 // And a size typed in the new unit is in that unit.
 doc.units = 'in';

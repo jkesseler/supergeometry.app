@@ -13,10 +13,10 @@ import type { PlaneDef } from '../doc/types';
 
 /** The smallest of 1, 5, 10 (times a power of ten) that is at least `raw`. */
 export function squareFor(raw: number): number {
-  const p = Math.pow(10, Math.floor(Math.log10(raw)));
-  const m = raw / p;
+  const power = Math.pow(10, Math.floor(Math.log10(raw)));
+  const mantissa = raw / power;
 
-  return (m <= 1 + 1e-9 ? 1 : m <= 5 ? 5 : 10) * p;
+  return (mantissa <= 1 + 1e-9 ? 1 : mantissa <= 5 ? 5 : 10) * power;
 }
 
 export class AdaptiveGrid {
@@ -78,8 +78,8 @@ export class AdaptiveGrid {
     this.mesh.frustumCulled = false;
   }
 
-  setPlane(p: PlaneDef): void {
-    this.plane = p;
+  setPlane(plane: PlaneDef): void {
+    this.plane = plane;
   }
 
   /** Recompute spacing and placement for the current view. */
@@ -95,22 +95,22 @@ export class AdaptiveGrid {
     // The stronger lines: every ten of them (every 10 where the squares are 5).
     const decade = Math.pow(10, Math.round(Math.log10(this.step)));
     const mid = Math.abs(decade - this.step) < this.step * 1e-6 ? this.step * 10 : Math.pow(10, Math.ceil(Math.log10(this.step)));
-    const n = new Vector3(...this.plane.normal);
+    const vector = new Vector3(...this.plane.normal);
     const x = new Vector3(...this.plane.xDir);
     const y = new Vector3(...planeY(this.plane));
-    const o = new Vector3(...this.plane.origin);
+    const origin = new Vector3(...this.plane.origin);
     // Centre the quad under the camera target (projected on the plane).
-    const rel = target.clone().sub(o);
+    const rel = target.clone().sub(origin);
     const cu = rel.dot(x);
     const cv = rel.dot(y);
     // Big enough to reach the horizon from where the camera is (it can sit far
     // above the plane while its target is close, after zooming towards a point).
-    const height = eye ? Math.abs(eye.clone().sub(o).dot(n)) : 0;
+    const height = eye ? Math.abs(eye.clone().sub(origin).dot(vector)) : 0;
     const size = Math.max(distance * 6, height * 12, this.step * 400);
     // The quad spans local coords [cu ± size/2]; vUv carries plane coordinates.
-    const m = new Matrix4().makeBasis(x, y, n).setPosition(o);
+    const matrix = new Matrix4().makeBasis(x, y, vector).setPosition(origin);
     const local = new Matrix4().makeScale(size, size, 1).setPosition(cu, cv, 0);
-    this.mesh.matrix.copy(m.multiply(local));
+    this.mesh.matrix.copy(matrix.multiply(local));
     this.mesh.matrixWorldNeedsUpdate = true;
     this.material.uniforms.uStep.value = this.step;
     this.material.uniforms.uMid.value = mid;

@@ -14,9 +14,9 @@ const check = (name: string, ok: boolean, info = '') => {
 const box = (es: SketchEntity[]) => {
   const pts = es.flatMap(e => entityPolylines(e).flat()) as Vec2[];
 
-  return [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
+  return [Math.min(...pts.map(point => point[0])), Math.min(...pts.map(point => point[1])), Math.max(...pts.map(point => point[0])), Math.max(...pts.map(point => point[1]))];
 };
-const length = (es: SketchEntity[]) => es.reduce((s, e) => s + entityPolylines(e).reduce((t, poly) => t + poly.slice(1).reduce((u, p, i) => u + Math.hypot(p[0] - poly[i][0], p[1] - poly[i][1]), 0), 0), 0);
+const length = (es: SketchEntity[]) => es.reduce((total, e) => total + entityPolylines(e).reduce((t, poly) => t + poly.slice(1).reduce((sum, point, i) => sum + Math.hypot(point[0] - poly[i][0], point[1] - poly[i][1]), 0), 0), 0);
 
 const sketch: SketchEntity[] = [
   { id: 'l', kind: 'line', a: [0, 0], b: [40, 0] },
@@ -36,7 +36,7 @@ check('construction curves are apart, dashed', /<g id="construction"[^>]*stroke-
 const back = parseSVG(svg).entities;
 const [b0, b1] = [box(sketch), box(back)];
 // (Read back, y runs the page's way: its height and width are what count, and what is drawn.)
-check('read back: as wide and as tall', Math.abs(b0[2] - b0[0] - (b1[2] - b1[0])) < 0.05 && Math.abs(b0[3] - b0[1] - (b1[3] - b1[1])) < 0.05, `${b0.map(v => v.toFixed(2))} / ${b1.map(v => v.toFixed(2))}`);
+check('read back: as wide and as tall', Math.abs(b0[2] - b0[0] - (b1[2] - b1[0])) < 0.05 && Math.abs(b0[3] - b0[1] - (b1[3] - b1[1])) < 0.05, `${b0.map(value => value.toFixed(2))} / ${b1.map(value => value.toFixed(2))}`);
 check('read back: the same length of line drawn', Math.abs(length(sketch) - length(back)) < length(sketch) * 0.002, `${length(sketch).toFixed(2)} / ${length(back).toFixed(2)}`);
 check('nothing drawn: still a file', /^<\?xml/.test(sketchToSVG([])) && !sketchToSVG([]).includes('NaN') && !sketchToSVG([]).includes('Infinity'));
 process.exit(failed ? 1 : 0);

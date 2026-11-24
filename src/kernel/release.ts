@@ -15,7 +15,7 @@
 
 import { BoundingBox, getOC, Solid } from 'replicad';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 /** The kernels (one at a time: a fresh one after a breakdown) whose classes are done. */
 const done = new WeakSet<object>();
@@ -105,29 +105,29 @@ export function useReleases(): void {
     };
   };
   // A shape's handle (a face's, an edge's... are its kinds): emptied, it no longer uses the shape.
-  before('TopoDS_Shape', h => h.Nullify());
+  before('TopoDS_Shape', handle => handle.Nullify());
   // An explorer keeps the shape it went through.
-  before('TopExp_Explorer', h => h.Init(nothing, ANY, ANY));
+  before('TopExp_Explorer', handle => handle.Init(nothing, ANY, ANY));
   // A boolean keeps all it worked out about where its shapes meet (165 KB for
   // a hole through a block) - cleared - and the bodies it was given and the
   // body it made, which it has no way to be told to drop: it is given a last
   // job instead, one point less another, and holds those two points from then on.
   const [a, b] = [new oc.gp_Pnt(0, 0, 0), new oc.gp_Pnt(1, 0, 0)];
-  const speck = (p: unknown) => {
+  const speck = (point: unknown) => {
     const list = new oc.NCollection_List_TopoDS_Shape();
-    list.Append(new oc.BRepBuilderAPI_MakeVertex(p).Vertex());
+    list.Append(new oc.BRepBuilderAPI_MakeVertex(point).Vertex());
 
     return list;
   };
   const [one, other] = [speck(a), speck(b)];
   const progress = new oc.Message_ProgressRange();
   for (const name of ['BRepAlgoAPI_Cut', 'BRepAlgoAPI_Fuse', 'BRepAlgoAPI_Common', 'BRepAlgoAPI_Section', 'BRepAlgoAPI_Splitter']) {
-    before(name, (h) => {
-      h.Clear();
-      h.SetArguments(one);
-      h.SetTools(other);
-      h.Build(progress);
-      h.Clear();
+    before(name, (handle) => {
+      handle.Clear();
+      handle.SetArguments(one);
+      handle.SetTools(other);
+      handle.Build(progress);
+      handle.Clear();
     });
   }
 }

@@ -6,7 +6,7 @@ import { resolveDoc } from '../src/doc/params';
 import { solve } from '../src/sketch/constraints';
 import { carryConstraints, mirrorXf, offsetChain, offsetEntity, transformEntity, trim } from '../src/sketch/edit';
 import { arcFrom3 } from '../src/sketch/curves';
-import type { Feature, ProjectDoc, SketchConstraint, SketchEntity, SketchFeature, Vec2 } from '../src/doc/types';
+import type { ProjectDoc, SketchConstraint, SketchEntity, SketchFeature, Vec2 } from '../src/doc/types';
 
 let failed = 0;
 const check = (name: string, ok: boolean, info: unknown = '') => {
@@ -24,37 +24,37 @@ const get = <K extends SketchEntity['kind']>(es: SketchEntity[], id: string) => 
 // ---- a line and its offset: the line made longer by its dimension, the offset is longer too
 {
   const a: SketchEntity = { id: 'a', kind: 'line', a: [0, 0], b: [40, 0] };
-  const o = { ...offsetEntity(a, 5)!, id: 'o' };
+  const offsetLine = { ...offsetEntity(a, 5)!, id: 'o' };
   const cs: SketchConstraint[] = [follow('a', 'o', { offset: 5 }), { id: 'len', type: 'dim', curves: ['a'], prop: 'length', value: 70 }, { id: 'pin', type: 'fix', pts: [{ e: 'a', p: 'a' }], at: [0, 0] }, { id: 'h', type: 'horizontal', curves: ['a'] }];
-  const r = solve([a, o], cs);
-  const [A, O] = [get<'line'>(r.entities, 'a'), get<'line'>(r.entities, 'o')];
-  check('a line 40 long with its offset, made 70 by its dimension: the offset is 70 too, 5 away, end for end', r.ok && pt(A.b, [70, 0]) && pt(O.a, [0, 5]) && pt(O.b, [70, 5]), JSON.stringify([A.a, A.b, O.a, O.b]));
+  const solution = solve([a, offsetLine], cs);
+  const [original, offset] = [get<'line'>(solution.entities, 'a'), get<'line'>(solution.entities, 'o')];
+  check('a line 40 long with its offset, made 70 by its dimension: the offset is 70 too, 5 away, end for end', solution.ok && pt(original.b, [70, 0]) && pt(offset.a, [0, 5]) && pt(offset.b, [70, 5]), JSON.stringify([original.a, original.b, offset.a, offset.b]));
 }
 // ---- a circle and its offset; a rectangle and its offset
 {
-  const c: SketchEntity = { id: 'c', kind: 'circle', center: [10, 10], radius: 8 };
-  const o = { ...offsetEntity(c, 3)!, id: 'o' };
-  const r = solve([c, o], [follow('c', 'o', { offset: 3 }), { id: 'd', type: 'dim', curves: ['c'], prop: 'diameter', value: 30 }, { id: 'pin', type: 'fix', pts: [{ e: 'c', p: 'c' }], at: [25, -5] }]);
-  const O = get<'circle'>(r.entities, 'o');
-  check('a circle made 30 across and moved: its offset is 18 in radius, about the same middle', r.ok && near(O.radius, 18) && pt(O.center, [25, -5]), `${O.radius} ${O.center}`);
+  const sketchEntity: SketchEntity = { id: 'c', kind: 'circle', center: [10, 10], radius: 8 };
+  const offsetCircle = { ...offsetEntity(sketchEntity, 3)!, id: 'o' };
+  const solution = solve([sketchEntity, offsetCircle], [follow('c', 'o', { offset: 3 }), { id: 'd', type: 'dim', curves: ['c'], prop: 'diameter', value: 30 }, { id: 'pin', type: 'fix', pts: [{ e: 'c', p: 'c' }], at: [25, -5] }]);
+  const offset = get<'circle'>(solution.entities, 'o');
+  check('a circle made 30 across and moved: its offset is 18 in radius, about the same middle', solution.ok && near(offset.radius, 18) && pt(offset.center, [25, -5]), `${offset.radius} ${offset.center}`);
   const q: SketchEntity = { id: 'q', kind: 'rect', center: [0, 0], w: 40, h: 20, rotation: 0 };
   const qo = { ...offsetEntity(q, -4)!, id: 'qo' };
   const r2 = solve([q, qo], [follow('q', 'qo', { offset: -4 }), { id: 'w', type: 'dim', curves: ['q'], prop: 'w', value: 100 }, { id: 'h', type: 'dim', curves: ['q'], prop: 'h', value: 50 }]);
-  const Q = get<'rect'>(r2.entities, 'qo');
-  check('a rectangle made 100 x 50: its offset 4 inside is 92 x 42', r2.ok && near(Q.w, 92) && near(Q.h, 42), `${Q.w} x ${Q.h}`);
+  const offsetRect = get<'rect'>(r2.entities, 'qo');
+  check('a rectangle made 100 x 50: its offset 4 inside is 92 x 42', r2.ok && near(offsetRect.w, 92) && near(offsetRect.h, 42), `${offsetRect.w} x ${offsetRect.h}`);
 }
 // ---- an arc and its offset
 {
   const a: SketchEntity = { id: 'a', kind: 'arc', a: [10, 0], m: [0, 10], b: [-10, 0] };
-  const o = { ...offsetEntity(a, 2)!, id: 'o' };
-  const r = solve([a, o], [follow('a', 'o', { offset: 2 }), { id: 'rad', type: 'dim', curves: ['a'], prop: 'radius', value: 25 }]);
-  const [A, O] = [arcFrom3(...(['a', 'm', 'b'] as const).map(k => get<'arc'>(r.entities, 'a')[k]) as [Vec2, Vec2, Vec2])!, arcFrom3(...(['a', 'm', 'b'] as const).map(k => get<'arc'>(r.entities, 'o')[k]) as [Vec2, Vec2, Vec2])!];
-  check('an arc made 25 in radius: its offset is 27, about the same centre', r.ok && near(A.r, 25, 1e-5) && near(O.r, 27, 1e-5) && pt(A.c, O.c, 1e-5), `${A.r} ${O.r}`);
+  const offsetArc = { ...offsetEntity(a, 2)!, id: 'o' };
+  const solution = solve([a, offsetArc], [follow('a', 'o', { offset: 2 }), { id: 'rad', type: 'dim', curves: ['a'], prop: 'radius', value: 25 }]);
+  const [originalArc, offsetCircle] = [arcFrom3(...(['a', 'm', 'b'] as const).map(key => get<'arc'>(solution.entities, 'a')[key]) as [Vec2, Vec2, Vec2])!, arcFrom3(...(['a', 'm', 'b'] as const).map(key => get<'arc'>(solution.entities, 'o')[key]) as [Vec2, Vec2, Vec2])!];
+  check('an arc made 25 in radius: its offset is 27, about the same centre', solution.ok && near(originalArc.r, 25, 1e-5) && near(offsetCircle.r, 27, 1e-5) && pt(originalArc.c, offsetCircle.c, 1e-5), `${originalArc.r} ${offsetCircle.r}`);
 }
 // ---- a closed outline of four lines and its offset outline: the outline resized, the offset is still 3 outside it all round
 {
-  const P: Vec2[] = [[0, 0], [40, 0], [40, 20], [0, 20]];
-  const lines: SketchEntity[] = P.map((p, i) => ({ id: `l${i}`, kind: 'line', a: p, b: P[(i + 1) % 4] }) as SketchEntity);
+  const corners: Vec2[] = [[0, 0], [40, 0], [40, 20], [0, 20]];
+  const lines: SketchEntity[] = corners.map((point, i) => ({ id: `l${i}`, kind: 'line', a: point, b: corners[(i + 1) % 4] }) as SketchEntity);
   const all = offsetChain(lines, 'l0', 3)!;
   const made = all.slice(lines.length).map((e, i) => ({ ...e, id: `o${i}` }));
   const joins: SketchConstraint[] = [0, 1, 2, 3].flatMap(i => [
@@ -64,19 +64,19 @@ const get = <K extends SketchEntity['kind']>(es: SketchEntity[], id: string) => 
   // Which original each piece is the offset of, and which way: found as the app finds it (by where it lies).
   const links: SketchConstraint[] = [];
   for (const piece of made as E<'line'>[]) {
-    for (const s of lines as E<'line'>[]) {
-      for (const d of [3, -3]) {
-        const w = offsetEntity(s, d) as E<'line'>;
+    for (const line of lines as E<'line'>[]) {
+      for (const distance of [3, -3]) {
+        const offsetLine = offsetEntity(line, distance) as E<'line'>;
         const mid: Vec2 = [(piece.a[0] + piece.b[0]) / 2, (piece.a[1] + piece.b[1]) / 2];
-        const off = Math.abs((mid[0] - w.a[0]) * (w.b[1] - w.a[1]) - (mid[1] - w.a[1]) * (w.b[0] - w.a[0])) / Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
-        const par = Math.abs((piece.b[0] - piece.a[0]) * (w.b[1] - w.a[1]) - (piece.b[1] - piece.a[1]) * (w.b[0] - w.a[0]));
-        if (off < 1e-6 && par < 1e-6 && !links.some(c => c.curves![1] === piece.id)) {
-          links.push(follow(s.id, piece.id, { offset: d, loose: true }));
+        const off = Math.abs((mid[0] - offsetLine.a[0]) * (offsetLine.b[1] - offsetLine.a[1]) - (mid[1] - offsetLine.a[1]) * (offsetLine.b[0] - offsetLine.a[0])) / Math.hypot(offsetLine.b[0] - offsetLine.a[0], offsetLine.b[1] - offsetLine.a[1]);
+        const par = Math.abs((piece.b[0] - piece.a[0]) * (offsetLine.b[1] - offsetLine.a[1]) - (piece.b[1] - piece.a[1]) * (offsetLine.b[0] - offsetLine.a[0]));
+        if (off < 1e-6 && par < 1e-6 && !links.some(link => link.curves![1] === piece.id)) {
+          links.push(follow(line.id, piece.id, { offset: distance, loose: true }));
         }
       }
     }
   }
-  check('each piece of the offset outline is found to be the offset of one side', links.length === 4, links.map(c => c.curves!.join('>') + ':' + c.how!.offset).join(' '));
+  check('each piece of the offset outline is found to be the offset of one side', links.length === 4, links.map(link => link.curves!.join('>') + ':' + link.how!.offset).join(' '));
   const sized: SketchConstraint[] = [
     { id: 'w', type: 'dim', curves: ['l0'], prop: 'length', value: 90 },
     { id: 'hh', type: 'dim', curves: ['l1'], prop: 'length', value: 35 },
@@ -86,29 +86,29 @@ const get = <K extends SketchEntity['kind']>(es: SketchEntity[], id: string) => 
     { id: 'v3', type: 'vertical', curves: ['l3'] },
     { id: 'pin', type: 'fix', pts: [{ e: 'l0', p: 'a' }], at: [0, 0] }
   ];
-  const r = solve([...lines, ...made], [...joins, ...links, ...sized]);
-  const xs = (r.entities.filter(e => e.id.startsWith('o')) as E<'line'>[]).flatMap(e => [e.a, e.b]);
-  const box = [Math.min(...xs.map(p => p[0])), Math.min(...xs.map(p => p[1])), Math.max(...xs.map(p => p[0])), Math.max(...xs.map(p => p[1]))];
-  check('the outline made 90 x 35: its offset outline is 96 x 41, 3 outside it all round, still closed', r.ok && [-3, -3, 93, 38].every((v, i) => near(box[i], v, 1e-5)), box.map(v => v.toFixed(4)).join());
+  const solution = solve([...lines, ...made], [...joins, ...links, ...sized]);
+  const xs = (solution.entities.filter(e => e.id.startsWith('o')) as E<'line'>[]).flatMap(e => [e.a, e.b]);
+  const box = [Math.min(...xs.map(point => point[0])), Math.min(...xs.map(point => point[1])), Math.max(...xs.map(point => point[0])), Math.max(...xs.map(point => point[1]))];
+  check('the outline made 90 x 35: its offset outline is 96 x 41, 3 outside it all round, still closed', solution.ok && [-3, -3, 93, 38].every((value, i) => near(box[i], value, 1e-5)), box.map(value => value.toFixed(4)).join());
 }
 // ---- a mirrored copy: the original moved and resized, the copy is its mirror image still
 {
   const line: [Vec2, Vec2] = [[0, -50], [0, 50]];
-  const c: SketchEntity = { id: 'c', kind: 'circle', center: [20, 5], radius: 6 };
-  const l: SketchEntity = { id: 'l', kind: 'line', a: [10, 0], b: [30, 15] };
-  const mc = { ...transformEntity(c, mirrorXf(...line)), id: 'mc' };
-  const ml = { ...transformEntity(l, mirrorXf(...line)), id: 'ml' };
-  const r = solve([c, l, mc, ml], [follow('c', 'mc', { mirror: line }), follow('l', 'ml', { mirror: line }), { id: 'd', type: 'dim', curves: ['c'], prop: 'radius', value: 11 }, { id: 'pin', type: 'fix', pts: [{ e: 'c', p: 'c' }], at: [33, -8] }, { id: 'pa', type: 'fix', pts: [{ e: 'l', p: 'a' }], at: [12, 4] }, { id: 'pb', type: 'fix', pts: [{ e: 'l', p: 'b' }], at: [40, 9] }]);
-  const [MC, ML] = [get<'circle'>(r.entities, 'mc'), get<'line'>(r.entities, 'ml')];
-  check('a mirrored circle and line, the originals moved and resized: the copies are their mirror images', r.ok && pt(MC.center, [-33, -8]) && near(MC.radius, 11) && pt(ML.a, [-12, 4]) && pt(ML.b, [-40, 9]), JSON.stringify([MC.center, MC.radius, ML.a, ML.b]));
+  const sketchEntity: SketchEntity = { id: 'c', kind: 'circle', center: [20, 5], radius: 6 };
+  const lineEntity: SketchEntity = { id: 'l', kind: 'line', a: [10, 0], b: [30, 15] };
+  const mc = { ...transformEntity(sketchEntity, mirrorXf(...line)), id: 'mc' };
+  const ml = { ...transformEntity(lineEntity, mirrorXf(...line)), id: 'ml' };
+  const solution = solve([sketchEntity, lineEntity, mc, ml], [follow('c', 'mc', { mirror: line }), follow('l', 'ml', { mirror: line }), { id: 'd', type: 'dim', curves: ['c'], prop: 'radius', value: 11 }, { id: 'pin', type: 'fix', pts: [{ e: 'c', p: 'c' }], at: [33, -8] }, { id: 'pa', type: 'fix', pts: [{ e: 'l', p: 'a' }], at: [12, 4] }, { id: 'pb', type: 'fix', pts: [{ e: 'l', p: 'b' }], at: [40, 9] }]);
+  const [MC, ML] = [get<'circle'>(solution.entities, 'mc'), get<'line'>(solution.entities, 'ml')];
+  check('a mirrored circle and line, the originals moved and resized: the copies are their mirror images', solution.ok && pt(MC.center, [-33, -8]) && near(MC.radius, 11) && pt(ML.a, [-12, 4]) && pt(ML.b, [-40, 9]), JSON.stringify([MC.center, MC.radius, ML.a, ML.b]));
 }
 // ---- an offset trimmed afterwards is its own curve: it isn't pulled back to its whole length
 {
   const a: SketchEntity = { id: 'a', kind: 'line', a: [0, 0], b: [40, 0] };
-  const o = { ...offsetEntity(a, 5)!, id: 'o' };
+  const offsetLine = { ...offsetEntity(a, 5)!, id: 'o' };
   const cross: SketchEntity = { id: 'x', kind: 'line', a: [20, 2], b: [20, 9] };
   const cs = [follow('a', 'o', { offset: 5 })];
-  const before = [a, o, cross];
+  const before = [a, offsetLine, cross];
   const after = trim(before, 'o', [30, 5]);
   const kept = carryConstraints(before, after, cs);
   check('the offset trimmed at a crossing line: its link is let go (it would stretch it back)', kept.length === 0 && after.some(e => e.kind === 'line' && near(Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]), 20)), `${kept.length} links, ${after.length} curves`);

@@ -20,7 +20,7 @@ export function keepSizes(doc: ProjectDoc, from: Units, to: Units): { changed: n
   }
   const sFrom = UNIT_MM[from];
   const sTo = UNIT_MM[to];
-  const old: Variable[] = doc.variables.map(v => ({ ...v }));
+  const old: Variable[] = doc.variables.map(variable => ({ ...variable }));
   const vars = doc.variables;
   const same = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
   /** How a formula's size goes with the unit in use: 0 not at all, 1 in step with it; NaN neither (or it can't be read). */
@@ -63,11 +63,11 @@ export function keepSizes(doc: ProjectDoc, from: Units, to: Units): { changed: n
         if (t.op) {
           return t.text;
         }
-        const d = degree(t.text);
-        if (d === 0) {
+        const degrees = degree(t.text);
+        if (degrees === 0) {
           return t.text;
         }
-        const whole = d === 1 ? pin(t.text) : null;
+        const whole = degrees === 1 ? pin(t.text) : null;
         if (whole) {
           return whole;
         }
@@ -107,35 +107,35 @@ export function keepSizes(doc: ProjectDoc, from: Units, to: Units): { changed: n
 
   // What each formula comes to now, before anything is touched.
   const before = new Map<string, number | null>();
-  for (const v of old) {
-    before.set(`v:${v.name}`, valueAt(v.expr, sFrom, old));
+  for (const variable of old) {
+    before.set(`v:${variable.name}`, valueAt(variable.expr, sFrom, old));
   }
   // Variables used as a count, a factor or an angle somewhere (and the ones those are made from) stay as they are:
   // "6" with a unit after it is no count. Where one of them is used as a length, that place is fixed instead.
   const plain = new Set<string>();
   const mark = (expr: string) => {
-    for (const n of namesIn(expr)) {
-      if (plain.has(n)) {
+    for (const name of namesIn(expr)) {
+      if (plain.has(name)) {
         continue;
       }
-      const v = old.find(x => x.name === n);
-      if (!v) {
+      const variable = old.find(variable => variable.name === name);
+      if (!variable) {
         continue;
       }
-      plain.add(n);
-      mark(v.expr);
+      plain.add(name);
+      mark(variable.expr);
     }
   };
-  for (const f of doc.features) {
-    for (const [path, expr] of Object.entries(f.exprs ?? {})) {
+  for (const feature of doc.features) {
+    for (const [path, expr] of Object.entries(feature.exprs ?? {})) {
       if (kindOfPath(path) !== 'length') {
         mark(expr);
       }
     }
-    if (f.type === 'sketch') {
-      for (const c of f.constraints ?? []) {
-        if (c.expr && c.prop === 'angle') {
-          mark(c.expr);
+    if (feature.type === 'sketch') {
+      for (const sketchConstraint of feature.constraints ?? []) {
+        if (sketchConstraint.expr && sketchConstraint.prop === 'angle') {
+          mark(sketchConstraint.expr);
         }
       }
     }
@@ -143,37 +143,37 @@ export function keepSizes(doc: ProjectDoc, from: Units, to: Units): { changed: n
   // Variables first, each after the ones it is made from (so those are already as they will be).
   const done = new Set<string>();
   for (let pass = 0; pass <= vars.length; pass++) {
-    for (const v of vars) {
-      if (done.has(v.name)) {
+    for (const variable of vars) {
+      if (done.has(variable.name)) {
         continue;
       }
-      const needs = namesIn(v.expr).filter(n => n !== v.name && vars.some(x => x.name === n));
-      if (pass < vars.length && needs.some(n => !done.has(n))) {
+      const needs = namesIn(variable.expr).filter(name => name !== variable.name && vars.some(variable => variable.name === name));
+      if (pass < vars.length && needs.some(need => !done.has(need))) {
         continue;
       }
-      done.add(v.name);
-      if (!plain.has(v.name)) {
-        v.expr = rewrite(v.expr, before.get(`v:${v.name}`) ?? null);
+      done.add(variable.name);
+      if (!plain.has(variable.name)) {
+        variable.expr = rewrite(variable.expr, before.get(`v:${variable.name}`) ?? null);
       }
     }
   }
   // Then every size that follows a formula.
   const length = (expr: string) => rewrite(expr, valueAt(expr, sFrom, old));
-  for (const f of doc.features) {
-    for (const [path, expr] of Object.entries(f.exprs ?? {})) {
+  for (const feature of doc.features) {
+    for (const [path, expr] of Object.entries(feature.exprs ?? {})) {
       if (kindOfPath(path) === 'length') {
-        f.exprs![path] = length(expr);
+        feature.exprs![path] = length(expr);
       }
     }
-    if (f.type !== 'sketch') {
+    if (feature.type !== 'sketch') {
       continue;
     }
-    for (const c of f.constraints ?? []) {
-      if (c.expr && c.prop !== 'angle') {
-        c.expr = length(c.expr);
+    for (const sketchConstraint of feature.constraints ?? []) {
+      if (sketchConstraint.expr && sketchConstraint.prop !== 'angle') {
+        sketchConstraint.expr = length(sketchConstraint.expr);
       }
-      if (c.atExpr) {
-        c.atExpr = c.atExpr.map(e => (e ? length(e) : e));
+      if (sketchConstraint.atExpr) {
+        sketchConstraint.atExpr = sketchConstraint.atExpr.map(e => (e ? length(e) : e));
       }
     }
   }
@@ -187,18 +187,18 @@ function terms(expr: string): { text: string; op: boolean }[] {
   let depth = 0;
   let start = 0;
   for (let i = 0; i < expr.length; i++) {
-    const c = expr[i];
-    if (c === '(') {
+    const char = expr[i];
+    if (char === '(') {
       depth++;
-    } else if (c === ')') {
+    } else if (char === ')') {
       depth--;
-    } else if ((c === '+' || c === '-') && depth === 0) {
+    } else if ((char === '+' || char === '-') && depth === 0) {
       const before = expr.slice(start, i).trimEnd();
       // A sign, not a sum: at the start, after another operator, or the exponent of 1e-3.
       if (!before || /[-+*/^(]$/.test(before) || (/\de$/i.test(before) && /^\d/.test(expr.slice(i + 1)))) {
         continue;
       }
-      out.push({ text: expr.slice(start, i), op: false }, { text: c, op: true });
+      out.push({ text: expr.slice(start, i), op: false }, { text: char, op: true });
       start = i + 1;
     }
   }
@@ -217,20 +217,20 @@ function brackets(text: string, each: (inner: string) => string): string {
   let start = 0;
   let many = false;
   for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '(') {
+    const char = text[i];
+    if (char === '(') {
       if (depth++ === 0) {
         many = /\b(min|max)\s*$/i.test(text.slice(0, i));
         out += text.slice(start, i + 1);
         start = i + 1;
       }
-    } else if (c === ')') {
+    } else if (char === ')') {
       if (--depth === 0) {
         out += each(text.slice(start, i));
         start = i;
       }
-    } else if ((c === ',' || c === ';') && depth === 1 && many) {
-      out += each(text.slice(start, i)) + c;
+    } else if ((char === ',' || char === ';') && depth === 1 && many) {
+      out += each(text.slice(start, i)) + char;
       start = i + 1;
     }
   }

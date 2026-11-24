@@ -8,9 +8,9 @@ import { el } from './ui';
 
 /** The app's main script of this page (its name changes with every build). */
 export function loadedBuild(): string | null {
-  const s = [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map(x => x.src).find(src => /\/assets\/index-[\w-]+\.js/.test(src));
+  const scriptUrl = [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map(script => script.src).find(src => /\/assets\/index-[\w-]+\.js/.test(src));
 
-  return s ? (s.match(/index-[\w-]+\.js/)?.[0] ?? null) : null;
+  return scriptUrl ? (scriptUrl.match(/index-[\w-]+\.js/)?.[0] ?? null) : null;
 }
 
 async function liveBuild(): Promise<string | null> {
@@ -86,16 +86,16 @@ export class Updates {
     }
     try {
       if ('caches' in window) {
-        for (const k of await caches.keys()) {
-          await caches.delete(k);
+        for (const cacheName of await caches.keys()) {
+          await caches.delete(cacheName);
         }
       }
     } catch {
       // nothing stored
     }
     try {
-      for (const r of (await navigator.serviceWorker?.getRegistrations?.()) ?? []) {
-        await r.unregister();
+      for (const registration of (await navigator.serviceWorker?.getRegistrations?.()) ?? []) {
+        await registration.unregister();
       }
     } catch {
       // none

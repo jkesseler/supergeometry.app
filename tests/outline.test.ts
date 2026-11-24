@@ -21,9 +21,9 @@ const check = (name: string, ok: boolean, info = '') => {
 const vol = (id: string) => Math.abs(measureVolume(debugBodies().get(id) as any));
 
 const rect = [{ id: 'r', kind: 'rect', center: [0, 0], w: 80, h: 50, rotation: 0 }];
-const lid = (W: string, cornerR = 6) => {
+const lid = (widthExpr: string, cornerR = 6) => {
   const doc: any = {
-    variables: [{ name: 'W', expr: W }],
+    variables: [{ name: 'W', expr: widthExpr }],
     features: [
       { id: 's1', name: 'Sketch 01', type: 'sketch', plane: XY, entities: rect, constraints: [], exprs: { 'entities.0.w': 'W' } },
       { id: 'lid', name: 'Extrude 01', type: 'extrude', source: { kind: 'profile', sketch: 's1', regions: arrangement(rect as any).regions.map(regionRef) }, distance: 3, mode: 'new' },
@@ -39,34 +39,34 @@ const lid = (W: string, cornerR = 6) => {
 // The lip's ring as the app would pick it: from the sketch's curves after a rebuild.
 const doc = lid('80');
 resolveDoc(doc);
-let r: any = await regenerate(doc.features);
-const curves = r.sketchBoundaries.s2 as any[];
+let result: any = await regenerate(doc.features);
+const curves = result.sketchBoundaries.s2 as any[];
 const links = curves.filter(e => e.id.startsWith('lnk-'));
 check('the two offsets of the outline are made (lines and corner arcs)', links.filter(e => e.id.startsWith('lnk-a-')).length === 8 && links.filter(e => e.id.startsWith('lnk-b-')).length === 8, links.map(e => `${e.id}:${e.kind}`).join(' '));
-const ring = arrangement(curves).regions.find(g => g.curves.some(c => c.startsWith('lnk-a')) && g.curves.some(c => c.startsWith('lnk-b')));
+const ring = arrangement(curves).regions.find(region => region.curves.some(curve => curve.startsWith('lnk-a')) && region.curves.some(curve => curve.startsWith('lnk-b')));
 check('…with a ring between them', !!ring, `${ring?.area.toFixed(1)}`);
 doc.features.push({ id: 'lip', name: 'Extrude 02', type: 'extrude', source: { kind: 'profile', sketch: 's2', regions: [regionRef(ring!)] }, distance: 4, mode: 'join', target: 'lid' });
 
-const ringArea = (W: number, R: number) => {
-  // Rounded rectangle W x 50 with corner R, offset in by d: (W-2d) x (50-2d), corners R-d.
-  const rr = (d: number) => (W - 2 * d) * (50 - 2 * d) - (4 - Math.PI) * (R - d) ** 2;
+const ringArea = (width: number, radius: number) => {
+  // Rounded rectangle `width` x 50 with corner `radius`, offset in by `inset`: (width - 2·inset) x (50 - 2·inset), corners radius - inset.
+  const rr = (inset: number) => (width - 2 * inset) * (50 - 2 * inset) - (4 - Math.PI) * (radius - inset) ** 2;
 
   return rr(2) - rr(4);
 };
-for (const W of [80, 120, 50]) {
-  const d = JSON.parse(JSON.stringify(doc));
-  d.variables[0].expr = String(W);
-  resolveDoc(d);
-  r = await regenerate(d.features);
-  const want = W * 50 * 3 - (4 - Math.PI) * 36 * 3 + ringArea(W, 6) * 4;
-  check(`lid ${W} wide: the lip follows the edge, 2 mm in all round`, !r.errors.length && Math.abs(vol('lid') - want) < 0.5, `${r.errors.map((e: any) => e.message).join()} ${vol('lid').toFixed(1)} want ${want.toFixed(1)}`);
+for (const width of [80, 120, 50]) {
+  const project = JSON.parse(JSON.stringify(doc));
+  project.variables[0].expr = String(width);
+  resolveDoc(project);
+  result = await regenerate(project.features);
+  const want = width * 50 * 3 - (4 - Math.PI) * 36 * 3 + ringArea(width, 6) * 4;
+  check(`lid ${width} wide: the lip follows the edge, 2 mm in all round`, !result.errors.length && Math.abs(vol('lid') - want) < 0.5, `${result.errors.map((e: any) => e.message).join()} ${vol('lid').toFixed(1)} want ${want.toFixed(1)}`);
 }
 // The corners made rounder: the lip's corners follow too.
-const d = JSON.parse(JSON.stringify(doc));
-d.features.find((f: any) => f.id === 'f1').radius = 10;
-r = await regenerate(d.features);
+const roundedDoc = JSON.parse(JSON.stringify(doc));
+roundedDoc.features.find((feature: any) => feature.id === 'f1').radius = 10;
+result = await regenerate(roundedDoc.features);
 const want = 80 * 50 * 3 - (4 - Math.PI) * 100 * 3 + ringArea(80, 10) * 4;
-check("corners made 10: the lip's corners follow", !r.errors.length && Math.abs(vol('lid') - want) < 0.5, `${r.errors.map((e: any) => e.message).join()} ${vol('lid').toFixed(1)} want ${want.toFixed(1)}`);
+check("corners made 10: the lip's corners follow", !result.errors.length && Math.abs(vol('lid') - want) < 0.5, `${result.errors.map((e: any) => e.message).join()} ${vol('lid').toFixed(1)} want ${want.toFixed(1)}`);
 
 // The same lid made by hand on a phone (tests/fixtures/lid-hand.json): drawn
 // 80 x 50, corners 6, the lip from two offsets of the top face's edge; then
@@ -76,11 +76,11 @@ check("corners made 10: the lip's corners follow", !r.errors.length && Math.abs(
   const { readFileSync } = await import('node:fs');
   const hand = JSON.parse(readFileSync(new URL('./fixtures/lid-hand.json', import.meta.url), 'utf8'));
   resolveDoc(hand);
-  r = await regenerate(hand.features);
-  const rr = (d: number) => (100 - 2 * d) * (60 - 2 * d) - (4 - Math.PI) * (10 - d) ** 2;
+  result = await regenerate(hand.features);
+  const rr = (inset: number) => (100 - 2 * inset) * (60 - 2 * inset) - (4 - Math.PI) * (10 - inset) ** 2;
   const want = (100 * 60 - (4 - Math.PI) * 100) * 3 + (rr(2) - rr(4)) * 4;
-  const v = vol('extrude-mw9gghgi-u7ha');
-  check('hand-built lid: 100 x 60, corners 10, lip 2-4 mm in', !r.errors.length && !(r.notes ?? []).length && Math.abs(v - want) < 0.5, `${[...r.errors, ...(r.notes ?? [])].map((e: any) => e.message).join()} ${v.toFixed(1)} want ${want.toFixed(1)}`);
+  const volume = vol('extrude-mw9gghgi-u7ha');
+  check('hand-built lid: 100 x 60, corners 10, lip 2-4 mm in', !result.errors.length && !(result.notes ?? []).length && Math.abs(volume - want) < 0.5, `${[...result.errors, ...(result.notes ?? [])].map((e: any) => e.message).join()} ${volume.toFixed(1)} want ${want.toFixed(1)}`);
 }
 
 process.exit(failed ? 1 : 0);

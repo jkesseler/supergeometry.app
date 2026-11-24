@@ -11,67 +11,67 @@ import type { Feature, FreeformFeature, ProjectDoc, TransformFeature, Vec3 } fro
 export type Affine = number[];
 const ID: Affine = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
-export const applyAffine = (m: Affine, p: Vec3): Vec3 => [0, 1, 2].map(r => m[r * 4] * p[0] + m[r * 4 + 1] * p[1] + m[r * 4 + 2] * p[2] + m[r * 4 + 3]) as Vec3;
+export const applyAffine = (affine: Affine, point: Vec3): Vec3 => [0, 1, 2].map(row => affine[row * 4] * point[0] + affine[row * 4 + 1] * point[1] + affine[row * 4 + 2] * point[2] + affine[row * 4 + 3]) as Vec3;
 
-function then(m: Affine, n: Affine): Affine {
+function then(affine: Affine, after: Affine): Affine {
   const out: number[] = [];
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      out.push(n[r * 4] * m[c] + n[r * 4 + 1] * m[4 + c] + n[r * 4 + 2] * m[8 + c]);
+  for (let row = 0; row < 3; row++) {
+    for (let column = 0; column < 3; column++) {
+      out.push(after[row * 4] * affine[column] + after[row * 4 + 1] * affine[4 + column] + after[row * 4 + 2] * affine[8 + column]);
     }
-    out.push(n[r * 4] * m[3] + n[r * 4 + 1] * m[7] + n[r * 4 + 2] * m[11] + n[r * 4 + 3]);
+    out.push(after[row * 4] * affine[3] + after[row * 4 + 1] * affine[7] + after[row * 4 + 2] * affine[11] + after[row * 4 + 3]);
   }
 
   return out;
 }
 
-export const det = (m: Affine) => m[0] * (m[5] * m[10] - m[6] * m[9]) - m[1] * (m[4] * m[10] - m[6] * m[8]) + m[2] * (m[4] * m[9] - m[5] * m[8]);
+export const det = (affine: Affine) => affine[0] * (affine[5] * affine[10] - affine[6] * affine[9]) - affine[1] * (affine[4] * affine[10] - affine[6] * affine[8]) + affine[2] * (affine[4] * affine[9] - affine[5] * affine[8]);
 
-function rotate(p: Vec3, o: Vec3, axis: Vec3, deg: number): Vec3 {
-  const l = Math.hypot(...axis) || 1;
-  const k: Vec3 = [axis[0] / l, axis[1] / l, axis[2] / l];
-  const v: Vec3 = [p[0] - o[0], p[1] - o[1], p[2] - o[2]];
+function rotate(point: Vec3, origin: Vec3, axis: Vec3, deg: number): Vec3 {
+  const length = Math.hypot(...axis) || 1;
+  const unitAxis: Vec3 = [axis[0] / length, axis[1] / length, axis[2] / length];
+  const offset: Vec3 = [point[0] - origin[0], point[1] - origin[1], point[2] - origin[2]];
   const t = (deg * Math.PI) / 180;
-  const c = Math.cos(t);
-  const s = Math.sin(t);
-  const kv = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
-  const x: Vec3 = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
+  const cos = Math.cos(t);
+  const sin = Math.sin(t);
+  const kv = unitAxis[0] * offset[0] + unitAxis[1] * offset[1] + unitAxis[2] * offset[2];
+  const x: Vec3 = [unitAxis[1] * offset[2] - unitAxis[2] * offset[1], unitAxis[2] * offset[0] - unitAxis[0] * offset[2], unitAxis[0] * offset[1] - unitAxis[1] * offset[0]];
 
-  return [0, 1, 2].map(i => o[i] + v[i] * c + x[i] * s + k[i] * kv * (1 - c)) as Vec3;
+  return [0, 1, 2].map(i => origin[i] + offset[i] * cos + x[i] * sin + unitAxis[i] * kv * (1 - cos)) as Vec3;
 }
 
-function fromMap(f: (p: Vec3) => Vec3): Affine {
-  const o = f([0, 0, 0]);
-  const cols = ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as Vec3[]).map(e => f(e).map((x, i) => x - o[i]));
+function fromMap(map: (p: Vec3) => Vec3): Affine {
+  const origin = map([0, 0, 0]);
+  const cols = ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as Vec3[]).map(e => map(e).map((x, i) => x - origin[i]));
 
-  return [0, 1, 2].flatMap(r => [cols[0][r], cols[1][r], cols[2][r], o[r]]);
+  return [0, 1, 2].flatMap(row => [cols[0][row], cols[1][row], cols[2][row], origin[row]]);
 }
 
 /** The map of a move / scale / mirror step (null for patterns). */
 export function stepAffine(op: TransformFeature['op']): Affine | null {
   switch (op.kind) {
     case 'move': {
-      const r = op.rotate && Math.abs(op.rotate.angle) > 1e-9 ? op.rotate : null;
+      const rotation = op.rotate && Math.abs(op.rotate.angle) > 1e-9 ? op.rotate : null;
 
-      return fromMap((p) => {
-        const q = r ? rotate(p, r.origin, r.axis, r.angle) : p;
+      return fromMap((point) => {
+        const q = rotation ? rotate(point, rotation.origin, rotation.axis, rotation.angle) : point;
 
         return [q[0] + op.translate[0], q[1] + op.translate[1], q[2] + op.translate[2]];
       });
     }
     case 'scale':
-      return fromMap(p => p.map((x, i) => op.center[i] + (x - op.center[i]) * op.factor) as Vec3);
+      return fromMap(point => point.map((x, i) => op.center[i] + (x - op.center[i]) * op.factor) as Vec3);
     case 'scaleXYZ':
-      return fromMap(p => p.map((x, i) => op.center[i] + (x - op.center[i]) * op.factors[i]) as Vec3);
+      return fromMap(point => point.map((x, i) => op.center[i] + (x - op.center[i]) * op.factors[i]) as Vec3);
     case 'mirror': {
-      const n = op.plane.normal;
-      const l = Math.hypot(...n) || 1;
-      const k: Vec3 = [n[0] / l, n[1] / l, n[2] / l];
+      const normal = op.plane.normal;
+      const length = Math.hypot(...normal) || 1;
+      const unitNormal: Vec3 = [normal[0] / length, normal[1] / length, normal[2] / length];
 
-      return fromMap((p) => {
-        const d = (p[0] - op.plane.origin[0]) * k[0] + (p[1] - op.plane.origin[1]) * k[1] + (p[2] - op.plane.origin[2]) * k[2];
+      return fromMap((point) => {
+        const distance = (point[0] - op.plane.origin[0]) * unitNormal[0] + (point[1] - op.plane.origin[1]) * unitNormal[1] + (point[2] - op.plane.origin[2]) * unitNormal[2];
 
-        return [p[0] - 2 * d * k[0], p[1] - 2 * d * k[1], p[2] - 2 * d * k[2]];
+        return [point[0] - 2 * distance * unitNormal[0], point[1] - 2 * distance * unitNormal[1], point[2] - 2 * distance * unitNormal[2]];
       });
     }
     default:
@@ -86,26 +86,26 @@ export function stepAffine(op: TransformFeature['op']): Affine | null {
  */
 export function freeformBodies(features: readonly Feature[], upto = features.length): Map<string, { feature: FreeformFeature; m: Affine }> {
   const out = new Map<string, { feature: FreeformFeature; m: Affine }>();
-  for (const f of features.slice(0, upto)) {
-    if (f.suppressed) {
+  for (const feature of features.slice(0, upto)) {
+    if (feature.suppressed) {
       continue;
     }
-    if (f.type === 'freeform') {
-      out.set(f.id, { feature: f, m: ID });
+    if (feature.type === 'freeform') {
+      out.set(feature.id, { feature: feature, m: ID });
       continue;
     }
     // An Edit Freeform step: the freeform (and its copies) with the new cage.
-    if (f.type === 'freeformEdit') {
+    if (feature.type === 'freeformEdit') {
       for (const [id, ff] of out) {
-        if (ff.feature.id === f.target) {
-          out.set(id, { ...ff, feature: { ...ff.feature, ...f.patch } });
+        if (ff.feature.id === feature.target) {
+          out.set(id, { ...ff, feature: { ...ff.feature, ...feature.patch } });
         }
       }
       continue;
     }
-    if (f.type === 'transform') {
-      const step = stepAffine(f.op);
-      for (const id of f.bodies) {
+    if (feature.type === 'transform') {
+      const step = stepAffine(feature.op);
+      for (const id of feature.bodies) {
         const ff = out.get(id);
         if (!ff) {
           continue;
@@ -113,15 +113,15 @@ export function freeformBodies(features: readonly Feature[], upto = features.len
         if (!step) {
           continue;
         } // a pattern: the copies are ordinary bodies
-        if (f.copy) {
-          out.set(`${f.id}:${id}:0`, { feature: ff.feature, m: then(ff.m, step) });
+        if (feature.copy) {
+          out.set(`${feature.id}:${id}:0`, { feature: ff.feature, m: then(ff.m, step) });
         } else {
           out.set(id, { feature: ff.feature, m: then(ff.m, step) });
         }
       }
       continue;
     }
-    const text = JSON.stringify(f);
+    const text = JSON.stringify(feature);
     for (const id of [...out.keys()]) {
       if (text.includes(`"${id}"`)) {
         out.delete(id);
@@ -151,7 +151,7 @@ export function detachFreeformCopy(doc: ProjectDoc, bodyId: string, newId: strin
     return null;
   }
   const src = rest.slice(0, -1).join(':');
-  const i = doc.features.findIndex(f => f.id === tid);
+  const i = doc.features.findIndex(feature => feature.id === tid);
   const t = doc.features[i] as TransformFeature | undefined;
   if (!t || t.type !== 'transform' || !t.copy || t.link || !t.bodies.includes(src)) {
     return null;
@@ -166,7 +166,7 @@ export function detachFreeformCopy(doc: ProjectDoc, bodyId: string, newId: strin
     id: newId,
     name: t.name,
     cage: {
-      verts: ff.feature.cage.verts.map(v => applyAffine(ff.m, v)),
+      verts: ff.feature.cage.verts.map(vertex => applyAffine(ff.m, vertex)),
       // A mirror turns the shape inside out: wind the quads the other way.
       faces: ff.feature.cage.faces.map(q => (flip ? ([q[0], q[3], q[2], q[1]] as typeof q) : ([...q] as typeof q))),
       ...(ff.feature.cage.creases ? { creases: structuredClone(ff.feature.cage.creases) } : {})
@@ -185,13 +185,13 @@ export function detachFreeformCopy(doc: ProjectDoc, bodyId: string, newId: strin
     ...doc,
     features: [...features.slice(0, at + 1), ...features.slice(at + 1).map(rename)],
     hidden: rename(doc.hidden),
-    names: Object.fromEntries(Object.entries(doc.names ?? {}).map(([k, v]) => [renameIn(`"${k}"`, bodyId, newId).slice(1, -1), v]))
+    names: Object.fromEntries(Object.entries(doc.names ?? {}).map(([key, value]) => [renameIn(`"${key}"`, bodyId, newId).slice(1, -1), value]))
   };
   if (doc.colors) {
-    out.colors = Object.fromEntries(Object.entries(doc.colors).map(([k, v]) => [renameIn(`"${k}"`, bodyId, newId).slice(1, -1), v]));
+    out.colors = Object.fromEntries(Object.entries(doc.colors).map(([key, value]) => [renameIn(`"${key}"`, bodyId, newId).slice(1, -1), value]));
   }
   if (doc.materials) {
-    out.materials = Object.fromEntries(Object.entries(doc.materials).map(([k, v]) => [renameIn(`"${k}"`, bodyId, newId).slice(1, -1), v]));
+    out.materials = Object.fromEntries(Object.entries(doc.materials).map(([key, value]) => [renameIn(`"${key}"`, bodyId, newId).slice(1, -1), value]));
   }
   // The copy's name in Items stays what it was.
   if (!out.names?.[newId] && doc.names?.[bodyId]) {
@@ -201,15 +201,15 @@ export function detachFreeformCopy(doc: ProjectDoc, bodyId: string, newId: strin
   return { doc: out, id: newId };
 }
 
-/** The map that undoes m. */
-export function invertAffine(m: Affine): Affine {
-  const [a, b, c, , d, e, f, , g, h, i] = m;
-  const D = det(m);
-  const inv = [(e * i - f * h) / D, (c * h - b * i) / D, (b * f - c * e) / D, (f * g - d * i) / D, (a * i - c * g) / D, (c * d - a * f) / D, (d * h - e * g) / D, (b * g - a * h) / D, (a * e - b * d) / D];
-  const t = [m[3], m[7], m[11]];
+/** The map that undoes `affine`. */
+export function invertAffine(affine: Affine): Affine {
+  const [a, b, m02, , m10, e, m12, , m20, m21, i] = affine;
+  const determinant = det(affine);
+  const inv = [(e * i - m12 * m21) / determinant, (m02 * m21 - b * i) / determinant, (b * m12 - m02 * e) / determinant, (m12 * m20 - m10 * i) / determinant, (a * i - m02 * m20) / determinant, (m02 * m10 - a * m12) / determinant, (m10 * m21 - e * m20) / determinant, (b * m20 - a * m21) / determinant, (a * e - b * m10) / determinant];
+  const t = [affine[3], affine[7], affine[11]];
   const out: Affine = [];
-  for (let r = 0; r < 3; r++) {
-    out.push(inv[r * 3], inv[r * 3 + 1], inv[r * 3 + 2], -(inv[r * 3] * t[0] + inv[r * 3 + 1] * t[1] + inv[r * 3 + 2] * t[2]));
+  for (let row = 0; row < 3; row++) {
+    out.push(inv[row * 3], inv[row * 3 + 1], inv[row * 3 + 2], -(inv[row * 3] * t[0] + inv[row * 3 + 1] * t[1] + inv[row * 3 + 2] * t[2]));
   }
 
   return out;

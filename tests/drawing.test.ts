@@ -45,17 +45,17 @@ const check = (name: string, ok: boolean, info = '') => {
   }
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
-const block = (id: string, pts: number[][], z: number, h: number): Feature[] => {
+const block = (id: string, pts: number[][], z: number, height: number): Feature[] => {
   const es = [{ id: `${id}p`, kind: 'polyline', points: pts, closed: true }];
 
   return [
     { id: `${id}s`, name: `${id}s`, type: 'sketch', plane: { origin: [0, 0, z], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: es } as Feature,
-    { id, name: id, type: 'extrude', source: { kind: 'profile', sketch: `${id}s`, regions: arrangement(es as any).regions.map(regionRef) }, distance: h, mode: 'new' } as Feature
+    { id, name: id, type: 'extrude', source: { kind: 'profile', sketch: `${id}s`, regions: arrangement(es as any).regions.map(regionRef) }, distance: height, mode: 'new' } as Feature
   ];
 };
 // A 200 x 100 x 20 plate, and a 40 x 40 x 60 post standing on it.
 const features = [...block('A', [[0, 0], [200, 0], [200, 100], [0, 100]], 0, 20), ...block('B', [[20, 20], [60, 20], [60, 60], [20, 60]], 20, 60)];
-const views = new Map((await projectViews(features, VIEW_SPECS)).map(v => [v.id, v]));
+const views = new Map((await projectViews(features, VIEW_SPECS)).map(projectedView => [projectedView.id, projectedView]));
 const front = views.get('front')!;
 check('front view: 200 wide, 80 high', Math.abs(front.box![1][0] - front.box![0][0] - 200) < 1e-6 && Math.abs(front.box![1][1] - front.box![0][1] - 80) < 1e-6, JSON.stringify(front.box));
 const top = views.get('top')!;
@@ -73,20 +73,20 @@ const doc = emptyDoc();
 doc.name = 'Test plate';
 const opts = drawingOptions(doc);
 check('defaults: A3, first angle, hidden lines, all four views', opts.size === 'A3' && opts.angle === 'first' && opts.hidden && opts.views.front && opts.views.top && opts.views.side && opts.views.iso);
-const L = layoutSheet(views, opts, 2);
-check('200 mm plate on A3: drawn 1:1', L.scale === 1, String(L.scale));
-const fp = L.views.find(v => v.id === 'front')!;
-const tp = L.views.find(v => v.id === 'top')!;
-const lp = L.views.find(v => v.id === 'left')!;
+const sheetLayout = layoutSheet(views, opts, 2);
+check('200 mm plate on A3: drawn 1:1', sheetLayout.scale === 1, String(sheetLayout.scale));
+const fp = sheetLayout.views.find(view => view.id === 'front')!;
+const tp = sheetLayout.views.find(view => view.id === 'top')!;
+const lp = sheetLayout.views.find(view => view.id === 'left')!;
 check('first angle: top view below the front view, lined up', tp.y > fp.y + 80 && Math.abs(tp.x - fp.x) < 1e-9);
 check('first angle: the view from the left on the right, level with the front', lp.x > fp.x + 200 && Math.abs(lp.y - fp.y) < 1e-9);
-const inFrame = L.views.every(v => v.x >= 20 && v.y >= 10 && v.x + (v.box[1][0] - v.box[0][0]) * v.s <= 410 && v.y + (v.box[1][1] - v.box[0][1]) * v.s <= 287);
+const inFrame = sheetLayout.views.every(view => view.x >= 20 && view.y >= 10 && view.x + (view.box[1][0] - view.box[0][0]) * view.s <= 410 && view.y + (view.box[1][1] - view.box[0][1]) * view.s <= 287);
 check('every view inside the frame', inFrame);
 doc.drawing = { angle: 'third' };
 const L3 = layoutSheet(views, drawingOptions(doc), 2);
-const f3 = L3.views.find(v => v.id === 'front')!;
-const t3 = L3.views.find(v => v.id === 'top')!;
-check('third angle: top view above, the view from the right on the right', t3.y < f3.y && L3.side === 'right' && !!L3.views.find(v => v.id === 'right'));
+const f3 = L3.views.find(view => view.id === 'front')!;
+const t3 = L3.views.find(view => view.id === 'top')!;
+check('third angle: top view above, the view from the right on the right', t3.y < f3.y && L3.side === 'right' && !!L3.views.find(view => view.id === 'right'));
 doc.drawing = { size: 'A4' };
 check('on A4 it has to shrink: 1:2', layoutSheet(views, drawingOptions(doc), 2).scale === 0.5, String(layoutSheet(views, drawingOptions(doc), 2).scale));
 doc.drawing = { size: 'A3', scale: 0.2 };
@@ -118,22 +118,22 @@ const disc: Feature[] = (() => {
 
   return [
     { id: 'ds', name: 'ds', type: 'sketch', plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: es } as Feature,
-    { id: 'D', name: 'D', type: 'extrude', source: { kind: 'profile', sketch: 'ds', regions: arrangement(es as any).regions.filter(r => r.holes.length).map(regionRef) }, distance: 10, mode: 'new' } as Feature
+    { id: 'D', name: 'D', type: 'extrude', source: { kind: 'profile', sketch: 'ds', regions: arrangement(es as any).regions.filter(region => region.holes.length).map(regionRef) }, distance: 10, mode: 'new' } as Feature
   ];
 })();
-const dv = new Map((await holed(disc, VIEW_SPECS)).map(v => [v.id, v]));
+const dv = new Map((await holed(disc, VIEW_SPECS)).map(projectedView => [projectedView.id, projectedView]));
 const topEdges = dv.get('top')!.bodies[0].edges;
 const circle = topEdges.find(e => 'c' in e) as { c: [number, number]; r: number } | undefined;
 check('a plate with a hole, from the top: its 4 sides and the hole as a circle', topEdges.filter(e => !('c' in e)).length >= 4 && !!circle && Math.abs(circle.r - 8) < 1e-3, JSON.stringify(circle));
 // ---- The same, worked out on the meshes (as for freeform or very big models).
 {
-  const mv = new Map((await projectViews(features, VIEW_SPECS, undefined, 'mesh')).map(v => [v.id, v]));
+  const mv = new Map((await projectViews(features, VIEW_SPECS, undefined, 'mesh')).map(projectedView => [projectedView.id, projectedView]));
   const mf = mv.get('front')!;
   check('meshes: front view still exactly 200 wide, 80 high', Math.abs(mf.box![1][0] - mf.box![0][0] - 200) < 1e-6 && Math.abs(mf.box![1][1] - mf.box![0][1] - 80) < 1e-6, JSON.stringify(mf.box));
   check('meshes: seen from the top nothing is hidden', mv.get('top')!.bodies.every(b => !b.hidden), mv.get('top')!.bodies.map(b => b.hidden.slice(0, 60)).join(' | '));
   const mw = (await projectViews(wall, [VIEW_SPECS[0]], undefined, 'mesh'))[0];
   check("meshes: the wall's edges behind the post are hidden", !!mw.bodies.find(b => b.id === 'W')?.hidden);
-  const md = (await projectViews(disc, VIEW_SPECS, undefined, 'mesh')).find(v => v.id === 'top')!.bodies[0].edges;
+  const md = (await projectViews(disc, VIEW_SPECS, undefined, 'mesh')).find(projectedView => projectedView.id === 'top')!.bodies[0].edges;
   const mc = md.find(e => 'c' in e) as { c: [number, number]; r: number } | undefined;
   check('meshes: the hole from the top is a circle, r 8', !!mc && Math.abs(mc.r - 8) < 1e-3 && md.some(e => !('c' in e) && Math.abs(Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) - 60) < 1e-6), JSON.stringify(mc));
   // A round rod seen from the side: its outlines are exact straight lines 10 apart.
@@ -148,19 +148,19 @@ check('a plate with a hole, from the top: its 4 sides and the hole as a circle',
   // A tall thin panel from the isometric view: its big flat faces' triangles
   // must not cover the edges beside them (they hid its top edges).
   const panel = block('Q', [[0, 0], [18, 0], [18, 479], [0, 479]], 0, 1800);
-  const isoSpec = VIEW_SPECS.filter(v => v.id === 'iso');
-  const len = (d: string) => {
-    let n = 0;
+  const isoSpec = VIEW_SPECS.filter(viewSpec => viewSpec.id === 'iso');
+  const len = (pathData: string) => {
+    let count = 0;
     let at: number[] | null = null;
-    for (const m of d.matchAll(/([ML])(-?[\d.e-]+) (-?[\d.e-]+)/g)) {
-      const p = [+m[2], +m[3]];
-      if (m[1] === 'L' && at) {
-        n += Math.hypot(p[0] - at[0], p[1] - at[1]);
+    for (const match of pathData.matchAll(/([ML])(-?[\d.e-]+) (-?[\d.e-]+)/g)) {
+      const point = [+match[2], +match[3]];
+      if (match[1] === 'L' && at) {
+        count += Math.hypot(point[0] - at[0], point[1] - at[1]);
       }
-      at = p;
+      at = point;
     }
 
-    return n;
+    return count;
   };
   const pe = (await projectViews(panel, isoSpec, undefined, 'exact'))[0].bodies[0];
   const pm = (await projectViews(panel, isoSpec, undefined, 'mesh'))[0].bodies[0];
@@ -178,7 +178,7 @@ check('a plate with a hole, from the top: its 4 sides and the hole as a circle',
 }
 const ddoc = emptyDoc();
 const dL = layoutSheet(dv, drawingOptions(ddoc), 0);
-const tp2 = dL.views.find(v => v.id === 'top')!;
+const tp2 = dL.views.find(view => view.id === 'top')!;
 const onHole: [number, number] = [tp2.x + (30 + 8 - tp2.box[0][0]) * tp2.s, tp2.y + (-20 - tp2.box[0][1]) * tp2.s];
 const hit = edgeAt(dv, dL, onHole, 1);
 check('tapping the hole on the sheet finds the circle', hit?.kind === 'circle' && Math.abs((hit.r ?? 0) - 8) < 1e-3, JSON.stringify(hit));
@@ -193,8 +193,8 @@ check('a diameter says Ø16, a radius R8', dimSVG({ id: 'd2', view: 'top', kind:
   // out; the long one over them, 7 mm further; a tiny one's value past its end;
   // a diameter's leader out past the view.
   const [[x0, y0], [x1, y1]] = tp2.box;
-  const lineY = (d: { a: [number, number]; offset: number }) => tp2.y + (d.a[1] - y0) * tp2.s - d.offset;
-  const r = extent(tp2);
+  const lineY = (dimension: { a: [number, number]; offset: number }) => tp2.y + (dimension.a[1] - y0) * tp2.s - dimension.offset;
+  const bounds = extent(tp2);
   const ds = arrangeDims(
     [
       { id: 'long', view: 'top', kind: 'length', a: [x0, y0], b: [x1, y0], offset: 3 },
@@ -206,15 +206,15 @@ check('a diameter says Ø16, a radius R8', dimSVG({ id: 'd2', view: 'top', kind:
     dL,
     o2
   );
-  const by = (id: string) => ds.find(d => d.id === id)!;
-  check('arranged: the short ones in the first row, 10 mm out', Math.abs(lineY(by('s1')) - (r.y0 - 10)) < 1e-6 && Math.abs(lineY(by('s2')) - (r.y0 - 10)) < 1e-6, `${lineY(by('s1'))} ${lineY(by('s2'))} ${r.y0}`);
-  check('arranged: the long one over them, 7 mm further out', Math.abs(lineY(by('long')) - (r.y0 - 17)) < 1e-6, String(lineY(by('long'))));
-  check('arranged: a dimension along the bottom goes below the view', Math.abs(lineY(by('tiny')) - (r.y1 + 10)) < 1e-6, String(lineY(by('tiny'))));
+  const by = (id: string) => ds.find(drawingDimension => drawingDimension.id === id)!;
+  check('arranged: the short ones in the first row, 10 mm out', Math.abs(lineY(by('s1')) - (bounds.y0 - 10)) < 1e-6 && Math.abs(lineY(by('s2')) - (bounds.y0 - 10)) < 1e-6, `${lineY(by('s1'))} ${lineY(by('s2'))} ${bounds.y0}`);
+  check('arranged: the long one over them, 7 mm further out', Math.abs(lineY(by('long')) - (bounds.y0 - 17)) < 1e-6, String(lineY(by('long'))));
+  check('arranged: a dimension along the bottom goes below the view', Math.abs(lineY(by('tiny')) - (bounds.y1 + 10)) < 1e-6, String(lineY(by('tiny'))));
   check('arranged: too short for its value, the value goes past its end', (by('tiny').slide ?? 0) > 2 && !by('s1').slide);
   const dia = by('dia');
-  const C = [tp2.x + (circle!.c[0] - x0) * tp2.s, tp2.y + (circle!.c[1] - y0) * tp2.s];
-  const end = [C[0] + Math.cos(dia.angle!) * (8 * tp2.s + dia.offset), C[1] + Math.sin(dia.angle!) * (8 * tp2.s + dia.offset)];
-  check("arranged: a diameter's leader ends outside the view", end[0] < r.x0 || end[0] > r.x1 || end[1] < r.y0 || end[1] > r.y1, JSON.stringify(end));
+  const center = [tp2.x + (circle!.c[0] - x0) * tp2.s, tp2.y + (circle!.c[1] - y0) * tp2.s];
+  const end = [center[0] + Math.cos(dia.angle!) * (8 * tp2.s + dia.offset), center[1] + Math.sin(dia.angle!) * (8 * tp2.s + dia.offset)];
+  check("arranged: a diameter's leader ends outside the view", end[0] < bounds.x0 || end[0] > bounds.x1 || end[1] < bounds.y0 || end[1] > bounds.y1, JSON.stringify(end));
 }
 {
   // Several drawings in one project; one saved before there could be several is the first.
@@ -234,21 +234,21 @@ check('a diameter says Ø16, a radius R8', dimSVG({ id: 'd2', view: 'top', kind:
 {
   // The frame's fields (ISO 5457) are measured out from the centring marks: the middle of the sheet is a field line.
   const ticks = /<path d="([^"]+)" stroke="#000" stroke-width="0.35"/.exec(svg)?.[1] ?? '';
-  const W = Number(/viewBox="0 0 ([\d.]+)/.exec(svg)?.[1]);
-  const xs = [...ticks.matchAll(/M([\d.]+) 10L/g)].map(m => Number(m[1]));
-  check('the centring mark is on a field line, fields 50 mm', xs.includes(W / 2) && xs.every(x => Math.abs(((x - W / 2) / 50) % 1) < 1e-9), xs.join(','));
+  const sheetWidth = Number(/viewBox="0 0 ([\d.]+)/.exec(svg)?.[1]);
+  const xs = [...ticks.matchAll(/M([\d.]+) 10L/g)].map(match => Number(match[1]));
+  check('the centring mark is on a field line, fields 50 mm', xs.includes(sheetWidth / 2) && xs.every(x => Math.abs(((x - sheetWidth / 2) / 50) % 1) < 1e-9), xs.join(','));
 }
 {
   // DXF of a sheet: y up, arcs the right way round, text kept, arrowheads solid.
   const ents = (dxf: string) => {
-    const l = dxf.split('\n');
-    const at = l.indexOf('ENTITIES');
+    const lines = dxf.split('\n');
+    const at = lines.indexOf('ENTITIES');
     const list: Record<string, string>[] = [];
-    for (let i = at + 1; i < l.length - 1; i += 2) {
-      if (l[i] === '0') {
-        list.push({ type: l[i + 1] });
+    for (let i = at + 1; i < lines.length - 1; i += 2) {
+      if (lines[i] === '0') {
+        list.push({ type: lines[i + 1] });
       } else if (list.length) {
-        list[list.length - 1][l[i]] ??= l[i + 1];
+        list[list.length - 1][lines[i]] ??= lines[i + 1];
       }
     }
 
@@ -275,11 +275,11 @@ ddoc.drawing = { size: 'A4', portrait: true };
 check('portrait A4: 210 wide, 297 high', sheetSize(drawingOptions(ddoc)).join() === '210,297');
 ddoc.drawing = { moved: { front: [5, 7] } };
 const mL = layoutSheet(dv, drawingOptions(ddoc), 0);
-const [f0, f1] = [dL.views.find(v => v.id === 'front')!, mL.views.find(v => v.id === 'front')!];
-const [t0, t1] = [dL.views.find(v => v.id === 'top')!, mL.views.find(v => v.id === 'top')!];
+const [f0, f1] = [dL.views.find(view => view.id === 'front')!, mL.views.find(view => view.id === 'front')!];
+const [t0, t1] = [dL.views.find(view => view.id === 'top')!, mL.views.find(view => view.id === 'top')!];
 check('moving the front view takes the top view along, still lined up', f1.x - f0.x === 5 && f1.y - f0.y === 7 && t1.x - t0.x === 5 && t1.x === f1.x);
 ddoc.drawing = { views: { iso: false, top: false } };
-check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 0).views.map(v => v.id).sort().join() === 'front,left');
+check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 0).views.map(view => view.id).sort().join() === 'front,left');
 
 // ---- Section views: the plate with the hole cut across the hole, from the top view.
 {
@@ -291,16 +291,16 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
   const sv = (await holed(disc, [spec]))[0];
   check("the section is the plate's width by its thickness", !!sv.box && Math.abs(sv.box[1][0] - sv.box[0][0] - 60) < 1e-6 && Math.abs(sv.box[1][1] - sv.box[0][1] - 10) < 1e-6, JSON.stringify(sv.box));
   // The cut faces: closed outlines, their area the plate's section less the hole's (60 - 16) x 10.
-  const area = (d: string) =>
-    d
+  const area = (pathData: string) =>
+    pathData
       .split('Z')
-      .filter(s => s.trim())
-      .reduce((sum, s) => {
-        const pts = [...s.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(m => [Number(m[1]), Number(m[2])]);
+      .filter(piece => piece.trim())
+      .reduce((sum, piece) => {
+        const pts = [...piece.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map(match => [Number(match[1]), Number(match[2])]);
         let a = 0;
         for (let i = 0; i < pts.length; i++) {
-          const [p, q] = [pts[i], pts[(i + 1) % pts.length]];
-          a += p[0] * q[1] - q[0] * p[1];
+          const [point, q] = [pts[i], pts[(i + 1) % pts.length]];
+          a += point[0] * q[1] - q[0] * point[1];
         }
 
         return sum + Math.abs(a) / 2;
@@ -310,7 +310,7 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
   check('no hidden lines in a section', sv.bodies.every(b => !b.hidden));
   const sviews = new Map([...dv, ['sec-1', sv]]);
   const sL = layoutSheet(sviews, so, 1);
-  const [stop, ssec] = [sL.views.find(v => v.id === 'top')!, sL.views.find(v => v.id === 'sec-1')!];
+  const [stop, ssec] = [sL.views.find(view => view.id === 'top')!, sL.views.find(view => view.id === 'sec-1')!];
   const sh = 10 * ssec.s;
   check('first angle: placed the way its arrows point (below the top view), lined up with it, its middle as far off as it was put', !!ssec && Math.abs(ssec.x - stop.x) < 1e-9 && Math.abs(ssec.y + sh / 2 - (stop.y + 40 * stop.s + Math.max(15, sh / 2 + 16))) < 1e-9, JSON.stringify([stop, ssec]));
   const ssvg = drawingSVG({ doc: sdoc, views: sviews, parts: [], date: new Date() }).svg;
@@ -318,7 +318,7 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
   sdoc.drawing = { ...sdoc.drawing, angle: 'third' };
   so = drawingOptions(sdoc);
   const tL = layoutSheet(new Map([...dv, ['sec-1', (await holed(disc, [sectionSpec(so.sections[0], so)!]))[0]]]), so, 1);
-  const [ttop, tsec] = [tL.views.find(v => v.id === 'top')!, tL.views.find(v => v.id === 'sec-1')!];
+  const [ttop, tsec] = [tL.views.find(view => view.id === 'top')!, tL.views.find(view => view.id === 'sec-1')!];
   check('third angle: placed against its arrows (above the top view)', !!tsec && tsec.y + 10 * tsec.s < ttop.y);
   // A cut down the front view, looking right: in first angle that is the view from the left.
   const fdoc = emptyDoc();
@@ -333,7 +333,7 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
   const ddoc2 = emptyDoc();
   ddoc2.drawing = { details: [{ id: 'det-1', letter: 'B', view: 'top', c: [30, -20], r: 10, at: [300, 200] }] };
   const dL2 = layoutSheet(dv, drawingOptions(ddoc2), 0);
-  const [top2, det] = [dL2.views.find(v => v.id === 'top')!, dL2.views.find(v => v.id === 'det-1')!];
+  const [top2, det] = [dL2.views.find(view => view.id === 'top')!, dL2.views.find(view => view.id === 'det-1')!];
   check("a detail: twice its view's scale, its circle where it was put", !!det && det.s === top2.s * 2 && det.clip?.c.join() === '300,200' && det.clip.r === 10 * det.s && det.src === 'top');
   const dsvg = drawingSVG({ doc: ddoc2, views: dv, parts: [], date: new Date() }).svg;
   check('drawn cut to its circle, captioned with its letter and scale', dsvg.includes('clip-path="url(#clip-det-1)"') && dsvg.includes(`>B (${det.s}:1)<`));
@@ -348,17 +348,17 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
   const a90 = dimSVG({ id: 'a', view: 'top', kind: 'angle', c: [0, 0], a: [60, 0], b: [0, -40], offset: 15 }, tp2, ao);
   check('an angle between two edges square to each other says 90°', a90.includes('>90°<') && a90.includes('A15 15 0 0 '), a90.slice(0, 200));
   check('an angle is the smaller way round', angleDim([0, 0], [10, 0], [-10, -1], 10, 'x', 0.25).includes('A10 10 0 0 0'));
-  const d = { id: 'l', view: 'top', kind: 'length' as const, a: [0, 0] as [number, number], b: [60, 0] as [number, number], offset: 8 };
-  check('± tolerance', dimLabel({ ...d, tol: { kind: 'sym', up: 0.02 } }, 60, ao).main === '60 ±0.02');
-  const dev = dimLabel({ ...d, tol: { kind: 'dev', up: 0.1, down: 0.05 } }, 60, ao);
+  const dimension = { id: 'l', view: 'top', kind: 'length' as const, a: [0, 0] as [number, number], b: [60, 0] as [number, number], offset: 8 };
+  check('± tolerance', dimLabel({ ...dimension, tol: { kind: 'sym', up: 0.02 } }, 60, ao).main === '60 ±0.02');
+  const dev = dimLabel({ ...dimension, tol: { kind: 'dev', up: 0.1, down: 0.05 } }, 60, ao);
   check('deviations stacked after the value: +0.1 over -0.05', dev.main === '60' && dev.up === '+0.1' && dev.down === '-0.05');
-  const lim = dimLabel({ ...d, tol: { kind: 'limits', up: 0.1, down: 0.05 } }, 60, ao);
+  const lim = dimLabel({ ...dimension, tol: { kind: 'limits', up: 0.1, down: 0.05 } }, 60, ao);
   check('limits: the largest size over the smallest', lim.up === '60.1' && lim.down === '59.95');
-  check('a basic size is boxed', dimSVG({ ...d, tol: { kind: 'basic' } }, tp2, ao).includes('<rect'));
-  check('text before and after the value', dimLabel({ ...d, kind: 'diameter', prefix: '4× ', suffix: ' THRU' }, 16, ao, 'Ø').main === '4× Ø16 THRU');
+  check('a basic size is boxed', dimSVG({ ...dimension, tol: { kind: 'basic' } }, tp2, ao).includes('<rect'));
+  check('text before and after the value', dimLabel({ ...dimension, kind: 'diameter', prefix: '4× ', suffix: ' THRU' }, 16, ao, 'Ø').main === '4× Ø16 THRU');
   const cm = markSVG({ id: 'm', view: 'top', kind: 'center', c: circle!.c, r: 8 }, tp2, 0.25);
-  const arms = [...cm.matchAll(/M(-?[\d.]+) (-?[\d.]+)L(-?[\d.]+) (-?[\d.]+)/g)].map(m => Math.hypot(Number(m[3]) - Number(m[1]), Number(m[4]) - Number(m[2])));
-  check('a centre mark: four arms, each 2.5 mm past the circle', arms.length === 4 && arms.every(l => Math.abs(l - (8 * tp2.s + 2.5)) < 0.02), JSON.stringify(arms));
+  const arms = [...cm.matchAll(/M(-?[\d.]+) (-?[\d.]+)L(-?[\d.]+) (-?[\d.]+)/g)].map(match => Math.hypot(Number(match[3]) - Number(match[1]), Number(match[4]) - Number(match[2])));
+  check('a centre mark: four arms, each 2.5 mm past the circle', arms.length === 4 && arms.every(arm => Math.abs(arm - (8 * tp2.s + 2.5)) < 0.02), JSON.stringify(arms));
   const nt = noteSVG({ id: 'n', x: 300, y: 100, text: 'Deburr', to: { view: 'top', p: [60, -20] } }, tp2, 0.25);
   check('a note pointing at an edge has a leader and an arrow', (nt.match(/<path/g) ?? []).length === 2 && nt.includes('>Deburr<'));
 }
@@ -379,30 +379,30 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
     ]
   };
   let xo = drawingOptions(xdoc);
-  const sp = (id: string) => extraSpec(xo.extra.find(v => v.id === id)!, xo)!;
-  const left = VIEW_SPECS.find(v => v.id === 'left')!;
-  const right = VIEW_SPECS.find(v => v.id === 'right')!;
-  const topS = VIEW_SPECS.find(v => v.id === 'top')!;
+  const sp = (id: string) => extraSpec(xo.extra.find(drawingView => drawingView.id === id)!, xo)!;
+  const left = VIEW_SPECS.find(viewSpec => viewSpec.id === 'left')!;
+  const right = VIEW_SPECS.find(viewSpec => viewSpec.id === 'right')!;
+  const topS = VIEW_SPECS.find(viewSpec => viewSpec.id === 'top')!;
   check('a base view from the back: looking at it from +Y, x the other way', same(sp('back').dir as number[], [0, 1, 0]) && same(sp('back').xAxis as number[], [-1, 0, 0]));
   check('first angle: projected to the right of the front view, it is the view from the left', same(sp('pr').dir as number[], left.dir as number[]) && same(sp('pr').xAxis as number[], left.xAxis as number[]), JSON.stringify(sp('pr')));
   check('first angle: projected below the front view, it is the top view', same(sp('pd').dir as number[], topS.dir as number[]) && same(sp('pd').xAxis as number[], topS.xAxis as number[]), JSON.stringify(sp('pd')));
   check('projected up and right from the front view: the isometric view from the front, right, top', same(sp('pc').dir as number[], unit([1, -1, 1])) && same(sp('pc').xAxis as number[], unit([1, 1, 0])), JSON.stringify(sp('pc')));
   const ptS = sp('pt');
   check("projected to the right of the top view: from the left, its up the top view's up (so it lines up)", same(ptS.dir as number[], [-1, 0, 0]) && same(ptS.xAxis as number[], [0, 0, 1]), JSON.stringify(ptS));
-  check('nothing is projected square from an isometric view', !specOf('pc', xo) && !extraSpecs(xo).some(v => v.id === 'fromIso'));
+  check('nothing is projected square from an isometric view', !specOf('pc', xo) && !extraSpecs(xo).some(extraSpec => extraSpec.id === 'fromIso'));
   check('their names: Back view, Left view, Isometric view', extraName(xo.extra[0], xo) === 'Back view' && extraName(xo.extra[1], xo) === 'Left view' && extraName(xo.extra[3], xo) === 'Isometric view');
   const tdoc = { ...xdoc, drawing: { ...xdoc.drawing, angle: 'third' as const } };
   const t3 = drawingOptions(tdoc);
   const prT = extraSpec(t3.extra[1], t3)!;
   check('third angle: projected to the right of the front view, it is the view from the right', same(prT.dir as number[], right.dir as number[]) && same(prT.xAxis as number[], right.xAxis as number[]), JSON.stringify(prT));
   // Laid out: the plate and post, drawn every way.
-  const xv = new Map([...views, ...(await projectViews(features, extraSpecs(xo))).map(v => [v.id, v] as const)]);
+  const xv = new Map([...views, ...(await projectViews(features, extraSpecs(xo))).map(projectedView => [projectedView.id, projectedView] as const)]);
   const XL = layoutSheet(xv, xo, 0);
-  const at = (id: string) => XL.views.find(v => v.id === id)!;
+  const at = (id: string) => XL.views.find(view => view.id === id)!;
   const ext = (id: string) => {
-    const p = at(id);
+    const placed = at(id);
 
-    return { x0: p.x, y0: p.y, x1: p.x + (p.box[1][0] - p.box[0][0]) * p.s, y1: p.y + (p.box[1][1] - p.box[0][1]) * p.s };
+    return { x0: placed.x, y0: placed.y, x1: placed.x + (placed.box[1][0] - placed.box[0][0]) * placed.s, y1: placed.y + (placed.box[1][1] - placed.box[0][1]) * placed.s };
   };
   const bk = ext('back');
   check('a base view: at its own scale (1:2), its middle where it was put', at('back').s === 0.5 && Math.abs((bk.x0 + bk.x1) / 2 - 300) < 1e-9 && Math.abs((bk.y0 + bk.y1) / 2 - 220) < 1e-9);
@@ -415,7 +415,7 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
   // The isometric view's own scale.
   const idoc = emptyDoc();
   idoc.drawing = { isoScale: 0.2 };
-  check('the isometric view at the scale given it', layoutSheet(views, drawingOptions(idoc), 0).views.find(v => v.id === 'iso')?.s === 0.2);
+  check('the isometric view at the scale given it', layoutSheet(views, drawingOptions(idoc), 0).views.find(view => view.id === 'iso')?.s === 0.2);
   xo = drawingOptions({ ...emptyDoc(), drawing: { images: [{ id: 'im', x: 30, y: 20, w: 40, h: 20, src: 'data:image/png;base64,AAAA' }] } });
   const isvg = drawingSVG({ doc: { ...emptyDoc(), drawing: { images: xo.images } }, views, parts: [], date: new Date() }).svg;
   check('a picture on the sheet, where it was put', isvg.includes('<image href="data:image/png;base64,AAAA" x="30" y="20" width="40" height="20"'));
@@ -430,35 +430,35 @@ check('views switched off are not drawn', layoutSheet(dv, drawingOptions(ddoc), 
   const a270 = dimSVG({ id: 'a', view: 'top', kind: 'angle', c: [0, 0], a: [10, 0], b: [0, 10], through: [-10, 0], offset: 15 }, tp2, ao);
   check('drawn the long way round, labelled 270°', a270.includes('>270°<') && /A15 15 0 1 /.test(a270), a270.slice(0, 160));
   const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
-  const d = (pr: [[number, number], [number, number]]) => Math.hypot(pr[0][0] - pr[1][0], pr[0][1] - pr[1][1]);
+  const distance = (pr: [[number, number], [number, number]]) => Math.hypot(pr[0][0] - pr[1][0], pr[0][1] - pr[1][1]);
   const pl = minMax({ kind: 'point', p: [0, 0] }, { kind: 'line', a: [5, -10], b: [5, 10] });
-  check('point to edge: nearest square to it (5), farthest an end', near(d(pl.min), 5) && near(d(pl.max), Math.hypot(5, 10)), `${d(pl.min)} ${d(pl.max)}`);
-  const circ = (c: [number, number], r: number) => ({ kind: 'circle' as const, c, r, a: [c[0] + r, c[1]] as [number, number], m: [c[0] - r, c[1]] as [number, number], b: [c[0] + r, c[1]] as [number, number] });
+  check('point to edge: nearest square to it (5), farthest an end', near(distance(pl.min), 5) && near(distance(pl.max), Math.hypot(5, 10)), `${distance(pl.min)} ${distance(pl.max)}`);
+  const circ = (center: [number, number], radius: number) => ({ kind: 'circle' as const, c: center, r: radius, a: [center[0] + radius, center[1]] as [number, number], m: [center[0] - radius, center[1]] as [number, number], b: [center[0] + radius, center[1]] as [number, number] });
   const cc = minMax(circ([0, 0], 5), circ([20, 0], 3));
-  check('circle to circle: 12 apart at the nearest, 28 at the farthest', near(d(cc.min), 12) && near(d(cc.max), 28), `${d(cc.min)} ${d(cc.max)}`);
+  check('circle to circle: 12 apart at the nearest, 28 at the farthest', near(distance(cc.min), 12) && near(distance(cc.max), 28), `${distance(cc.min)} ${distance(cc.max)}`);
   const ll = minMax({ kind: 'line', a: [0, 0], b: [10, 0] }, { kind: 'line', a: [0, 5], b: [10, 5] });
-  check('two parallel edges: 5 apart, the far corners', near(d(ll.min), 5) && near(d(ll.max), Math.hypot(10, 5)));
+  check('two parallel edges: 5 apart, the far corners', near(distance(ll.min), 5) && near(distance(ll.max), Math.hypot(10, 5)));
   const arc = minMax({ kind: 'point', p: [0, -20] }, { kind: 'circle', c: [0, 0], r: 10, a: [10, 0], m: [0, 10], b: [-10, 0] });
-  check("a point and an arc that turns away from it: nearest at the arc's end, not the circle", near(d(arc.min), Math.hypot(10, 20)), String(d(arc.min)));
+  check("a point and an arc that turns away from it: nearest at the arc's end, not the circle", near(distance(arc.min), Math.hypot(10, 20)), String(distance(arc.min)));
 }
 
 const spots = balloonSpots({ x0: 0, y0: 0, x1: 100, y1: 100 }, [1, 2, 3].map(item => ({ item, at: [50 + item * 0.1, 10] as [number, number] })));
 const apart = spots.every((a, i) => spots.every((b, j) => i === j || Math.hypot(a.x - b.x, a.y - b.y) >= 9.99));
-check('balloons for parts close together are spread apart', apart, JSON.stringify(spots.map(s => [s.x, s.y])));
-check('they sit on the rectangle around the view', spots.every(s => s.y === 0 || s.x === 0 || s.x === 100 || s.y === 100));
+check('balloons for parts close together are spread apart', apart, JSON.stringify(spots.map(spot => [spot.x, spot.y])));
+check('they sit on the rectangle around the view', spots.every(spot => spot.y === 0 || spot.x === 0 || spot.x === 100 || spot.y === 100));
 
 // Title blocks: a strip along the bottom, a column down the right (the views keep off them), a block with a revision table.
 {
   const tdoc = emptyDoc();
   for (const tb of ['horizontal', 'vertical', 'block'] as const) {
     tdoc.drawing = { size: 'A3', titleBlock: tb, revisions: [{ rev: 'A', note: 'First issue', date: '2026-11-12', by: 'SG' }] };
-    const o = drawingOptions(tdoc);
-    const lay = layoutSheet(views, o, 2);
-    const [W, H] = sheetSize(o);
-    const clear = lay.views.every((p) => {
-      const r = extent(p);
+    const options = drawingOptions(tdoc);
+    const lay = layoutSheet(views, options, 2);
+    const [sheetWidth, sheetHeight] = sheetSize(options);
+    const clear = lay.views.every((view) => {
+      const bounds = extent(view);
 
-      return tb === 'horizontal' ? r.y1 <= H - 10 - 26 : tb === 'vertical' ? r.x1 <= W - 10 - 60 : true;
+      return tb === 'horizontal' ? bounds.y1 <= sheetHeight - 10 - 26 : tb === 'vertical' ? bounds.x1 <= sheetWidth - 10 - 60 : true;
     });
     const out = drawingSVG({ doc: tdoc, views, parts, date: new Date(2026, 10, 12) }).svg;
     check(`${tb} title block: drawn, views clear of it, fits`, clear && lay.fits && out.includes('Drawing number'), JSON.stringify(lay.views.map(extent)));

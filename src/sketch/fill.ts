@@ -31,11 +31,11 @@ export const withoutFills = (entities: SketchEntity[]): SketchEntity[] => entiti
 /** No more curves than this in one fill (a spacing typed a hundred times too small). */
 export const FILL_MOST = 2500;
 
-const inRegion = (r: Region, q: Vec2): boolean => pointInPoly(q, r.outer.poly) && !r.holes.some(h => pointInPoly(q, h.poly));
+const inRegion = (region: Region, q: Vec2): boolean => pointInPoly(q, region.outer.poly) && !region.holes.some(hole => pointInPoly(q, hole.poly));
 
 /** The closed shape a point is in (the smallest, where shapes are one in another): null on none. */
 export function fillRegion(entities: SketchEntity[], at: Vec2): Region | null {
-  const regions = arrangement(withoutFills(entities)).regions.filter(r => inRegion(r, at));
+  const regions = arrangement(withoutFills(entities)).regions.filter(region => inRegion(region, at));
 
   return regions.sort((a, b) => a.area - b.area)[0] ?? null;
 }
@@ -52,33 +52,33 @@ export function fillCurves(entities: SketchEntity[], fill: SketchFill): { curves
   }
   const around = new Set(region.curves);
   const edge: Prim[] = own.filter(e => around.has(e.id) && !e.construction).flatMap(entityPrims);
-  const kind = FILL_KINDS.find(k => k.id === fill.kind) ?? FILL_KINDS[0];
+  const kind = FILL_KINDS.find(kindOption => kindOption.id === fill.kind) ?? FILL_KINDS[0];
   const out: SketchEntity[] = [];
   const name = () => `${FILL_PREFIX}${fill.id}-${out.length}`;
   const th = (fill.angle * Math.PI) / 180;
-  const d: Vec2 = [Math.cos(th), Math.sin(th)];
-  const n: Vec2 = [-d[1], d[0]];
+  const direction: Vec2 = [Math.cos(th), Math.sin(th)];
+  const normal: Vec2 = [-direction[1], direction[0]];
   // The shape's reach along the pattern's own two ways, and its middle there.
-  const along = region.outer.poly.map(p => p[0] * d[0] + p[1] * d[1]);
-  const across = region.outer.poly.map(p => p[0] * n[0] + p[1] * n[1]);
+  const along = region.outer.poly.map(point => point[0] * direction[0] + point[1] * direction[1]);
+  const across = region.outer.poly.map(point => point[0] * normal[0] + point[1] * normal[1]);
   const [a0, a1, c0, c1] = [Math.min(...along), Math.max(...along), Math.min(...across), Math.max(...across)];
   const mid: Vec2 = [(a0 + a1) / 2, (c0 + c1) / 2];
-  const at = (u: number, v: number): Vec2 => [d[0] * u + n[0] * v, d[1] * u + n[1] * v];
+  const at = (along: number, across: number): Vec2 => [direction[0] * along + normal[0] * across, direction[1] * along + normal[1] * across];
   const reach = Math.hypot(a1 - a0, c1 - c0);
   const step = Math.max(1e-6, Math.abs(fill.spacing));
   const size = Math.max(1e-6, Math.abs(fill.size));
 
   /** The parts of a curve that are inside the shape, each from edge to edge. */
-  const clipped = (p: Prim): boolean => {
-    const ts = [0, ...crossings(p, edge), 1].filter((t, i, all) => i === 0 || t - all[i - 1] > 1e-7);
+  const clipped = (prim: Prim): boolean => {
+    const ts = [0, ...crossings(prim, edge), 1].filter((t, i, all) => i === 0 || t - all[i - 1] > 1e-7);
     for (let i = 0; i + 1 < ts.length; i++) {
-      if (!inRegion(region, evalPrim(p, (ts[i] + ts[i + 1]) / 2))) {
+      if (!inRegion(region, evalPrim(prim, (ts[i] + ts[i + 1]) / 2))) {
         continue;
       }
       if (out.length >= FILL_MOST) {
         return false;
       }
-      out.push({ ...pieceEntity(p, ts[i], ts[i + 1]), id: name() } as SketchEntity);
+      out.push({ ...pieceEntity(prim, ts[i], ts[i + 1]), id: name() } as SketchEntity);
     }
 
     return true;
@@ -88,21 +88,21 @@ export function fillCurves(entities: SketchEntity[], fill: SketchFill): { curves
     // Rows `step` apart, the middle one through the shape's middle; cross: the same again, square to them.
     for (const turn of fill.kind === 'cross' ? [0, 1] : [0]) {
       const [u0, u1, v0, v1, um, vm] = turn ? [c0, c1, -a1, -a0, mid[1], -mid[0]] : [a0, a1, c0, c1, mid[0], mid[1]];
-      const P = (u: number, v: number): Vec2 => (turn ? at(-v, u) : at(u, v));
+      const place = (along: number, across: number): Vec2 => (turn ? at(-across, along) : at(along, across));
       const pad = reach * 0.01 + 1e-3;
       const rows = Math.ceil((v1 - v0) / step / 2) + 1;
       if (rows * 2 > FILL_MOST) {
         return { curves: [], tooMany: true };
       }
-      for (let k = -rows; k <= rows; k++) {
-        const v = vm + k * step;
+      for (let row = -rows; row <= rows; row++) {
+        const offset = vm + row * step;
         // (Zigzag and waves swing `size` either side of their row.)
         const swing = fill.kind === 'zigzag' || fill.kind === 'waves' ? size / 2 : 0;
-        if (v + swing <= v0 || v - swing >= v1) {
+        if (offset + swing <= v0 || offset - swing >= v1) {
           continue;
         }
         if (fill.kind === 'lines' || fill.kind === 'cross') {
-          if (!clipped({ t: 'line', a: P(u0 - pad, v), b: P(u1 + pad, v), src: '' })) {
+          if (!clipped({ t: 'line', a: place(u0 - pad, offset), b: place(u1 + pad, offset), src: '' })) {
             return { curves: [], tooMany: true };
           }
           continue;
@@ -118,9 +118,9 @@ export function fillCurves(entities: SketchEntity[], fill: SketchFill): { curves
           const [x0, x1] = [first + j * size, first + (j + 1) * size];
           let prim: Prim;
           if (fill.kind === 'zigzag') {
-            prim = { t: 'line', a: P(x0, v - (up * size) / 2), b: P(x1, v + (up * size) / 2), src: '' };
+            prim = { t: 'line', a: place(x0, offset - (up * size) / 2), b: place(x1, offset + (up * size) / 2), src: '' };
           } else {
-            const arc = arcFrom3(P(x0, v), P((x0 + x1) / 2, v + up * size * 0.3), P(x1, v));
+            const arc = arcFrom3(place(x0, offset), place((x0 + x1) / 2, offset + up * size * 0.3), place(x1, offset));
             if (!arc) {
               continue;
             }
@@ -146,11 +146,11 @@ export function fillCurves(entities: SketchEntity[], fill: SketchFill): { curves
   if ((2 * rows + 1) * (2 * cols + 1) > FILL_MOST * 6) {
     return { curves: [], tooMany: true };
   }
-  for (let r = -rows; r <= rows; r++) {
-    for (let c = -cols; c <= cols; c++) {
-      const u = mid[0] + c * pitch + (stagger && r % 2 !== 0 ? pitch / 2 : 0);
-      const v = mid[1] + r * rowGap;
-      const centre = at(u, v);
+  for (let row = -rows; row <= rows; row++) {
+    for (let column = -cols; column <= cols; column++) {
+      const along = mid[0] + column * pitch + (stagger && row % 2 !== 0 ? pitch / 2 : 0);
+      const across = mid[1] + row * rowGap;
+      const centre = at(along, across);
       let e: SketchEntity;
       let rim: Vec2[];
       if (fill.kind === 'dots') {
@@ -163,17 +163,17 @@ export function fillCurves(entities: SketchEntity[], fill: SketchFill): { curves
         const poly = { id: '', kind: 'polygon' as const, center: centre, radius, sides, angle: turn };
         e = poly as SketchEntity;
         const corners = entityCorners(poly as Extract<SketchEntity, { kind: 'polygon' }>);
-        rim = corners.flatMap((p, i) => {
+        rim = corners.flatMap((corner, i) => {
           const q = corners[(i + 1) % corners.length];
 
-          return [p, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2] as Vec2];
+          return [corner, [(corner[0] + q[0]) / 2, (corner[1] + q[1]) / 2] as Vec2];
         });
       }
-      if (!rim.every(p => inRegion(region, p))) {
+      if (!rim.every(point => inRegion(region, point))) {
         continue;
       }
       // (All its points inside, and its outline crossing nothing: not across a thin neck of the shape.)
-      if (entityPrims(e).some(p => crossings(p, edge).length)) {
+      if (entityPrims(e).some(entityPrim => crossings(entityPrim, edge).length)) {
         continue;
       }
       if (out.length >= FILL_MOST) {
@@ -196,12 +196,12 @@ export function refill(entities: SketchEntity[], fills: SketchFill[] | undefined
     return own.length === entities.length ? entities : own;
   }
   const made: SketchEntity[] = [];
-  for (const f of fills) {
-    const got = fillCurves(own, f);
+  for (const fill of fills) {
+    const got = fillCurves(own, fill);
     if (got && !got.tooMany) {
       made.push(...got.curves);
     } else {
-      made.push(...entities.filter(e => fillOf(e.id) === f.id));
+      made.push(...entities.filter(e => fillOf(e.id) === fill.id));
     }
   }
 

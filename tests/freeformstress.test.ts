@@ -17,42 +17,42 @@ const oc = getOC();
 
 const ROUNDS = Number(process.argv[2] ?? 12);
 let seed = Number(process.argv[3] ?? 1);
-const R = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-const pick = <T>(a: T[]): T => a[Math.floor(R() * a.length)];
+const random = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const pick = <T>(a: T[]): T => a[Math.floor(random() * a.length)];
 const XY: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] };
 
-function count(s: Shape3D, kind: 'SOLID' | 'SHELL'): number {
-  const ex = new oc.TopExp_Explorer(s.wrapped, oc.TopAbs_ShapeEnum[`TopAbs_${kind}`], oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-  let n = 0;
+function count(shape: Shape3D, kind: 'SOLID' | 'SHELL'): number {
+  const ex = new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum[`TopAbs_${kind}`], oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  let count = 0;
   for (; ex.More(); ex.Next()) {
-    n++;
+    count++;
   }
   ex.delete();
 
-  return n;
+  return count;
 }
 
-function problems(s: Shape3D, solid: boolean, oe: number, mayPart = false): string[] {
+function problems(shape: Shape3D, solid: boolean, oe: number, mayPart = false): string[] {
   const out: string[] = [];
-  if (!shapeValid(s)) {
+  if (!shapeValid(shape)) {
     out.push('invalid');
   }
   if (solid) {
-    const n = count(s, 'SOLID');
-    if (n < 1 || (n > 1 && !mayPart)) {
-      out.push(`${n} solids`);
+    const solidCount = count(shape, 'SOLID');
+    if (solidCount < 1 || (solidCount > 1 && !mayPart)) {
+      out.push(`${solidCount} solids`);
     }
     if (oe) {
       out.push(`${oe} open edges`);
     }
-    const v = measureVolume(s);
-    if (!(v > 1e-6)) {
-      out.push(`volume ${v.toFixed(3)}`);
+    const volume = measureVolume(shape);
+    if (!(volume > 1e-6)) {
+      out.push(`volume ${volume.toFixed(3)}`);
     }
-  } else if (count(s, 'SHELL') < 1) {
+  } else if (count(shape, 'SHELL') < 1) {
     out.push('no surface');
   }
-  const areas = s.faces.map(f => measureArea(f));
+  const areas = shape.faces.map(face => measureArea(face));
   const total = areas.reduce((a, b) => a + b, 0);
   const tiny = areas.filter(a => a < total * 1e-7).length;
   if (tiny) {
@@ -75,46 +75,46 @@ const base = (): { cage: Cage; name: string } =>
   ])();
 
 /** One random edit of the cage (returns a label). */
-function mischief(c: Cage): string {
-  const v = Math.floor(R() * c.verts.length);
+function mischief(cage: Cage): string {
+  const vertex = Math.floor(random() * cage.verts.length);
   const kind = pick(['pull', 'pull', 'pull far', 'through', 'onto neighbour', 'flatten face', 'squash all', 'twist']);
-  const P = c.verts;
-  const centre = P.reduce((s, p) => [s[0] + p[0] / P.length, s[1] + p[1] / P.length, s[2] + p[2] / P.length] as Vec3, [0, 0, 0] as Vec3);
+  const vertices = cage.verts;
+  const centre = vertices.reduce((sum, point) => [sum[0] + point[0] / vertices.length, sum[1] + point[1] / vertices.length, sum[2] + point[2] / vertices.length] as Vec3, [0, 0, 0] as Vec3);
   switch (kind) {
     case 'pull':
-      P[v] = P[v].map(x => x + (R() - 0.5) * 20) as Vec3;
+      vertices[vertex] = vertices[vertex].map(x => x + (random() - 0.5) * 20) as Vec3;
 
-      return `pull point ${v}`;
+      return `pull point ${vertex}`;
     case 'pull far':
-      P[v] = P[v].map(x => x + (R() - 0.5) * 400) as Vec3;
+      vertices[vertex] = vertices[vertex].map(x => x + (random() - 0.5) * 400) as Vec3;
 
-      return `pull point ${v} far away`;
+      return `pull point ${vertex} far away`;
     case 'through': {
       // Out the other side of the body.
-      P[v] = P[v].map((x, k) => centre[k] - (x - centre[k]) * 1.5) as Vec3;
+      vertices[vertex] = vertices[vertex].map((x, axis) => centre[axis] - (x - centre[axis]) * 1.5) as Vec3;
 
-      return `push point ${v} through the body`;
+      return `push point ${vertex} through the body`;
     }
     case 'onto neighbour': {
-      const f = c.faces.find(q => q.includes(v))!;
-      const w = f[(f.indexOf(v) + 1) % 4];
-      P[v] = [...P[w]] as Vec3;
+      const face = cage.faces.find(q => q.includes(vertex))!;
+      const neighbour = face[(face.indexOf(vertex) + 1) % 4];
+      vertices[vertex] = [...vertices[neighbour]] as Vec3;
 
-      return `point ${v} onto its neighbour ${w}`;
+      return `point ${vertex} onto its neighbour ${neighbour}`;
     }
     case 'flatten face': {
-      const f = pick(c.faces);
-      const m = f.reduce((s, i) => [s[0] + P[i][0] / 4, s[1] + P[i][1] / 4, s[2] + P[i][2] / 4] as Vec3, [0, 0, 0] as Vec3);
-      for (const i of f) {
-        P[i] = [...m] as Vec3;
+      const face = pick(cage.faces);
+      const middle = face.reduce((sum, i) => [sum[0] + vertices[i][0] / 4, sum[1] + vertices[i][1] / 4, sum[2] + vertices[i][2] / 4] as Vec3, [0, 0, 0] as Vec3);
+      for (const i of face) {
+        vertices[i] = [...middle] as Vec3;
       }
 
       return 'a face squashed to a point';
     }
     case 'squash all': {
-      const k = Math.floor(R() * 3);
-      for (const p of P) {
-        p[k] = centre[k] + (p[k] - centre[k]) * 0.01;
+      const axis = Math.floor(random() * 3);
+      for (const point of vertices) {
+        point[axis] = centre[axis] + (point[axis] - centre[axis]) * 0.01;
       }
 
       return 'whole cage squashed flat';
@@ -122,12 +122,12 @@ function mischief(c: Cage): string {
     default: {
       // Top half turned 170° against the bottom.
       const a = (170 * Math.PI) / 180;
-      for (const p of P) {
-        if (p[2] > centre[2]) {
-          const x = p[0] - centre[0];
-          const y = p[1] - centre[1];
-          p[0] = centre[0] + x * Math.cos(a) - y * Math.sin(a);
-          p[1] = centre[1] + x * Math.sin(a) + y * Math.cos(a);
+      for (const point of vertices) {
+        if (point[2] > centre[2]) {
+          const x = point[0] - centre[0];
+          const y = point[1] - centre[1];
+          point[0] = centre[0] + x * Math.cos(a) - y * Math.sin(a);
+          point[1] = centre[1] + x * Math.sin(a) + y * Math.cos(a);
         }
       }
 
@@ -142,18 +142,18 @@ const fails: string[] = [];
 const refusedBy = new Map<string, number>();
 let accepted = 0;
 let slow = 0;
-const XYrect = (w: number, h: number, cx = 0, cy = 0) => [{ id: 'r', kind: 'rect', center: [cx, cy], w, h, rotation: 0 }];
+const XYrect = (width: number, height: number, cx = 0, cy = 0) => [{ id: 'r', kind: 'rect', center: [cx, cy], w: width, h: height, rotation: 0 }];
 
-for (let k = 0; k < ROUNDS; k++) {
+for (let round = 0; round < ROUNDS; round++) {
   const b = base();
   const cage = structuredClone(b.cage);
   const trail = [b.name];
-  const edits = 1 + Math.floor(R() * 3);
+  const edits = 1 + Math.floor(random() * 3);
   for (let i = 0; i < edits; i++) {
     trail.push(mischief(cage));
   }
   const solid = isClosed(cage);
-  const ff: Feature = { id: 'ff', name: 'Freeform', type: 'freeform', cage, ...(solid ? {} : { surface: true, ...(R() < 0.7 ? { thickness: 1 + R() * 4, thickSide: pick(['up', 'down', 'both'] as const) } : {}) }) } as Feature;
+  const ff: Feature = { id: 'ff', name: 'Freeform', type: 'freeform', cage, ...(solid ? {} : { surface: true, ...(random() < 0.7 ? { thickness: 1 + random() * 4, thickSide: pick(['up', 'down', 'both'] as const) } : {}) }) } as Feature;
   const thick = solid || !!(ff as any).thickness;
   // Something to combine it with.
   const partner = pick(['none', 'box', 'cylinder', 'freeform']);
@@ -169,7 +169,7 @@ for (let k = 0; k < ROUNDS; k++) {
   if (partner !== 'none' && thick) {
     const op = pick(['union', 'subtract', 'intersect'] as const);
     trail.push(`${op} with a ${partner}`);
-    features.push({ id: 'bo', name: 'Boolean', type: 'boolean', op, target: R() < 0.5 ? 'ff' : 'b2', tools: [R() < 0.5 ? 'b2' : 'ff'].filter((x, _, a) => x !== '') } as Feature);
+    features.push({ id: 'bo', name: 'Boolean', type: 'boolean', op, target: random() < 0.5 ? 'ff' : 'b2', tools: [random() < 0.5 ? 'b2' : 'ff'].filter(tool => tool !== '') } as Feature);
     const last = features[features.length - 1] as any;
     if (last.tools[0] === last.target) {
       last.tools = [last.target === 'ff' ? 'b2' : 'ff'];
@@ -180,7 +180,7 @@ for (let k = 0; k < ROUNDS; k++) {
   try {
     res = await regenerate(features);
   } catch (e) {
-    fails.push(`round ${k}: threw ${(e as Error).message} - ${trail.join(', ')}`);
+    fails.push(`round ${round}: threw ${(e as Error).message} - ${trail.join(', ')}`);
     continue;
   }
   const dt = performance.now() - t0;
@@ -195,12 +195,12 @@ for (let k = 0; k < ROUNDS; k++) {
     continue;
   }
   accepted++;
-  for (const [id, s] of debugBodies()) {
-    const isSheet = id === 'ff' && !thick && !features.some(f => f.type === 'boolean');
-    const info = (res.bodies ?? []).find((x: any) => x.id === id);
-    const bad = problems(s, !isSheet, info?.openEdges?.length ?? 0, features.some(f => f.type === 'boolean' && (f as any).op !== 'union'));
+  for (const [id, debugBody] of debugBodies()) {
+    const isSheet = id === 'ff' && !thick && !features.some(feature => feature.type === 'boolean');
+    const info = (res.bodies ?? []).find((bodyInfo: any) => bodyInfo.id === id);
+    const bad = problems(debugBody, !isSheet, info?.openEdges?.length ?? 0, features.some(feature => feature.type === 'boolean' && (feature as any).op !== 'union'));
     if (bad.length) {
-      fails.push(`round ${k}: body ${id}: ${bad.join(', ')} - ${trail.join(', ')}`);
+      fails.push(`round ${round}: body ${id}: ${bad.join(', ')} - ${trail.join(', ')}`);
       if (process.env.FF_DUMP) {
         (await import('node:fs')).writeFileSync(process.env.FF_DUMP, JSON.stringify(features));
       }
@@ -209,11 +209,11 @@ for (let k = 0; k < ROUNDS; k++) {
   }
 }
 
-for (const f of fails) {
-  console.log('FAIL', f);
+for (const fail of fails) {
+  console.log('FAIL', fail);
 }
-console.log(`${accepted} accepted, ${ROUNDS - accepted - fails.filter(f => f.includes('threw')).length} refused, ${fails.length} broke${slow ? `, ${slow} took over 8 s` : ''}`);
-for (const [m, n] of [...refusedBy].sort((a, b) => b[1] - a[1])) {
-  console.log(`  ${n}× ${m}`);
+console.log(`${accepted} accepted, ${ROUNDS - accepted - fails.filter(fail => fail.includes('threw')).length} refused, ${fails.length} broke${slow ? `, ${slow} took over 8 s` : ''}`);
+for (const [message, count] of [...refusedBy].sort((a, b) => b[1] - a[1])) {
+  console.log(`  ${count}× ${message}`);
 }
 process.exit(fails.length ? 1 : 0);

@@ -13,54 +13,54 @@ const check = (name: string, ok: boolean, info: unknown = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 
-/** A box as a mesh, each side cut `n` by `n` (so it has corners all over it, as a real mesh does). */
-function box(lo: Vec3, hi: Vec3, n = 4): Solid {
-  const P: number[] = [];
-  const I: number[] = [];
-  const face = (o: Vec3, u: Vec3, v: Vec3) => {
-    const base = P.length / 3;
-    for (let j = 0; j <= n; j++) {
-      for (let i = 0; i <= n; i++) {
-        P.push(o[0] + (u[0] * i + v[0] * j) / n, o[1] + (u[1] * i + v[1] * j) / n, o[2] + (u[2] * i + v[2] * j) / n);
+/** A box as a mesh, each side cut `divisions` by `divisions` (so it has corners all over it, as a real mesh does). */
+function box(lo: Vec3, hi: Vec3, divisions = 4): Solid {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const face = (origin: Vec3, edgeU: Vec3, edgeV: Vec3) => {
+    const base = positions.length / 3;
+    for (let j = 0; j <= divisions; j++) {
+      for (let i = 0; i <= divisions; i++) {
+        positions.push(origin[0] + (edgeU[0] * i + edgeV[0] * j) / divisions, origin[1] + (edgeU[1] * i + edgeV[1] * j) / divisions, origin[2] + (edgeU[2] * i + edgeV[2] * j) / divisions);
       }
     }
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const a = base + j * (n + 1) + i;
-        I.push(a, a + 1, a + n + 2, a, a + n + 2, a + n + 1);
+    for (let j = 0; j < divisions; j++) {
+      for (let i = 0; i < divisions; i++) {
+        const a = base + j * (divisions + 1) + i;
+        indices.push(a, a + 1, a + divisions + 2, a, a + divisions + 2, a + divisions + 1);
       }
     }
   };
-  const d: Vec3 = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
-  face(lo, [d[0], 0, 0], [0, d[1], 0]);
-  face([lo[0], lo[1], hi[2]], [d[0], 0, 0], [0, d[1], 0]);
-  face(lo, [d[0], 0, 0], [0, 0, d[2]]);
-  face([lo[0], hi[1], lo[2]], [d[0], 0, 0], [0, 0, d[2]]);
-  face(lo, [0, d[1], 0], [0, 0, d[2]]);
-  face([hi[0], lo[1], lo[2]], [0, d[1], 0], [0, 0, d[2]]);
+  const size: Vec3 = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+  face(lo, [size[0], 0, 0], [0, size[1], 0]);
+  face([lo[0], lo[1], hi[2]], [size[0], 0, 0], [0, size[1], 0]);
+  face(lo, [size[0], 0, 0], [0, 0, size[2]]);
+  face([lo[0], hi[1], lo[2]], [size[0], 0, 0], [0, 0, size[2]]);
+  face(lo, [0, size[1], 0], [0, 0, size[2]]);
+  face([hi[0], lo[1], lo[2]], [0, size[1], 0], [0, 0, size[2]]);
 
-  return new Solid(new Float32Array(P), new Uint32Array(I));
+  return new Solid(new Float32Array(positions), new Uint32Array(indices));
 }
 
-const A = box([0, 0, 0], [10, 10, 10]);
-check('a point in the box is inside, one beside it is not', A.inside([5, 5, 5]) && A.inside([0.5, 9.5, 0.2]) && !A.inside([11, 5, 5]) && !A.inside([5, -0.1, 5]) && !A.inside([5, 5, 10.01]));
-check('deep inside: not a point just under the skin', A.deepInside([5, 5, 5], 0.25) && !A.deepInside([5, 5, 9.9], 0.25));
+const solidA = box([0, 0, 0], [10, 10, 10]);
+check('a point in the box is inside, one beside it is not', solidA.inside([5, 5, 5]) && solidA.inside([0.5, 9.5, 0.2]) && !solidA.inside([11, 5, 5]) && !solidA.inside([5, -0.1, 5]) && !solidA.inside([5, 5, 10.01]));
+check('deep inside: not a point just under the skin', solidA.deepInside([5, 5, 5], 0.25) && !solidA.deepInside([5, 5, 9.9], 0.25));
 
-const B = box([0, 0, 0], [4, 4, 4]);
+const solidB = box([0, 0, 0], [4, 4, 4]);
 const at = (x: number, y: number, z: number) => translation([x, y, z]);
-check('apart: no', !penetrates(A, B, at(12, 3, 3), 0.25));
-check('face to face, touching: no', !penetrates(A, B, at(10, 3, 3), 0.25));
-check('a tenth of a millimetre in (less than the tolerance): no', !penetrates(A, B, at(9.9, 3, 3), 0.25));
-check('two millimetres in: yes', penetrates(A, B, at(8, 3, 3), 0.25));
-check('the small one wholly inside the big one: yes', penetrates(A, B, at(3, 3, 3), 0.25));
-check('the big one over the small one (asked the other way round): yes', penetrates(B, A, at(-3, -3, -3), 0.25));
-check('corner to corner, past each other: no', !penetrates(A, B, at(10.5, 10.5, 10.5), 0.25));
+check('apart: no', !penetrates(solidA, solidB, at(12, 3, 3), 0.25));
+check('face to face, touching: no', !penetrates(solidA, solidB, at(10, 3, 3), 0.25));
+check('a tenth of a millimetre in (less than the tolerance): no', !penetrates(solidA, solidB, at(9.9, 3, 3), 0.25));
+check('two millimetres in: yes', penetrates(solidA, solidB, at(8, 3, 3), 0.25));
+check('the small one wholly inside the big one: yes', penetrates(solidA, solidB, at(3, 3, 3), 0.25));
+check('the big one over the small one (asked the other way round): yes', penetrates(solidB, solidA, at(-3, -3, -3), 0.25));
+check('corner to corner, past each other: no', !penetrates(solidA, solidB, at(10.5, 10.5, 10.5), 0.25));
 
 // Turned: the small box swung on a hinge at the big one's edge, into it and clear of it.
 {
   const hinge = (deg: number) => mul(about([10, 0, 0], [0, 0, 1], deg), at(10, 0, 3));
-  check('swung clear on a hinge: no', !penetrates(A, B, hinge(0), 0.25) && !penetrates(A, B, hinge(-45), 0.25));
-  check('swung into the body: yes', penetrates(A, B, hinge(120), 0.25));
+  check('swung clear on a hinge: no', !penetrates(solidA, solidB, hinge(0), 0.25) && !penetrates(solidA, solidB, hinge(-45), 0.25));
+  check('swung into the body: yes', penetrates(solidA, solidB, hinge(120), 0.25));
 }
 // A pin in a hole with play: a square pin 3.6 wide in a 4 wide square hole through a plate (four bars round it).
 {
@@ -71,9 +71,9 @@ check('corner to corner, past each other: no', !penetrates(A, B, at(10.5, 10.5, 
 }
 // A move undone.
 {
-  const m = mul(about([3, 1, 2], [0.3, 0.5, 0.8], 70), at(4, -2, 9));
-  const p = apply(inverse(m), apply(m, [1, 2, 3]));
-  check('a move and its undoing: back where it was', Math.hypot(p[0] - 1, p[1] - 2, p[2] - 3) < 1e-9);
+  const matrix = mul(about([3, 1, 2], [0.3, 0.5, 0.8], 70), at(4, -2, 9));
+  const point = apply(inverse(matrix), apply(matrix, [1, 2, 3]));
+  check('a move and its undoing: back where it was', Math.hypot(point[0] - 1, point[1] - 2, point[2] - 3) < 1e-9);
 }
 // Speed: a fine mesh against another.
 {

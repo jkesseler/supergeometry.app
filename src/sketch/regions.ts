@@ -67,8 +67,8 @@ export function arrangement(entities: SketchEntity[]): Arrangement {
   return result;
 }
 
-export function regionRef(r: Region): RegionRef {
-  return { c: r.centroid, a: r.area, k: r.curves, s: r.spots };
+export function regionRef(region: Region): RegionRef {
+  return { c: region.centroid, a: region.area, k: region.curves, s: region.spots };
 }
 
 /**
@@ -79,33 +79,33 @@ export function regionRef(r: Region): RegionRef {
  */
 export function resolveRegion(arr: Arrangement, ref: RegionRef): Region | null {
   const scale = Math.sqrt(Math.max(ref.a, 1e-9));
-  const score = (r: Region) => Math.hypot(r.centroid[0] - ref.c[0], r.centroid[1] - ref.c[1]) / scale + Math.abs(Math.log((r.area + 1e-12) / (ref.a + 1e-12)));
+  const score = (region: Region) => Math.hypot(region.centroid[0] - ref.c[0], region.centroid[1] - ref.c[1]) / scale + Math.abs(Math.log((region.area + 1e-12) / (ref.a + 1e-12)));
   if (ref.k?.length) {
     const key = ref.k.join(',');
-    const same = arr.regions.filter(r => r.curves.join(',') === key);
+    const same = arr.regions.filter(region => region.curves.join(',') === key);
     // Several outlined by the same curves (a circle's half inside a strip and
     // the half outside it): which stretch of those curves, then size, then place.
     if (same.length === 1) {
       return same[0];
     }
     if (same.length > 1) {
-      const along = (r: Region) => (ref.s?.length === r.spots.length ? r.spots.reduce((t, v, i) => t + Math.abs(v - ref.s![i]), 0) : 0);
+      const along = (region: Region) => (ref.s?.length === region.spots.length ? region.spots.reduce((t, spot, i) => t + Math.abs(spot - ref.s![i]), 0) : 0);
 
       return same.reduce((a, b) => (along(b) * 10 + sizeScore(b, ref) + score(b) * 0.1 < along(a) * 10 + sizeScore(a, ref) + score(a) * 0.1 ? b : a));
     }
   }
   let best: { r: Region; s: number } | null = null;
-  for (const r of arr.regions) {
-    const s = score(r);
-    if (!best || s < best.s) {
-      best = { r, s };
+  for (const region of arr.regions) {
+    const regionScore = score(region);
+    if (!best || regionScore < best.s) {
+      best = { r: region, s: regionScore };
     }
   }
 
   return best && best.s < 3 ? best.r : null;
 }
 
-const sizeScore = (r: Region, ref: RegionRef) => Math.abs(Math.log((r.area + 1e-12) / (ref.a + 1e-12)));
+const sizeScore = (region: Region, ref: RegionRef) => Math.abs(Math.log((region.area + 1e-12) / (ref.a + 1e-12)));
 
 function compute(entities: SketchEntity[]): Arrangement {
   const prims = entities.flatMap(entityPrims);
@@ -115,18 +115,18 @@ function compute(entities: SketchEntity[]): Arrangement {
   }
 
   // ---- discretise
-  const samples = prims.map((p) => {
-    const n = primSegments(p);
-    const ts = Array.from({ length: n + 1 }, (_, i) => i / n);
+  const samples = prims.map((prim) => {
+    const segmentCount = primSegments(prim);
+    const ts = Array.from({ length: segmentCount + 1 }, (_, i) => i / segmentCount);
 
-    return { ts, pts: ts.map(t => evalPrim(p, t)) };
+    return { ts, pts: ts.map(t => evalPrim(prim, t)) };
   });
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (const s of samples) {
-    for (const [x, y] of s.pts) {
+  for (const sample of samples) {
+    for (const [x, y] of sample.pts) {
       minX = Math.min(minX, x);
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x);
@@ -148,57 +148,57 @@ function compute(entities: SketchEntity[]): Arrangement {
     y1: number;
   }
   const segs: Seg[] = [];
-  samples.forEach((s, p) => {
-    for (let i = 0; i < s.pts.length - 1; i++) {
-      const a = s.pts[i];
-      const b = s.pts[i + 1];
-      segs.push({ p, i, a, b, x0: Math.min(a[0], b[0]) - eps, x1: Math.max(a[0], b[0]) + eps, y0: Math.min(a[1], b[1]) - eps, y1: Math.max(a[1], b[1]) + eps });
+  samples.forEach((sample, sampleIndex) => {
+    for (let i = 0; i < sample.pts.length - 1; i++) {
+      const a = sample.pts[i];
+      const b = sample.pts[i + 1];
+      segs.push({ p: sampleIndex, i, a, b, x0: Math.min(a[0], b[0]) - eps, x1: Math.max(a[0], b[0]) + eps, y0: Math.min(a[1], b[1]) - eps, y1: Math.max(a[1], b[1]) + eps });
     }
   });
-  segs.sort((u, v) => u.x0 - v.x0);
+  segs.sort((firstSegment, secondSegment) => firstSegment.x0 - secondSegment.x0);
   const splits: number[][] = prims.map(() => []);
-  const tParam = (p: number, i: number, u: number) => samples[p].ts[i] + (samples[p].ts[i + 1] - samples[p].ts[i]) * u;
+  const tParam = (sampleIndex: number, i: number, fraction: number) => samples[sampleIndex].ts[i] + (samples[sampleIndex].ts[i + 1] - samples[sampleIndex].ts[i]) * fraction;
   for (let i = 0; i < segs.length; i++) {
-    const A = segs[i];
-    for (let j = i + 1; j < segs.length && segs[j].x0 <= A.x1; j++) {
-      const B = segs[j];
-      if (B.y0 > A.y1 || B.y1 < A.y0) {
+    const segA = segs[i];
+    for (let j = i + 1; j < segs.length && segs[j].x0 <= segA.x1; j++) {
+      const segB = segs[j];
+      if (segB.y0 > segA.y1 || segB.y1 < segA.y0) {
         continue;
       }
-      if (A.p === B.p) {
+      if (segA.p === segB.p) {
         // A spline crossing itself (a loop drawn by hand that runs past its
         // start, a figure 8) is split there like two curves crossing: it had
         // no region at all. Neighbouring pieces of it always touch, so skip those.
-        if (prims[A.p].t !== 'spline') {
+        if (prims[segA.p].t !== 'spline') {
           continue;
         }
-        const n = samples[A.p].pts.length - 1;
-        const gap = Math.abs(A.i - B.i);
-        if (gap <= 1 || (isClosedPrim(prims[A.p]) && gap >= n - 1)) {
+        const lastIndex = samples[segA.p].pts.length - 1;
+        const gap = Math.abs(segA.i - segB.i);
+        if (gap <= 1 || (isClosedPrim(prims[segA.p]) && gap >= lastIndex - 1)) {
           continue;
         }
       }
       // Lines lying on each other (e.g. drawn over a face's edge): each is split
       // where the other one ends, and the doubled pieces merge below.
-      const lap = overlap(A.a, A.b, B.a, B.b, eps);
+      const lap = overlap(segA.a, segA.b, segB.a, segB.b, eps);
       if (lap) {
-        for (const u of lap[0]) {
-          splits[A.p].push(tParam(A.p, A.i, u));
+        for (const fractionA of lap[0]) {
+          splits[segA.p].push(tParam(segA.p, segA.i, fractionA));
         }
-        for (const v of lap[1]) {
-          splits[B.p].push(tParam(B.p, B.i, v));
+        for (const fractionB of lap[1]) {
+          splits[segB.p].push(tParam(segB.p, segB.i, fractionB));
         }
         continue;
       }
-      const hit = segHit(A.a, A.b, B.a, B.b, eps);
+      const hit = segHit(segA.a, segA.b, segB.a, segB.b, eps);
       if (!hit) {
         continue;
       }
-      let ta = tParam(A.p, A.i, hit[0]);
-      let tb = tParam(B.p, B.i, hit[1]);
-      [ta, tb] = refine(prims[A.p], prims[B.p], ta, tb);
-      splits[A.p].push(ta);
-      splits[B.p].push(tb);
+      let ta = tParam(segA.p, segA.i, hit[0]);
+      let tb = tParam(segB.p, segB.i, hit[1]);
+      [ta, tb] = refine(prims[segA.p], prims[segB.p], ta, tb);
+      splits[segA.p].push(ta);
+      splits[segB.p].push(tb);
     }
   }
 
@@ -214,9 +214,9 @@ function compute(entities: SketchEntity[]): Arrangement {
     let best = -1;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
-        for (const k of cells.get(`${cx + dx},${cy + dy}`) ?? []) {
-          if (Math.abs(nodes[k][0] - pt[0]) < tol && Math.abs(nodes[k][1] - pt[1]) < tol && (best < 0 || k < best)) {
-            best = k;
+        for (const nodeIndex of cells.get(`${cx + dx},${cy + dy}`) ?? []) {
+          if (Math.abs(nodes[nodeIndex][0] - pt[0]) < tol && Math.abs(nodes[nodeIndex][1] - pt[1]) < tol && (best < 0 || nodeIndex < best)) {
+            best = nodeIndex;
           }
         }
       }
@@ -236,8 +236,8 @@ function compute(entities: SketchEntity[]): Arrangement {
     return nodes.length - 1;
   };
   let pieces: Piece[] = [];
-  prims.forEach((p, pi) => {
-    const closed = isClosedPrim(p);
+  prims.forEach((prim, pi) => {
+    const closed = isClosedPrim(prim);
     let ts = [...splits[pi]].map(t => Math.min(1, Math.max(0, t))).sort((a, b) => a - b);
     if (closed) {
       ts = ts.map(t => (t >= 1 - 1e-9 ? 0 : t)).sort((a, b) => a - b);
@@ -250,18 +250,18 @@ function compute(entities: SketchEntity[]): Arrangement {
       ts.unshift(0);
       ts.push(1);
     }
-    const uniq = ts.filter((t, k) => k === 0 || t - ts[k - 1] > 1e-9);
+    const uniq = ts.filter((t, paramIndex) => paramIndex === 0 || t - ts[paramIndex - 1] > 1e-9);
     const bounds: [number, number][] = [];
-    for (let k = 0; k < uniq.length - 1; k++) {
-      bounds.push([uniq[k], uniq[k + 1]]);
+    for (let paramIndex = 0; paramIndex < uniq.length - 1; paramIndex++) {
+      bounds.push([uniq[paramIndex], uniq[paramIndex + 1]]);
     }
     if (closed) {
       bounds.push([uniq[uniq.length - 1], uniq[0] + 1]);
     }
     for (const [t0, t1] of bounds) {
-      const a = evalPrim(p, t0 % 1);
-      const b = evalPrim(p, t1 > 1 ? t1 - 1 : t1);
-      const poly = closed && t1 > 1 ? [...samplePrim(p, t0, 1).slice(0, -1), ...samplePrim(p, 0, t1 - 1)] : samplePrim(p, t0, t1);
+      const a = evalPrim(prim, t0 % 1);
+      const b = evalPrim(prim, t1 > 1 ? t1 - 1 : t1);
+      const poly = closed && t1 > 1 ? [...samplePrim(prim, t0, 1).slice(0, -1), ...samplePrim(prim, 0, t1 - 1)] : samplePrim(prim, t0, t1);
       if (polyLength(poly) < eps * 10) {
         continue;
       }
@@ -280,15 +280,15 @@ function compute(entities: SketchEntity[]): Arrangement {
     pieces = pieces.filter((pc) => {
       const key = pc.n0 < pc.n1 ? `${pc.n0}:${pc.n1}` : `${pc.n1}:${pc.n0}`;
       const mid = pc.poly[Math.floor(pc.poly.length / 2)];
-      const m = pc.poly.length > 2 ? mid : [(pc.poly[0][0] + pc.poly[1][0]) / 2, (pc.poly[0][1] + pc.poly[1][1]) / 2] as Vec2;
+      const midpoint = pc.poly.length > 2 ? mid : [(pc.poly[0][0] + pc.poly[1][0]) / 2, (pc.poly[0][1] + pc.poly[1][1]) / 2] as Vec2;
       const had = seen.get(key);
-      if (had?.some(q => Math.hypot(q[0] - m[0], q[1] - m[1]) < eps * 1e3)) {
+      if (had?.some(q => Math.hypot(q[0] - midpoint[0], q[1] - midpoint[1]) < eps * 1e3)) {
         return false;
       }
       if (had) {
-        had.push(m);
+        had.push(midpoint);
       } else {
-        seen.set(key, [m]);
+        seen.set(key, [midpoint]);
       }
 
       return true;
@@ -313,51 +313,51 @@ function compute(entities: SketchEntity[]): Arrangement {
   }
 
   // ---- half-edge traversal
-  const H = pieces.length * 2;
-  const from = (h: number) => (h % 2 === 0 ? pieces[h >> 1].n0 : pieces[h >> 1].n1);
-  const hpoly = (h: number) => (h % 2 === 0 ? pieces[h >> 1].poly : [...pieces[h >> 1].poly].reverse());
-  const angleOf = (h: number) => {
-    const pl = hpoly(h);
+  const halfEdgeCount = pieces.length * 2;
+  const from = (halfEdge: number) => (halfEdge % 2 === 0 ? pieces[halfEdge >> 1].n0 : pieces[halfEdge >> 1].n1);
+  const hpoly = (halfEdge: number) => (halfEdge % 2 === 0 ? pieces[halfEdge >> 1].poly : [...pieces[halfEdge >> 1].poly].reverse());
+  const angleOf = (halfEdge: number) => {
+    const pl = hpoly(halfEdge);
     const a = pl[0];
     const b = pl[1];
-    const c = pl[Math.min(2, pl.length - 1)];
+    const thirdPoint = pl[Math.min(2, pl.length - 1)];
     const main = Math.atan2(b[1] - a[1], b[0] - a[0]);
     // Tie-break tangent pieces by where they head next.
-    const next = Math.atan2(c[1] - a[1], c[0] - a[0]);
+    const next = Math.atan2(thirdPoint[1] - a[1], thirdPoint[0] - a[0]);
 
     return main + angleDiff(main, next) * 1e-3;
   };
   const out: number[][] = nodes.map(() => []);
-  for (let h = 0; h < H; h++) {
-    out[from(h)].push(h);
+  for (let halfEdge = 0; halfEdge < halfEdgeCount; halfEdge++) {
+    out[from(halfEdge)].push(halfEdge);
   }
-  const ang = new Float64Array(H);
-  for (let h = 0; h < H; h++) {
-    ang[h] = angleOf(h);
+  const ang = new Float64Array(halfEdgeCount);
+  for (let halfEdge = 0; halfEdge < halfEdgeCount; halfEdge++) {
+    ang[halfEdge] = angleOf(halfEdge);
   }
   for (const list of out) {
     list.sort((x, y) => ang[x] - ang[y]);
   }
-  const next = (h: number) => {
-    const twin = h ^ 1;
+  const next = (halfEdge: number) => {
+    const twin = halfEdge ^ 1;
     const list = out[from(twin)];
-    const k = list.indexOf(twin);
+    const twinIndex = list.indexOf(twin);
 
-    return list[(k - 1 + list.length) % list.length];
+    return list[(twinIndex - 1 + list.length) % list.length];
   };
-  const seen = new Uint8Array(H);
+  const seen = new Uint8Array(halfEdgeCount);
   const cycles: { hs: number[]; poly: Vec2[]; area: number }[] = [];
-  for (let h0 = 0; h0 < H; h0++) {
+  for (let h0 = 0; h0 < halfEdgeCount; h0++) {
     if (seen[h0]) {
       continue;
     }
     const hs: number[] = [];
-    let h = h0;
+    let halfEdge = h0;
     let guard = 0;
-    while (!seen[h] && guard++ < H + 1) {
-      seen[h] = 1;
-      hs.push(h);
-      h = next(h);
+    while (!seen[halfEdge] && guard++ < halfEdgeCount + 1) {
+      seen[halfEdge] = 1;
+      hs.push(halfEdge);
+      halfEdge = next(halfEdge);
     }
     const poly: Vec2[] = [];
     for (const x of hs) {
@@ -372,17 +372,17 @@ function compute(entities: SketchEntity[]): Arrangement {
   for (const pc of pieces) {
     parent[find(pc.n0)] = find(pc.n1);
   }
-  const comp = (c: { hs: number[] }) => find(from(c.hs[0]));
+  const comp = (cycle: { hs: number[] }) => find(from(cycle.hs[0]));
 
   const minArea = eps * eps * 100;
-  const faces = cycles.filter(c => c.area > minArea);
-  const outers = cycles.filter(c => c.area <= minArea);
+  const faces = cycles.filter(cycle => cycle.area > minArea);
+  const outers = cycles.filter(cycle => cycle.area <= minArea);
   const holes = new Map<(typeof faces)[number], typeof outers>();
   // (Each face's box first: a plate with hundreds of holes tested every hole's
   // outline against every other hole's, point by point.)
-  const boxes = faces.map((f) => {
+  const boxes = faces.map((face) => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [x, y] of f.poly) {
+    for (const [x, y] of face.poly) {
       if (x < x0) {
         x0 = x;
       }
@@ -400,73 +400,73 @@ function compute(entities: SketchEntity[]): Arrangement {
     return [x0, y0, x1, y1];
   });
   const compOf = faces.map(comp);
-  for (const o of outers) {
-    const p = o.poly[0];
-    const co = comp(o);
+  for (const outer of outers) {
+    const firstPoint = outer.poly[0];
+    const co = comp(outer);
     let best: (typeof faces)[number] | null = null;
-    for (let k = 0; k < faces.length; k++) {
-      const f = faces[k];
-      const b = boxes[k];
-      if (p[0] < b[0] || p[0] > b[2] || p[1] < b[1] || p[1] > b[3]) {
+    for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      const face = faces[faceIndex];
+      const b = boxes[faceIndex];
+      if (firstPoint[0] < b[0] || firstPoint[0] > b[2] || firstPoint[1] < b[1] || firstPoint[1] > b[3]) {
         continue;
       }
-      if (best && f.area >= best.area) {
+      if (best && face.area >= best.area) {
         continue;
       }
-      if (compOf[k] === co) {
+      if (compOf[faceIndex] === co) {
         continue;
       }
-      if (!pointInPoly(p, f.poly)) {
+      if (!pointInPoly(firstPoint, face.poly)) {
         continue;
       }
-      best = f;
+      best = face;
     }
     if (!best) {
       continue;
     }
     const list = holes.get(best);
     if (list) {
-      list.push(o);
+      list.push(outer);
     } else {
-      holes.set(best, [o]);
+      holes.set(best, [outer]);
     }
   }
 
-  const toLoop = (c: { hs: number[]; poly: Vec2[] }): Loop => ({
-    pieces: c.hs.map(h => ({ piece: h >> 1, reversed: h % 2 === 1 })),
-    poly: c.poly
+  const toLoop = (cycle: { hs: number[]; poly: Vec2[] }): Loop => ({
+    pieces: cycle.hs.map(halfEdge => ({ piece: halfEdge >> 1, reversed: halfEdge % 2 === 1 })),
+    poly: cycle.poly
   });
   // Each primitive's place among its curve's own (a rectangle's four sides: 0-3).
   const seenOf = new Map<string, number>();
-  const primOrdinal = prims.map((p) => {
-    const k = p.src ?? '';
-    const i = seenOf.get(k) ?? 0;
-    seenOf.set(k, i + 1);
+  const primOrdinal = prims.map((prim) => {
+    const sourceId = prim.src ?? '';
+    const i = seenOf.get(sourceId) ?? 0;
+    seenOf.set(sourceId, i + 1);
 
     return i;
   });
-  const regions: Region[] = faces.map((f, index) => {
-    const hs = holes.get(f) ?? [];
-    const holeArea = hs.reduce((s, o) => s + Math.abs(o.area), 0);
-    const area = f.area - holeArea;
+  const regions: Region[] = faces.map((face, index) => {
+    const hs = holes.get(face) ?? [];
+    const holeArea = hs.reduce((total, hole) => total + Math.abs(hole.area), 0);
+    const area = face.area - holeArea;
     // Area-weighted centroid of the face minus its holes.
-    const c0 = polyCentroid(f.poly);
-    let cx = c0[0] * f.area;
-    let cy = c0[1] * f.area;
-    for (const o of hs) {
-      const ch = polyCentroid(o.poly);
-      cx -= ch[0] * Math.abs(o.area);
-      cy -= ch[1] * Math.abs(o.area);
+    const c0 = polyCentroid(face.poly);
+    let cx = c0[0] * face.area;
+    let cy = c0[1] * face.area;
+    for (const hole of hs) {
+      const ch = polyCentroid(hole.poly);
+      cx -= ch[0] * Math.abs(hole.area);
+      cy -= ch[1] * Math.abs(hole.area);
     }
-    const outer = toLoop(f);
+    const outer = toLoop(face);
     const inner = hs.map(toLoop);
-    const loopPieces = [outer, ...inner].flatMap(l => l.pieces.map(p => pieces[p.piece]));
-    const curves = [...new Set(loopPieces.map(p => prims[p.prim].src ?? ''))].filter(Boolean).sort();
+    const loopPieces = [outer, ...inner].flatMap(loop => loop.pieces.map(piece => pieces[piece.piece]));
+    const curves = [...new Set(loopPieces.map(loopPiece => prims[loopPiece.prim].src ?? ''))].filter(Boolean).sort();
     // Where along each curve: which of its parts (a rectangle's side, …) plus how far along that part.
     const spots = curves.map((id) => {
-      const ps = loopPieces.filter(p => prims[p.prim].src === id);
+      const ps = loopPieces.filter(loopPiece => prims[loopPiece.prim].src === id);
 
-      return ps.reduce((t, p) => t + primOrdinal[p.prim] + (p.t0 + p.t1) / 2, 0) / ps.length;
+      return ps.reduce((t, piece) => t + primOrdinal[piece.prim] + (piece.t0 + piece.t1) / 2, 0) / ps.length;
     });
 
     return { index, outer, holes: inner, area, centroid: [cx / area, cy / area], curves, spots };
@@ -479,11 +479,11 @@ function compute(entities: SketchEntity[]): Arrangement {
  * Two collinear, overlapping segments → where (as fractions along each) the
  * other one's ends fall inside it. Null when they don't lie on each other.
  */
-function overlap(a: Vec2, b: Vec2, c: Vec2, d: Vec2, eps: number): [number[], number[]] | null {
+function overlap(a: Vec2, b: Vec2, otherStart: Vec2, otherEnd: Vec2, eps: number): [number[], number[]] | null {
   const rx = b[0] - a[0];
   const ry = b[1] - a[1];
-  const sx = d[0] - c[0];
-  const sy = d[1] - c[1];
+  const sx = otherEnd[0] - otherStart[0];
+  const sy = otherEnd[1] - otherStart[1];
   const lu = Math.hypot(rx, ry);
   const lv = Math.hypot(sx, sy);
   if (lu < eps || lv < eps) {
@@ -492,17 +492,17 @@ function overlap(a: Vec2, b: Vec2, c: Vec2, d: Vec2, eps: number): [number[], nu
   if (Math.abs(rx * sy - ry * sx) > lu * lv * 1e-6) {
     return null;
   }
-  // Both ends of cd on the line through ab?
-  const off = (p: Vec2) => Math.abs((p[0] - a[0]) * ry - (p[1] - a[1]) * rx) / lu;
-  if (off(c) > eps * 10 || off(d) > eps * 10) {
+  // Both ends of the other segment on the line through ab?
+  const off = (point: Vec2) => Math.abs((point[0] - a[0]) * ry - (point[1] - a[1]) * rx) / lu;
+  if (off(otherStart) > eps * 10 || off(otherEnd) > eps * 10) {
     return null;
   }
-  const along = (p: Vec2, o: Vec2, x: number, y: number, l: number) => ((p[0] - o[0]) * x + (p[1] - o[1]) * y) / (l * l);
-  const inside = (u: number, l: number) => u > (eps * 10) / l && u < 1 - (eps * 10) / l;
-  const ua = [along(c, a, rx, ry, lu), along(d, a, rx, ry, lu)].filter(u => inside(u, lu));
-  const vb = [along(a, c, sx, sy, lv), along(b, c, sx, sy, lv)].filter(v => inside(v, lv));
-  const lo = Math.min(along(c, a, rx, ry, lu), along(d, a, rx, ry, lu));
-  const hi = Math.max(along(c, a, rx, ry, lu), along(d, a, rx, ry, lu));
+  const along = (point: Vec2, origin: Vec2, x: number, y: number, length: number) => ((point[0] - origin[0]) * x + (point[1] - origin[1]) * y) / (length * length);
+  const inside = (fraction: number, length: number) => fraction > (eps * 10) / length && fraction < 1 - (eps * 10) / length;
+  const ua = [along(otherStart, a, rx, ry, lu), along(otherEnd, a, rx, ry, lu)].filter(fraction => inside(fraction, lu));
+  const vb = [along(a, otherStart, sx, sy, lv), along(b, otherStart, sx, sy, lv)].filter(fraction => inside(fraction, lv));
+  const lo = Math.min(along(otherStart, a, rx, ry, lu), along(otherEnd, a, rx, ry, lu));
+  const hi = Math.max(along(otherStart, a, rx, ry, lu), along(otherEnd, a, rx, ry, lu));
   if (hi < 0 || lo > 1) {
     return null;
   }
@@ -510,130 +510,130 @@ function overlap(a: Vec2, b: Vec2, c: Vec2, d: Vec2, eps: number): [number[], nu
   return [ua, vb];
 }
 
-function segHit(a: Vec2, b: Vec2, c: Vec2, d: Vec2, eps: number): [number, number] | null {
+function segHit(a: Vec2, b: Vec2, otherStart: Vec2, otherEnd: Vec2, eps: number): [number, number] | null {
   const rx = b[0] - a[0];
   const ry = b[1] - a[1];
-  const sx = d[0] - c[0];
-  const sy = d[1] - c[1];
+  const sx = otherEnd[0] - otherStart[0];
+  const sy = otherEnd[1] - otherStart[1];
   const den = rx * sy - ry * sx;
   if (Math.abs(den) < 1e-18) {
     return null;
   } // parallel / collinear overlaps ignored
-  const qx = c[0] - a[0];
-  const qy = c[1] - a[1];
-  const u = (qx * sy - qy * sx) / den;
-  const v = (qx * ry - qy * rx) / den;
+  const qx = otherStart[0] - a[0];
+  const qy = otherStart[1] - a[1];
+  const fractionA = (qx * sy - qy * sx) / den;
+  const fractionB = (qx * ry - qy * rx) / den;
   const lu = Math.hypot(rx, ry) || 1;
   const lv = Math.hypot(sx, sy) || 1;
   const tu = eps / lu;
   const tv = eps / lv;
-  if (u < -tu || u > 1 + tu || v < -tv || v > 1 + tv) {
+  if (fractionA < -tu || fractionA > 1 + tu || fractionB < -tv || fractionB > 1 + tv) {
     return null;
   }
 
-  return [Math.min(1, Math.max(0, u)), Math.min(1, Math.max(0, v))];
+  return [Math.min(1, Math.max(0, fractionA)), Math.min(1, Math.max(0, fractionB))];
 }
 
 /** Newton-refine an intersection on the exact curves. */
-function refine(p: Prim, q: Prim, t: number, s: number): [number, number] {
-  if (p.t === 'spline' && q.t === 'spline') {
-    return [t, s];
+function refine(prim: Prim, q: Prim, t: number, otherParam: number): [number, number] {
+  if (prim.t === 'spline' && q.t === 'spline') {
+    return [t, otherParam];
   }
-  const h = 1e-7;
-  for (let k = 0; k < 8; k++) {
-    const P = evalPrim(p, t);
-    const Q = evalPrim(q, s);
-    const fx = P[0] - Q[0];
-    const fy = P[1] - Q[1];
+  const step = 1e-7;
+  for (let iteration = 0; iteration < 8; iteration++) {
+    const pointOnFirst = evalPrim(prim, t);
+    const pointOnSecond = evalPrim(q, otherParam);
+    const fx = pointOnFirst[0] - pointOnSecond[0];
+    const fy = pointOnFirst[1] - pointOnSecond[1];
     if (Math.abs(fx) + Math.abs(fy) < 1e-12) {
       break;
     }
-    const Pt = evalPrim(p, Math.min(1, t + h));
-    const Qs = evalPrim(q, Math.min(1, s + h));
-    const a = (Pt[0] - P[0]) / h;
-    const c = (Pt[1] - P[1]) / h;
-    const b = -(Qs[0] - Q[0]) / h;
-    const d = -(Qs[1] - Q[1]) / h;
-    const det = a * d - b * c;
+    const Pt = evalPrim(prim, Math.min(1, t + step));
+    const Qs = evalPrim(q, Math.min(1, otherParam + step));
+    const a = (Pt[0] - pointOnFirst[0]) / step;
+    const dyDt = (Pt[1] - pointOnFirst[1]) / step;
+    const b = -(Qs[0] - pointOnSecond[0]) / step;
+    const dyDs = -(Qs[1] - pointOnSecond[1]) / step;
+    const det = a * dyDs - b * dyDt;
     if (Math.abs(det) < 1e-14) {
       break;
     }
-    const dt = (d * fx - b * fy) / det;
-    const ds = (-c * fx + a * fy) / det;
+    const dt = (dyDs * fx - b * fy) / det;
+    const ds = (-dyDt * fx + a * fy) / det;
     t = Math.min(1, Math.max(0, t - dt));
-    s = Math.min(1, Math.max(0, s - ds));
+    otherParam = Math.min(1, Math.max(0, otherParam - ds));
   }
 
-  return [t, s];
+  return [t, otherParam];
 }
 
-function polyLength(p: Vec2[]): number {
-  let l = 0;
-  for (let i = 1; i < p.length; i++) {
-    l += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+function polyLength(points: Vec2[]): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
   }
 
-  return l;
+  return total;
 }
 
 function angleDiff(a: number, b: number): number {
-  let d = b - a;
-  while (d > Math.PI) {
-    d -= Math.PI * 2;
+  let difference = b - a;
+  while (difference > Math.PI) {
+    difference -= Math.PI * 2;
   }
-  while (d < -Math.PI) {
-    d += Math.PI * 2;
+  while (difference < -Math.PI) {
+    difference += Math.PI * 2;
   }
 
-  return d;
+  return difference;
 }
 
 /** Parameter + distance of the closest point on any primitive of an entity. */
 export function closestOnEntity(e: SketchEntity, q: Vec2): { t: number; d: number; pt: Vec2; prim: number } {
   const prims = entityPrims(e);
   let best = { t: 0, d: Infinity, pt: q, prim: 0 };
-  prims.forEach((p, i) => {
-    const c = closestOnPrim(p, q);
-    if (c.d < best.d) {
-      best = { ...c, prim: i };
+  prims.forEach((prim, i) => {
+    const closest = closestOnPrim(prim, q);
+    if (closest.d < best.d) {
+      best = { ...closest, prim: i };
     }
   });
 
   return best;
 }
 
-function insidePoly(P: Vec2[], q: Vec2): boolean {
-  let c = false;
-  for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
-    if (P[i][1] > q[1] !== P[j][1] > q[1] && q[0] < ((P[j][0] - P[i][0]) * (q[1] - P[i][1])) / (P[j][1] - P[i][1]) + P[i][0]) {
-      c = !c;
+function insidePoly(polygon: Vec2[], q: Vec2): boolean {
+  let isInside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    if (polygon[i][1] > q[1] !== polygon[j][1] > q[1] && q[0] < ((polygon[j][0] - polygon[i][0]) * (q[1] - polygon[i][1])) / (polygon[j][1] - polygon[i][1]) + polygon[i][0]) {
+      isInside = !isInside;
     }
   }
 
-  return c;
+  return isInside;
 }
 
 /** A point truly inside a region (its centroid may be in a hole: a ring, a "0"). */
-export function pointInRegion(r: Region): Vec2 {
-  const ok = (q: Vec2) => insidePoly(r.outer.poly, q) && !r.holes.some(h => insidePoly(h.poly, q));
-  if (ok(r.centroid)) {
-    return r.centroid;
+export function pointInRegion(region: Region): Vec2 {
+  const ok = (q: Vec2) => insidePoly(region.outer.poly, q) && !region.holes.some(hole => insidePoly(hole.poly, q));
+  if (ok(region.centroid)) {
+    return region.centroid;
   }
-  const P = r.outer.poly;
-  for (let i = 0; i < P.length; i++) {
-    const a = P[i];
-    const b = P[(i + 1) % P.length];
-    const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    const m: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    for (const s of [1e-4 * d, -1e-4 * d, 1e-3, -1e-3]) {
-      const q: Vec2 = [m[0] - ((b[1] - a[1]) / d) * s, m[1] + ((b[0] - a[0]) / d) * s];
+  const poly = region.outer.poly;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const edgeLength = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const midpoint: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    for (const nudge of [1e-4 * edgeLength, -1e-4 * edgeLength, 1e-3, -1e-3]) {
+      const q: Vec2 = [midpoint[0] - ((b[1] - a[1]) / edgeLength) * nudge, midpoint[1] + ((b[0] - a[0]) / edgeLength) * nudge];
       if (ok(q)) {
         return q;
       }
     }
   }
 
-  return r.centroid;
+  return region.centroid;
 }
 
 /**
@@ -642,11 +642,11 @@ export function pointInRegion(r: Region): Vec2 {
  * its middle is the hole, not a part). Every shape of a scale or a lettering.
  */
 export function materialRegions(arr: Arrangement): Region[] {
-  return arr.regions.filter((r) => {
-    const q = pointInRegion(r);
+  return arr.regions.filter((region) => {
+    const q = pointInRegion(region);
     let depth = 0;
-    for (const o of arr.regions) {
-      if (o !== r && insidePoly(o.outer.poly, q)) {
+    for (const otherRegion of arr.regions) {
+      if (otherRegion !== region && insidePoly(otherRegion.outer.poly, q)) {
         depth++;
       }
     }
@@ -665,9 +665,9 @@ export function materialRegions(arr: Arrangement): Region[] {
 export function drawnRegions(all: Arrangement, drawn: Arrangement): Region[] {
   const solid = materialRegions(drawn);
 
-  return all.regions.filter((r) => {
-    const q = pointInRegion(r);
+  return all.regions.filter((region) => {
+    const q = pointInRegion(region);
 
-    return solid.some(m => insidePoly(m.outer.poly, q) && !m.holes.some(h => insidePoly(h.poly, q)));
+    return solid.some(solidRegion => insidePoly(solidRegion.outer.poly, q) && !solidRegion.holes.some(hole => insidePoly(hole.poly, q)));
   });
 }

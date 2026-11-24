@@ -13,7 +13,7 @@ const XY = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] };
 const base = (features: unknown[], variables: { name: string; expr: string }[]): ProjectDoc => ({ format: 'super', version: 2, name: 't', units: 'mm', variables, features, views: [], hidden: [], pins: [], names: {} }) as unknown as ProjectDoc;
 const sk = (doc: ProjectDoc) => doc.features[0] as SketchFeature;
 const circles = (doc: ProjectDoc) => sk(doc).entities.filter(e => e.kind === 'circle' && e.id !== 'plate') as Extract<SketchEntity, { kind: 'circle' }>[];
-const put = (doc: ProjectDoc, name: string, expr: string) => (doc.variables.find(v => v.name === name)!.expr = expr);
+const put = (doc: ProjectDoc, name: string, expr: string) => (doc.variables.find(variable => variable.name === name)!.expr = expr);
 
 // ---- round a circle: n holes on a 20 mm circle
 {
@@ -22,9 +22,9 @@ const put = (doc: ProjectDoc, name: string, expr: string) => (doc.variables.find
     [{ name: 'n', expr: '4' }]
   );
   let problems = resolveDoc(doc);
-  const at = () => circles(doc).map(c => `${Math.round((Math.atan2(c.center[1], c.center[0]) * 180) / Math.PI + 360) % 360}@${Math.hypot(c.center[0], c.center[1]).toFixed(3)}`).sort().join(' ');
+  const at = () => circles(doc).map(circle => `${Math.round((Math.atan2(circle.center[1], circle.center[0]) * 180) / Math.PI + 360) % 360}@${Math.hypot(circle.center[0], circle.center[1]).toFixed(3)}`).sort().join(' ');
   check('n = 4: four holes, a quarter turn apart, all 20 from the middle', !problems.length && circles(doc).length === 4 && at() === ['0@20.000', '180@20.000', '270@20.000', '90@20.000'].sort().join(' '), `${at()} ${problems.join()}`);
-  check('  each copy tied to the original', (sk(doc).constraints ?? []).filter(c => c.type === 'pattern' && c.curves?.[0] === 'h').length === 3);
+  check('  each copy tied to the original', (sk(doc).constraints ?? []).filter(sketchConstraint => sketchConstraint.type === 'pattern' && sketchConstraint.curves?.[0] === 'h').length === 3);
   put(doc, 'n', '6');
   problems = resolveDoc(doc);
   check('n = 6: six holes, 60 degrees apart', !problems.length && circles(doc).length === 6 && at() === ['0@20.000', '60@20.000', '120@20.000', '180@20.000', '240@20.000', '300@20.000'].sort().join(' ') && (sk(doc).constraints ?? []).length === 5, at());
@@ -42,14 +42,14 @@ const put = (doc: ProjectDoc, name: string, expr: string) => (doc.variables.find
   // The original held further out: the copies follow it (their links), and stay 8.
   sk(doc).constraints = [...(sk(doc).constraints ?? []), { id: 'hold', type: 'fix', pts: [{ e: 'h', p: 'c' }], at: [25, 0] }];
   problems = resolveDoc(doc);
-  check('the original held out at 25: all eight are 25 from the middle', !problems.length && circles(doc).length === 8 && circles(doc).every(c => near(Math.hypot(c.center[0], c.center[1]), 25, 1e-6)), at());
+  check('the original held out at 25: all eight are 25 from the middle', !problems.length && circles(doc).length === 8 && circles(doc).every(circle => near(Math.hypot(circle.center[0], circle.center[1]), 25, 1e-6)), at());
   // Built: the plate with its eight holes.
   const regions = arrangement(sk(doc).entities).regions;
   const plate = regions.sort((a, b) => b.area - a.area)[0];
   const ext = { id: 'E', name: 'E', type: 'extrude', source: { kind: 'profile', sketch: 'S', regions: [regionRef(plate)] }, distance: 2, mode: 'new' } as unknown as Feature;
-  const r = await after([...(doc.features as Feature[]), ext]);
-  const v = [...bodies().values()].reduce((s, b) => s + volume(b as Shape3D), 0);
-  check('extruded 2: the disc less eight holes', !r.errors.length && near(v, (Math.PI * 900 - 8 * Math.PI * 9) * 2, 1e-2) && [...bodies().values()].every(b => health(b as Shape3D).healthy), `${v.toFixed(2)} ${r.errors.join('; ')}`);
+  const result = await after([...(doc.features as Feature[]), ext]);
+  const bodyVolume = [...bodies().values()].reduce((total, b) => total + volume(b as Shape3D), 0);
+  check('extruded 2: the disc less eight holes', !result.errors.length && near(bodyVolume, (Math.PI * 900 - 8 * Math.PI * 9) * 2, 1e-2) && [...bodies().values()].every(b => health(b as Shape3D).healthy), `${bodyVolume.toFixed(2)} ${result.errors.join('; ')}`);
   // Renamed: the pattern still follows it.
   renameVariable(doc, 'n', 'holes');
   put(doc, 'holes', '3');
@@ -76,10 +76,10 @@ const put = (doc: ProjectDoc, name: string, expr: string) => (doc.variables.find
 }
 // ---- a fill pattern follows a shape resized by a variable
 {
-  const f: SketchFill = { id: 'f1', at: [0, 0], kind: 'lines', spacing: 5, angle: 0, size: 3 };
+  const sketchFill: SketchFill = { id: 'f1', at: [0, 0], kind: 'lines', spacing: 5, angle: 0, size: 3 };
   const rect = { id: 'r', kind: 'rect', center: [0, 0], w: 40, h: 20, rotation: 0 } as SketchEntity;
   const doc = base(
-    [{ id: 'S', name: 'Sketch 01', type: 'sketch', plane: XY, entities: refill([rect], [f]), fills: [f], constraints: [{ id: 'c1', type: 'dim', curves: ['r'], prop: 'h', value: 20, expr: 'H' }, { id: 'c2', type: 'fix', pts: [{ e: 'r', p: 'c' }], at: [0, 0] }] }],
+    [{ id: 'S', name: 'Sketch 01', type: 'sketch', plane: XY, entities: refill([rect], [sketchFill]), fills: [sketchFill], constraints: [{ id: 'c1', type: 'dim', curves: ['r'], prop: 'h', value: 20, expr: 'H' }, { id: 'c2', type: 'fix', pts: [{ e: 'r', p: 'c' }], at: [0, 0] }] }],
     [{ name: 'H', expr: '20 mm' }]
   );
   const lines = () => sk(doc).entities.filter(e => fillOf(e.id) === 'f1');
@@ -87,8 +87,8 @@ const put = (doc: ProjectDoc, name: string, expr: string) => (doc.variables.find
   check('a 40 x 20 rectangle filled with lines 5 apart: three', !problems.length && lines().length === 3, `${lines().length} ${problems.join()}`);
   put(doc, 'H', '42 mm');
   problems = resolveDoc(doc);
-  const h = (sk(doc).entities.find(e => e.id === 'r') as { h: number }).h;
-  check('its height made 42 by its variable: nine lines now', !problems.length && near(h, 42, 1e-6) && lines().length === 9, `h ${h}, ${lines().length} lines ${problems.join()}`);
+  const height = (sk(doc).entities.find(e => e.id === 'r') as { h: number }).h;
+  check('its height made 42 by its variable: nine lines now', !problems.length && near(height, 42, 1e-6) && lines().length === 9, `h ${height}, ${lines().length} lines ${problems.join()}`);
   const same = sk(doc).entities;
   resolveDoc(doc);
   check('resolved again with nothing changed: the very same curves', sk(doc).entities === same);

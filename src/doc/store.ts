@@ -81,15 +81,15 @@ const idOfBig = new Map<string, string>();
 const REF = '\u0000sg-big:';
 
 function pack(doc: ProjectDoc): string {
-  return JSON.stringify(doc, (_k, v) => {
-    if (typeof v !== 'string' || v.length < BIG) {
-      return v;
+  return JSON.stringify(doc, (_k, value) => {
+    if (typeof value !== 'string' || value.length < BIG) {
+      return value;
     }
-    let id = idOfBig.get(v);
+    let id = idOfBig.get(value);
     if (!id) {
       id = `${REF}${idOfBig.size}`;
-      idOfBig.set(v, id);
-      bigById.set(id, v);
+      idOfBig.set(value, id);
+      bigById.set(id, value);
     }
 
     return id;
@@ -97,7 +97,7 @@ function pack(doc: ProjectDoc): string {
 }
 
 function unpack(text: string): ProjectDoc {
-  return JSON.parse(text, (_k, v) => (typeof v === 'string' && v.startsWith(REF) ? (bigById.get(v) ?? v) : v));
+  return JSON.parse(text, (_k, value) => (typeof value === 'string' && value.startsWith(REF) ? (bigById.get(value) ?? value) : value));
 }
 
 export class DocStore {
@@ -134,16 +134,16 @@ export class DocStore {
     if (!text) {
       return;
     }
-    const h = JSON.parse(text) as SavedHistory;
-    if (h.head !== hashText(saved) || !Array.isArray(h.undo) || !Array.isArray(h.redo)) {
+    const savedHistory = JSON.parse(text) as SavedHistory;
+    if (savedHistory.head !== hashText(saved) || !Array.isArray(savedHistory.undo) || !Array.isArray(savedHistory.redo)) {
       return;
     }
-    for (const [id, v] of h.big ?? []) {
-      bigById.set(id, v);
-      idOfBig.set(v, id);
+    for (const [id, bigValue] of savedHistory.big ?? []) {
+      bigById.set(id, bigValue);
+      idOfBig.set(bigValue, id);
     }
-    this.undoStack = h.undo;
-    this.redoStack = h.redo;
+    this.undoStack = savedHistory.undo;
+    this.redoStack = savedHistory.redo;
   }
 
   private historyTimer = 0;
@@ -163,14 +163,14 @@ export class DocStore {
     const undo = keep(this.undoStack), redo = keep(this.redoStack);
     const refs = new Set<string>();
     for (const t of [...undo, ...redo]) {
-      for (const m of t.matchAll(/\\u0000sg-big:(\d+)/g)) {
-        refs.add(REF + m[1]);
+      for (const match of t.matchAll(/\\u0000sg-big:(\d+)/g)) {
+        refs.add(REF + match[1]);
       }
     }
     const big = [...refs].filter(id => bigById.has(id)).map(id => [id, bigById.get(id)!] as [string, string]);
-    const h: SavedHistory = { head: hashText(docText), undo, redo, big };
+    const savedHistory: SavedHistory = { head: hashText(docText), undo, redo, big };
 
-    return idbSet('undo', JSON.stringify(h));
+    return idbSet('undo', JSON.stringify(savedHistory));
   }
 
   onChange(fn: Listener): () => void {
@@ -184,17 +184,17 @@ export class DocStore {
   }
 
   find<T extends Feature = Feature>(id: string): T | undefined {
-    return this.doc.features.find(f => f.id === id) as T | undefined;
+    return this.doc.features.find(feature => feature.id === id) as T | undefined;
   }
 
   /** Unique id + "Extrude 03"-style name for a new feature. */
   newIdentity(type: FeatureType, label = LABELS[type]): { id: string; name: string } {
     // One past the highest number in use (a step deleted from the middle doesn't free its number for a duplicate).
     // Only "<label> <number>": "Freeform surface 01" isn't one of the "Freeform"s.
-    const mine = this.doc.features.filter(f => f.name.startsWith(label + ' ') && /^\d+$/.test(f.name.slice(label.length + 1)));
-    const n = Math.max(0, mine.length, ...mine.map(f => Number(f.name.slice(label.length + 1)))) + 1;
+    const mine = this.doc.features.filter(feature => feature.name.startsWith(label + ' ') && /^\d+$/.test(feature.name.slice(label.length + 1)));
+    const nextNumber = Math.max(0, mine.length, ...mine.map(feature => Number(feature.name.slice(label.length + 1)))) + 1;
 
-    return { id: newId(type), name: `${label} ${String(n).padStart(2, '0')}` };
+    return { id: newId(type), name: `${label} ${String(nextNumber).padStart(2, '0')}` };
   }
 
   /** Expressions that couldn't be evaluated / sketches that can't be solved. */
@@ -207,8 +207,8 @@ export class DocStore {
     const next = unpack(pack(this.doc));
     mutate(next);
     // With a breakpoint: what's after it stays last, so a new step goes in at the breakpoint.
-    if (next.features.some(f => f.rolledBack)) {
-      next.features = [...next.features.filter(f => !f.rolledBack), ...next.features.filter(f => f.rolledBack)];
+    if (next.features.some(feature => feature.rolledBack)) {
+      next.features = [...next.features.filter(feature => !feature.rolledBack), ...next.features.filter(feature => feature.rolledBack)];
     }
     this.problems = resolveDoc(next);
     const wasLive = this.transientBase !== null;
@@ -265,29 +265,29 @@ export class DocStore {
   }
 
   add(feature: Feature): void {
-    this.commit(d => d.features.push(feature));
+    this.commit(draft => draft.features.push(feature));
   }
 
   update(id: string, patch: Partial<Feature>): void {
-    this.commit((d) => {
-      const i = d.features.findIndex(f => f.id === id);
+    this.commit((draft) => {
+      const i = draft.features.findIndex(feature => feature.id === id);
       if (i >= 0) {
-        d.features[i] = { ...d.features[i], ...patch } as Feature;
+        draft.features[i] = { ...draft.features[i], ...patch } as Feature;
       }
     });
   }
 
   remove(id: string): void {
-    this.commit((d) => {
-      const gone = d.features.find(f => f.id === id);
-      d.features = d.features.filter(f => f.id !== id);
+    this.commit((draft) => {
+      const gone = draft.features.find(feature => feature.id === id);
+      draft.features = draft.features.filter(feature => feature.id !== id);
       // Its sketches, now used by nothing, come back into view to be used again
       // (they were hidden once used: deleting a cut left its sketch invisible).
-      const used = (f: Feature) => sketchesOf(f);
-      const still = new Set(d.features.flatMap(used));
-      const free = gone ? used(gone).filter(s => !still.has(s)) : [];
+      const used = (feature: Feature) => sketchesOf(feature);
+      const still = new Set(draft.features.flatMap(used));
+      const free = gone ? used(gone).filter(sketchId => !still.has(sketchId)) : [];
       if (free.length) {
-        d.hidden = d.hidden.filter(h => !free.includes(h));
+        draft.hidden = draft.hidden.filter(hiddenId => !free.includes(hiddenId));
       }
     });
   }
@@ -340,13 +340,13 @@ export class DocStore {
 
   /** Replace the whole document (open file / new project). Undoable. */
   replace(doc: ProjectDoc): void {
-    this.commit((d) => {
+    this.commit((draft) => {
       // Drop every key first: anything the new document doesn't have (folders,
       // colours, custom names…) must not linger from the old one.
-      for (const k of Object.keys(d)) {
-        delete (d as unknown as Record<string, unknown>)[k];
+      for (const key of Object.keys(draft)) {
+        delete (draft as unknown as Record<string, unknown>)[key];
       }
-      Object.assign(d, structuredClone(doc));
+      Object.assign(draft, structuredClone(doc));
     });
   }
 
@@ -356,10 +356,10 @@ export class DocStore {
       return;
     }
     clearTimeout(this.saveTimer);
-    const v = this.edits;
+    const edits = this.edits;
     const text = JSON.stringify(this.doc);
     await idbSet('autosave', text);
-    this.wrote(v);
+    this.wrote(edits);
     this.onSaved?.(text);
     await this.saveHistory(text);
   }
@@ -378,9 +378,9 @@ export class DocStore {
     this.saved = on;
     this.savedListeners.forEach(fn => fn());
   }
-  /** A save of the state after change `v` is written: saved, unless more came since. */
-  private wrote(v: number): void {
-    if (v === this.edits) {
+  /** A save of the state after change `version` is written: saved, unless more came since. */
+  private wrote(version: number): void {
+    if (version === this.edits) {
       this.setSaved(true);
     }
   }
@@ -393,13 +393,13 @@ export class DocStore {
     }
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
-      const v = this.edits;
+      const edits = this.edits;
       const text = JSON.stringify(this.doc);
       // (A write that failed is tried again: left, the name's mark said "Saving…" from then on.)
       const write = (tries: number): void =>
         void idbSet('autosave', text).then(
-          () => this.wrote(v),
-          () => tries > 0 && v === this.edits && window.setTimeout(() => write(tries - 1), 2000)
+          () => this.wrote(edits),
+          () => tries > 0 && edits === this.edits && window.setTimeout(() => write(tries - 1), 2000)
         );
       write(3);
       this.onSaved?.(text);
@@ -421,19 +421,19 @@ const HISTORY_BYTES = 8_000_000;
 
 /** A short fingerprint of a saved project (FNV-1a, plus the length). */
 function hashText(t: string): string {
-  let h = 0x811c9dc5;
+  let hash = 0x811c9dc5;
   for (let i = 0; i < t.length; i++) {
-    h = Math.imul(h ^ t.charCodeAt(i), 0x01000193);
+    hash = Math.imul(hash ^ t.charCodeAt(i), 0x01000193);
   }
 
-  return `${t.length}:${(h >>> 0).toString(36)}`;
+  return `${t.length}:${(hash >>> 0).toString(36)}`;
 }
 
 /** The sketches a step makes something from (its profiles). */
-function sketchesOf(f: Feature): string[] {
-  const srcs = f.type === 'extrude' || f.type === 'revolve' || f.type === 'sweep' ? [f.source] : f.type === 'loft' ? f.sections : [];
+function sketchesOf(feature: Feature): string[] {
+  const srcs = feature.type === 'extrude' || feature.type === 'revolve' || feature.type === 'sweep' ? [feature.source] : feature.type === 'loft' ? feature.sections : [];
 
-  return srcs.flatMap(s => (s.kind === 'profile' ? [s.sketch] : []));
+  return srcs.flatMap(source => (source.kind === 'profile' ? [source.sketch] : []));
 }
 
 export function newId(prefix: string): string {
@@ -461,7 +461,7 @@ export function parseProject(text: string): ProjectDoc {
  */
 function cleanLooks(doc: ProjectDoc): void {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-  const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
   if (doc.colors !== undefined) {
     doc.colors = record(doc.colors) ? Object.fromEntries(Object.entries(doc.colors).filter((e): e is [string, string] => typeof e[1] === 'string' && hex.test(e[1]))) : undefined;
   }
@@ -469,9 +469,9 @@ function cleanLooks(doc: ProjectDoc): void {
     doc.opacity = record(doc.opacity) ? Object.fromEntries(Object.entries(doc.opacity).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1]))) : undefined;
   }
   if (Array.isArray(doc.customMaterials)) {
-    for (const m of doc.customMaterials) {
-      if (typeof m.color !== 'string' || !hex.test(m.color)) {
-        m.color = '#9aa3ad';
+    for (const customMaterial of doc.customMaterials) {
+      if (typeof customMaterial.color !== 'string' || !hex.test(customMaterial.color)) {
+        customMaterial.color = '#9aa3ad';
       }
     }
   }
@@ -500,20 +500,20 @@ function migrate0(raw: unknown): ProjectDoc {
 
   // v1: rect {a, b}; extrude profiles referenced entity ids.
   const sketches = new Map<string, SketchEntity[]>();
-  for (const f of doc.features as unknown as Array<Record<string, any>>) {
-    if (f.type === 'sketch') {
-      f.entities = f.entities.map((e: any) => {
+  for (const feature of doc.features as unknown as Array<Record<string, any>>) {
+    if (feature.type === 'sketch') {
+      feature.entities = feature.entities.map((e: any) => {
         if (e.kind === 'rect' && e.a) {
           return { id: e.id, kind: 'rect', center: [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2], w: Math.abs(e.b[0] - e.a[0]), h: Math.abs(e.b[1] - e.a[1]), rotation: 0 };
         }
 
         return e;
       });
-      sketches.set(f.id, f.entities);
+      sketches.set(feature.id, feature.entities);
     }
-    if (f.type === 'extrude' && f.source?.kind === 'profile' && f.source.entities) {
-      const entities = sketches.get(f.source.sketch) ?? [];
-      f.source = { kind: 'profile', sketch: f.source.sketch, regions: regionsForEntities(entities, f.source.entities) };
+    if (feature.type === 'extrude' && feature.source?.kind === 'profile' && feature.source.entities) {
+      const entities = sketches.get(feature.source.sketch) ?? [];
+      feature.source = { kind: 'profile', sketch: feature.source.sketch, regions: regionsForEntities(entities, feature.source.entities) };
     }
   }
 
@@ -534,8 +534,8 @@ function regionsForEntities(entities: SketchEntity[], ids: string[]) {
   };
 
   return arr.regions
-    .filter((r) => {
-      const owners = entities.filter(e => pointInPoly(r.centroid, outline(e)));
+    .filter((region) => {
+      const owners = entities.filter(e => pointInPoly(region.centroid, outline(e)));
       if (!owners.length) {
         return false;
       }
@@ -562,37 +562,37 @@ function db(name = DB_NAME): Promise<IDBDatabase | null> {
 }
 
 export async function idbGet(key: string, dbName = DB_NAME): Promise<string | null> {
-  const d = await db(dbName);
-  if (!d) {
+  const database = await db(dbName);
+  if (!database) {
     return null;
   }
 
   return new Promise((resolve) => {
-    const req = d.transaction('kv').objectStore('kv').get(key);
+    const req = database.transaction('kv').objectStore('kv').get(key);
     req.onsuccess = () => resolve((req.result as string) ?? null);
     req.onerror = () => resolve(null);
   });
 }
 
 export async function idbSet(key: string, value: string): Promise<void> {
-  const d = await db();
-  if (!d) {
+  const database = await db();
+  if (!database) {
     return;
   }
   await new Promise<void>((resolve) => {
-    const t = d.transaction('kv', 'readwrite');
+    const t = database.transaction('kv', 'readwrite');
     t.objectStore('kv').put(value, key);
     t.oncomplete = t.onerror = t.onabort = () => resolve();
   });
 }
 
 export async function idbDel(key: string): Promise<void> {
-  const d = await db();
-  if (!d) {
+  const database = await db();
+  if (!database) {
     return;
   }
   await new Promise<void>((resolve) => {
-    const t = d.transaction('kv', 'readwrite');
+    const t = database.transaction('kv', 'readwrite');
     t.objectStore('kv').delete(key);
     t.oncomplete = t.onerror = t.onabort = () => resolve();
   });

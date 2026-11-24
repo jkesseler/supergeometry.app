@@ -18,66 +18,66 @@ interface Curve {
   closed: boolean;
 }
 
-function sample(w: Wire, n = 720): Curve {
+function sample(wire: Wire, count = 720): Curve {
   const oc = getOC();
-  const ad = new oc.BRepAdaptor_CompCurve(w.wrapped, true);
+  const ad = new oc.BRepAdaptor_CompCurve(wire.wrapped, true);
   const pts: Vec3[] = [];
   try {
     const u0 = ad.FirstParameter();
     const u1 = ad.LastParameter();
-    for (let i = 0; i <= n; i++) {
-      const p = ad.Value(u0 + ((u1 - u0) * i) / n);
-      pts.push([p.X(), p.Y(), p.Z()]);
-      p.delete();
+    for (let i = 0; i <= count; i++) {
+      const curvePoint = ad.Value(u0 + ((u1 - u0) * i) / count);
+      pts.push([curvePoint.X(), curvePoint.Y(), curvePoint.Z()]);
+      curvePoint.delete();
     }
   } finally {
     ad.delete();
   }
-  const s = [0];
+  const lengths = [0];
   for (let i = 1; i < pts.length; i++) {
-    s.push(s[i - 1] + len(sub(pts[i], pts[i - 1])));
+    lengths.push(lengths[i - 1] + len(sub(pts[i], pts[i - 1])));
   }
-  const L = s[s.length - 1] || 1;
+  const total = lengths[lengths.length - 1] || 1;
 
-  return { pts, s: s.map(x => x / L), closed: len(sub(pts[0], pts[pts.length - 1])) < 1e-6 * L + 1e-9 };
+  return { pts, s: lengths.map(x => x / total), closed: len(sub(pts[0], pts[pts.length - 1])) < 1e-6 * total + 1e-9 };
 }
 
-const reversed = (c: Curve): Curve => ({ pts: [...c.pts].reverse(), s: [...c.s].reverse().map(x => 1 - x), closed: c.closed });
+const reversed = (curve: Curve): Curve => ({ pts: [...curve.pts].reverse(), s: [...curve.s].reverse().map(x => 1 - x), closed: curve.closed });
 
-/** The point `f` of the way along (round again past the end of a closed one). */
-function at(c: Curve, f: number): Vec3 {
-  if (c.closed) {
-    f = ((f % 1) + 1) % 1;
+/** The point `fraction` of the way along (round again past the end of a closed one). */
+function at(curve: Curve, fraction: number): Vec3 {
+  if (curve.closed) {
+    fraction = ((fraction % 1) + 1) % 1;
   } else {
-    f = Math.min(1, Math.max(0, f));
+    fraction = Math.min(1, Math.max(0, fraction));
   }
   let lo = 0;
-  let hi = c.s.length - 1;
+  let hi = curve.s.length - 1;
   while (hi - lo > 1) {
-    const m = (lo + hi) >> 1;
-    if (c.s[m] <= f) {
-      lo = m;
+    const middle = (lo + hi) >> 1;
+    if (curve.s[middle] <= fraction) {
+      lo = middle;
     } else {
-      hi = m;
+      hi = middle;
     }
   }
-  const d = c.s[hi] - c.s[lo];
-  const t = d > 0 ? (f - c.s[lo]) / d : 0;
+  const span = curve.s[hi] - curve.s[lo];
+  const t = span > 0 ? (fraction - curve.s[lo]) / span : 0;
 
-  return add(c.pts[lo], scale(sub(c.pts[hi], c.pts[lo]), t));
+  return add(curve.pts[lo], scale(sub(curve.pts[hi], curve.pts[lo]), t));
 }
 
-/** Where on the curve is nearest p: how far along, and how far off. */
-function nearest(c: Curve, p: Vec3): { f: number; d: number } {
+/** Where on the curve is nearest `point`: how far along, and how far off. */
+function nearest(curve: Curve, point: Vec3): { f: number; d: number } {
   let best = { f: 0, d: Infinity };
-  for (let i = 0; i + 1 < c.pts.length; i++) {
-    const a = c.pts[i];
-    const ab = sub(c.pts[i + 1], a);
+  for (let i = 0; i + 1 < curve.pts.length; i++) {
+    const a = curve.pts[i];
+    const ab = sub(curve.pts[i + 1], a);
     const l2 = dot(ab, ab);
-    const t = l2 > 0 ? Math.min(1, Math.max(0, dot(sub(p, a), ab) / l2)) : 0;
-    const d = len(sub(p, add(a, scale(ab, t))));
-    if (d < best.d) {
-      best = { f: c.s[i] + (c.s[i + 1] - c.s[i]) * t, d };
+    const t = l2 > 0 ? Math.min(1, Math.max(0, dot(sub(point, a), ab) / l2)) : 0;
+    const distance = len(sub(point, add(a, scale(ab, t))));
+    if (distance < best.d) {
+      best = { f: curve.s[i] + (curve.s[i + 1] - curve.s[i]) * t, d: distance };
     }
   }
 
@@ -95,10 +95,10 @@ function meet(rail: Curve, sec: Curve): { onRail: number; onSec: number; d: numb
   }
   tries.sort((a, b) => a.d - b.d);
   for (const { i } of tries.slice(0, 3)) {
-    for (let k = Math.max(0, i - step); k <= Math.min(rail.pts.length - 1, i + step); k++) {
-      const q = nearest(sec, rail.pts[k]);
+    for (let pointIndex = Math.max(0, i - step); pointIndex <= Math.min(rail.pts.length - 1, i + step); pointIndex++) {
+      const q = nearest(sec, rail.pts[pointIndex]);
       if (q.d < best.d) {
-        best = { onRail: rail.s[k], onSec: q.f, d: q.d };
+        best = { onRail: rail.s[pointIndex], onSec: q.f, d: q.d };
       }
     }
   }
@@ -108,16 +108,16 @@ function meet(rail: Curve, sec: Curve): { onRail: number; onSec: number; d: numb
   return { onRail: back.f, onSec: best.onSec, d: Math.min(best.d, back.d) };
 }
 
-const centroidOf = (ps: Vec3[]): Vec3 => scale(ps.reduce((a, p) => add(a, p), [0, 0, 0] as Vec3), 1 / Math.max(1, ps.length));
-const centroid = (c: Curve): Vec3 => scale(c.pts.slice(0, -1).reduce((a, p) => add(a, p), [0, 0, 0] as Vec3), 1 / Math.max(1, c.pts.length - 1));
+const centroidOf = (ps: Vec3[]): Vec3 => scale(ps.reduce((a, point) => add(a, point), [0, 0, 0] as Vec3), 1 / Math.max(1, ps.length));
+const centroid = (curve: Curve): Vec3 => scale(curve.pts.slice(0, -1).reduce((a, point) => add(a, point), [0, 0, 0] as Vec3), 1 / Math.max(1, curve.pts.length - 1));
 /** Which way round a closed curve runs (Newell's normal, its size the area). */
-function winding(c: Curve): Vec3 {
-  let n: Vec3 = [0, 0, 0];
-  for (let i = 0; i + 1 < c.pts.length; i++) {
-    n = add(n, cross(c.pts[i], c.pts[i + 1]));
+function winding(curve: Curve): Vec3 {
+  let normal: Vec3 = [0, 0, 0];
+  for (let i = 0; i + 1 < curve.pts.length; i++) {
+    normal = add(normal, cross(curve.pts[i], curve.pts[i + 1]));
   }
 
-  return n;
+  return normal;
 }
 
 interface Anchor {
@@ -160,8 +160,8 @@ function gridSolid(rows: Vec3[][], size: number): Shape3D {
     const grid = keep(new oc.NCollection_Array2_gp_Pnt(1, nu, 1, nv));
     rows.forEach((row, i) => {
       for (let j = 0; j < nv; j++) {
-        const p = keep(new oc.gp_Pnt(...row[j % row.length]));
-        grid.SetValue(i + 1, j + 1, p);
+        const pole = keep(new oc.gp_Pnt(...row[j % row.length]));
+        grid.SetValue(i + 1, j + 1, pole);
       }
     });
     // Through the points exactly (fitted within a tolerance, a square's corners came out rounded).
@@ -176,13 +176,13 @@ function gridSolid(rows: Vec3[][], size: number): Shape3D {
     const sew = keep(new oc.BRepBuilderAPI_Sewing(size * 1e-6, true, true, true, false));
     const side = keep(new oc.BRepBuilderAPI_MakeFace(surf, 1e-6));
     sew.Add(side.Face());
-    for (const [u, row] of [[surf.UKnot(1), rows[0]], [surf.UKnot(surf.NbUKnots()), rows[nu - 1]]] as const) {
-      const edge = keep(new oc.BRepBuilderAPI_MakeEdge(surf.UIso(u)));
+    for (const [param, row] of [[surf.UKnot(1), rows[0]], [surf.UKnot(surf.NbUKnots()), rows[nu - 1]]] as const) {
+      const edge = keep(new oc.BRepBuilderAPI_MakeEdge(surf.UIso(param)));
       const wire = keep(new oc.BRepBuilderAPI_MakeWire(edge.Edge()));
       // On the profile's own plane (from its points).
-      const c = centroidOf(row);
-      const n = norm(row.reduce((a, p, j) => add(a, cross(sub(p, c), sub(row[(j + 1) % row.length], c))), [0, 0, 0] as Vec3));
-      const pln = keep(new oc.gp_Pln(keep(new oc.gp_Pnt(...c)), keep(new oc.gp_Dir(...n))));
+      const centroid = centroidOf(row);
+      const normal = norm(row.reduce((a, point, j) => add(a, cross(sub(point, centroid), sub(row[(j + 1) % row.length], centroid))), [0, 0, 0] as Vec3));
+      const pln = keep(new oc.gp_Pln(keep(new oc.gp_Pnt(...centroid)), keep(new oc.gp_Dir(...normal))));
       const cap = keep(new oc.BRepBuilderAPI_MakeFace(pln, wire.Wire(), true));
       if (!cap.IsDone()) {
         throw new Error("A profile isn't flat: the loft's end can't be closed");
@@ -203,8 +203,8 @@ function gridSolid(rows: Vec3[][], size: number): Shape3D {
 
     return solid;
   } finally {
-    for (const o of gc.reverse()) {
-      o.delete();
+    for (const object of gc.reverse()) {
+      object.delete();
     }
   }
 }
@@ -215,29 +215,29 @@ function gridSolid(rows: Vec3[][], size: number): Shape3D {
  * (Its sides are always smooth: Straight sides doesn't apply.)
  */
 export function railLoft(wires: Wire[], rails: Wire[], connections: Vec3[][]): Shape3D {
-  let secs = wires.map(w => sample(w));
-  if (secs.some(c => !c.closed)) {
+  let secs = wires.map(wire => sample(wire));
+  if (secs.some(section => !section.closed)) {
     throw new Error('Guide curves and connection points need closed profiles');
   }
-  const size = Math.max(...secs.map(c => Math.max(...c.pts.map(p => len(sub(p, centroid(c)))))), 1e-6);
+  const size = Math.max(...secs.map(section => Math.max(...section.pts.map(point => len(sub(point, centroid(section)))))), 1e-6);
   // All one way round, seen down the loft.
   const axis = norm(sub(centroid(secs[secs.length - 1]), centroid(secs[0])));
-  secs = secs.map(c => (dot(winding(c), axis) < 0 ? reversed(c) : c));
+  secs = secs.map(section => (dot(winding(section), axis) < 0 ? reversed(section) : section));
 
   const anchors: Anchor[] = [];
-  const railCurves = rails.map(w => sample(w, 1200));
+  const railCurves = rails.map(rail => sample(rail, 1200));
   const tol = Math.max(size * 0.03, 0.05);
-  railCurves.forEach((rc, k) => {
-    const m = secs.map(sec => meet(rc, sec));
-    const off = m.findIndex(x => x.d > tol);
+  railCurves.forEach((rc, railCurveIndex) => {
+    const meets = secs.map(sec => meet(rc, sec));
+    const off = meets.findIndex(meet => meet.d > tol);
     if (off >= 0) {
-      throw new Error(`Guide curve ${k + 1} doesn't touch profile ${off + 1}: each guide must run through every profile`);
+      throw new Error(`Guide curve ${railCurveIndex + 1} doesn't touch profile ${off + 1}: each guide must run through every profile`);
     }
-    anchors.push({ rail: k, a: m.map(x => x.onSec), r: m.map(x => x.onRail) });
+    anchors.push({ rail: railCurveIndex, a: meets.map(meet => meet.onSec), r: meets.map(meet => meet.onRail) });
   });
-  for (const [k, pts] of connections.entries()) {
+  for (const [index, pts] of connections.entries()) {
     if (pts.length !== secs.length) {
-      throw new Error(`Connection ${k + 1} needs a point on every profile`);
+      throw new Error(`Connection ${index + 1} needs a point on every profile`);
     }
     anchors.push({ rail: -1, a: secs.map((sec, i) => nearest(sec, pts[i]).f), r: [] });
   }
@@ -246,28 +246,28 @@ export function railLoft(wires: Wire[], rails: Wire[], connections: Vec3[][]): S
   }
 
   // Round each profile from the first anchor; the anchors must come in the same order on all.
-  anchors.sort((x, y) => x.a[0] - y.a[0]);
-  const rel = (i: number, k: number) => (((anchors[k].a[i] - anchors[0].a[i]) % 1) + 1) % 1;
+  anchors.sort((firstAnchor, secondAnchor) => firstAnchor.a[0] - secondAnchor.a[0]);
+  const rel = (i: number, anchorIndex: number) => (((anchors[anchorIndex].a[i] - anchors[0].a[i]) % 1) + 1) % 1;
   for (let i = 1; i < secs.length; i++) {
-    for (let k = 1; k < anchors.length; k++) {
-      if (rel(i, k) <= rel(i, k - 1)) {
+    for (let anchorIndex = 1; anchorIndex < anchors.length; anchorIndex++) {
+      if (rel(i, anchorIndex) <= rel(i, anchorIndex - 1)) {
         throw new Error('The guides or connections cross over between profiles: they must go round each profile in the same order');
       }
     }
   }
 
   // The same number of points between each two anchors on every profile.
-  const N = 160;
-  const counts = anchors.map((_, k) => Math.max(3, Math.round(N * ((k + 1 < anchors.length ? rel(0, k + 1) : 1) - rel(0, k)))));
-  const start = counts.map((_, k) => counts.slice(0, k).reduce((a, b) => a + b, 0));
+  const samples = 160;
+  const counts = anchors.map((_, anchorIndex) => Math.max(3, Math.round(samples * ((anchorIndex + 1 < anchors.length ? rel(0, anchorIndex + 1) : 1) - rel(0, anchorIndex)))));
+  const start = counts.map((_, countIndex) => counts.slice(0, countIndex).reduce((a, b) => a + b, 0));
   const total = counts.reduce((a, b) => a + b, 0);
   const resampled = secs.map((sec, i) => {
     const out: Vec3[] = [];
-    anchors.forEach((an, k) => {
+    anchors.forEach((an, anchorIndex) => {
       const from = an.a[i];
-      const to = from + ((k + 1 < anchors.length ? rel(i, k + 1) : 1) - rel(i, k));
-      for (let m = 0; m < counts[k]; m++) {
-        out.push(at(sec, from + ((to - from) * m) / counts[k]));
+      const to = from + ((anchorIndex + 1 < anchors.length ? rel(i, anchorIndex + 1) : 1) - rel(i, anchorIndex));
+      for (let index = 0; index < counts[anchorIndex]; index++) {
+        out.push(at(sec, from + ((to - from) * index) / counts[anchorIndex]));
       }
     });
 
@@ -275,37 +275,37 @@ export function railLoft(wires: Wire[], rails: Wire[], connections: Vec3[][]): S
   });
 
   // Between profiles: sections that follow the guides.
-  const railAnchors = anchors.map((an, k) => ({ an, idx: start[k] })).filter(x => x.an.rail >= 0);
+  const railAnchors = anchors.map((an, anchorIndex) => ({ an, idx: start[anchorIndex] })).filter(entry => entry.an.rail >= 0);
   const sections: Vec3[][] = [resampled[0]];
   for (let i = 0; i + 1 < resampled.length; i++) {
     {
-      const M = railAnchors.length ? 6 : 3;
-      for (let m = 1; m <= M; m++) {
-        const t = m / (M + 1);
-        const P = resampled[i].map((p, j) => add(p, scale(sub(resampled[i + 1][j], p), t)));
+      const steps = railAnchors.length ? 6 : 3;
+      for (let step = 1; step <= steps; step++) {
+        const t = step / (steps + 1);
+        const points = resampled[i].map((point, j) => add(point, scale(sub(resampled[i + 1][j], point), t)));
         if (!railAnchors.length) {
-          sections.push(P);
+          sections.push(points);
           continue;
         }
-        const moves = railAnchors.map(({ an, idx }) => ({ idx, d: sub(at(railCurves[an.rail], an.r[i] + (an.r[i + 1] - an.r[i]) * t), P[idx]) }));
+        const moves = railAnchors.map(({ an, idx }) => ({ idx, d: sub(at(railCurves[an.rail], an.r[i] + (an.r[i + 1] - an.r[i]) * t), points[idx]) }));
         // Each point moved as the guides either side of it are, by how near it is to each.
         sections.push(
-          P.map((p, j) => {
+          points.map((point, j) => {
             if (moves.length === 1) {
-              return add(p, moves[0].d);
+              return add(point, moves[0].d);
             }
             let q = moves.length - 1;
-            for (let k = 0; k < moves.length; k++) {
-              if (moves[k].idx <= j) {
-                q = k;
+            for (let moveIndex = 0; moveIndex < moves.length; moveIndex++) {
+              if (moves[moveIndex].idx <= j) {
+                q = moveIndex;
               }
             }
             const a = moves[q];
             const b = moves[(q + 1) % moves.length];
             const span = (b.idx - a.idx + total) % total || total;
-            const w = ((j - a.idx + total) % total) / span;
+            const weight = ((j - a.idx + total) % total) / span;
 
-            return add(p, add(scale(a.d, 1 - w), scale(b.d, w)));
+            return add(point, add(scale(a.d, 1 - weight), scale(b.d, weight)));
           })
         );
       }

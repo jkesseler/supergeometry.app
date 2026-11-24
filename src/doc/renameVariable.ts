@@ -18,7 +18,7 @@ export function nameProblem(doc: ProjectDoc, from: string, to: string): string |
   if (!/^[a-z_][a-z0-9_]*$/i.test(to) || RESERVED.test(to)) {
     return 'Names use letters, digits and _ (not starting with a digit, and not a unit or a function like sin or pi)';
   }
-  const twin = doc.variables.find(v => v.name !== from && v.name.toLowerCase() === to.toLowerCase());
+  const twin = doc.variables.find(variable => variable.name !== from && variable.name.toLowerCase() === to.toLowerCase());
   if (twin) {
     return twin.name === to ? `There is a variable ${to} already` : `There is a variable ${twin.name} already: ${to} differs only in its capitals`;
   }
@@ -28,44 +28,44 @@ export function nameProblem(doc: ProjectDoc, from: string, to: string): string |
 
 /** The variable `from` called `to` from now on, in place. How many formulas were rewritten (-1: no such variable). */
 export function renameVariable(doc: ProjectDoc, from: string, to: string): number {
-  const v = doc.variables.find(x => x.name === from);
-  if (!v || from === to) {
-    return v ? 0 : -1;
+  const variable = doc.variables.find(variable => variable.name === from);
+  if (!variable || from === to) {
+    return variable ? 0 : -1;
   }
-  let n = 0;
+  let count = 0;
   const re = (expr: string): string => {
     const next = renameIn(expr, from, to);
     if (next !== expr) {
-      n++;
+      count++;
     }
 
     return next;
   };
-  v.name = to;
+  variable.name = to;
   for (const x of doc.variables) {
     x.expr = re(x.expr);
   }
-  for (const f of doc.features) {
-    if (f.exprs) {
-      for (const k of Object.keys(f.exprs)) {
-        f.exprs[k] = re(f.exprs[k]);
+  for (const feature of doc.features) {
+    if (feature.exprs) {
+      for (const key of Object.keys(feature.exprs)) {
+        feature.exprs[key] = re(feature.exprs[key]);
       }
     }
-    if (f.type !== 'sketch') {
+    if (feature.type !== 'sketch') {
       continue;
     }
-    for (const r of f.repeats ?? []) {
-      r.countExpr = re(r.countExpr);
+    for (const sketchRepeat of feature.repeats ?? []) {
+      sketchRepeat.countExpr = re(sketchRepeat.countExpr);
     }
-    for (const c of f.constraints ?? []) {
-      if (c.expr) {
-        c.expr = re(c.expr);
+    for (const sketchConstraint of feature.constraints ?? []) {
+      if (sketchConstraint.expr) {
+        sketchConstraint.expr = re(sketchConstraint.expr);
       }
-      if (c.atExpr) {
-        c.atExpr = c.atExpr.map(e => (e ? re(e) : e)) as typeof c.atExpr;
+      if (sketchConstraint.atExpr) {
+        sketchConstraint.atExpr = sketchConstraint.atExpr.map(e => (e ? re(e) : e)) as typeof sketchConstraint.atExpr;
       }
     }
   }
 
-  return n;
+  return count;
 }

@@ -98,13 +98,13 @@ export class Handle {
     this.view.requestRender();
   }
 
-  hit(p: ToolPointer): boolean {
+  hit(pointer: ToolPointer): boolean {
     if (!this.group.visible) {
       return false;
     }
-    const s = this.grabPoint();
+    const grab = this.grabPoint();
 
-    return !!s && Math.hypot(s[0] - p.x, s[1] - p.y) < Math.max(30, p.tol * 1.8);
+    return !!grab && Math.hypot(grab[0] - pointer.x, grab[1] - pointer.y) < Math.max(30, pointer.tol * 1.8);
   }
 
   dispose(): void {
@@ -134,17 +134,17 @@ export class Handle {
   }
 
   private layout(): void {
-    const s = this.size();
+    const size = this.size();
     this.head.scale.setScalar(this.headScale());
     if (this.shape === 'arrow') {
       const tip = this.tip();
       this.head.position.copy(tip);
       this.head.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), this.dir);
       // (From a little off its foot to the head's base; the head's point is the arrow's tip.)
-      const h = this.headScale() * 0.3;
-      this.head.position.copy(tip).addScaledVector(this.dir, -h / 2);
-      const start = this.base.clone().addScaledVector(this.dir, Math.min(s * 0.12, Math.max(0, s - h)));
-      const end = this.base.clone().addScaledVector(this.dir, Math.max(0, s - h));
+      const height = this.headScale() * 0.3;
+      this.head.position.copy(tip).addScaledVector(this.dir, -height / 2);
+      const start = this.base.clone().addScaledVector(this.dir, Math.min(size * 0.12, Math.max(0, size - height)));
+      const end = this.base.clone().addScaledVector(this.dir, Math.max(0, size - height));
       const at = [...start.toArray(), ...end.toArray()];
       (this.shaft!.geometry as LineSegmentsGeometry).setPositions(at);
       (this.under!.geometry as LineSegmentsGeometry).setPositions(at);
@@ -163,20 +163,20 @@ export class Handle {
  */
 export function axisDrag(view: Viewport, origin: Vec3, dir: Vec3, from: ToolPointer, to: ToolPointer): number {
   const dl = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-  const d: Vec3 = [dir[0] / dl, dir[1] / dl, dir[2] / dl];
+  const direction: Vec3 = [dir[0] / dl, dir[1] / dl, dir[2] / dl];
   const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   // Where along the line the pointer's ray passes closest.
-  const along = (p: ToolPointer): number | null => {
-    const r = view.pointerRay(p.x, p.y);
-    const w: Vec3 = [origin[0] - r.o[0], origin[1] - r.o[1], origin[2] - r.o[2]];
-    const b = dot3(d, r.d);
+  const along = (pointer: ToolPointer): number | null => {
+    const ray = view.pointerRay(pointer.x, pointer.y);
+    const toOrigin: Vec3 = [origin[0] - ray.o[0], origin[1] - ray.o[1], origin[2] - ray.o[2]];
+    const b = dot3(direction, ray.d);
     const den = 1 - b * b;
     // Looking (almost) straight along the line: no good answer this way.
     if (den < 0.03) {
       return null;
     }
 
-    return (b * dot3(r.d, w) - dot3(d, w)) / den;
+    return (b * dot3(ray.d, toOrigin) - dot3(direction, toOrigin)) / den;
   };
   const t0 = along(from);
   const t1 = along(to);
@@ -186,10 +186,10 @@ export function axisDrag(view: Viewport, origin: Vec3, dir: Vec3, from: ToolPoin
   // Nearly end-on: by the screen direction of a long piece of the line (or,
   // dead end-on, finger up = towards you).
   const wpp = view.cam.worldPerPixel(view.height);
-  const L = wpp * 80;
-  const o = new Vector3(...origin);
-  const a = view.toScreen(o);
-  const b = view.toScreen(o.clone().addScaledVector(new Vector3(...d), L));
+  const length = wpp * 80;
+  const vector = new Vector3(...origin);
+  const a = view.toScreen(vector);
+  const b = view.toScreen(vector.clone().addScaledVector(new Vector3(...direction), length));
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   if (a && b) {
@@ -197,11 +197,11 @@ export function axisDrag(view: Viewport, origin: Vec3, dir: Vec3, from: ToolPoin
     const vy = b[1] - a[1];
     const l2 = vx * vx + vy * vy;
     if (l2 > 16) {
-      return ((dx * vx + dy * vy) / l2) * L;
+      return ((dx * vx + dy * vy) / l2) * length;
     }
   }
   const eye = view.pointerRay(view.width / 2, view.height / 2).d;
-  const towardYou = dot3(d, eye) < 0 ? 1 : -1;
+  const towardYou = dot3(direction, eye) < 0 ? 1 : -1;
 
   return -dy * wpp * towardYou;
 }

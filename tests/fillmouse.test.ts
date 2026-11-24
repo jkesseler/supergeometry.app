@@ -12,26 +12,26 @@ import { arrangement, regionRef } from '../src/sketch/regions';
 import { after, bodies, check, circle, done, health, line, near, rect, sketch, XY, XZ, YZ } from './kit';
 import type { Feature, PathRef, SketchEntity, Vec3 } from '../src/doc/types';
 
-const W = 30, Y0 = -40, Y1 = 40, H = 18;
-const vol = (s: Shape3D) => Math.abs(measureVolume(s));
+const WIDTH = 30, Y0 = -40, Y1 = 40, HEIGHT = 18;
+const vol = (shape: Shape3D) => Math.abs(measureVolume(shape));
 
 // ---------------------------------------------------------------- the outline
 // Drawn on a plane 18 up: straight sides 80 long, 60 apart; a round front
 // (a half circle, out to y 70) and back (radius 34, to y -58).
 const outlineEs: SketchEntity[] = [
-  line('left', [-W, Y0], [-W, Y1]),
-  { id: 'front', kind: 'arc', a: [-W, Y1], m: [0, 70], b: [W, Y1] } as SketchEntity,
-  line('right', [W, Y1], [W, Y0]),
-  { id: 'back', kind: 'arc', a: [W, Y0], m: [0, -58], b: [-W, Y0] } as SketchEntity
+  line('left', [-WIDTH, Y0], [-WIDTH, Y1]),
+  { id: 'front', kind: 'arc', a: [-WIDTH, Y1], m: [0, 70], b: [WIDTH, Y1] } as SketchEntity,
+  line('right', [WIDTH, Y1], [WIDTH, Y0]),
+  { id: 'back', kind: 'arc', a: [WIDTH, Y0], m: [0, -58], b: [-WIDTH, Y0] } as SketchEntity
 ];
 // Two arches over it, meeting at the top (0, 0, 40): one along it from the
 // back to the front, one across it from side to side.
-const alongEs: SketchEntity[] = [{ id: 'a', kind: 'spline', points: [[-58, H], [-40, 34], [0, 40], [40, 33], [70, H]], closed: false, mode: 'fit' } as SketchEntity];
-const acrossEs: SketchEntity[] = [{ id: 'c', kind: 'spline', points: [[-W, H], [-18, 33], [0, 40], [18, 33], [W, H]], closed: false, mode: 'fit' } as SketchEntity];
+const alongEs: SketchEntity[] = [{ id: 'a', kind: 'spline', points: [[-58, HEIGHT], [-40, 34], [0, 40], [40, 33], [70, HEIGHT]], closed: false, mode: 'fit' } as SketchEntity];
+const acrossEs: SketchEntity[] = [{ id: 'c', kind: 'spline', points: [[-WIDTH, HEIGHT], [-18, 33], [0, 40], [18, 33], [WIDTH, HEIGHT]], closed: false, mode: 'fit' } as SketchEntity];
 const path = (sketch: string, entities: string[]): PathRef => ({ kind: 'sketch', sketch, entities }) as PathRef;
 
 const steps: Feature[] = [
-  sketch('Outline', XY(H), outlineEs),
+  sketch('Outline', XY(HEIGHT), outlineEs),
   sketch('Along', YZ(), alongEs),
   sketch('Across', XZ(), acrossEs),
   { id: 'Shell', name: 'Fill', type: 'fill', boundary: [path('Outline', ['left', 'front', 'right', 'back'])], guides: [path('Along', ['a']), path('Across', ['c'])] } as Feature
@@ -40,7 +40,7 @@ let { errors } = await after(steps);
 check('the top: no errors', !errors.length, errors);
 const top = bodies().get('Shell') as Shape3D;
 const [[tx0, ty0, tz0], [tx1, ty1, tz1]] = top.boundingBox.bounds;
-check('the top: over the outline, up to the arches (40)', near(tx0, -W, 0.05) && near(tx1, W, 0.05) && near(ty0, -58, 0.1) && near(ty1, 70, 0.1) && near(tz0, H, 0.05) && near(tz1, 40, 0.3), top.boundingBox.bounds);
+check('the top: over the outline, up to the arches (40)', near(tx0, -WIDTH, 0.05) && near(tx1, WIDTH, 0.05) && near(ty0, -58, 0.1) && near(ty1, 70, 0.1) && near(tz0, HEIGHT, 0.05) && near(tz1, 40, 0.3), top.boundingBox.bounds);
 check('the top: one surface', top.faces.length === 1, top.faces.length);
 const topArea = measureArea(top.faces[0]);
 
@@ -51,40 +51,40 @@ check('filled down: no errors', !errors.length, errors);
 let mouse = bodies().get('Shell') as Shape3D;
 const vSolid = vol(mouse);
 // (Under the outline, 18 of straight sides; above it, the dome.)
-const plan = 2 * W * (Y1 - Y0) + (() => {
+const plan = 2 * WIDTH * (Y1 - Y0) + (() => {
   // The two round ends: segments of their circles.
   const seg = (sag: number) => {
-    const r = (W * W + sag * sag) / (2 * sag);
-    const th = 2 * Math.asin(W / r);
+    const radius = (WIDTH * WIDTH + sag * sag) / (2 * sag);
+    const th = 2 * Math.asin(WIDTH / radius);
 
-    return (r * r * (th - Math.sin(th))) / 2;
+    return (radius * radius * (th - Math.sin(th))) / 2;
   };
 
   return seg(70 - Y1) + seg(58 + Y0);
 })();
-const walls = plan * H;
+const walls = plan * HEIGHT;
 check('filled down: the walls under the dome, the dome over them', vSolid > walls + 0.4 * plan * 22 * 0.5 && vSolid < walls + plan * 22, [vSolid, walls, plan]);
 check('filled down: on the desk, as long and wide as the outline', near(mouse.boundingBox.bounds[0][2], 0, 1e-3) && near(mouse.boundingBox.bounds[1][2], tz1, 1e-3), mouse.boundingBox.bounds);
 
 // ----------------------------------------------------------- the thumb rest
 // The left side (flat, 80 x 18) laid with a grid, its inside points pushed in
 // 4 at the middle, 2 towards the ends.
-const leftFace = mouse.faces.find(f => f.geomType === 'PLANE' && f.normalAt().x < -0.99)!;
-check('the left side: a flat face 80 x 18', !!leftFace && near(measureArea(leftFace), (Y1 - Y0) * H, 0.5), leftFace && measureArea(leftFace));
+const leftFace = mouse.faces.find(face => face.geomType === 'PLANE' && face.normalAt().x < -0.99)!;
+check('the left side: a flat face 80 x 18', !!leftFace && near(measureArea(leftFace), (Y1 - Y0) * HEIGHT, 0.5), leftFace && measureArea(leftFace));
 const lr = await after(steps);
 const info = (lr.r as any).bodies.find((b: any) => b.id === 'Shell');
-const fi = info.faces.findIndex((f: any) => f.normal[0] < -0.999);
+const fi = info.faces.findIndex((face: any) => face.normal[0] < -0.999);
 const fInfo = info.faces[fi];
-const g = info.faceGroups.find((x: any) => x.face === fi);
-const P = (k: number): Vec3 => [info.positions[3 * k], info.positions[3 * k + 1], info.positions[3 * k + 2]];
+const faceGroup = info.faceGroups.find((faceGroup: any) => faceGroup.face === fi);
+const vertexAt = (index: number): Vec3 => [info.positions[3 * index], info.positions[3 * index + 1], info.positions[3 * index + 2]];
 const tris: [Vec3, Vec3, Vec3][] = [];
-for (let t = g.start; t < g.start + g.count; t += 3) {
-  tris.push([P(info.indices[t]), P(info.indices[t + 1]), P(info.indices[t + 2])]);
+for (let t = faceGroup.start; t < faceGroup.start + faceGroup.count; t += 3) {
+  tris.push([vertexAt(info.indices[t]), vertexAt(info.indices[t + 1]), vertexAt(info.indices[t + 2])]);
 }
 const cage = faceCage(tris, fInfo.center, fInfo.normal, 5)!;
 const border = new Set(boundaryEdges(cage).flat());
 // (Relative to the face's middle: u along it, the other way up it.)
-const pushed = cage.verts.map((v, i): Vec3 => (border.has(i) ? v : [v[0] + (Math.abs(v[1]) < 10 ? 4 : 2), v[1], v[2]]));
+const pushed = cage.verts.map((vertex, i): Vec3 => (border.has(i) ? vertex : [vertex[0] + (Math.abs(vertex[1]) < 10 ? 4 : 2), vertex[1], vertex[2]]));
 const inside = cage.verts.filter((_, i) => !border.has(i)).length;
 check('the thumb rest: a 5-across grid, its inside points to move', inside >= 4, `${inside} inside of ${cage.verts.length}`);
 const leftRef = { body: 'Shell', center: fInfo.center, normal: fInfo.normal, area: fInfo.area };
@@ -93,12 +93,12 @@ steps.push({ id: 'Thumb', name: 'Freeform Face', type: 'faceFreeform', face: lef
 check('the thumb rest: no errors', !errors.length, errors);
 mouse = bodies().get('Shell') as Shape3D;
 const vThumb = vol(mouse);
-check('the thumb rest: pressed in (smaller), its edges where they were', vThumb < vSolid - 100 && near(mouse.boundingBox.bounds[0][0], -W, 1e-3), [vThumb, vSolid, mouse.boundingBox.bounds[0][0]]);
+check('the thumb rest: pressed in (smaller), its edges where they were', vThumb < vSolid - 100 && near(mouse.boundingBox.bounds[0][0], -WIDTH, 1e-3), [vThumb, vSolid, mouse.boundingBox.bounds[0][0]]);
 {
   // Deepest at the middle: a cut across it, at half height, comes in from x -30.
-  const mid = mouse.intersect(makeBox([-40, -2, H / 2 - 1], [0, 2, H / 2 + 1]));
+  const mid = mouse.intersect(makeBox([-40, -2, HEIGHT / 2 - 1], [0, 2, HEIGHT / 2 + 1]));
   const x = mid.boundingBox.bounds[0][0];
-  check('the thumb rest: about 3 deep at its middle (the surface lies inside its grid)', x > -W + 1.5 && x < -W + 4.2, x);
+  check('the thumb rest: about 3 deep at its middle (the surface lies inside its grid)', x > -WIDTH + 1.5 && x < -WIDTH + 4.2, x);
 }
 
 // ----------------------------------------------------- the wheel and its slot
@@ -111,7 +111,7 @@ mouse = bodies().get('Shell') as Shape3D;
 const vSlot = vol(mouse);
 const slotGone = vThumb - vSlot;
 check('the slot: cut into the top (some 10 x 22 x 6 to 10)', slotGone > 10 * 22 * 5 && slotGone < 10 * 22 * 10, slotGone);
-const floorZ = Math.min(...mouse.faces.filter(f => f.geomType === 'PLANE' && f.normalAt().z > 0.99).map(f => f.center.z));
+const floorZ = Math.min(...mouse.faces.filter(face => face.geomType === 'PLANE' && face.normalAt().z > 0.99).map(face => face.center.z));
 check('the slot: its floor at 28', near(floorZ, 28, 1e-3), floorZ);
 // The wheel: a circle 7 round on the middle plane, 3.5 each side of it, a body of its own.
 const wheelEs = [circle('w', 33, 36, 7)];
@@ -128,7 +128,7 @@ const rim = mouse.edges.filter((e) => {
   const [x, y, z] = e.pointAt(0.5).toTuple();
 
   // (Not the slot's upright corners.)
-  return z > 30 && (([a, b, c]) => Math.abs(c) < 0.9 * Math.hypot(a, b, c))(e.tangentAt(0.5).toTuple()) && Math.abs(x) < 5 + 1e-3 && y > 22 - 1e-3 && y < 44 + 1e-3;
+  return z > 30 && (([a, b, tangentZ]) => Math.abs(tangentZ) < 0.9 * Math.hypot(a, b, tangentZ))(e.tangentAt(0.5).toTuple()) && Math.abs(x) < 5 + 1e-3 && y > 22 - 1e-3 && y < 44 + 1e-3;
 });
 check("the slot's rim: four edges", rim.length === 4, rim.length);
 steps.push({ id: 'Rim', name: 'Fillet', type: 'fillet', edges: rim.map(e => ({ body: 'Shell', mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length })), radius: 1.5 } as Feature);
@@ -140,11 +140,11 @@ const vRim = vol(mouse);
 check("the slot's rim: a little taken off (a round 1.5 along some 70)", vSlot - vRim > 0.5 * 0.483 * 70 && vSlot - vRim < 2 * 0.483 * 70, vSlot - vRim);
 check('the wheel: still clear of the mouse', Math.abs(rVol(wheel.intersect(mouse))) < 1e-6);
 
-for (const [id, s] of bodies()) {
-  const h = health(s as Shape3D, id);
-  check(`${id}: sound`, h.healthy, h.healthy ? `${Math.round(h.volume)} mm³` : h);
+for (const [id, body] of bodies()) {
+  const bodyHealth = health(body as Shape3D, id);
+  check(`${id}: sound`, bodyHealth.healthy, bodyHealth.healthy ? `${Math.round(bodyHealth.volume)} mm³` : bodyHealth);
 }
-const codeVols = [...bodies().values()].map(s => vol(s as Shape3D));
+const codeVols = [...bodies().values()].map(body => vol(body as Shape3D));
 
 // ------------------------------------------------------ the mouse built by hand
 // On a phone-sized screen (tests/fixtures/fillmouse-hand.json): the outline
@@ -157,12 +157,12 @@ const codeVols = [...bodies().values()].map(s => vol(s as Shape3D));
   const hand = JSON.parse(readFileSync(new URL('./fixtures/fillmouse-hand.json', import.meta.url), 'utf8')).features as Feature[];
   const { errors } = await after(hand);
   check('by hand: no errors', errors.length === 0, errors);
-  const H = [...bodies().values()].map(s => vol(s as Shape3D));
-  check('by hand: the same parts', H.length === codeVols.length, `${H.length} / ${codeVols.length}`);
-  ['mouse', 'wheel'].forEach((name, i) => check(`by hand: the ${name} the same (to 0.1 %)`, Math.abs(H[i] - codeVols[i]) < codeVols[i] * 1e-3, `${H[i]?.toFixed(1)} / ${codeVols[i]?.toFixed(1)}`));
-  const ff = hand.find(f => f.type === 'faceFreeform') as any;
-  const key = (vs: Vec3[]) => JSON.stringify(vs.map(v => v.map(x => +x.toFixed(6))).sort());
-  check("by hand: the thumb rest's grid the same, point for point", !!ff && ff.grid === 5 && key(ff.cage.verts) === key(pushed), ff && ff.cage.verts.filter((v: Vec3) => Math.abs(v[0]) > 1e-6));
+  const volumes = [...bodies().values()].map(body => vol(body as Shape3D));
+  check('by hand: the same parts', volumes.length === codeVols.length, `${volumes.length} / ${codeVols.length}`);
+  ['mouse', 'wheel'].forEach((name, i) => check(`by hand: the ${name} the same (to 0.1 %)`, Math.abs(volumes[i] - codeVols[i]) < codeVols[i] * 1e-3, `${volumes[i]?.toFixed(1)} / ${codeVols[i]?.toFixed(1)}`));
+  const ff = hand.find(feature => feature.type === 'faceFreeform') as any;
+  const key = (vs: Vec3[]) => JSON.stringify(vs.map(vertex => vertex.map(x => +x.toFixed(6))).sort());
+  check("by hand: the thumb rest's grid the same, point for point", !!ff && ff.grid === 5 && key(ff.cage.verts) === key(pushed), ff && ff.cage.verts.filter((vertex: Vec3) => Math.abs(vertex[0]) > 1e-6));
 }
 console.log('top', topArea.toFixed(1), 'solid', vSolid.toFixed(1), 'thumb', vThumb.toFixed(1), 'slot', vSlot.toFixed(1), 'rim', vRim.toFixed(1));
 

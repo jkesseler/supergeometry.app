@@ -12,63 +12,63 @@ import type { SketchEntity, Vec2 } from '../doc/types';
 
 /** 2D affine map [a b c d e f]: x' = a x + c y + e, y' = b x + d y + f (SVG's matrix order). */
 type M = [number, number, number, number, number, number];
-const I: M = [1, 0, 0, 1, 0, 0];
-const mul = (p: M, q: M): M => [p[0] * q[0] + p[2] * q[1], p[1] * q[0] + p[3] * q[1], p[0] * q[2] + p[2] * q[3], p[1] * q[2] + p[3] * q[3], p[0] * q[4] + p[2] * q[5] + p[4], p[1] * q[4] + p[3] * q[5] + p[5]];
-const ap = (m: M, [x, y]: Vec2): Vec2 => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+const identity: M = [1, 0, 0, 1, 0, 0];
+const mul = (left: M, q: M): M => [left[0] * q[0] + left[2] * q[1], left[1] * q[0] + left[3] * q[1], left[0] * q[2] + left[2] * q[3], left[1] * q[2] + left[3] * q[3], left[0] * q[4] + left[2] * q[5] + left[4], left[1] * q[4] + left[3] * q[5] + left[5]];
+const ap = (matrix: M, [x, y]: Vec2): Vec2 => [matrix[0] * x + matrix[2] * y + matrix[4], matrix[1] * x + matrix[3] * y + matrix[5]];
 
 /** Rotation + uniform scale (+ mirror) only: circles stay circles. */
-function similarity(m: M): { k: number; rot: number } | null {
-  const k1 = Math.hypot(m[0], m[1]);
-  const k2 = Math.hypot(m[2], m[3]);
-  const dotp = m[0] * m[2] + m[1] * m[3];
+function similarity(matrix: M): { k: number; rot: number } | null {
+  const k1 = Math.hypot(matrix[0], matrix[1]);
+  const k2 = Math.hypot(matrix[2], matrix[3]);
+  const dotp = matrix[0] * matrix[2] + matrix[1] * matrix[3];
   if (Math.abs(k1 - k2) > 1e-9 * Math.max(k1, k2) || Math.abs(dotp) > 1e-9 * k1 * k2) {
     return null;
   }
 
-  return { k: k1, rot: Math.atan2(m[1], m[0]) };
+  return { k: k1, rot: Math.atan2(matrix[1], matrix[0]) };
 }
 
-function parseTransform(s: string | undefined): M {
-  let m = I;
-  if (!s) {
-    return m;
+function parseTransform(text: string | undefined): M {
+  let matrix = identity;
+  if (!text) {
+    return matrix;
   }
-  for (const [, fn, args] of s.matchAll(/(\w+)\s*\(([^)]*)\)/g)) {
-    const v = nums(args);
-    let t: M = I;
+  for (const [, fn, args] of text.matchAll(/(\w+)\s*\(([^)]*)\)/g)) {
+    const values = nums(args);
+    let t: M = identity;
     switch (fn) {
       case 'matrix':
-        if (v.length === 6) {
-          t = v as M;
+        if (values.length === 6) {
+          t = values as M;
         }
         break;
       case 'translate':
-        t = [1, 0, 0, 1, v[0] ?? 0, v[1] ?? 0];
+        t = [1, 0, 0, 1, values[0] ?? 0, values[1] ?? 0];
         break;
       case 'scale':
-        t = [v[0] ?? 1, 0, 0, v[1] ?? v[0] ?? 1, 0, 0];
+        t = [values[0] ?? 1, 0, 0, values[1] ?? values[0] ?? 1, 0, 0];
         break;
       case 'rotate': {
-        const a = ((v[0] ?? 0) * Math.PI) / 180;
-        const r: M = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0];
-        t = v.length >= 3 ? mul(mul([1, 0, 0, 1, v[1], v[2]], r), [1, 0, 0, 1, -v[1], -v[2]]) : r;
+        const a = ((values[0] ?? 0) * Math.PI) / 180;
+        const rotation: M = [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0];
+        t = values.length >= 3 ? mul(mul([1, 0, 0, 1, values[1], values[2]], rotation), [1, 0, 0, 1, -values[1], -values[2]]) : rotation;
         break;
       }
       case 'skewX':
-        t = [1, 0, Math.tan(((v[0] ?? 0) * Math.PI) / 180), 1, 0, 0];
+        t = [1, 0, Math.tan(((values[0] ?? 0) * Math.PI) / 180), 1, 0, 0];
         break;
       case 'skewY':
-        t = [1, Math.tan(((v[0] ?? 0) * Math.PI) / 180), 0, 1, 0, 0];
+        t = [1, Math.tan(((values[0] ?? 0) * Math.PI) / 180), 0, 1, 0, 0];
         break;
     }
-    m = mul(m, t);
+    matrix = mul(matrix, t);
   }
 
-  return m;
+  return matrix;
 }
 
-function nums(s: string): number[] {
-  return (s.match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:e[-+]?\d+)?/gi) ?? []).map(Number);
+function nums(text: string): number[] {
+  return (text.match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:e[-+]?\d+)?/gi) ?? []).map(Number);
 }
 
 // ---------------------------------------------------------------- XML
@@ -92,8 +92,8 @@ function parseXml(text: string): El {
       continue;
     }
     const attrs: Record<string, string> = {};
-    for (const [, k, , v1, v2] of rest.matchAll(/([\w:.-]+)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
-      attrs[k] = v1 ?? v2 ?? '';
+    for (const [, key, , v1, v2] of rest.matchAll(/([\w:.-]+)\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+      attrs[key] = v1 ?? v2 ?? '';
     }
     // style="stroke:…; transform:…" isn't geometry, except display:none.
     const el: El = { name: name.replace(/^svg:/, ''), attrs, children: [] };
@@ -110,10 +110,10 @@ function parseXml(text: string): El {
 
 const UNIT_MM: Record<string, number> = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96, '': 25.4 / 96 };
 
-function lengthMM(s: string | undefined): number | null {
-  const m = s?.trim().match(/^([-+]?[\d.]+(?:e[-+]?\d+)?)\s*(mm|cm|in|pt|pc|px)?$/i);
+function lengthMM(text: string | undefined): number | null {
+  const match = text?.trim().match(/^([-+]?[\d.]+(?:e[-+]?\d+)?)\s*(mm|cm|in|pt|pc|px)?$/i);
 
-  return m ? Number(m[1]) * UNIT_MM[(m[2] ?? '').toLowerCase()] : null;
+  return match ? Number(match[1]) * UNIT_MM[(match[2] ?? '').toLowerCase()] : null;
 }
 
 // ---------------------------------------------------------------- import
@@ -132,14 +132,14 @@ export function parseSVG(text: string): SvgImport {
   }
   // User units → mm, from width + viewBox (no width: 96 px per inch).
   const vb = svg.attrs.viewBox ? nums(svg.attrs.viewBox) : null;
-  const w = lengthMM(svg.attrs.width);
-  const h = lengthMM(svg.attrs.height);
+  const width = lengthMM(svg.attrs.width);
+  const height = lengthMM(svg.attrs.height);
   // Without a viewBox one user unit is one CSS pixel; with one, width (or height) sets the scale.
-  let k = UNIT_MM.px;
+  let px = UNIT_MM.px;
   if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
-    k = w !== null ? w / vb[2] : h !== null ? h / vb[3] : UNIT_MM.px;
+    px = width !== null ? width / vb[2] : height !== null ? height / vb[3] : UNIT_MM.px;
   }
-  const [kx, ky] = [k, k];
+  const [kx, ky] = [px, px];
   const ox = vb?.[0] ?? 0;
   const oy = vb?.[1] ?? 0;
   // SVG y points down; the sketch's y points up.
@@ -151,21 +151,21 @@ export function parseSVG(text: string): SvgImport {
   }
   // Centre on the origin.
   const pts = out.flatMap(samplePoints);
-  const lo: Vec2 = [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))];
-  const hi: Vec2 = [Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
-  const c: Vec2 = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
+  const lo: Vec2 = [Math.min(...pts.map(point => point[0])), Math.min(...pts.map(point => point[1]))];
+  const hi: Vec2 = [Math.max(...pts.map(point => point[0])), Math.max(...pts.map(point => point[1]))];
+  const center: Vec2 = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
 
-  return { entities: out.map(e => shift(e, -c[0], -c[1])), size: [hi[0] - lo[0], hi[1] - lo[1]] };
+  return { entities: out.map(e => shift(e, -center[0], -center[1])), size: [hi[0] - lo[0], hi[1] - lo[1]] };
 }
 
 function findFirst(el: El, name: string): El | null {
   if (el.name === name) {
     return el;
   }
-  for (const c of el.children) {
-    const f = findFirst(c, name);
-    if (f) {
-      return f;
+  for (const child of el.children) {
+    const first = findFirst(child, name);
+    if (first) {
+      return first;
     }
   }
 
@@ -175,77 +175,77 @@ function findFirst(el: El, name: string): El | null {
 const SKIP = new Set(['defs', 'clipPath', 'mask', 'symbol', 'marker', 'pattern', 'style', 'title', 'desc', 'metadata', 'text', 'linearGradient', 'radialGradient', 'filter', 'image']);
 
 function walk(el: El, parent: M, out: SketchEntity[]): void {
-  for (const c of el.children) {
-    if (SKIP.has(c.name) || /display\s*:\s*none/.test(c.attrs.style ?? '') || c.attrs.display === 'none') {
+  for (const child of el.children) {
+    if (SKIP.has(child.name) || /display\s*:\s*none/.test(child.attrs.style ?? '') || child.attrs.display === 'none') {
       continue;
     }
-    const m = mul(parent, parseTransform(c.attrs.transform));
-    const n = (k: string, d = 0) => (c.attrs[k] !== undefined ? Number(nums(c.attrs[k])[0] ?? d) : d);
-    switch (c.name) {
+    const matrix = mul(parent, parseTransform(child.attrs.transform));
+    const attrNumber = (key: string, fallback = 0) => (child.attrs[key] !== undefined ? Number(nums(child.attrs[key])[0] ?? fallback) : fallback);
+    switch (child.name) {
       case 'g':
       case 'svg':
       case 'a':
       case 'switch':
-        walk(c, c.name === 'svg' ? mul(m, [1, 0, 0, 1, n('x'), n('y')]) : m, out);
+        walk(child, child.name === 'svg' ? mul(matrix, [1, 0, 0, 1, attrNumber('x'), attrNumber('y')]) : matrix, out);
         break;
       case 'path':
-        out.push(...pathEntities(c.attrs.d ?? '', m));
+        out.push(...pathEntities(child.attrs.d ?? '', matrix));
         break;
       case 'line':
-        out.push(line(ap(m, [n('x1'), n('y1')]), ap(m, [n('x2'), n('y2')])));
+        out.push(line(ap(matrix, [attrNumber('x1'), attrNumber('y1')]), ap(matrix, [attrNumber('x2'), attrNumber('y2')])));
         break;
       case 'polyline':
       case 'polygon': {
-        const v = nums(c.attrs.points ?? '');
-        const p: Vec2[] = [];
-        for (let i = 0; i + 1 < v.length; i += 2) {
-          p.push(ap(m, [v[i], v[i + 1]]));
+        const values = nums(child.attrs.points ?? '');
+        const points: Vec2[] = [];
+        for (let i = 0; i + 1 < values.length; i += 2) {
+          points.push(ap(matrix, [values[i], values[i + 1]]));
         }
-        for (let i = 0; i + 1 < p.length; i++) {
-          out.push(line(p[i], p[i + 1]));
+        for (let i = 0; i + 1 < points.length; i++) {
+          out.push(line(points[i], points[i + 1]));
         }
-        if (c.name === 'polygon' && p.length > 2) {
-          out.push(line(p[p.length - 1], p[0]));
+        if (child.name === 'polygon' && points.length > 2) {
+          out.push(line(points[points.length - 1], points[0]));
         }
         break;
       }
       case 'rect': {
-        const [x, y, w, h] = [n('x'), n('y'), n('width'), n('height')];
-        if (w <= 0 || h <= 0) {
+        const [x, y, width, height] = [attrNumber('x'), attrNumber('y'), attrNumber('width'), attrNumber('height')];
+        if (width <= 0 || height <= 0) {
           break;
         }
-        const rx = Math.min(n('rx', n('ry')), w / 2);
-        const ry = Math.min(n('ry', rx), h / 2);
-        const sim = similarity(m);
+        const rx = Math.min(attrNumber('rx', attrNumber('ry')), width / 2);
+        const ry = Math.min(attrNumber('ry', rx), height / 2);
+        const sim = similarity(matrix);
         if (!rx && !ry && sim) {
-          const ctr = ap(m, [x + w / 2, y + h / 2]);
-          out.push({ id: uid(), kind: 'rect', center: ctr, w: w * sim.k, h: h * sim.k, rotation: Math.atan2(m[1], m[0]) });
+          const ctr = ap(matrix, [x + width / 2, y + height / 2]);
+          out.push({ id: uid(), kind: 'rect', center: ctr, w: width * sim.k, h: height * sim.k, rotation: Math.atan2(matrix[1], matrix[0]) });
         } else {
           // Rounded (or skewed): as a path.
-          const d = rx || ry
-            ? `M${x + rx},${y}H${x + w - rx}A${rx},${ry} 0 0 1 ${x + w},${y + ry}V${y + h - ry}A${rx},${ry} 0 0 1 ${x + w - rx},${y + h}H${x + rx}A${rx},${ry} 0 0 1 ${x},${y + h - ry}V${y + ry}A${rx},${ry} 0 0 1 ${x + rx},${y}Z`
-            : `M${x},${y}H${x + w}V${y + h}H${x}Z`;
-          out.push(...pathEntities(d, m));
+          const pathData = rx || ry
+            ? `M${x + rx},${y}H${x + width - rx}A${rx},${ry} 0 0 1 ${x + width},${y + ry}V${y + height - ry}A${rx},${ry} 0 0 1 ${x + width - rx},${y + height}H${x + rx}A${rx},${ry} 0 0 1 ${x},${y + height - ry}V${y + ry}A${rx},${ry} 0 0 1 ${x + rx},${y}Z`
+            : `M${x},${y}H${x + width}V${y + height}H${x}Z`;
+          out.push(...pathEntities(pathData, matrix));
         }
         break;
       }
       case 'circle':
       case 'ellipse': {
-        const cx = n('cx');
-        const cy = n('cy');
-        const rx = c.name === 'circle' ? n('r') : n('rx');
-        const ry = c.name === 'circle' ? n('r') : n('ry', rx);
+        const cx = attrNumber('cx');
+        const cy = attrNumber('cy');
+        const rx = child.name === 'circle' ? attrNumber('r') : attrNumber('rx');
+        const ry = child.name === 'circle' ? attrNumber('r') : attrNumber('ry', rx);
         if (rx <= 0 || ry <= 0) {
           break;
         }
-        const sim = similarity(m);
-        const ctr = ap(m, [cx, cy]);
+        const sim = similarity(matrix);
+        const ctr = ap(matrix, [cx, cy]);
         if (sim && Math.abs(rx - ry) < 1e-12) {
           out.push({ id: uid(), kind: 'circle', center: ctr, radius: rx * sim.k });
         } else if (sim) {
           out.push({ id: uid(), kind: 'ellipse', center: ctr, rx: rx * sim.k, ry: ry * sim.k, rotation: sim.rot });
         } else {
-          out.push(closedSpline(Array.from({ length: 24 }, (_, i) => ap(m, [cx + rx * Math.cos((i / 24) * Math.PI * 2), cy + ry * Math.sin((i / 24) * Math.PI * 2)]))));
+          out.push(closedSpline(Array.from({ length: 24 }, (_, i) => ap(matrix, [cx + rx * Math.cos((i / 24) * Math.PI * 2), cy + ry * Math.sin((i / 24) * Math.PI * 2)]))));
         }
         break;
       }
@@ -256,9 +256,9 @@ function walk(el: El, parent: M, out: SketchEntity[]): void {
 // ---------------------------------------------------------------- paths
 
 /** One SVG path's curves. */
-export function pathEntities(d: string, m: M = I): SketchEntity[] {
+export function pathEntities(pathData: string, matrix: M = identity): SketchEntity[] {
   const out: SketchEntity[] = [];
-  const toks = d.match(/[a-df-z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:e[-+]?\d+)?/gi) ?? [];
+  const toks = pathData.match(/[a-df-z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:e[-+]?\d+)?/gi) ?? [];
   let i = 0;
   let cmd = '';
   let cur: Vec2 = [0, 0];
@@ -267,18 +267,18 @@ export function pathEntities(d: string, m: M = I): SketchEntity[] {
   let lastQ: Vec2 | null = null;
   const num = () => Number(toks[i++]);
   const more = () => i < toks.length && !/^[a-z]$/i.test(toks[i]);
-  const P = (p: Vec2) => ap(m, p);
-  const sim = similarity(m);
+  const place = (point: Vec2) => ap(matrix, point);
+  const sim = similarity(matrix);
   while (i < toks.length) {
     if (/^[a-z]$/i.test(toks[i])) {
       cmd = toks[i++];
     }
     const rel = cmd === cmd.toLowerCase();
-    const R = (p: Vec2): Vec2 => (rel ? [cur[0] + p[0], cur[1] + p[1]] : p);
-    const C = cmd.toUpperCase();
-    if (C === 'Z') {
+    const absolute = (point: Vec2): Vec2 => (rel ? [cur[0] + point[0], cur[1] + point[1]] : point);
+    const command = cmd.toUpperCase();
+    if (command === 'Z') {
       if (Math.hypot(cur[0] - start[0], cur[1] - start[1]) > 1e-12) {
-        out.push(line(P(cur), P(start)));
+        out.push(line(place(cur), place(start)));
       }
       cur = start;
       lastCtrl = lastQ = null;
@@ -291,9 +291,9 @@ export function pathEntities(d: string, m: M = I): SketchEntity[] {
     if (!more()) {
       break;
     }
-    switch (C) {
+    switch (command) {
       case 'M': {
-        cur = R([num(), num()]);
+        cur = absolute([num(), num()]);
         start = cur;
         cmd = rel ? 'l' : 'L';
         lastCtrl = lastQ = null;
@@ -302,36 +302,36 @@ export function pathEntities(d: string, m: M = I): SketchEntity[] {
       case 'L':
       case 'H':
       case 'V': {
-        const p: Vec2 = C === 'L' ? R([num(), num()]) : C === 'H' ? [rel ? cur[0] + num() : num(), cur[1]] : [cur[0], rel ? cur[1] + num() : num()];
-        if (Math.hypot(p[0] - cur[0], p[1] - cur[1]) > 1e-12) {
-          out.push(line(P(cur), P(p)));
+        const point: Vec2 = command === 'L' ? absolute([num(), num()]) : command === 'H' ? [rel ? cur[0] + num() : num(), cur[1]] : [cur[0], rel ? cur[1] + num() : num()];
+        if (Math.hypot(point[0] - cur[0], point[1] - cur[1]) > 1e-12) {
+          out.push(line(place(cur), place(point)));
         }
-        cur = p;
+        cur = point;
         lastCtrl = lastQ = null;
         break;
       }
       case 'C':
       case 'S': {
-        const c1: Vec2 = C === 'C' ? R([num(), num()]) : lastCtrl ? [2 * cur[0] - lastCtrl[0], 2 * cur[1] - lastCtrl[1]] : cur;
-        const c2 = R([num(), num()]);
-        const p = R([num(), num()]);
-        out.push(bezierSpline([cur, c1, c2, p].map(P)));
+        const c1: Vec2 = command === 'C' ? absolute([num(), num()]) : lastCtrl ? [2 * cur[0] - lastCtrl[0], 2 * cur[1] - lastCtrl[1]] : cur;
+        const c2 = absolute([num(), num()]);
+        const point = absolute([num(), num()]);
+        out.push(bezierSpline([cur, c1, c2, point].map(place)));
         lastCtrl = c2;
         lastQ = null;
-        cur = p;
+        cur = point;
         break;
       }
       case 'Q':
       case 'T': {
-        const q: Vec2 = C === 'Q' ? R([num(), num()]) : lastQ ? [2 * cur[0] - lastQ[0], 2 * cur[1] - lastQ[1]] : cur;
-        const p = R([num(), num()]);
+        const q: Vec2 = command === 'Q' ? absolute([num(), num()]) : lastQ ? [2 * cur[0] - lastQ[0], 2 * cur[1] - lastQ[1]] : cur;
+        const point = absolute([num(), num()]);
         // Quadratic → cubic.
         const c1: Vec2 = [cur[0] + (2 / 3) * (q[0] - cur[0]), cur[1] + (2 / 3) * (q[1] - cur[1])];
-        const c2: Vec2 = [p[0] + (2 / 3) * (q[0] - p[0]), p[1] + (2 / 3) * (q[1] - p[1])];
-        out.push(bezierSpline([cur, c1, c2, p].map(P)));
+        const c2: Vec2 = [point[0] + (2 / 3) * (q[0] - point[0]), point[1] + (2 / 3) * (q[1] - point[1])];
+        out.push(bezierSpline([cur, c1, c2, point].map(place)));
         lastQ = q;
         lastCtrl = null;
-        cur = p;
+        cur = point;
         break;
       }
       case 'A': {
@@ -340,9 +340,9 @@ export function pathEntities(d: string, m: M = I): SketchEntity[] {
         const phi = (num() * Math.PI) / 180;
         const large = num() !== 0;
         const sweep = num() !== 0;
-        const p = R([num(), num()]);
-        out.push(...arcEntities(cur, p, rx0, ry0, phi, large, sweep, m, sim));
-        cur = p;
+        const point = absolute([num(), num()]);
+        out.push(...arcEntities(cur, point, rx0, ry0, phi, large, sweep, matrix, sim));
+        cur = point;
         lastCtrl = lastQ = null;
         break;
       }
@@ -355,12 +355,12 @@ export function pathEntities(d: string, m: M = I): SketchEntity[] {
 }
 
 /** SVG endpoint arc → one arc (circular, under a similarity) or a spline through it. */
-function arcEntities(a: Vec2, b: Vec2, rx: number, ry: number, phi: number, large: boolean, sweep: boolean, m: M, sim: { k: number } | null): SketchEntity[] {
+function arcEntities(a: Vec2, b: Vec2, rx: number, ry: number, phi: number, large: boolean, sweep: boolean, matrix: M, sim: { k: number } | null): SketchEntity[] {
   if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-12) {
     return [];
   }
   if (!rx || !ry) {
-    return [line(ap(m, a), ap(m, b))];
+    return [line(ap(matrix, a), ap(matrix, b))];
   }
   // Endpoint → centre parameterisation (SVG spec, F.6.5).
   const cs = Math.cos(phi);
@@ -390,48 +390,48 @@ function arcEntities(a: Vec2, b: Vec2, rx: number, ry: number, phi: number, larg
   if (sweep && dt < 0) {
     dt += 2 * Math.PI;
   }
-  const at = (t: number): Vec2 => ap(m, [cx + rx * Math.cos(t) * cs - ry * Math.sin(t) * sn, cy + rx * Math.cos(t) * sn + ry * Math.sin(t) * cs]);
+  const at = (t: number): Vec2 => ap(matrix, [cx + rx * Math.cos(t) * cs - ry * Math.sin(t) * sn, cy + rx * Math.cos(t) * sn + ry * Math.sin(t) * cs]);
   if (sim && Math.abs(rx - ry) < 1e-9 * rx) {
     // A full-ish circle is split in two so each arc's three points stay well apart.
     if (Math.abs(dt) > Math.PI * 1.5) {
-      const h = dt / 2;
+      const half = dt / 2;
 
-      return [arc3(at(t1), at(t1 + h / 2), at(t1 + h)), arc3(at(t1 + h), at(t1 + h * 1.5), at(t1 + dt))];
+      return [arc3(at(t1), at(t1 + half / 2), at(t1 + half)), arc3(at(t1 + half), at(t1 + half * 1.5), at(t1 + dt))];
     }
 
     return [arc3(at(t1), at(t1 + dt / 2), at(t1 + dt))];
   }
-  const n = Math.max(4, Math.ceil((Math.abs(dt) / (Math.PI / 2)) * 4));
+  const segmentCount = Math.max(4, Math.ceil((Math.abs(dt) / (Math.PI / 2)) * 4));
 
-  return [{ id: uid(), kind: 'spline', mode: 'fit', closed: false, points: Array.from({ length: n + 1 }, (_, k) => at(t1 + (dt * k) / n)) }];
+  return [{ id: uid(), kind: 'spline', mode: 'fit', closed: false, points: Array.from({ length: segmentCount + 1 }, (_, step) => at(t1 + (dt * step) / segmentCount)) }];
 }
 
 /** A cubic Bézier as a fit spline through points on it (ends exact). */
 function bezierSpline([p0, p1, p2, p3]: Vec2[]): SketchEntity {
   // Straight "curves" stay lines.
-  const off = (p: Vec2) => {
+  const off = (point: Vec2) => {
     const dx = p3[0] - p0[0];
     const dy = p3[1] - p0[1];
-    const l = Math.hypot(dx, dy) || 1;
+    const length = Math.hypot(dx, dy) || 1;
 
-    return Math.abs((p[0] - p0[0]) * dy - (p[1] - p0[1]) * dx) / l;
+    return Math.abs((point[0] - p0[0]) * dy - (point[1] - p0[1]) * dx) / length;
   };
   if (off(p1) < 1e-9 && off(p2) < 1e-9) {
     return line(p0, p3);
   }
-  const N = 8;
-  const pts = Array.from({ length: N + 1 }, (_, k): Vec2 => {
-    const t = k / N;
-    const u = 1 - t;
+  const steps = 8;
+  const pts = Array.from({ length: steps + 1 }, (_, step): Vec2 => {
+    const t = step / steps;
+    const oneMinusT = 1 - t;
 
-    return [u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0], u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1]];
+    return [oneMinusT * oneMinusT * oneMinusT * p0[0] + 3 * oneMinusT * oneMinusT * t * p1[0] + 3 * oneMinusT * t * t * p2[0] + t * t * t * p3[0], oneMinusT * oneMinusT * oneMinusT * p0[1] + 3 * oneMinusT * oneMinusT * t * p1[1] + 3 * oneMinusT * t * t * p2[1] + t * t * t * p3[1]];
   });
 
   return { id: uid(), kind: 'spline', mode: 'fit', closed: false, points: pts };
 }
 
 const line = (a: Vec2, b: Vec2): SketchEntity => ({ id: uid(), kind: 'line', a, b });
-const arc3 = (a: Vec2, m: Vec2, b: Vec2): SketchEntity => ({ id: uid(), kind: 'arc', a, m, b });
+const arc3 = (a: Vec2, middle: Vec2, b: Vec2): SketchEntity => ({ id: uid(), kind: 'arc', a, m: middle, b });
 const closedSpline = (points: Vec2[]): SketchEntity => ({ id: uid(), kind: 'spline', mode: 'fit', closed: true, points });
 
 function samplePoints(e: SketchEntity): Vec2[] {
@@ -443,15 +443,15 @@ function samplePoints(e: SketchEntity): Vec2[] {
     case 'circle':
       return [[e.center[0] - e.radius, e.center[1] - e.radius], [e.center[0] + e.radius, e.center[1] + e.radius]];
     case 'ellipse': {
-      const r = Math.max(e.rx, e.ry);
+      const radius = Math.max(e.rx, e.ry);
 
-      return [[e.center[0] - r, e.center[1] - r], [e.center[0] + r, e.center[1] + r]];
+      return [[e.center[0] - radius, e.center[1] - radius], [e.center[0] + radius, e.center[1] + radius]];
     }
     case 'rect': {
-      const c = Math.cos(e.rotation);
-      const s = Math.sin(e.rotation);
+      const cos = Math.cos(e.rotation);
+      const sin = Math.sin(e.rotation);
 
-      return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]): Vec2 => [e.center[0] + (u * e.w * c - v * e.h * s) / 2, e.center[1] + (u * e.w * s + v * e.h * c) / 2]);
+      return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([cornerU, cornerV]): Vec2 => [e.center[0] + (cornerU * e.w * cos - cornerV * e.h * sin) / 2, e.center[1] + (cornerU * e.w * sin + cornerV * e.h * cos) / 2]);
     }
     case 'spline':
     case 'polyline':
@@ -462,20 +462,20 @@ function samplePoints(e: SketchEntity): Vec2[] {
 }
 
 function shift(e: SketchEntity, dx: number, dy: number): SketchEntity {
-  const s = (p: Vec2): Vec2 => [p[0] + dx, p[1] + dy];
+  const shiftPoint = (point: Vec2): Vec2 => [point[0] + dx, point[1] + dy];
   switch (e.kind) {
     case 'line':
-      return { ...e, a: s(e.a), b: s(e.b) };
+      return { ...e, a: shiftPoint(e.a), b: shiftPoint(e.b) };
     case 'arc':
-      return { ...e, a: s(e.a), m: s(e.m), b: s(e.b) };
+      return { ...e, a: shiftPoint(e.a), m: shiftPoint(e.m), b: shiftPoint(e.b) };
     case 'circle':
     case 'ellipse':
     case 'rect':
     case 'polygon':
-      return { ...e, center: s(e.center) };
+      return { ...e, center: shiftPoint(e.center) };
     case 'spline':
     case 'polyline':
-      return { ...e, points: e.points.map(s) };
+      return { ...e, points: e.points.map(shiftPoint) };
     default:
       return e;
   }
@@ -487,37 +487,37 @@ function shift(e: SketchEntity, dx: number, dy: number): SketchEntity {
  * Construction curves are in a group of their own, dashed.
  */
 export function sketchToSVG(entities: SketchEntity[], title = 'Sketch'): string {
-  const f = (v: number) => String(Math.round(v * 1e4) / 1e4 || 0);
-  const pt = (p: Vec2) => `${f(p[0])} ${f(-p[1])}`;
+  const formatNumber = (value: number) => String(Math.round(value * 1e4) / 1e4 || 0);
+  const pt = (point: Vec2) => `${formatNumber(point[0])} ${formatNumber(-point[1])}`;
   let lo: Vec2 = [Infinity, Infinity];
   let hi: Vec2 = [-Infinity, -Infinity];
-  const see = (p: Vec2) => {
-    lo = [Math.min(lo[0], p[0]), Math.min(lo[1], -p[1])];
-    hi = [Math.max(hi[0], p[0]), Math.max(hi[1], -p[1])];
+  const see = (point: Vec2) => {
+    lo = [Math.min(lo[0], point[0]), Math.min(lo[1], -point[1])];
+    hi = [Math.max(hi[0], point[0]), Math.max(hi[1], -point[1])];
   };
   const TAU = Math.PI * 2;
-  const draw = (p: Prim): string => {
-    if (p.t === 'line') {
-      see(p.a);
-      see(p.b);
+  const draw = (prim: Prim): string => {
+    if (prim.t === 'line') {
+      see(prim.a);
+      see(prim.b);
 
-      return `<path d="M${pt(p.a)} L${pt(p.b)}"/>`;
+      return `<path d="M${pt(prim.a)} L${pt(prim.b)}"/>`;
     }
-    if (p.t === 'circle') {
-      const at = (t: number): Vec2 => [p.c[0] + p.r * Math.cos(t), p.c[1] + p.r * Math.sin(t)];
+    if (prim.t === 'circle') {
+      const at = (t: number): Vec2 => [prim.c[0] + prim.r * Math.cos(t), prim.c[1] + prim.r * Math.sin(t)];
       // (Its whole round counted for the page's size: an arc can bulge past its ends.)
-      for (const q of samplePrim(p, 0, 1, 32)) {
+      for (const q of samplePrim(prim, 0, 1, 32)) {
         see(q);
       }
-      if (Math.abs(Math.abs(p.sweep) - TAU) < 1e-9) {
-        return `<circle cx="${f(p.c[0])}" cy="${f(-p.c[1])}" r="${f(p.r)}"/>`;
+      if (Math.abs(Math.abs(prim.sweep) - TAU) < 1e-9) {
+        return `<circle cx="${formatNumber(prim.c[0])}" cy="${formatNumber(-prim.c[1])}" r="${formatNumber(prim.r)}"/>`;
       }
 
       // Turned over, anticlockwise in the sketch is clockwise on the page: sweep flag 0 for a positive sweep.
-      return `<path d="M${pt(at(p.a0))} A${f(p.r)} ${f(p.r)} 0 ${Math.abs(p.sweep) > Math.PI ? 1 : 0} ${p.sweep > 0 ? 0 : 1} ${pt(at(p.a0 + p.sweep))}"/>`;
+      return `<path d="M${pt(at(prim.a0))} A${formatNumber(prim.r)} ${formatNumber(prim.r)} 0 ${Math.abs(prim.sweep) > Math.PI ? 1 : 0} ${prim.sweep > 0 ? 0 : 1} ${pt(at(prim.a0 + prim.sweep))}"/>`;
     }
-    const closed = p.t === 'spline' ? p.closed : Math.abs(Math.abs(p.sweep) - TAU) < 1e-9;
-    let pts = samplePrim(p, 0, 1, p.t === 'spline' ? Math.max(64, p.pts.length * 16) : 128);
+    const closed = prim.t === 'spline' ? prim.closed : Math.abs(Math.abs(prim.sweep) - TAU) < 1e-9;
+    let pts = samplePrim(prim, 0, 1, prim.t === 'spline' ? Math.max(64, prim.pts.length * 16) : 128);
     if (closed && pts.length > 1) {
       pts = pts.slice(0, -1);
     }
@@ -528,27 +528,27 @@ export function sketchToSVG(entities: SketchEntity[], title = 'Sketch'): string 
   const solid: string[] = [];
   const construction: string[] = [];
   for (const e of entities) {
-    for (const p of entityPrims(e)) {
-      (e.construction ? construction : solid).push(draw(p));
+    for (const entityPrim of entityPrims(e)) {
+      (e.construction ? construction : solid).push(draw(entityPrim));
     }
   }
   if (!Number.isFinite(lo[0])) {
     [lo, hi] = [[0, 0], [1, 1]];
   }
   const pad = Math.max(1, Math.max(hi[0] - lo[0], hi[1] - lo[1]) * 0.02);
-  const w = hi[0] - lo[0] + pad * 2;
-  const h = hi[1] - lo[1] + pad * 2;
-  const stroke = Math.max(0.05, Math.min(0.35, Math.max(w, h) / 600));
+  const width = hi[0] - lo[0] + pad * 2;
+  const height = hi[1] - lo[1] + pad * 2;
+  const stroke = Math.max(0.05, Math.min(0.35, Math.max(width, height) / 600));
   const safe = title.replace(/[<>&]/g, '');
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${f(w)}mm" height="${f(h)}mm" viewBox="${f(lo[0] - pad)} ${f(lo[1] - pad)} ${f(w)} ${f(h)}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${formatNumber(width)}mm" height="${formatNumber(height)}mm" viewBox="${formatNumber(lo[0] - pad)} ${formatNumber(lo[1] - pad)} ${formatNumber(width)} ${formatNumber(height)}">`,
     `<title>${safe}</title>`,
-    `<g fill="none" stroke="#000" stroke-width="${f(stroke)}" stroke-linecap="round" stroke-linejoin="round">`,
+    `<g fill="none" stroke="#000" stroke-width="${formatNumber(stroke)}" stroke-linecap="round" stroke-linejoin="round">`,
     ...solid,
     '</g>',
-    ...(construction.length ? [`<g id="construction" fill="none" stroke="#888" stroke-width="${f(stroke)}" stroke-dasharray="${f(stroke * 6)} ${f(stroke * 4)}">`, ...construction, '</g>'] : []),
+    ...(construction.length ? [`<g id="construction" fill="none" stroke="#888" stroke-width="${formatNumber(stroke)}" stroke-dasharray="${formatNumber(stroke * 6)} ${formatNumber(stroke * 4)}">`, ...construction, '</g>'] : []),
     '</svg>',
     ''
   ].join('\n');

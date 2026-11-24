@@ -11,26 +11,26 @@ import { check, done, near } from './kit';
 import type { PlaneDef, SketchEntity, Vec2, Vec3 } from '../src/doc/types';
 
 const XY: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] };
-const N = 64;
+const SAMPLES = 64;
 /** How far the spline strays from the points it was made from, at most. */
 function strays(e: SketchEntity, pts: Vec3[]): number {
   if (e.kind !== 'spline') {
     return NaN;
   }
   const curve = splinePoints(e.points, e.closed, e.mode, 48);
-  const seg = (p: Vec2, a: Vec2, b: Vec2) => {
+  const seg = (point: Vec2, a: Vec2, b: Vec2) => {
     const dx = b[0] - a[0], dy = b[1] - a[1];
-    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+    const t = Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
 
-    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+    return Math.hypot(point[0] - a[0] - t * dx, point[1] - a[1] - t * dy);
   };
   let worst = 0;
-  for (const p of pts) {
-    let d = Infinity;
+  for (const point of pts) {
+    let distance = Infinity;
     for (let i = 1; i < curve.length; i++) {
-      d = Math.min(d, seg([p[0], p[1]], curve[i - 1], curve[i]));
+      distance = Math.min(distance, seg([point[0], point[1]], curve[i - 1], curve[i]));
     }
-    worst = Math.max(worst, d);
+    worst = Math.max(worst, distance);
   }
 
   return worst;
@@ -41,12 +41,12 @@ const line = projectPolyline([[0, 0, 0], [5, 5, 3], [10, 10, 6]], XY, 'LINE');
 check('a straight edge: a line', line?.kind === 'line', line);
 
 // A circle flat on the plane: a circle; part of one: an arc.
-const ring = Array.from({ length: N + 1 }, (_, k): Vec3 => [20 * Math.cos((k / N) * 2 * Math.PI), 20 * Math.sin((k / N) * 2 * Math.PI), 4]);
+const ring = Array.from({ length: SAMPLES + 1 }, (_, index): Vec3 => [20 * Math.cos((index / SAMPLES) * 2 * Math.PI), 20 * Math.sin((index / SAMPLES) * 2 * Math.PI), 4]);
 check('a circle flat on the plane: a circle', projectPolyline(ring, XY, 'CIRCLE')?.kind === 'circle');
-check('part of a circle: an arc', projectPolyline(ring.slice(0, N / 4 + 1), XY, 'CIRCLE')?.kind === 'arc');
+check('part of a circle: an arc', projectPolyline(ring.slice(0, SAMPLES / 4 + 1), XY, 'CIRCLE')?.kind === 'arc');
 
 // A circle seen at a slant (tilted 60° about x): an ellipse 20 by 10, exactly.
-const tilt = (p: Vec3): Vec3 => [p[0], p[1] * 0.5, p[1] * Math.sqrt(0.75)];
+const tilt = (point: Vec3): Vec3 => [point[0], point[1] * 0.5, point[1] * Math.sqrt(0.75)];
 const slant = projectPolyline(ring.map(tilt), XY, 'CIRCLE', true);
 check('a circle seen at a slant: an ellipse', slant?.kind === 'ellipse', slant);
 if (slant?.kind === 'ellipse') {
@@ -54,7 +54,7 @@ if (slant?.kind === 'ellipse') {
   check('... 20 by 10, about its middle', near(big, 20, 1e-6) && near(small, 10, 1e-6) && near(slant.center[0], 0, 1e-6) && near(slant.center[1], 0, 1e-6), slant);
 }
 // The same turned 30° in the plane and moved: still an ellipse, its long way at 30°.
-const turned = ring.map(tilt).map((p): Vec3 => [p[0] * Math.cos(Math.PI / 6) - p[1] * Math.sin(Math.PI / 6) + 7, p[0] * Math.sin(Math.PI / 6) + p[1] * Math.cos(Math.PI / 6) - 3, 0]);
+const turned = ring.map(tilt).map((point): Vec3 => [point[0] * Math.cos(Math.PI / 6) - point[1] * Math.sin(Math.PI / 6) + 7, point[0] * Math.sin(Math.PI / 6) + point[1] * Math.cos(Math.PI / 6) - 3, 0]);
 const el2 = projectPolyline(turned, XY, 'ELLIPSE', true);
 check('turned and moved: an ellipse at 7, -3', el2?.kind === 'ellipse' && near(el2.center[0], 7, 1e-6) && near(el2.center[1], -3, 1e-6), el2);
 if (el2?.kind === 'ellipse') {
@@ -63,7 +63,7 @@ if (el2?.kind === 'ellipse') {
 }
 
 // Part of an ellipse (a quarter of the slanted circle): a spline through a few points, on the edge.
-const quarter = ring.map(tilt).slice(0, N / 4 + 1);
+const quarter = ring.map(tilt).slice(0, SAMPLES / 4 + 1);
 // Part of an ellipse (a quarter of the slanted circle): part of an ellipse, exactly - two ends, like the edge.
 const arc = projectPolyline(quarter, XY, 'ELLIPSE');
 check('part of an ellipse: part of an ellipse', arc?.kind === 'ellipse' && arc.sweep !== undefined, arc);
@@ -76,7 +76,7 @@ if (arc?.kind === 'ellipse') {
   const back = projectPolyline([...quarter].reverse(), XY, 'CIRCLE');
   check('... the edge run the other way: from its other end', back?.kind === 'ellipse' && near(pointsOf(back)[0].at[1], 10, 1e-6) && near(pointsOf(back)[1].at[0], 20, 1e-6), back);
   // More than half way round: still the way the edge goes.
-  const most = projectPolyline(ring.map(tilt).slice(0, (N * 3) / 4 + 1), XY, 'CIRCLE');
+  const most = projectPolyline(ring.map(tilt).slice(0, (SAMPLES * 3) / 4 + 1), XY, 'CIRCLE');
   check('... three quarters of it: three quarters', most?.kind === 'ellipse' && near(Math.abs(most.sweep!), Math.PI * 1.5, 1e-6), most);
 }
 // (A curve of an older project, made as a spline, stays one.)
@@ -89,28 +89,28 @@ if (q?.kind === 'spline') {
 }
 
 // A wavy edge (an S): a spline with the points its bends ask for, far fewer than 24.
-const wave = Array.from({ length: N + 1 }, (_, k): Vec3 => [(k / N) * 60, 8 * Math.sin((k / N) * 2 * Math.PI), 0]);
-const w = projectPolyline(wave, XY, 'BSPLINE_CURVE', true);
-check('a wavy edge: a spline', w?.kind === 'spline', w?.kind);
-if (w?.kind === 'spline') {
-  check('... through 12 points at most', w.points.length <= 12, w.points.length);
-  check('... on the edge', strays(w, wave) < 60 * 5e-4 * 1.5, strays(w, wave));
+const wave = Array.from({ length: SAMPLES + 1 }, (_, index): Vec3 => [(index / SAMPLES) * 60, 8 * Math.sin((index / SAMPLES) * 2 * Math.PI), 0]);
+const waveSpline = projectPolyline(wave, XY, 'BSPLINE_CURVE', true);
+check('a wavy edge: a spline', waveSpline?.kind === 'spline', waveSpline?.kind);
+if (waveSpline?.kind === 'spline') {
+  check('... through 12 points at most', waveSpline.points.length <= 12, waveSpline.points.length);
+  check('... on the edge', strays(waveSpline, wave) < 60 * 5e-4 * 1.5, strays(waveSpline, wave));
 }
 // A closed curve that is no ellipse (a rounded square): a closed spline, few points.
-const sq = Array.from({ length: N }, (_, k): Vec3 => {
-  const a = (k / N) * 2 * Math.PI;
-  const r = 10 / Math.pow(Math.pow(Math.abs(Math.cos(a)), 4) + Math.pow(Math.abs(Math.sin(a)), 4), 0.25);
+const sq = Array.from({ length: SAMPLES }, (_, index): Vec3 => {
+  const a = (index / SAMPLES) * 2 * Math.PI;
+  const radius = 10 / Math.pow(Math.pow(Math.abs(Math.cos(a)), 4) + Math.pow(Math.abs(Math.sin(a)), 4), 0.25);
 
-  return [r * Math.cos(a), r * Math.sin(a), 0];
+  return [radius * Math.cos(a), radius * Math.sin(a), 0];
 });
-const s = projectPolyline([...sq, sq[0]], XY, 'BSPLINE_CURVE', true);
-check('a closed curve that is no ellipse: a closed spline', s?.kind === 'spline' && s.closed, s?.kind);
-if (s?.kind === 'spline') {
-  check('... through fewer points than it was made from', s.points.length < N, s.points.length);
+const squareSpline = projectPolyline([...sq, sq[0]], XY, 'BSPLINE_CURVE', true);
+check('a closed curve that is no ellipse: a closed spline', squareSpline?.kind === 'spline' && squareSpline.closed, squareSpline?.kind);
+if (squareSpline?.kind === 'spline') {
+  check('... through fewer points than it was made from', squareSpline.points.length < SAMPLES, squareSpline.points.length);
 }
 
 // One that follows its edge: the edge's own shape, 24 points - and two ends to pick.
-const long = ring.map(tilt).slice(0, N / 2 + 1);
+const long = ring.map(tilt).slice(0, SAMPLES / 2 + 1);
 const follow = projectPolyline(long, XY, 'ELLIPSE', false, false);
 check('a curve that follows its edge: 24 points of it', follow?.kind === 'spline' && follow.points.length === 24, follow?.kind === 'spline' ? follow.points.length : follow);
 const oldRing = projectPolyline(ring.map(tilt), XY, 'CIRCLE');
@@ -133,8 +133,8 @@ if (follow?.kind === 'spline') {
   if (off?.kind === 'spline') {
     // Half an ellipse 20 by 10 moved 2 sideways: every point of it 2 from the curve it came from.
     const src = splinePoints((follow as { points: Vec2[] }).points, false, 'fit', 48);
-    const far = (p: Vec2) => Math.min(...src.map(q => Math.hypot(p[0] - q[0], p[1] - q[1])));
-    const worst = Math.max(...splinePoints(off.points, false, 'fit', 24).map(p => Math.abs(far(p) - 2)));
+    const far = (point: Vec2) => Math.min(...src.map(q => Math.hypot(point[0] - q[0], point[1] - q[1])));
+    const worst = Math.max(...splinePoints(off.points, false, 'fit', 24).map(splinePoint => Math.abs(far(splinePoint) - 2)));
     check('... 2 from the curve all along', worst < 0.03, worst);
   }
 }

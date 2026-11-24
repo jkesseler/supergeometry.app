@@ -10,12 +10,12 @@ import type { HistoryGroup } from './types';
 export function ungroupedSteps(order: readonly string[], groups: readonly HistoryGroup[], out: ReadonlySet<string>): HistoryGroup[] {
   const next: HistoryGroup[] = [];
   const stamp = Date.now().toString(36);
-  for (const g of groups) {
-    if (!g.steps.some(id => out.has(id))) {
-      next.push(g);
+  for (const group of groups) {
+    if (!group.steps.some(id => out.has(id))) {
+      next.push(group);
       continue;
     }
-    const idx = g.steps.map(id => order.indexOf(id)).filter(i => i >= 0).sort((a, b) => a - b);
+    const idx = group.steps.map(id => order.indexOf(id)).filter(i => i >= 0).sort((a, b) => a - b);
     const runs: string[][] = [];
     let run: string[] = [];
     for (const i of idx) {
@@ -31,7 +31,7 @@ export function ungroupedSteps(order: readonly string[], groups: readonly Histor
     if (run.length) {
       runs.push(run);
     }
-    runs.forEach((steps, k) => next.push(k ? { id: `${g.id}-${stamp}-${k}`, name: `${g.name} (${k + 1})`, steps } : { ...g, steps }));
+    runs.forEach((steps, runIndex) => next.push(runIndex ? { id: `${group.id}-${stamp}-${runIndex}`, name: `${group.name} (${runIndex + 1})`, steps } : { ...group, steps }));
   }
 
   return next;

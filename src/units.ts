@@ -9,15 +9,15 @@ export const UNIT_LABEL: Record<Units, string> = { mm: 'mm', cm: 'cm', m: 'm', i
 let current: Units = 'mm';
 let variables: Variable[] = [];
 
-export function setUnits(u: Units): void {
-  current = u;
+export function setUnits(units: Units): void {
+  current = units;
   known.clear();
 }
 export function units(): Units {
   return current;
 }
-export function setVariables(v: Variable[]): void {
-  variables = v;
+export function setVariables(list: Variable[]): void {
+  variables = list;
   known.clear();
 }
 
@@ -36,9 +36,9 @@ export const RESERVED = /^(mm|cm|m|in|ft|deg|pi|sqrt|abs|sin|cos|tan|asin|acos|a
  * use (it goes without saying). Formulas are shown as they are.
  */
 export function bareExpr(expr: string): string {
-  const m = /^\s*(-?\d*\.?\d+)\s*(mm|cm|m|in|ft)\s*$/i.exec(expr);
+  const match = /^\s*(-?\d*\.?\d+)\s*(mm|cm|m|in|ft)\s*$/i.exec(expr);
 
-  return m && m[2].toLowerCase() === current ? m[1] : expr.trim();
+  return match && match[2].toLowerCase() === current ? match[1] : expr.trim();
 }
 
 /** Typed as a plain number where the value had a unit ("220 mm" → "300"): it keeps that unit ("300 mm"). */
@@ -51,9 +51,9 @@ export function withUnitOf(typed: string, original: string): string {
 
 /** mm → display string in the current unit. */
 export function fmtLen(mm: number, digits = 3): string {
-  const v = mm / UNIT_MM[current];
+  const value = mm / UNIT_MM[current];
 
-  return `${trim(v, digits)} ${UNIT_LABEL[current]}`;
+  return `${trim(value, digits)} ${UNIT_LABEL[current]}`;
 }
 
 /** mm → number in the current unit (for input fields). */
@@ -61,10 +61,10 @@ export function toDisplay(mm: number): number {
   return mm / UNIT_MM[current];
 }
 
-export function trim(v: number, digits = 3): string {
-  const p = Math.pow(10, digits);
+export function trim(value: number, digits = 3): string {
+  const scale = Math.pow(10, digits);
 
-  return String(Math.round(v * p) / p);
+  return String(Math.round(value * scale) / scale);
 }
 
 /**
@@ -75,10 +75,10 @@ export function trim(v: number, digits = 3): string {
 export function evaluate(text: string, kind: 'length' | 'number' | 'angle' = 'length'): number | null {
   try {
     const scaleFor = kind === 'length' ? UNIT_MM[current] : 1;
-    const v = new Parser(decimalComma(text), scaleFor, kind === 'length', []).parse();
+    const parsed = new Parser(decimalComma(text), scaleFor, kind === 'length', []).parse();
 
     // (2^1000 is a number, but no size: 1000 km is the most a box takes.)
-    return Number.isFinite(v) && Math.abs(v) <= 1e9 ? v : null;
+    return Number.isFinite(parsed) && Math.abs(parsed) <= 1e9 ? parsed : null;
   } catch {
     return null;
   }
@@ -93,9 +93,9 @@ export function valueAt(text: string, scale: number, vars: Variable[]): number |
   variables = vars;
   known.clear();
   try {
-    const v = new Parser(decimalComma(text), scale, true, []).parse();
+    const parsed = new Parser(decimalComma(text), scale, true, []).parse();
 
-    return Number.isFinite(v) ? v : null;
+    return Number.isFinite(parsed) ? parsed : null;
   } catch {
     return null;
   } finally {
@@ -150,13 +150,13 @@ class Parser {
   ) {}
 
   parse(): number {
-    const v = this.expr();
+    const value = this.expr();
     this.ws();
     if (this.i < this.s.length) {
       throw new Error('Unexpected input');
     }
 
-    return v;
+    return value;
   }
 
   private ws() {
@@ -166,72 +166,72 @@ class Parser {
   }
 
   private expr(): number {
-    let v = this.term();
+    let value = this.term();
     for (;;) {
       this.ws();
-      const c = this.s[this.i];
-      if (c === '+') {
-        (this.i++, (v += this.term()));
-      } else if (c === '-') {
-        (this.i++, (v -= this.term()));
+      const char = this.s[this.i];
+      if (char === '+') {
+        (this.i++, (value += this.term()));
+      } else if (char === '-') {
+        (this.i++, (value -= this.term()));
       } else {
-        return v;
+        return value;
       }
     }
   }
 
   private term(): number {
-    let v = this.power();
+    let value = this.power();
     for (;;) {
       this.ws();
-      const c = this.s[this.i];
+      const char = this.s[this.i];
       // Multiplying/dividing two lengths would square units; treat the right side as a plain number.
-      if (c === '*') {
-        (this.i++, (v *= this.power() / (this.lengths ? this.defaultScale : 1)));
-      } else if (c === '/') {
-        (this.i++, (v /= this.power() / (this.lengths ? this.defaultScale : 1)));
+      if (char === '*') {
+        (this.i++, (value *= this.power() / (this.lengths ? this.defaultScale : 1)));
+      } else if (char === '/') {
+        (this.i++, (value /= this.power() / (this.lengths ? this.defaultScale : 1)));
       } else {
-        return v;
+        return value;
       }
     }
   }
 
   /** a ^ b, right to left; both sides as plain numbers in the field's unit. */
   private power(): number {
-    const v = this.factor();
+    const base = this.factor();
     this.ws();
     if (this.s[this.i] !== '^') {
-      return v;
+      return base;
     }
     this.i++;
-    const k = this.lengths ? this.defaultScale : 1;
+    const scale = this.lengths ? this.defaultScale : 1;
 
-    return (v / k) ** (this.power() / k) * k;
+    return (base / scale) ** (this.power() / scale) * scale;
   }
 
   private factor(): number {
     this.ws();
-    const c = this.s[this.i];
-    if (c === '-') {
+    const char = this.s[this.i];
+    if (char === '-') {
       this.i++;
 
       return -this.factor();
     }
-    if (c === '+') {
+    if (char === '+') {
       this.i++;
 
       return this.factor();
     }
-    if (c === '(') {
+    if (char === '(') {
       this.i++;
-      const v = this.expr();
+      const inner = this.expr();
       this.ws();
       if (this.s[this.i++] !== ')') {
         throw new Error('Missing )');
       }
 
       // Already in mm; a suffix re-interprets the bracketed number in that unit.
-      return this.unit(v / this.defaultScale);
+      return this.unit(inner / this.defaultScale);
     }
     // (Also "5." - a dot typed and nothing after it yet.)
     const num = /^(\d+\.?\d*|\.\d+)(e[-+]?\d+)?/i.exec(this.s.slice(this.i));
@@ -243,8 +243,8 @@ class Parser {
     const name = /^[a-z_][a-z0-9_]*/i.exec(this.s.slice(this.i));
     if (name) {
       this.i += name[0].length;
-      const variable = variables.find(x => x.name === name[0]);
-      const k = this.lengths ? this.defaultScale : 1;
+      const variable = variables.find(variable => variable.name === name[0]);
+      const scale = this.lengths ? this.defaultScale : 1;
       const fn = !variable && FUNCS[name[0].toLowerCase()];
       if (fn) {
         // sqrt(3), sin(30): the bracket is a plain number in the field's unit (angles in degrees).
@@ -252,18 +252,18 @@ class Parser {
         if (this.s[this.i++] !== '(') {
           throw new Error('Missing (');
         }
-        const args = [this.expr() / k];
+        const args = [this.expr() / scale];
         this.ws();
         while (MANY.has(name[0].toLowerCase()) && (this.s[this.i] === ',' || this.s[this.i] === ';')) {
           this.i++;
-          args.push(this.expr() / k);
+          args.push(this.expr() / scale);
           this.ws();
         }
         if (this.s[this.i++] !== ')') {
           throw new Error('Missing )');
         }
 
-        return fn(...args) * k;
+        return fn(...args) * scale;
       }
       if (!variable && name[0].toLowerCase() === 'pi') {
         return this.unit(Math.PI);
@@ -280,10 +280,10 @@ class Parser {
       if (had !== undefined) {
         return had;
       }
-      const v = new Parser(decimalComma(variable.expr), this.defaultScale, this.lengths, [...this.chain, variable.name]).parse();
-      known.set(key, v);
+      const value = new Parser(decimalComma(variable.expr), this.defaultScale, this.lengths, [...this.chain, variable.name]).parse();
+      known.set(key, value);
 
-      return v;
+      return value;
     }
     throw new Error('Expected a number');
   }
@@ -293,23 +293,23 @@ class Parser {
    * number (a count, a ratio) a length is in mm: "shadeR / 16 mm" is the
    * ratio of two lengths - a variable like "55 mm" was refused there.
    */
-  private unit(v: number): number {
+  private unit(value: number): number {
     this.ws();
     // An angle or a plain number may say "deg" / "°" (a variable "30 deg" used for a revolve).
     const deg = !this.lengths && /^(deg|°)(?![a-z])/i.exec(this.s.slice(this.i));
     if (deg) {
       this.i += deg[0].length;
 
-      return v;
+      return value;
     }
-    const m = /^(mm|cm|m|in|ft|"|')(?![a-z])/i.exec(this.s.slice(this.i));
-    if (m) {
-      this.i += m[0].length;
-      const u = m[0] === '"' ? 'in' : m[0] === "'" ? 'ft' : (m[0].toLowerCase() as Units);
+    const match = /^(mm|cm|m|in|ft|"|')(?![a-z])/i.exec(this.s.slice(this.i));
+    if (match) {
+      this.i += match[0].length;
+      const units = match[0] === '"' ? 'in' : match[0] === "'" ? 'ft' : (match[0].toLowerCase() as Units);
 
-      return v * UNIT_MM[u];
+      return value * UNIT_MM[units];
     }
 
-    return v * this.defaultScale;
+    return value * this.defaultScale;
   }
 }

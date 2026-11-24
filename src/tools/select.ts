@@ -69,32 +69,32 @@ export class SelectTool implements Tool {
     this.app.setHover(null);
   }
 
-  hover(p: ToolPointer | null): void {
-    if (!p) {
+  hover(pointer: ToolPointer | null): void {
+    if (!pointer) {
       return this.app.setHover(null);
     }
-    const g = this.gimbal?.hit(p) ?? null;
-    this.gimbal?.setHot(g);
-    const onHandle = !!this.handle?.hit(p);
+    const part = this.gimbal?.hit(pointer) ?? null;
+    this.gimbal?.setHot(part);
+    const onHandle = !!this.handle?.hit(pointer);
     this.handle?.setHot(onHandle);
-    if (g || onHandle) {
+    if (part || onHandle) {
       this.app.view.canvas.style.cursor = 'grab';
 
       return this.app.setHover(null);
     }
     this.app.view.canvas.style.cursor = '';
     // Over the section's cut face: a tap there brings the cut's arrow and buttons.
-    if (this.onCut(p)) {
+    if (this.onCut(pointer)) {
       this.app.view.canvas.style.cursor = 'pointer';
       this.lastHover = null;
 
       return this.app.setHover(null);
     }
-    const hit = this.pickAt(p);
-    this.lastHover = { x: p.x, y: p.y, hit };
+    const hit = this.pickAt(pointer);
+    this.lastHover = { x: pointer.x, y: pointer.y, hit };
     this.app.setHover(hitToSel(hit));
     // Direct touch: over what is picked and can be dragged by itself, the pointer says so.
-    if ((this.handleAction || (this.gimbal && this.app.selection[0]?.kind === 'body')) && this.onPick(p, hit)) {
+    if ((this.handleAction || (this.gimbal && this.app.selection[0]?.kind === 'body')) && this.onPick(pointer, hit)) {
       this.app.view.canvas.style.cursor = 'grab';
     }
   }
@@ -102,13 +102,13 @@ export class SelectTool implements Tool {
   /** What the last hover highlighted, and where: tapping there selects exactly that. */
   private lastHover: { x: number; y: number; hit: ReturnType<SelectTool['pickAt']> } | null = null;
 
-  private tapHit(p: ToolPointer) {
-    const h = this.lastHover;
-    if (h?.hit && Math.hypot(h.x - p.x, h.y - p.y) < 6) {
-      return h.hit;
+  private tapHit(pointer: ToolPointer) {
+    const lastHover = this.lastHover;
+    if (lastHover?.hit && Math.hypot(lastHover.x - pointer.x, lastHover.y - pointer.y) < 6) {
+      return lastHover.hit;
     }
 
-    return this.pickAt(p);
+    return this.pickAt(pointer);
   }
 
   /**
@@ -121,40 +121,40 @@ export class SelectTool implements Tool {
     return false;
   }
 
-  dragStart(p: ToolPointer): boolean {
+  dragStart(pointer: ToolPointer): boolean {
     // Direct touch: a picked body dragged by itself slides over the floor.
-    if (this.gimbal && !this.gimbal.hit(p) && this.app.selection[0]?.kind === 'body' && this.onPick(p)) {
+    if (this.gimbal && !this.gimbal.hit(pointer) && this.app.selection[0]?.kind === 'body' && this.onPick(pointer)) {
       const op = new TransformOp(this.app, 'move', bodiesOf(this.app.selection), undefined, undefined, copyMode.on).grabAnywhere();
       this.app.setTool(op);
 
-      return op.down(p);
+      return op.down(pointer);
     }
-    if (this.gimbal?.hit(p)) {
-      const s = this.app.selection[0];
-      const img = s?.kind === 'image' ? this.app.store.find<ImageFeature>(s.id) : undefined;
-      const plane = s?.kind === 'plane' ? this.app.store.find<PlaneFeature>(s.id) : undefined;
+    if (this.gimbal?.hit(pointer)) {
+      const highlight = this.app.selection[0];
+      const img = highlight?.kind === 'image' ? this.app.store.find<ImageFeature>(highlight.id) : undefined;
+      const plane = highlight?.kind === 'plane' ? this.app.store.find<PlaneFeature>(highlight.id) : undefined;
       // A vertex: its gimbal moves just that corner (the faces around it follow).
-      const at = s?.kind === 'vertex' ? this.app.view.vertexOf(s.body, s.vertex) : undefined;
-      const edge = s?.kind === 'edge' ? this.edgeRefs()[0] : undefined;
+      const at = highlight?.kind === 'vertex' ? this.app.view.vertexOf(highlight.body, highlight.vertex) : undefined;
+      const edge = highlight?.kind === 'edge' ? this.edgeRefs()[0] : undefined;
       const op = img
         ? new ImageOp(this.app, img)
         : plane
           ? new PlaneMoveOp(this.app, plane)
-          : s?.kind === 'vertex' && at
-            ? new MoveFaceOp(this.app, { vertex: { body: s.body, at } })
+          : highlight?.kind === 'vertex' && at
+            ? new MoveFaceOp(this.app, { vertex: { body: highlight.body, at } })
             : edge
               ? new MoveFaceOp(this.app, { edge })
-              : new TransformOp(this.app, 'move', bodiesOf(this.app.selection), undefined, undefined, s?.kind === 'body' && copyMode.on);
+              : new TransformOp(this.app, 'move', bodiesOf(this.app.selection), undefined, undefined, highlight?.kind === 'body' && copyMode.on);
       this.app.setTool(op);
 
-      return op.down(p);
+      return op.down(pointer);
     }
     if (!this.handleAction) {
       return false;
     }
     // Direct touch: the picked face, shape or edge dragged by itself is its arrow or dot dragged.
-    const direct = !this.handle?.hit(p) && this.onPick(p);
-    if (!this.handle?.hit(p) && !direct) {
+    const direct = !this.handle?.hit(pointer) && this.onPick(pointer);
+    if (!this.handle?.hit(pointer) && !direct) {
       return false;
     }
     const op = this.handleAction();
@@ -163,15 +163,15 @@ export class SelectTool implements Tool {
     }
     this.app.setTool(op);
 
-    return op.down?.(p) ?? false;
+    return op.down?.(pointer) ?? false;
   }
 
   /** Direct touch is on and the press is on what is picked (the thing its arrow or dot is for). */
-  private onPick(p: ToolPointer, hit: ReturnType<SelectTool['pickAt']> = this.pickAt(p)): boolean {
-    if (!settings.value.direct || this.pending || p.shift) {
+  private onPick(pointer: ToolPointer, hit: ReturnType<SelectTool['pickAt']> = this.pickAt(pointer)): boolean {
+    if (!settings.value.direct || this.pending || pointer.shift) {
       return false;
     }
-    const picked = (s: Sel | null) => !!s && this.app.selection.some(x => sameSel(x, s) || (x.kind === 'body' && 'body' in s && s.body === x.body && s.kind !== 'vertex'));
+    const picked = (selection: Sel | null) => !!selection && this.app.selection.some(highlight => sameSel(highlight, selection) || (highlight.kind === 'body' && 'body' in selection && selection.body === highlight.body && selection.kind !== 'vertex'));
     if (picked(hitToSel(hit))) {
       return true;
     }
@@ -181,7 +181,7 @@ export class SelectTool implements Tool {
     }
 
     // (A face or body picked that has a sketch lying on it: the press is on it all the same.)
-    return (this.app.selection[0]?.kind === 'face' || this.app.selection[0]?.kind === 'body') && picked(hitToSel(this.app.view.pick(p.x, p.y, { profiles: false, planes: false, axes: false, curves: false, edgeTolPx: p.tol })));
+    return (this.app.selection[0]?.kind === 'face' || this.app.selection[0]?.kind === 'body') && picked(hitToSel(this.app.view.pick(pointer.x, pointer.y, { profiles: false, planes: false, axes: false, curves: false, edgeTolPx: pointer.tol })));
   }
 
   /**
@@ -189,31 +189,31 @@ export class SelectTool implements Tool {
    * touch): it is picked, and - where the pick has something to drag - the
    * same touch goes on to drag it. (Else the hold is the menu, as before.)
    */
-  grab(p: ToolPointer): boolean {
+  grab(pointer: ToolPointer): boolean {
     if (!settings.value.direct || this.pending) {
       return false;
     }
-    if (this.gimbal?.hit(p) || this.handle?.hit(p)) {
+    if (this.gimbal?.hit(pointer) || this.handle?.hit(pointer)) {
       return false;
     }
-    const s = hitToSel(this.pickAt(p));
-    if (!s || (s.kind !== 'face' && s.kind !== 'profile' && s.kind !== 'edge')) {
+    const selection = hitToSel(this.pickAt(pointer));
+    if (!selection || (selection.kind !== 'face' && selection.kind !== 'profile' && selection.kind !== 'edge')) {
       return false;
     }
-    if (!this.app.selection.some(x => sameSel(x, s))) {
-      this.app.setSelection([s]);
+    if (!this.app.selection.some(highlight => sameSel(highlight, selection))) {
+      this.app.setSelection([selection]);
     }
 
     return !!this.handleAction;
   }
 
   /** Sketch curves win near them; a face outline copied into a sketch ("bnd-…") is the body's edge. */
-  private pickAt(p: ToolPointer) {
-    const hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, curves: true });
+  private pickAt(pointer: ToolPointer) {
+    const hit = this.app.view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol, curves: true });
     if (hit?.kind !== 'curve' && hit?.kind !== 'point') {
       return hit;
     }
-    const under = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol });
+    const under = this.app.view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol });
     if (hit.entity.startsWith('bnd-')) {
       return under;
     }
@@ -233,30 +233,30 @@ export class SelectTool implements Tool {
   private chosenHit: ReturnType<SelectTool['pickAt']> | null = null;
 
   /** On the section's cut face (with nothing waiting for a pick): a tap there is the section's. */
-  private onCut(p: ToolPointer): boolean {
-    return !this.pending && !!(this.app as AppContext & Partial<SectionHost>).section && !!this.app.view.cutAt(p.x, p.y);
+  private onCut(pointer: ToolPointer): boolean {
+    return !this.pending && !!(this.app as AppContext & Partial<SectionHost>).section && !!this.app.view.cutAt(pointer.x, pointer.y);
   }
 
-  tap(p: ToolPointer, count: number): void {
+  tap(pointer: ToolPointer, count: number): void {
     // The cut face of a section: its arrow to move the cut, and its buttons (Add Plane, Flip...).
-    if (!p.add && this.onCut(p)) {
+    if (!pointer.add && this.onCut(pointer)) {
       this.app.setSelection([]);
 
       return this.app.setTool(new SectionTool(this.app as AppContext & SectionHost));
     }
-    this.pick(p, count);
+    this.pick(pointer, count);
   }
 
   /** What's picked, as rows of the Items list: bodies, planes, axes, images, sketches. */
   private pickedIds(): string[] {
-    return [...new Set(this.app.selection.flatMap(s => (s.kind === 'body' || s.kind === 'face' || s.kind === 'edge' || s.kind === 'vertex' ? [s.body] : s.kind === 'plane' || s.kind === 'axis' || s.kind === 'image' ? [s.id] : s.kind === 'curve' || s.kind === 'point' || s.kind === 'profile' ? [s.sketch] : [])))];
+    return [...new Set(this.app.selection.flatMap(highlight => (highlight.kind === 'body' || highlight.kind === 'face' || highlight.kind === 'edge' || highlight.kind === 'vertex' ? [highlight.body] : highlight.kind === 'plane' || highlight.kind === 'axis' || highlight.kind === 'image' ? [highlight.id] : highlight.kind === 'curve' || highlight.kind === 'point' || highlight.kind === 'profile' ? [highlight.sketch] : [])))];
   }
 
   /** A tap on the model. False when it only put up the list of overlapping faces (the tap comes again from there). */
-  private pick(p: ToolPointer, count: number): boolean {
+  private pick(pointer: ToolPointer, count: number): boolean {
     const forced = this.chosenHit;
     this.chosenHit = null;
-    let hit = forced ?? this.tapHit(p);
+    let hit = forced ?? this.tapHit(pointer);
     // Waiting for edges (Fillet, Chamfer): a corner within a finger's reach
     // isn't one - the edge under the finger is (a slot's rim, tapped from the
     // top, gave the corner of the wheel standing in it). So for a shape or a
@@ -264,23 +264,23 @@ export class SelectTool implements Tool {
     // the bore's seam, which Extrude can't take.
     const wants = this.pending?.accepts;
     if (!forced && hit?.kind === 'vertex' && wants && !wants.includes('vertex') && (wants.includes('edge') || wants.includes('face') || wants.includes('profile'))) {
-      hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, vertices: false }) ?? hit;
+      hit = this.app.view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol, vertices: false }) ?? hit;
     }
     // Faces of several bodies in the same place (a bolt flush with the flange
     // it cuts): which one, from a list by the pointer.
     if (!forced && hit?.kind === 'face' && count < 2 && !this.app.view.selectThrough) {
-      const all = this.app.view.facesAt(p.x, p.y);
+      const all = this.app.view.facesAt(pointer.x, pointer.y);
       if (all.length > 1) {
-        const r = this.app.view.canvas.getBoundingClientRect();
+        const rect = this.app.view.canvas.getBoundingClientRect();
         const name = (b: string) => this.app.store.doc.names[b] ?? this.app.view.body(b)?.name ?? b;
         this.app.ui.menu(
-          r.left + p.x,
-          r.top + p.y,
-          all.map(h => ({
-            label: `${h.kind === 'face' ? name(h.body) : ''} – face`,
+          rect.left + pointer.x,
+          rect.top + pointer.y,
+          all.map(pickHit => ({
+            label: `${pickHit.kind === 'face' ? name(pickHit.body) : ''} – face`,
             run: () => {
-              this.chosenHit = h;
-              this.tap(p, count);
+              this.chosenHit = pickHit;
+              this.tap(pointer, count);
             }
           }))
         );
@@ -292,7 +292,7 @@ export class SelectTool implements Tool {
     // small offset of its edge): the tap is the shape - its line, the body's edge beside it or the face under it
     // took it every time, on any screen. (A double tap on its line still opens the sketch.)
     if (!forced && count < 2 && !this.app.view.selectThrough && hit && (hit.kind === 'curve' || hit.kind === 'point' || hit.kind === 'edge' || hit.kind === 'vertex' || hit.kind === 'face') && (!this.pending || this.pending.accepts.includes('profile'))) {
-      const thin = this.app.view.thinProfileNear(p.x, p.y, p.tol);
+      const thin = this.app.view.thinProfileNear(pointer.x, pointer.y, pointer.tol);
       if (thin) {
         hit = thin;
       }
@@ -302,7 +302,7 @@ export class SelectTool implements Tool {
     // tap opens the sketch to edit. (A mouse can aim for one or the other.)
     // (Also while a tool waits for a shape: Loft took no taps on a thin blade tip.)
     if (hit?.kind === 'curve' && count < 2 && isTouchDevice && (!this.pending || this.pending.accepts.includes('profile'))) {
-      const under = this.app.view.pick(p.x, p.y, { edgeTolPx: 0, curves: false, profiles: true, edges: false, vertices: false });
+      const under = this.app.view.pick(pointer.x, pointer.y, { edgeTolPx: 0, curves: false, profiles: true, edges: false, vertices: false });
       // A shape of another sketch under the finger wins too: a path drawn from
       // the middle of the circle to sweep along opened its sketch instead.
       if (under?.kind === 'profile') {
@@ -313,7 +313,7 @@ export class SelectTool implements Tool {
     // lies on a body (a sketch drawn on a face: its corner or the face won
     // the pick, and the double tap took the whole body instead).
     if (count >= 2 && !forced && !this.pending && (hit?.kind === 'vertex' || hit?.kind === 'edge' || hit?.kind === 'face' || hit?.kind === 'profile')) {
-      const line = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol, curves: true, vertices: false, edges: false, profiles: false, planes: false, axes: false });
+      const line = this.app.view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol, curves: true, vertices: false, edges: false, profiles: false, planes: false, axes: false });
       if (line?.kind === 'curve' || line?.kind === 'point') {
         hit = line;
       }
@@ -332,55 +332,55 @@ export class SelectTool implements Tool {
       return true;
     }
     // Where the tap was: Edit Freeform picks the cage element there.
-    this.lastTap = p;
-    let s = hitToSel(hit);
+    this.lastTap = pointer;
+    let selection = hitToSel(hit);
     const sel = this.app.selection;
-    if (!s) {
+    if (!selection) {
       this.app.setSelection([]);
 
       return true;
     }
     // Double tap selects the whole body (what its first tap picked there gives way to it).
-    const whole = count >= 2 && (s.kind === 'face' || s.kind === 'edge' || s.kind === 'vertex');
+    const whole = count >= 2 && (selection.kind === 'face' || selection.kind === 'edge' || selection.kind === 'vertex');
     if (whole) {
-      s = { kind: 'body', body: (s as { body: string }).body };
+      selection = { kind: 'body', body: (selection as { body: string }).body };
     }
     // With bodies selected, tapping another body adds it (Union/Subtract need
     // two) - and tapping a picked body anywhere lets it go.
-    if (sel[0]?.kind === 'body' && (s.kind === 'face' || s.kind === 'edge' || s.kind === 'vertex')) {
-      s = { kind: 'body', body: s.body };
+    if (sel[0]?.kind === 'body' && (selection.kind === 'face' || selection.kind === 'edge' || selection.kind === 'vertex')) {
+      selection = { kind: 'body', body: selection.body };
     }
-    if (this.pending && (!sel.length || sel[0].kind !== s.kind)) {
+    if (this.pending && (!sel.length || sel[0].kind !== selection.kind)) {
       // A tool waiting for its pick: what's tapped is the pick.
-      this.app.setSelection([s]);
+      this.app.setSelection([selection]);
     } else if (whole) {
-      const b = (s as { body: string }).body;
-      this.app.setSelection([...sel.filter(x => !('body' in x && x.body === b)), s]);
+      const b = (selection as { body: string }).body;
+      this.app.setSelection([...sel.filter(highlight => !('body' in highlight && highlight.body === b)), selection]);
     } else {
       // Each tap adds to what is picked, whatever it is (a face, then an edge, then a plane); a tap on a picked one
       // lets that one go; a tap on nothing lets them all go. (Asked for: "I don't like that now I have to click the
       // + icon after I select to add another one ... I should just be able to select another to add to the
       // selection. If I want to deselect an element from the selection, I can just click on that element again".
       // A tap had picked that thing alone, with a + on the line - or Shift - to add.)
-      const i = sel.findIndex(x => sameSel(x, s!));
-      this.app.setSelection(i >= 0 ? sel.filter((_, j) => j !== i) : [...sel, s]);
+      const i = sel.findIndex(highlight => sameSel(highlight, selection!));
+      this.app.setSelection(i >= 0 ? sel.filter((_, j) => j !== i) : [...sel, selection]);
     }
     // Waiting for a body, and a corner of one was tapped (an STL's faces meet
     // in corners everywhere): that body is the pick.
-    if (this.pending && s.kind === 'vertex' && !this.pending.accepts.includes('vertex') && this.pending.accepts.includes('body')) {
-      s = { kind: 'body', body: s.body };
-      this.app.setSelection([s]);
+    if (this.pending && selection.kind === 'vertex' && !this.pending.accepts.includes('vertex') && this.pending.accepts.includes('body')) {
+      selection = { kind: 'body', body: selection.body };
+      this.app.setSelection([selection]);
     }
     // Fillet or Chamfer waiting, and a round face's seam tapped: nothing to
     // round there - said, and still waiting (it took the wait, and the next
     // edge tapped was only picked: a fillet's dot on a chamfer).
-    if (this.pending && /^(Fillet|Chamfer)$/.test(this.pending.label) && s.kind === 'edge' && this.app.view.body(s.body)?.edges[s.edge]?.seam) {
+    if (this.pending && /^(Fillet|Chamfer)$/.test(this.pending.label) && selection.kind === 'edge' && this.app.view.body(selection.body)?.edges[selection.edge]?.seam) {
       this.app.setSelection([]);
       this.app.ui.toast('That line is a seam - where a round face starts and ends, no corner there to round or chamfer. Tap a real edge.');
 
       return true;
     }
-    if (this.pending && this.pending.accepts.includes(s.kind)) {
+    if (this.pending && this.pending.accepts.includes(selection.kind)) {
       const run = this.pending.run;
       this.pending = null;
       run();
@@ -426,16 +426,16 @@ export class SelectTool implements Tool {
     const y1 = Math.max(a.y, b.y);
     const view = this.app.view;
     const inBox = (x: number, y: number, z: number) => {
-      const s = view.toScreen([x, y, z]);
+      const screenPoint = view.toScreen([x, y, z]);
 
-      return !!s && s[0] >= x0 && s[0] <= x1 && s[1] >= y0 && s[1] <= y1;
+      return !!screenPoint && screenPoint[0] >= x0 && screenPoint[0] <= x1 && screenPoint[1] >= y0 && screenPoint[1] <= y1;
     };
     // Points (some of them, on a big mesh): all inside, or any (touching).
     const takes = (count: number, at: (i: number) => [number, number, number]) => {
       const step = Math.max(1, Math.floor(count / 400));
       for (let i = 0; i < count; i += step) {
-        const p = at(i);
-        const inside = inBox(p[0], p[1], p[2]);
+        const point = at(i);
+        const inside = inBox(point[0], point[1], point[2]);
         if (touching && inside) {
           return true;
         }
@@ -452,61 +452,61 @@ export class SelectTool implements Tool {
     if (touching) {
       for (let i = 0; i <= 6; i++) {
         for (let j = 0; j <= 6; j++) {
-          for (const h of view.facesAt(x0 + ((x1 - x0) * i) / 6, y0 + ((y1 - y0) * j) / 6)) {
-            if (h.kind === 'face') {
-              under.add(`${h.body}|${h.face}`), under.add(h.body);
+          for (const face of view.facesAt(x0 + ((x1 - x0) * i) / 6, y0 + ((y1 - y0) * j) / 6)) {
+            if (face.kind === 'face') {
+              under.add(`${face.body}|${face.face}`), under.add(face.body);
             }
           }
         }
       }
     }
     // An edge crossing the box (no point of it inside): its pieces on screen cut a side.
-    const crosses = (p: number[], q: number[]) => {
+    const crosses = (point: number[], q: number[]) => {
       const side = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) => {
-        const d = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
-        if (Math.abs(d) < 1e-12) {
+        const cross = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+        if (Math.abs(cross) < 1e-12) {
           return false;
         }
-        const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / d;
-        const u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / d;
+        const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / cross;
+        const fraction = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / cross;
 
-        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+        return t >= 0 && t <= 1 && fraction >= 0 && fraction <= 1;
       };
 
-      return side(p[0], p[1], q[0], q[1], x0, y0, x1, y0) || side(p[0], p[1], q[0], q[1], x1, y0, x1, y1) || side(p[0], p[1], q[0], q[1], x1, y1, x0, y1) || side(p[0], p[1], q[0], q[1], x0, y1, x0, y0);
+      return side(point[0], point[1], q[0], q[1], x0, y0, x1, y0) || side(point[0], point[1], q[0], q[1], x1, y0, x1, y1) || side(point[0], point[1], q[0], q[1], x1, y1, x0, y1) || side(point[0], point[1], q[0], q[1], x0, y1, x0, y0);
     };
     const picked: Sel[] = [];
     for (const body of view.bodyList) {
       if (view.isHidden(body.id)) {
         continue;
       }
-      const P = body.positions;
-      const vertex = (v: number): [number, number, number] => [P[3 * v], P[3 * v + 1], P[3 * v + 2]];
+      const positions = body.positions;
+      const vertex = (vertex: number): [number, number, number] => [positions[3 * vertex], positions[3 * vertex + 1], positions[3 * vertex + 2]];
       if (kind === 'all' || kind === 'body') {
-        if (under.has(body.id) || takes(P.length / 3, vertex)) {
+        if (under.has(body.id) || takes(positions.length / 3, vertex)) {
           picked.push({ kind: 'body', body: body.id });
         }
       } else if (kind === 'face') {
-        for (const g of body.faceGroups) {
-          if (under.has(`${body.id}|${g.face}`) || takes(g.count, i => vertex(body.indices[g.start + i]))) {
-            picked.push({ kind: 'face', body: body.id, face: g.face });
+        for (const faceGroup of body.faceGroups) {
+          if (under.has(`${body.id}|${faceGroup.face}`) || takes(faceGroup.count, i => vertex(body.indices[faceGroup.start + i]))) {
+            picked.push({ kind: 'face', body: body.id, face: faceGroup.face });
           }
         }
       } else {
-        const E = body.edgePositions;
-        const pt = (i: number): [number, number, number] => [E[3 * i], E[3 * i + 1], E[3 * i + 2]];
-        for (const g of body.edgeGroups) {
-          let hit = takes(g.count, i => pt(g.start + i));
+        const edgePositions = body.edgePositions;
+        const pt = (i: number): [number, number, number] => [edgePositions[3 * i], edgePositions[3 * i + 1], edgePositions[3 * i + 2]];
+        for (const edgeGroup of body.edgeGroups) {
+          let hit = takes(edgeGroup.count, i => pt(edgeGroup.start + i));
           // (Edge points come in pairs: each pair a piece of the edge.)
-          for (let i = g.start; touching && !hit && i + 1 < g.start + g.count; i += 2) {
-            const p = view.toScreen(pt(i));
+          for (let i = edgeGroup.start; touching && !hit && i + 1 < edgeGroup.start + edgeGroup.count; i += 2) {
+            const screenPoint = view.toScreen(pt(i));
             const q = view.toScreen(pt(i + 1));
-            if (p && q && crosses(p, q)) {
+            if (screenPoint && q && crosses(screenPoint, q)) {
               hit = true;
             }
           }
           if (hit) {
-            picked.push({ kind: 'edge', body: body.id, edge: g.edge });
+            picked.push({ kind: 'edge', body: body.id, edge: edgeGroup.edge });
           }
         }
       }
@@ -520,9 +520,9 @@ export class SelectTool implements Tool {
         }
       }
     }
-    const k = picked[0]?.kind ?? (kind === 'all' ? 'body' : kind);
-    const base = add ? this.app.selection.filter(s => s.kind === k) : [];
-    this.app.setSelection([...base, ...picked.filter(s => !base.some(x => sameSel(x, s)))]);
+    const pickKind = picked[0]?.kind ?? (kind === 'all' ? 'body' : kind);
+    const base = add ? this.app.selection.filter(highlight => highlight.kind === pickKind) : [];
+    this.app.setSelection([...base, ...picked.filter(highlight => !base.some(kept => sameSel(kept, highlight)))]);
   }
 
   /** Ctrl + A: every body shown; with no bodies, every closed shape of the sketches shown. */
@@ -544,11 +544,11 @@ export class SelectTool implements Tool {
       return false;
     }
     const order = ['all', 'body', 'face', 'edge'] as const;
-    const k = e.key.toLowerCase();
-    if (k === 'tab') {
+    const key = e.key.toLowerCase();
+    if (key === 'tab') {
       this.boxKind = order[(order.indexOf(this.boxKind) + (e.shiftKey ? 3 : 1)) % 4];
-    } else if (k === 'b' || k === 'f' || k === 'e' || k === 'a') {
-      this.boxKind = ({ b: 'body', f: 'face', e: 'edge', a: 'all' } as const)[k];
+    } else if (key === 'b' || key === 'f' || key === 'e' || key === 'a') {
+      this.boxKind = ({ b: 'body', f: 'face', e: 'edge', a: 'all' } as const)[key];
     } else {
       return false;
     }
@@ -562,7 +562,7 @@ export class SelectTool implements Tool {
    * (as in the column, groups apart) and Deselect All; always the view's
    * switches. A tool waiting for a pick lets go of it, as before.
    */
-  context(p: ToolPointer): void {
+  context(pointer: ToolPointer): void {
     if (this.pending) {
       this.pending = null;
       this.app.setSelection([]);
@@ -579,7 +579,7 @@ export class SelectTool implements Tool {
           continue;
         }
         // A tool with variants (Fillet with variables): its first one.
-        const run = it.run ?? it.children?.find(c => c.run && !c.disabled)?.run;
+        const run = it.run ?? it.children?.find(child => child.run && !child.disabled)?.run;
         if (!run) {
           continue;
         }
@@ -594,15 +594,15 @@ export class SelectTool implements Tool {
         rows.push('-', { label: 'Reveal in Items', run: () => this.app.revealInItems(ids) });
       }
     }
-    viewMenu(this.app, p.x, p.y, rows);
+    viewMenu(this.app, pointer.x, pointer.y, rows);
   }
 
   key(e: KeyboardEvent): boolean {
     if (this.boxing && this.dragKey(e)) {
       return true;
     }
-    const k = e.key.toLowerCase();
-    if (k === 'escape' && (this.app.selection.length || this.pending)) {
+    const key = e.key.toLowerCase();
+    if (key === 'escape' && (this.app.selection.length || this.pending)) {
       this.pending = null;
       this.app.setSelection([]);
 
@@ -610,11 +610,11 @@ export class SelectTool implements Tool {
     }
     // A sketch region selected: just type the height - the extrude starts with it.
     const sel = this.app.selection;
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && /^[0-9.\-]$/.test(e.key) && sel.length && sel.every(x => x.kind === 'profile')) {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && /^[0-9.\-]$/.test(e.key) && sel.length && sel.every(highlight => highlight.kind === 'profile')) {
       const src = sourcesOf(this.app, sel)[0];
       if (src) {
-        const v = Number(e.key);
-        this.app.setTool(new ExtrudeOp(this.app, src, undefined, 'auto', { distance: Number.isFinite(v) ? v : 0, typed: e.key }));
+        const value = Number(e.key);
+        this.app.setTool(new ExtrudeOp(this.app, src, undefined, 'auto', { distance: Number.isFinite(value) ? value : 0, typed: e.key }));
 
         return true;
       }
@@ -631,10 +631,10 @@ export class SelectTool implements Tool {
           return true;
         }
       }
-      if (first.kind === 'edge' && sel.every(x => x.kind === 'edge') && !this.sheetFreeform(first.body)) {
+      if (first.kind === 'edge' && sel.every(highlight => highlight.kind === 'edge') && !this.sheetFreeform(first.body)) {
         const refs = this.edgeRefs();
         if (refs.length) {
-          this.app.setTool(new EdgeOp(this.app, 'fillet', refs.map(r => ({ ...r })), undefined, undefined, e.key));
+          this.app.setTool(new EdgeOp(this.app, 'fillet', refs.map(ref => ({ ...ref })), undefined, undefined, e.key));
 
           return true;
         }
@@ -643,7 +643,7 @@ export class SelectTool implements Tool {
     if (e.ctrlKey || e.metaKey) {
       return false;
     }
-    const want = k === 'delete' || k === 'backspace' ? 'DEL' : k.toUpperCase();
+    const want = key === 'delete' || key === 'backspace' ? 'DEL' : key.toUpperCase();
     const action = flatten(this.actions()).find(a => a.shortcut?.toUpperCase() === want && !a.disabled && a.run);
     if (action) {
       action.run!();
@@ -672,7 +672,7 @@ export class SelectTool implements Tool {
     }
     this.app.ui.setHint(
       this.pending
-        ? `${this.pending.label}: tap ${this.pending.accepts.map(k => withArticle(label({ kind: k } as Sel, 1))).join(' or ')}`
+        ? `${this.pending.label}: tap ${this.pending.accepts.map(accept => withArticle(label({ kind: accept } as Sel, 1))).join(' or ')}`
         : sel.length === 0
           ? this.app.firstShape()
             ? 'Your shape is ready: tap it, then drag its arrow up.'
@@ -683,7 +683,7 @@ export class SelectTool implements Tool {
     );
     const first = sel[0];
     // (Picks of different kinds: no one handle is for all of them.)
-    if (!first || sel.some(x => x.kind !== first.kind)) {
+    if (!first || sel.some(highlight => highlight.kind !== first.kind)) {
       return;
     }
     // The most likely next step gets a handle.
@@ -711,14 +711,14 @@ export class SelectTool implements Tool {
       // Body: the Move/Rotate gimbal is ready to drag (with Copy beside it).
       this.gimbal = new Gimbal(this.app.view);
       this.gimbal.setCenter(centerOf(this.app, bodiesOf(sel)));
-      const g = this.gimbal;
-      this.copyToggle = new CopyToggle(this.app.view, () => g.origin);
+      const gimbal = this.gimbal;
+      this.copyToggle = new CopyToggle(this.app.view, () => gimbal.origin);
     } else if (first.kind === 'vertex' && sel.length === 1) {
-      const v = this.app.view.vertexOf(first.body, first.vertex);
+      const vertex = this.app.view.vertexOf(first.body, first.vertex);
       // (A freeform left as an open surface: its points are moved in Edit Freeform, so no gimbal here.)
-      if (v && !this.sheetFreeform(first.body)) {
+      if (vertex && !this.sheetFreeform(first.body)) {
         this.gimbal = new Gimbal(this.app.view);
-        this.gimbal.setCenter(v);
+        this.gimbal.setCenter(vertex);
       }
     } else if (first.kind === 'image') {
       const img = this.app.store.find<ImageFeature>(first.id);
@@ -733,8 +733,8 @@ export class SelectTool implements Tool {
       if (pl) {
         this.gimbal = new Gimbal(this.app.view, { axes: planeAxes(pl) });
         this.gimbal.setCenter(this.app.view.planeShownAt(first.id) ?? pl.origin);
-        const g = this.gimbal;
-        this.copyToggle = new CopyToggle(this.app.view, () => g.origin);
+        const gimbal = this.gimbal;
+        this.copyToggle = new CopyToggle(this.app.view, () => gimbal.origin);
       }
     } else if (first.kind === 'edge') {
       const all = this.edgeRefs();
@@ -757,18 +757,18 @@ export class SelectTool implements Tool {
   private armedHint(): string {
     const sel = this.picks;
     const first = sel[0];
-    const n = sel.length;
+    const count = sel.length;
     const tap = isTouchDevice ? 'tap' : 'click';
     const or = this.quick ? `or ${tap} a button beside it` : 'or pick a tool';
     const direct = settings.value.direct;
     if (direct && first.kind === 'profile') {
       return `Drag the shape (or its arrow) to pull it into 3D, ${or}.`;
     }
-    if (direct && first.kind === 'face' && n === 1 && offsettable(this.app.view.body(first.body)?.faces[first.face]?.type) && !this.sheetFreeform(first.body)) {
+    if (direct && first.kind === 'face' && count === 1 && offsettable(this.app.view.body(first.body)?.faces[first.face]?.type) && !this.sheetFreeform(first.body)) {
       return `Drag the face (or its arrow) to push or pull it, ${or}.`;
     }
     if (direct && first.kind === 'edge' && !this.sheetFreeform(first.body)) {
-      return `Drag ${n > 1 ? 'an edge' : 'the edge'} (or its dot) to round ${n > 1 ? 'them' : 'it'}, ${or}.`;
+      return `Drag ${count > 1 ? 'an edge' : 'the edge'} (or its dot) to round ${count > 1 ? 'them' : 'it'}, ${or}.`;
     }
     if (direct && first.kind === 'body') {
       return `Drag it to slide it over the floor, or its arrows and arcs to move and turn it, ${or}.`;
@@ -776,20 +776,20 @@ export class SelectTool implements Tool {
     if (first.kind === 'profile') {
       return `Drag the arrow to extrude, ${or}.`;
     }
-    if (first.kind === 'face' && n === 1 && offsettable(this.app.view.body(first.body)?.faces[first.face]?.type) && !this.sheetFreeform(first.body)) {
+    if (first.kind === 'face' && count === 1 && offsettable(this.app.view.body(first.body)?.faces[first.face]?.type) && !this.sheetFreeform(first.body)) {
       return `Drag the arrow to move the face, ${or}.`;
     }
-    if (first.kind === 'face' && n === 2 && sel[1].kind === 'face') {
+    if (first.kind === 'face' && count === 2 && sel[1].kind === 'face') {
       return 'The distance between the faces is shown. Pick a tool for them.';
     }
     if (first.kind === 'edge' && !this.sheetFreeform(first.body)) {
-      return `Drag the dot to round ${n > 1 ? 'the edges' : 'the edge'}, ${or}.`;
+      return `Drag the dot to round ${count > 1 ? 'the edges' : 'the edge'}, ${or}.`;
     }
     if (first.kind === 'body') {
       return `Drag the arrows or arcs to move it, ${or}.`;
     }
 
-    return this.quick ? `${cap(tap)} a button beside it, or pick a tool on the line at the bottom.` : `Pick a tool for ${n > 1 ? 'them' : 'it'}, or ${tap} another to add it (${tap} a picked one to let it go).`;
+    return this.quick ? `${cap(tap)} a button beside it, or pick a tool on the line at the bottom.` : `Pick a tool for ${count > 1 ? 'them' : 'it'}, or ${tap} another to add it (${tap} a picked one to let it go).`;
   }
 
   /** Called by the app when a top-level tool needs a selection first. */
@@ -798,13 +798,13 @@ export class SelectTool implements Tool {
    * for one takes it - Repair Body sat on "select body" while the pod was
    * picked in the list. False when nothing waits for it.
    */
-  pickFromList(s: Sel): boolean {
-    if (!this.pending || !this.pending.accepts.includes(s.kind)) {
+  pickFromList(highlight: Sel): boolean {
+    if (!this.pending || !this.pending.accepts.includes(highlight.kind)) {
       return false;
     }
     const run = this.pending.run;
     this.pending = null;
-    this.app.setSelection([s]);
+    this.app.setSelection([highlight]);
     run();
 
     return true;
@@ -848,9 +848,9 @@ export class SelectTool implements Tool {
    */
   private get picks(): Sel[] {
     const sel = this.app.selection;
-    const k = sel[sel.length - 1]?.kind;
+    const kind = sel[sel.length - 1]?.kind;
 
-    return sel.every(x => x.kind === k) ? sel : sel.filter(x => x.kind === k);
+    return sel.every(highlight => highlight.kind === kind) ? sel : sel.filter(highlight => highlight.kind === kind);
   }
 
   private actionList(): ToolItem[] {
@@ -871,13 +871,13 @@ export class SelectTool implements Tool {
       head.push({ id: 'editFreeform', label: 'Edit Freeform', icon: 'editFreeform', shortcut: 'F2', run: () => this.editFreeform(own()) });
     }
     // Border edges of open freeforms (one surface or two): connect them with new faces.
-    const edgeSel = sel.filter((x): x is Extract<Sel, { kind: 'edge' }> => x.kind === 'edge');
+    const edgeSel = sel.filter((highlight): highlight is Extract<Sel, { kind: 'edge' }> => highlight.kind === 'edge');
     if (edgeSel.length >= 2 && edgeSel.length === sel.length) {
-      const bodies = [...new Set(edgeSel.map(x => x.body))];
+      const bodies = [...new Set(edgeSel.map(edge => edge.body))];
       const open = bodies.every((b) => {
-        const f = this.freeformOf(b);
+        const freeform = this.freeformOf(b);
 
-        return !!f && !isClosed(f.cage);
+        return !!freeform && !isClosed(freeform.cage);
       });
       if (open && bodies.length <= 2) {
         head.push({ id: 'connect', label: 'Connect', icon: 'connect', sub: bodies.length === 2 ? 'Join the two surfaces' : 'New faces between the edges', run: () => this.connectEdges(edgeSel) });
@@ -886,7 +886,7 @@ export class SelectTool implements Tool {
     // An open freeform (faces deleted, or a surface): close a hole, or give it a thickness.
     if (ff?.type === 'freeform' && !isClosed(ff.cage)) {
       if (first.kind === 'edge') {
-        const at = sel.flatMap(x => (x.kind === 'edge' ? [this.app.view.body(x.body)?.edges[x.edge]?.mid].filter((p): p is Vec3 => !!p) : []));
+        const at = sel.flatMap(highlight => (highlight.kind === 'edge' ? [this.app.view.body(highlight.body)?.edges[highlight.edge]?.mid].filter((point): point is Vec3 => !!point) : []));
         head.push({
           id: 'fillHole',
           label: 'Fill hole',
@@ -934,17 +934,17 @@ export class SelectTool implements Tool {
         return [...head, ...this.axisActions()];
       case 'vertex': {
         const bodies = bodiesOf(sel);
-        const s = sel[0] as Extract<Sel, { kind: 'vertex' }>;
-        const pivot = this.app.view.vertexOf(s.body, s.vertex);
-        const at = sel.flatMap(x => (x.kind === 'vertex' && x.body === s.body ? [this.app.view.vertexOf(x.body, x.vertex)!].filter(Boolean) : []));
+        const vertexPick = sel[0] as Extract<Sel, { kind: 'vertex' }>;
+        const pivot = this.app.view.vertexOf(vertexPick.body, vertexPick.vertex);
+        const at = sel.flatMap(highlight => (highlight.kind === 'vertex' && highlight.body === vertexPick.body ? [this.app.view.vertexOf(highlight.body, highlight.vertex)!].filter(Boolean) : []));
         // A freeform's points move in Edit Freeform (at the top of this list), not here.
-        const isFreeform = this.sheetFreeform(s.body);
+        const isFreeform = this.sheetFreeform(vertexPick.body);
 
         return [
           ...head,
-          ...(isFreeform ? [] : [{ id: 'moveVertex', label: 'Move Vertex', icon: 'point' as const, shortcut: 'M', active: true, disabled: !pivot, run: () => pivot && this.app.setTool(new MoveFaceOp(this.app, { vertex: { body: s.body, at: pivot } })) }]),
+          ...(isFreeform ? [] : [{ id: 'moveVertex', label: 'Move Vertex', icon: 'point' as const, shortcut: 'M', active: true, disabled: !pivot, run: () => pivot && this.app.setTool(new MoveFaceOp(this.app, { vertex: { body: vertexPick.body, at: pivot } })) }]),
           { id: 'move', label: 'Move/Rotate Body', icon: 'move', run: () => this.app.setTool(new TransformOp(this.app, 'move', bodies, undefined, pivot)) },
-          { id: 'delete', label: 'Delete Vertex', icon: 'trash', shortcut: 'Del', run: () => this.deleteGeom(s.body, { vertices: at }) }
+          { id: 'delete', label: 'Delete Vertex', icon: 'trash', shortcut: 'Del', run: () => this.deleteGeom(vertexPick.body, { vertices: at }) }
         ];
       }
       case 'image': {
@@ -1007,21 +1007,21 @@ export class SelectTool implements Tool {
   private faceActions(): ToolItem[] {
     const app = this.app;
     const sel = this.picks;
-    const s = sel[0] as Extract<Sel, { kind: 'face' }>;
-    const info = app.view.body(s.body)?.faces[s.face];
+    const facePick = sel[0] as Extract<Sel, { kind: 'face' }>;
+    const info = app.view.body(facePick.body)?.faces[facePick.face];
     const flat = !!info?.plane;
     const one = sel.length === 1;
     const src = sourcesOf(app, sel)[0];
-    const faceRefs = sel.flatMap(x => (x.kind === 'face' ? [faceRefOf(app, x)!] : []));
+    const faceRefs = sel.flatMap(highlight => (highlight.kind === 'face' ? [faceRefOf(app, highlight)!] : []));
     const needFlat = { disabled: !flat || !one, why: 'Needs one flat face' };
-    const allFlat = sel.every(x => x.kind === 'face' && x.body === s.body && !!app.view.body(x.body)?.faces[x.face]?.plane);
+    const allFlat = sel.every(highlight => highlight.kind === 'face' && highlight.body === facePick.body && !!app.view.body(highlight.body)?.faces[highlight.face]?.plane);
     const freeFaces = { disabled: !allFlat, why: one ? 'Needs a flat face' : 'Needs flat faces of one body' };
-    const ref = faceRefOf(app, s);
+    const ref = faceRefOf(app, facePick);
     const bodies = bodiesOf(sel);
     // (One round wall of a hole picked: a pattern started here repeats the hole.)
     const holeRef = one && info?.round?.hole && ref ? ref : undefined;
     // A round face: its axis (from its mesh).
-    const axis = info?.round && one ? roundAxis(app, s.body, s.face) : null;
+    const axis = info?.round && one ? roundAxis(app, facePick.body, facePick.face) : null;
     // A face a Freeform Face step made: that step opens again to reshape it.
     const shaped = info?.step ? app.store.find(info.step) : undefined;
     const editFree: ToolItem[] = shaped?.type === 'faceFreeform' && one ? [{ id: 'editFreeform', label: 'Edit Freeform', icon: 'editFreeform', active: true, beta: true, run: () => {
@@ -1046,22 +1046,22 @@ export class SelectTool implements Tool {
       { id: 'thread', label: 'Thread', icon: 'thread', disabled: !one || !info?.round, why: 'Needs one round face (a shank or a hole)', run: () => app.startThread() },
       // Two faces, one on each of two bodies: the joint between the two (Assemblies opens with it made).
       (() => {
-        const fs = this.picks.filter((p): p is Extract<Sel, { kind: 'face' }> => p.kind === 'face');
+        const fs = this.picks.filter((pick): pick is Extract<Sel, { kind: 'face' }> => pick.kind === 'face');
         const pair = this.picks.length === 2 && fs.length === 2 && fs[0].body !== fs[1].body;
 
         return { id: 'joint', label: 'Joint', icon: 'assembly', disabled: !pair, why: 'Needs a face on each of two parts', run: () => pair && app.setTool(new AssemblyTool(app, { a: fs[0], b: fs[1] })) } as ToolItem;
       })(),
       { id: 'offsetFace', label: 'Offset Face', icon: 'offsetFace', shortcut: 'E', active: !editFree.length, disabled: !one || !offsettable(info?.type), why: 'Needs one flat or round face', run: () => src && app.setTool(new ExtrudeOp(app, src)) },
       // A line on this face, parallel to an edge (tapped next): Offset Edge started from the face.
-      { id: 'offsetFromEdge', label: 'Offset from Edge', icon: 'offsetEdge', ...needFlat, run: () => app.setTool(new OffsetEdgeOp(app, undefined, { body: s.body, face: s.face })) },
+      { id: 'offsetFromEdge', label: 'Offset from Edge', icon: 'offsetEdge', ...needFlat, run: () => app.setTool(new OffsetEdgeOp(app, undefined, { body: facePick.body, face: facePick.face })) },
       { id: 'fillet', label: 'Fillet', icon: 'fillet', shortcut: 'F', run: () => this.edgesOfFaces('fillet') },
       { id: 'chamfer', label: 'Chamfer', icon: 'chamfer', run: () => this.edgesOfFaces('chamfer') },
       { id: 'extrude', label: 'Extrude', icon: 'extrude', ...needFlat, run: () => src && app.setTool(new ExtrudeOp(app, src, undefined, 'new')) },
-      { id: 'shell', label: 'Shell', icon: 'shell', run: () => app.setTool(new ShellOp(app, s.body, faceRefs)) },
+      { id: 'shell', label: 'Shell', icon: 'shell', run: () => app.setTool(new ShellOp(app, facePick.body, faceRefs)) },
       axis
         ? { id: 'axis', label: 'Axis – Cylinder', icon: 'axisRound', run: () => app.setTool(new AxisOp(app, axis.origin, axis.dir, undefined, 'round')) }
         : { id: 'axis', label: 'Axis – Perp. to Face', icon: 'axisFace', run: () => info && app.setTool(new AxisOp(app, info.center, info.normal, undefined, 'face')) },
-      { id: 'plane', label: 'Plane – Offset', icon: 'plane', ...needFlat, run: () => info?.plane && app.setTool(new PlaneOp(app, info.plane, faceRefOf(app, s)!)) },
+      { id: 'plane', label: 'Plane – Offset', icon: 'plane', ...needFlat, run: () => info?.plane && app.setTool(new PlaneOp(app, info.plane, faceRefOf(app, facePick)!)) },
       { id: 'loft', label: 'Loft', icon: 'loft', ...needFlat, run: () => app.setTool(new LoftOp(app, sourcesOf(app, sel).flatMap(splitRegions), sel)) },
       // The face made smooth: a grid of points over it to pull out or push in; its edges stay put.
       // (Several flat faces of one body, side by side: one smooth surface over them all, no edge where they met.)
@@ -1072,29 +1072,29 @@ export class SelectTool implements Tool {
       } },
       // A smooth freeform bridge between two faces (the second tapped next when one is picked).
       { id: 'connect', label: 'Connect', icon: 'connect', beta: true, disabled: sel.length > 2, why: 'Needs two faces', run: () => app.setTool(new ConnectOp(app, sel)) },
-      { id: 'split', label: 'Split Body', icon: 'split', disabled: !flat || app.view.bodyList.length < 2, why: 'Needs another body to split', run: () => this.splitWith(info!.plane!, s.body) },
+      { id: 'split', label: 'Split Body', icon: 'split', disabled: !flat || app.view.bodyList.length < 2, why: 'Needs another body to split', run: () => this.splitWith(info!.plane!, facePick.body) },
       { id: 'revolve', label: 'Revolve', icon: 'revolve', ...needFlat, run: () => src && app.setTool(new RevolveOp(app, src)) },
       { id: 'sweep', label: 'Sweep', icon: 'sweep', ...needFlat, run: () => src && app.setTool(new SweepOp(app, src)) },
       // The face's body moved, copied round or mirrored, without picking the body first.
       // (A hole's round wall: the pattern repeats the hole in its body - it copied the whole body, and there was no
       // way to repeat a hole.)
-      { id: 'patl', label: 'Pattern – Linear', icon: 'patternLinear', ...(holeRef ? { sub: 'repeats this hole' } : {}), run: () => app.setTool(new TransformOp(app, 'linear', holeRef ? [s.body] : bodies, undefined, undefined, false, holeRef, holeRef ? info?.round?.r : undefined)) },
-      { id: 'patc', label: 'Pattern – Circular', icon: 'patternCircular', ...(holeRef ? { sub: 'repeats this hole' } : {}), run: () => app.setTool(new TransformOp(app, 'circular', holeRef ? [s.body] : bodies, undefined, undefined, false, holeRef)) },
+      { id: 'patl', label: 'Pattern – Linear', icon: 'patternLinear', ...(holeRef ? { sub: 'repeats this hole' } : {}), run: () => app.setTool(new TransformOp(app, 'linear', holeRef ? [facePick.body] : bodies, undefined, undefined, false, holeRef, holeRef ? info?.round?.r : undefined)) },
+      { id: 'patc', label: 'Pattern – Circular', icon: 'patternCircular', ...(holeRef ? { sub: 'repeats this hole' } : {}), run: () => app.setTool(new TransformOp(app, 'circular', holeRef ? [facePick.body] : bodies, undefined, undefined, false, holeRef)) },
       { id: 'translate', label: 'Translate', icon: 'translate', shortcut: 'N', run: () => app.setTool(new TransformOp(app, 'translate', bodies)) },
       { id: 'rotate', label: 'Rotate Around Axis', icon: 'rotateAxis', run: () => app.setTool(new TransformOp(app, 'rotate', bodies)) },
       { id: 'mirror', label: 'Mirror', icon: 'mirror', run: () => app.setTool(new TransformOp(app, 'mirror', bodies)) },
       { id: 'replace', label: 'Replace Face', icon: 'replaceFace', ...needFlat, run: () => ref && app.setTool(new ReplaceFaceOp(app, ref)) },
       { id: 'projs', label: 'Project as Sketch', icon: 'project', ...needFlat, run: () => this.projectFace('select') },
       // The neighbours extend to close the gap (fillets, chamfers, holes).
-      { id: 'delete', label: 'Delete Face', icon: 'trash', shortcut: 'Del', run: () => this.deleteGeom(s.body, { faces: faceRefs.filter(f => f.body === s.body) }) }
+      { id: 'delete', label: 'Delete Face', icon: 'trash', shortcut: 'Del', run: () => this.deleteGeom(facePick.body, { faces: faceRefs.filter(faceRef => faceRef.body === facePick.body) }) }
     ].filter(t => flat || !flatOnly.has(t.id)) as ToolItem[];
   }
 
   private edgeActions(): ToolItem[] {
     const app = this.app;
     const sel = this.picks;
-    const s = sel[0] as Extract<Sel, { kind: 'edge' }>;
-    const info = app.view.body(s.body)?.edges[s.edge];
+    const edgePick = sel[0] as Extract<Sel, { kind: 'edge' }>;
+    const info = app.view.body(edgePick.body)?.edges[edgePick.edge];
     const bodies = bodiesOf(sel);
     const straight = info?.type === 'LINE';
     // The edges as picked now: Fillet starts at once (its preview takes the body's place in the
@@ -1103,7 +1103,7 @@ export class SelectTool implements Tool {
     const picked = this.edgeRefs();
     // (The edge picked last first: the tool's dot and its size are at that one.)
     const refs = () => {
-      const all = picked.map(r => ({ ...r }));
+      const all = picked.map(edgeRef => ({ ...edgeRef }));
 
       return all.length > 1 ? [all[all.length - 1], ...all.slice(0, -1)] : all;
     };
@@ -1116,7 +1116,7 @@ export class SelectTool implements Tool {
           sub: 'Pick a size',
           children: [
             { id: `${kind}-free`, label: 'Drag / type', icon: kind, run: () => app.setTool(new EdgeOp(app, kind, refs())) },
-            ...vars.map(v => ({ id: `${kind}-var-${v.name}`, label: `${v.name} = ${v.expr}`, icon: 'variable' as const, run: () => app.setTool(new EdgeOp(app, kind, refs(), undefined, v.name)) }))
+            ...vars.map(variable => ({ id: `${kind}-var-${variable.name}`, label: `${variable.name} = ${variable.expr}`, icon: 'variable' as const, run: () => app.setTool(new EdgeOp(app, kind, refs(), undefined, variable.name)) }))
           ]
         }
         : {};
@@ -1125,7 +1125,7 @@ export class SelectTool implements Tool {
       { id: 'fillet', label: 'Fillet', icon: 'fillet', shortcut: 'F', active: true, run: () => app.setTool(new EdgeOp(app, 'fillet', refs())), ...sized('fillet') },
       { id: 'chamfer', label: 'Chamfer', icon: 'chamfer', shortcut: 'C', run: () => app.setTool(new EdgeOp(app, 'chamfer', refs())), ...sized('chamfer') },
       // A line on a face, parallel to this edge (the face is tapped next).
-      { id: 'offsetEdge', label: 'Offset Edge', icon: 'offsetEdge', disabled: !straight || sel.length !== 1, why: 'Needs one straight edge', run: () => app.setTool(new OffsetEdgeOp(app, s)) },
+      { id: 'offsetEdge', label: 'Offset Edge', icon: 'offsetEdge', disabled: !straight || sel.length !== 1, why: 'Needs one straight edge', run: () => app.setTool(new OffsetEdgeOp(app, edgePick)) },
       // Moves just this edge: the faces on it tilt to follow.
       { id: 'move', label: 'Move/Rotate Edge', icon: 'moveEdge', shortcut: 'M', disabled: !straight || sel.length !== 1, why: 'Needs one straight edge', run: () => ref && app.setTool(new MoveFaceOp(app, { edge: ref })) },
       { id: 'moveBody', label: 'Move/Rotate Body', icon: 'move', run: () => app.setTool(new TransformOp(app, 'move', bodies)) },
@@ -1152,12 +1152,12 @@ export class SelectTool implements Tool {
       { id: 'translate', label: 'Translate', icon: 'translate', shortcut: 'N', run: () => app.setTool(new TransformOp(app, 'translate', bodies)) },
       { id: 'rotate', label: 'Rotate Around Axis', icon: 'rotateAxis', run: () => app.setTool(new TransformOp(app, 'rotate', bodies)) },
       // Through a straight edge, turned about it from a face by an angle.
-      { id: 'planeEdge', label: 'Plane – Through Edge', icon: 'planeAngle', disabled: !straight || sel.length !== 1, why: 'Needs one straight edge', run: () => info && app.setTool(new EdgeAnglePlaneOp(app, { body: s.body, edge: s.edge, point: info.mid })) },
+      { id: 'planeEdge', label: 'Plane – Through Edge', icon: 'planeAngle', disabled: !straight || sel.length !== 1, why: 'Needs one straight edge', run: () => info && app.setTool(new EdgeAnglePlaneOp(app, { body: edgePick.body, edge: edgePick.edge, point: info.mid })) },
       // The edges drawn onto a face picked next (split along them).
       { id: 'proje', label: 'Project as Edge', icon: 'projectEdge', beta: true, run: () => app.setTool(new ImprintOp(app, { edges: refs() })) },
       // The edges in a new sketch, on the plane they lie on.
       { id: 'projs', label: 'Project as Sketch', icon: 'project', run: () => this.projectEdges() },
-      { id: 'delete', label: 'Delete Edge', icon: 'trash', shortcut: 'Del', run: () => this.deleteGeom(s.body, { edges: this.edgeRefs().filter(e => e.body === s.body) }) }
+      { id: 'delete', label: 'Delete Edge', icon: 'trash', shortcut: 'Del', run: () => this.deleteGeom(edgePick.body, { edges: this.edgeRefs().filter(e => e.body === edgePick.body) }) }
     ];
   }
 
@@ -1168,17 +1168,17 @@ export class SelectTool implements Tool {
     // An open surface (it has open edges: a sheet, not a solid).
     const openSurface = bodies.length === 1 && !!app.view.bodyList.find(b => b.id === bodies[0])?.openEdges?.length;
     const boolean = (op: 'union' | 'subtract' | 'intersect') => () => {
-      const f = { ...app.store.newIdentity('boolean', cap(op)), type: 'boolean' as const, op, target: bodies[0], tools: bodies.slice(1) };
+      const feature = { ...app.store.newIdentity('boolean', cap(op)), type: 'boolean' as const, op, target: bodies[0], tools: bodies.slice(1) };
       // Tried first: one that can't be done (e.g. Union of bodies that don't touch) says why and isn't added.
-      void app.preview([...app.store.features, f]).then((r) => {
-        const err = r?.errors.find(e => e.featureId === f.id);
+      void app.preview([...app.store.features, feature]).then((result) => {
+        const err = result?.errors.find(e => e.featureId === feature.id);
         if (err) {
           app.ui.toast(err.message);
           void app.preview([...app.store.features]);
 
           return;
         }
-        app.store.add(f);
+        app.store.add(feature);
         app.setSelection([{ kind: 'body', body: bodies[0] }]);
       });
     };
@@ -1187,8 +1187,8 @@ export class SelectTool implements Tool {
     const chosen = new Set(bodies);
     const ids = app.view.bodyList.map(b => b.id);
     const pattern = app.store.features
-      .flatMap(f => (f.type === 'transform' && (f.op.kind === 'linear' || f.op.kind === 'circular') && !f.suppressed ? f.bodies.map(b => [b, ...ids.filter(id => id.startsWith(`${f.id}:${b}:`))]) : []))
-      .find(g => g.length > 1 && g.some(id => chosen.has(id)) && !g.every(id => chosen.has(id)));
+      .flatMap(feature => (feature.type === 'transform' && (feature.op.kind === 'linear' || feature.op.kind === 'circular') && !feature.suppressed ? feature.bodies.map(b => [b, ...ids.filter(id => id.startsWith(`${feature.id}:${b}:`))]) : []))
+      .find(group => group.length > 1 && group.some(id => chosen.has(id)) && !group.every(id => chosen.has(id)));
 
     return [
       ...(pattern
@@ -1231,33 +1231,33 @@ export class SelectTool implements Tool {
         id: 'color',
         label: 'Color',
         icon: 'color',
-        sub: BODY_COLORS.find(c => c.hex === bodyColor((app.store.doc.colors ?? {})[bodies[0]]))?.name ?? ((app.store.doc.colors ?? {})[bodies[0]] ? 'Custom' : 'Grey'),
-        children: [...BODY_COLORS.map((c, i): ToolItem => ({
+        sub: BODY_COLORS.find(color => color.hex === bodyColor((app.store.doc.colors ?? {})[bodies[0]]))?.name ?? ((app.store.doc.colors ?? {})[bodies[0]] ? 'Custom' : 'Grey'),
+        children: [...BODY_COLORS.map((color, i): ToolItem => ({
           id: `color-${i}`,
-          label: c.name,
+          label: color.name,
           icon: 'color',
-          swatch: c.hex,
-          active: bodyColor((app.store.doc.colors ?? {})[bodies[0]]) === c.hex,
+          swatch: color.hex,
+          active: bodyColor((app.store.doc.colors ?? {})[bodies[0]]) === color.hex,
           // (Tapped again while lit: back to the grey every body has to start with.)
           run: () =>
-            app.store.commit((d) => {
-              const colors = { ...(d.colors ?? {}) };
-              const off = bodies.every(b => bodyColor(colors[b]) === c.hex);
+            app.store.commit((draft) => {
+              const colors = { ...(draft.colors ?? {}) };
+              const off = bodies.every(b => bodyColor(colors[b]) === color.hex);
               for (const b of bodies) {
                 if (off) {
                   delete colors[b];
                 } else {
-                  colors[b] = c.hex;
+                  colors[b] = color.hex;
                 }
               }
-              d.colors = colors;
+              draft.colors = colors;
             })
         })),
         // Any colour (a dark lamp base, a brass shade): the seven soft ones
         // couldn't give what a model made by code had.
         ((): ToolItem => {
           const now = bodyColor((app.store.doc.colors ?? {})[bodies[0]]);
-          const custom = !!now && !BODY_COLORS.some(c => c.hex === now);
+          const custom = !!now && !BODY_COLORS.some(color => color.hex === now);
 
           return {
             id: 'color-custom',
@@ -1267,19 +1267,19 @@ export class SelectTool implements Tool {
             active: custom,
             run: async () => {
               const before = app.store.doc.colors;
-              const write = (hex: string) => (d: { colors?: Record<string, string> }) => {
-                const colors = { ...(d.colors ?? {}) };
+              const write = (hex: string) => (draft: { colors?: Record<string, string> }) => {
+                const colors = { ...(draft.colors ?? {}) };
                 for (const b of bodies) {
                   colors[b] = hex;
                 }
-                d.colors = colors;
+                draft.colors = colors;
               };
               // One undo step for the whole pick: live while choosing, kept on Done.
-              const hex = await pickColor('Custom colour', now ?? DEFAULT_BODY_COLOR, h => app.store.transient(write(h)));
+              const hex = await pickColor('Custom colour', now ?? DEFAULT_BODY_COLOR, hex => app.store.transient(write(hex)));
               if (hex) {
                 app.store.commit(write(hex));
               } else {
-                app.store.commit(d => (d.colors = before));
+                app.store.commit(draft => (draft.colors = before));
               }
             }
           };
@@ -1294,41 +1294,41 @@ export class SelectTool implements Tool {
         label: 'Transparency',
         inOrder: true,
         icon: 'color',
-        sub: BODY_OPACITY.find(o => o.value === ((app.store.doc.opacity ?? {})[bodies[0]] ?? 1))?.name ?? seeThrough((app.store.doc.opacity ?? {})[bodies[0]] ?? 1),
-        children: [...BODY_OPACITY.map((o, i): ToolItem => ({
+        sub: BODY_OPACITY.find(option => option.value === ((app.store.doc.opacity ?? {})[bodies[0]] ?? 1))?.name ?? seeThrough((app.store.doc.opacity ?? {})[bodies[0]] ?? 1),
+        children: [...BODY_OPACITY.map((option, i): ToolItem => ({
           id: `opacity-${i}`,
-          label: o.name,
+          label: option.name,
           icon: 'color',
-          active: ((app.store.doc.opacity ?? {})[bodies[0]] ?? 1) === o.value,
+          active: ((app.store.doc.opacity ?? {})[bodies[0]] ?? 1) === option.value,
           run: () =>
-            app.store.commit((d) => {
-              const op = { ...(d.opacity ?? {}) };
+            app.store.commit((draft) => {
+              const op = { ...(draft.opacity ?? {}) };
               for (const b of bodies) {
-                if (o.value >= 1) {
+                if (option.value >= 1) {
                   delete op[b];
                 } else {
-                  op[b] = o.value;
+                  op[b] = option.value;
                 }
               }
-              d.opacity = op;
+              draft.opacity = op;
             })
         })),
         // Any amount: typed in, as how see-through (40 = 40%).
         ((): ToolItem => {
           const now = (app.store.doc.opacity ?? {})[bodies[0]] ?? 1;
-          const custom = !BODY_OPACITY.some(o => o.value === now);
+          const custom = !BODY_OPACITY.some(option => option.value === now);
           const put = (pct: number) =>
-            app.store.commit((d) => {
-              const v = Math.round(Math.min(95, Math.max(0, pct)));
-              const op = { ...(d.opacity ?? {}) };
+            app.store.commit((draft) => {
+              const value = Math.round(Math.min(95, Math.max(0, pct)));
+              const op = { ...(draft.opacity ?? {}) };
               for (const b of bodies) {
-                if (v <= 0) {
+                if (value <= 0) {
                   delete op[b];
                 } else {
-                  op[b] = (100 - v) / 100;
+                  op[b] = (100 - value) / 100;
                 }
               }
-              d.opacity = op;
+              draft.opacity = op;
             });
           const typed = String(Math.round((1 - now) * 100));
 
@@ -1340,10 +1340,10 @@ export class SelectTool implements Tool {
             active: custom,
             value: { now: typed, put, int: true, min: 0, max: 95 },
             run: async () => {
-              const r = await app.ui.dialog('Custom transparency', [{ key: 'pct', label: 'Transparency (%)', value: typed }]);
-              const v = r ? parseFloat(r.pct) : NaN;
-              if (Number.isFinite(v)) {
-                put(v);
+              const answers = await app.ui.dialog('Custom transparency', [{ key: 'pct', label: 'Transparency (%)', value: typed }]);
+              const percent = answers ? parseFloat(answers.pct) : NaN;
+              if (Number.isFinite(percent)) {
+                put(percent);
               }
             }
           };
@@ -1356,23 +1356,23 @@ export class SelectTool implements Tool {
 
   private planeActions(): ToolItem[] {
     const app = this.app;
-    const s = this.picks[0] as Extract<Sel, { kind: 'plane' }>;
-    const plane = app.view.planeOf(s.id);
-    const isFeature = !!app.store.find(s.id);
+    const firstPick = this.picks[0] as Extract<Sel, { kind: 'plane' }>;
+    const plane = app.view.planeOf(firstPick.id);
+    const isFeature = !!app.store.find(firstPick.id);
 
     return [
-      { id: 'sketch', label: 'Sketch', icon: 'sketch', shortcut: 'S', run: () => plane && (app.setSelection([]), app.setTool(new SketchTool(app, { plane, onPlane: isFeature ? s.id : undefined }))) },
+      { id: 'sketch', label: 'Sketch', icon: 'sketch', shortcut: 'S', run: () => plane && (app.setSelection([]), app.setTool(new SketchTool(app, { plane, onPlane: isFeature ? firstPick.id : undefined }))) },
       { id: 'plane', label: 'Plane – Offset', icon: 'plane', run: () => plane && app.setTool(new PlaneOp(app, plane, undefined)) },
       { id: 'split', label: 'Split Body', icon: 'split', disabled: !app.view.bodyList.length, why: 'Needs a body', run: () => plane && this.splitWith(plane) },
-      { id: 'delete', label: 'Delete', icon: 'trash', shortcut: 'Del', disabled: !isFeature, why: "Origin planes can't be deleted", run: () => (app.store.remove(s.id), app.setSelection([])) }
+      { id: 'delete', label: 'Delete', icon: 'trash', shortcut: 'Del', disabled: !isFeature, why: "Origin planes can't be deleted", run: () => (app.store.remove(firstPick.id), app.setSelection([])) }
     ];
   }
 
   private axisActions(): ToolItem[] {
     const app = this.app;
-    const s = this.picks[0] as Extract<Sel, { kind: 'axis' }>;
+    const firstPick = this.picks[0] as Extract<Sel, { kind: 'axis' }>;
 
-    return [{ id: 'delete', label: 'Delete', icon: 'trash', shortcut: 'Del', run: () => (app.store.remove(s.id), app.setSelection([])) }];
+    return [{ id: 'delete', label: 'Delete', icon: 'trash', shortcut: 'Del', run: () => (app.store.remove(firstPick.id), app.setSelection([])) }];
   }
 
   // ------------------------------------------------------------- helpers
@@ -1394,36 +1394,36 @@ export class SelectTool implements Tool {
       return;
     }
     const view = this.app.view;
-    const s = sel[sel.length - 1];
+    const highlight = sel[sel.length - 1];
     const show = (kind: QuickKind, at: Vec3 | undefined, place?: QuickPlace) => {
       if (at) {
         this.quick = QuickActions.show(view, kind, items, at, place, true);
       }
     };
-    if (s.kind === 'face') {
-      const f = view.body(s.body)?.faces[s.face];
-      if (f) {
-        show('face', f.center, f.plane ? { facing: f.normal } : {});
+    if (highlight.kind === 'face') {
+      const face = view.body(highlight.body)?.faces[highlight.face];
+      if (face) {
+        show('face', face.center, face.plane ? { facing: face.normal } : {});
       }
-    } else if (s.kind === 'edge') {
-      show('edge', view.body(s.body)?.edges[s.edge]?.mid);
-    } else if (s.kind === 'vertex') {
-      show('vertex', view.vertexOf(s.body, s.vertex), { gap: 110 });
-    } else if (s.kind === 'body') {
+    } else if (highlight.kind === 'edge') {
+      show('edge', view.body(highlight.body)?.edges[highlight.edge]?.mid);
+    } else if (highlight.kind === 'vertex') {
+      show('vertex', view.vertexOf(highlight.body, highlight.vertex), { gap: 110 });
+    } else if (highlight.kind === 'body') {
       show('body', centerOf(this.app, bodiesOf(sel)), { gap: 120 });
-    } else if (s.kind === 'profile') {
-      const src = sourcesOf(this.app, [s])[0];
+    } else if (highlight.kind === 'profile') {
+      const src = sourcesOf(this.app, [highlight])[0];
       const fr = src && sourceFrame(this.app, src);
       if (fr) {
         show('profile', fr.base, { facing: fr.normal, hideBack: false });
       }
-    } else if (s.kind === 'plane') {
-      const pl = view.planeOf(s.id);
-      show('plane', view.planeShownAt(s.id) ?? pl?.origin, { gap: 110 });
-    } else if (s.kind === 'axis') {
-      show('axis', view.axisOf(s.id)?.plane.origin, { gap: 40 });
-    } else if (s.kind === 'image') {
-      show('image', this.app.store.find<ImageFeature>(s.id)?.plane.origin, { gap: 110 });
+    } else if (highlight.kind === 'plane') {
+      const pl = view.planeOf(highlight.id);
+      show('plane', view.planeShownAt(highlight.id) ?? pl?.origin, { gap: 110 });
+    } else if (highlight.kind === 'axis') {
+      show('axis', view.axisOf(highlight.id)?.plane.origin, { gap: 40 });
+    } else if (highlight.kind === 'image') {
+      show('image', this.app.store.find<ImageFeature>(highlight.id)?.plane.origin, { gap: 110 });
     }
   }
 
@@ -1446,9 +1446,9 @@ export class SelectTool implements Tool {
    * A selected flat face shows its thickness to the opposite face (Total);
    * typing a value or switching to Offset starts Offset Face right away.
    */
-  private showFaceDimension(s: Extract<Sel, { kind: 'face' }>, src: ExtrudeSource): void {
-    const f = this.app.view.body(s.body)!.faces[s.face];
-    const opp = oppositeFace(this.app, s.body, s.face);
+  private showFaceDimension(facePick: Extract<Sel, { kind: 'face' }>, src: ExtrudeSource): void {
+    const face = this.app.view.body(facePick.body)!.faces[facePick.face];
+    const opp = oppositeFace(this.app, facePick.body, facePick.face);
     if (!opp) {
       return;
     }
@@ -1461,24 +1461,24 @@ export class SelectTool implements Tool {
         // Past the tip of the extrude arrow, which starts at the face.
         boxAt: 'beyond',
         boxGap: 96,
-        dir: f.normal,
+        dir: face.normal,
         modes: [{ id: 'total', label: 'Total' }, { id: 'offset', label: 'Offset' }],
         mode: 'total',
-        onMode: m => start(m as 'total' | 'offset', 0),
-        onInput: v => start('total', v - opp.distance, this.dim?.text),
-        onPin: () => this.app.addPin({ text: fmtLen(opp.distance), a: opp.point, b: f.center, at: scale(add(opp.point, f.center), 0.5) }),
+        onMode: mode => start(mode as 'total' | 'offset', 0),
+        onInput: value => start('total', value - opp.distance, this.dim?.text),
+        onPin: () => this.app.addPin({ text: fmtLen(opp.distance), a: opp.point, b: face.center, at: scale(add(opp.point, face.center), 0.5) }),
         // ƒx: the thickness becomes a variable (and follows it when it changes).
-        variables: this.app.store.doc.variables.map(v => v.name),
+        variables: this.app.store.doc.variables.map(variable => variable.name),
         onVariable: (name) => {
-          const v = evaluate(name, 'length');
-          if (v === null) {
+          const value = evaluate(name, 'length');
+          if (value === null) {
             return;
           }
-          const offset = Math.round((v - opp.distance) * 1e9) / 1e9;
+          const offset = Math.round((value - opp.distance) * 1e9) / 1e9;
           this.app.setTool(new ExtrudeOp(this.app, src, undefined, 'auto', { measure: 'total', distance: offset, expr: `${name} - ${Math.round(opp.distance * 1e6) / 1e6}mm` }));
         }
       });
-      this.dim.set(opp.point, f.center);
+      this.dim.set(opp.point, face.center);
     }, 400);
   }
 
@@ -1494,43 +1494,43 @@ export class SelectTool implements Tool {
     if (!fa || !fb) {
       return;
     }
-    const n = fa.normal;
-    const parallel = !!fa.plane && !!fb.plane && Math.abs(dot(n, fb.normal)) > 0.9999;
+    const normal = fa.normal;
+    const parallel = !!fa.plane && !!fb.plane && Math.abs(dot(normal, fb.normal)) > 0.9999;
     const p0 = fa.center;
-    const p1 = parallel ? add(p0, scale(n, dot(sub(fb.center, p0), n))) : fb.center;
-    const d = len(sub(p1, p0));
+    const p1 = parallel ? add(p0, scale(normal, dot(sub(fb.center, p0), normal))) : fb.center;
+    const distance = len(sub(p1, p0));
     this.dim = new DimWidget(this.app.view, {
-      value: d,
+      value: distance,
       boxAt: 'side',
-      onPin: () => this.app.addPin({ text: fmtLen(d), a: p0, b: p1, at: scale(add(p0, p1), 0.5) })
+      onPin: () => this.app.addPin({ text: fmtLen(distance), a: p0, b: p1, at: scale(add(p0, p1), 0.5) })
     });
     this.dim.set(p0, p1);
-    this.app.ui.setHint(`${parallel ? 'Distance between the faces' : 'Centre to centre'}: ${fmtLen(d)}`);
+    this.app.ui.setHint(`${parallel ? 'Distance between the faces' : 'Centre to centre'}: ${fmtLen(distance)}`);
   }
 
   private edgeRefs(): EdgeRef[] {
-    return this.app.selection.flatMap(s => (s.kind === 'edge' ? [edgeRefOf(this.app, s)!].filter(Boolean) : []));
+    return this.app.selection.flatMap(highlight => (highlight.kind === 'edge' ? [edgeRefOf(this.app, highlight)!].filter(Boolean) : []));
   }
 
   /** Fillet/chamfer every edge round the selected faces: on a flat one's plane, or a round one's rims. */
   private edgesOfFaces(kind: 'fillet' | 'chamfer'): void {
     const refs: EdgeRef[] = [];
-    for (const s of this.picks) {
-      if (s.kind !== 'face') {
+    for (const pick of this.picks) {
+      if (pick.kind !== 'face') {
         continue;
       }
-      const b = this.app.view.body(s.body);
-      const f = b?.faces[s.face];
-      if (!b || !f) {
+      const b = this.app.view.body(pick.body);
+      const face = b?.faces[pick.face];
+      if (!b || !face) {
         continue;
       }
-      const ax = f.round ? roundAxis(this.app, s.body, s.face) : null;
-      const r = f.round?.r ?? 0;
-      const onFace = (p: Vec3) =>
-        f.plane
-          ? Math.abs((p[0] - f.center[0]) * f.normal[0] + (p[1] - f.center[1]) * f.normal[1] + (p[2] - f.center[2]) * f.normal[2]) < 1e-5
-          : !!ax && Math.abs(len(cross(sub(p, ax.origin), ax.dir)) - r) < Math.max(1e-4, r * 1e-4);
-      if (!f.plane && !ax) {
+      const ax = face.round ? roundAxis(this.app, pick.body, pick.face) : null;
+      const radius = face.round?.r ?? 0;
+      const onFace = (point: Vec3) =>
+        face.plane
+          ? Math.abs((point[0] - face.center[0]) * face.normal[0] + (point[1] - face.center[1]) * face.normal[1] + (point[2] - face.center[2]) * face.normal[2]) < 1e-5
+          : !!ax && Math.abs(len(cross(sub(point, ax.origin), ax.dir)) - radius) < Math.max(1e-4, radius * 1e-4);
+      if (!face.plane && !ax) {
         continue;
       }
       b.edges.forEach((e, i) => {
@@ -1539,7 +1539,7 @@ export class SelectTool implements Tool {
           return;
         }
         if ([e.start, e.end, e.mid].every(onFace)) {
-          refs.push(edgeRefOf(this.app, { body: s.body, edge: i })!);
+          refs.push(edgeRefOf(this.app, { body: pick.body, edge: i })!);
         }
       });
     }
@@ -1559,12 +1559,12 @@ export class SelectTool implements Tool {
   }
 
   private sketchOnFace(kind?: string): void {
-    const s = this.picks[0] as Extract<Sel, { kind: 'face' }>;
-    const info = this.app.view.body(s.body)?.faces[s.face];
+    const firstPick = this.picks[0] as Extract<Sel, { kind: 'face' }>;
+    const info = this.app.view.body(firstPick.body)?.faces[firstPick.face];
     if (!info?.plane) {
       return;
     }
-    const ref = faceRefOf(this.app, s)!;
+    const ref = faceRefOf(this.app, firstPick)!;
     this.app.setSelection([]);
     const tool = new SketchTool(this.app, { plane: originOnPlane(info.plane), attachedTo: ref });
     this.app.setTool(tool);
@@ -1577,44 +1577,44 @@ export class SelectTool implements Tool {
   /** The picked edges in a new sketch: on a flat face they all lie on, or else on the plane through them. */
   private projectEdges(): void {
     const app = this.app;
-    const picked = this.picks.filter((x): x is Extract<Sel, { kind: 'edge' }> => x.kind === 'edge');
-    const infos = picked.map(x => ({ s: x, b: app.view.body(x.body), e: app.view.body(x.body)?.edges[x.edge] })).filter(x => x.b && x.e);
+    const picked = this.picks.filter((pick): pick is Extract<Sel, { kind: 'edge' }> => pick.kind === 'edge');
+    const infos = picked.map(edge => ({ s: edge, b: app.view.body(edge.body), e: app.view.body(edge.body)?.edges[edge.edge] })).filter(info => info.b && info.e);
     if (!infos.length) {
       return;
     }
-    const pts = infos.flatMap(x => [x.e!.start, x.e!.mid, x.e!.end]);
-    const size = Math.max(1, ...pts.map(p => len(sub(p, pts[0]))));
-    const onPlane = (o: Vec3, n: Vec3) => pts.every(p => Math.abs(dot(sub(p, o), n)) < 1e-6 * size);
+    const pts = infos.flatMap(info => [info.e!.start, info.e!.mid, info.e!.end]);
+    const size = Math.max(1, ...pts.map(point => len(sub(point, pts[0]))));
+    const onPlane = (origin: Vec3, normal: Vec3) => pts.every(point => Math.abs(dot(sub(point, origin), normal)) < 1e-6 * size);
     // A flat face of the first edge's body holding them all (its sketch stays on it).
     const b0 = infos[0].b!;
-    const fi = b0.faces.findIndex(f => !!f.plane && onPlane(f.center, f.normal));
+    const fi = b0.faces.findIndex(face => !!face.plane && onPlane(face.center, face.normal));
     let plane: PlaneDef | null = fi >= 0 ? b0.faces[fi].plane! : null;
     if (!plane) {
       // The plane through them: the two points furthest apart, and the one furthest off their line.
       const a = pts[0];
-      const b = pts.reduce((m, p) => (len(sub(p, a)) > len(sub(m, a)) ? p : m), a);
-      const u = norm(sub(b, a));
-      const c = pts.reduce((m, p) => (len(cross(sub(p, a), u)) > len(cross(sub(m, a), u)) ? p : m), a);
-      const n = cross(u, sub(c, a));
-      if (len(n) < 1e-6 * size) {
+      const b = pts.reduce((best, point) => (len(sub(point, a)) > len(sub(best, a)) ? point : best), a);
+      const unitU = norm(sub(b, a));
+      const third = pts.reduce((best, point) => (len(cross(sub(point, a), unitU)) > len(cross(sub(best, a), unitU)) ? point : best), a);
+      const normal = cross(unitU, sub(third, a));
+      if (len(normal) < 1e-6 * size) {
         return app.ui.toast('One straight edge alone gives no plane: pick one more, or a face');
       }
-      if (!onPlane(a, norm(n))) {
+      if (!onPlane(a, norm(normal))) {
         return app.ui.toast("Those edges aren't on one plane");
       }
-      plane = { origin: a, normal: norm(n), xDir: u };
+      plane = { origin: a, normal: norm(normal), xDir: unitU };
     }
     // Linked: each curve follows its edge when the body changes (Unlink in the sketch, tapping it).
     const links: EdgeLink[] = [];
     const entities = infos.flatMap(({ b, e, s }) => {
-      const g = b!.edgeGroups.find(x => x.edge === s.edge);
-      if (!g) {
+      const edgeGroup = b!.edgeGroups.find(edgeGroup => edgeGroup.edge === s.edge);
+      if (!edgeGroup) {
         return [];
       }
       const ps: Vec3[] = [];
-      for (let k = g.start; k < g.start + g.count; k++) {
-        if ((k - g.start) % 2 === 0 || k === g.start + g.count - 1) {
-          ps.push([b!.edgePositions[k * 3], b!.edgePositions[k * 3 + 1], b!.edgePositions[k * 3 + 2]]);
+      for (let start = edgeGroup.start; start < edgeGroup.start + edgeGroup.count; start++) {
+        if ((start - edgeGroup.start) % 2 === 0 || start === edgeGroup.start + edgeGroup.count - 1) {
+          ps.push([b!.edgePositions[start * 3], b!.edgePositions[start * 3 + 1], b!.edgePositions[start * 3 + 2]]);
         }
       }
       const ref = edgeRefOf(app, s);
@@ -1641,28 +1641,28 @@ export class SelectTool implements Tool {
   }
 
   private projectFace(then: string): void {
-    const s = this.picks[0] as Extract<Sel, { kind: 'face' }>;
-    const b = this.app.view.body(s.body);
-    const f = b?.faces[s.face];
-    if (!b || !f?.plane) {
+    const firstPick = this.picks[0] as Extract<Sel, { kind: 'face' }>;
+    const b = this.app.view.body(firstPick.body);
+    const face = b?.faces[firstPick.face];
+    if (!b || !face?.plane) {
       return;
     }
-    const plane = f.plane;
+    const plane = face.plane;
     const links: EdgeLink[] = [];
     const entities = b.edges.flatMap((e, i) => {
-      const on = [e.start, e.end, e.mid].every(p => Math.abs((p[0] - f.center[0]) * f.normal[0] + (p[1] - f.center[1]) * f.normal[1] + (p[2] - f.center[2]) * f.normal[2]) < 1e-5);
+      const on = [e.start, e.end, e.mid].every(point => Math.abs((point[0] - face.center[0]) * face.normal[0] + (point[1] - face.center[1]) * face.normal[1] + (point[2] - face.center[2]) * face.normal[2]) < 1e-5);
       if (!on) {
         return [];
       }
-      const g = b.edgeGroups.find(x => x.edge === i)!;
+      const edgeGroup = b.edgeGroups.find(edgeGroup => edgeGroup.edge === i)!;
       const pts: Vec3[] = [];
-      for (let k = g.start; k < g.start + g.count; k++) {
-        if ((k - g.start) % 2 === 0 || k === g.start + g.count - 1) {
-          pts.push([b.edgePositions[k * 3], b.edgePositions[k * 3 + 1], b.edgePositions[k * 3 + 2]]);
+      for (let start = edgeGroup.start; start < edgeGroup.start + edgeGroup.count; start++) {
+        if ((start - edgeGroup.start) % 2 === 0 || start === edgeGroup.start + edgeGroup.count - 1) {
+          pts.push([b.edgePositions[start * 3], b.edgePositions[start * 3 + 1], b.edgePositions[start * 3 + 2]]);
         }
       }
       // Linked: it follows the face's edge when the body changes.
-      const ref = edgeRefOf(this.app, { body: s.body, edge: i });
+      const ref = edgeRefOf(this.app, { body: firstPick.body, edge: i });
       const ent = projectPolyline(pts, plane, e.type, !ref?.steps?.length);
       if (!ent) {
         return [];
@@ -1675,7 +1675,7 @@ export class SelectTool implements Tool {
 
       return [{ ...ent, id }];
     });
-    const sk: SketchFeature = { ...this.app.store.newIdentity('sketch'), type: 'sketch', plane, attachedTo: faceRefOf(this.app, s)!, entities, ...(links.length ? { links } : {}) };
+    const sk: SketchFeature = { ...this.app.store.newIdentity('sketch'), type: 'sketch', plane, attachedTo: faceRefOf(this.app, firstPick)!, entities, ...(links.length ? { links } : {}) };
     this.app.store.add(sk);
     this.openSketch(sk.id, then);
   }
@@ -1683,13 +1683,13 @@ export class SelectTool implements Tool {
   private openSketch(sketchId: string, kind: string): void {
     // Preselect the curves bounding the selected regions for sketch-level edits.
     const sk = this.app.store.find<SketchFeature>(sketchId);
-    const regions = this.app.selection.filter((s): s is Extract<Sel, { kind: 'profile' }> => s.kind === 'profile' && s.sketch === sketchId).map(s => s.region);
+    const regions = this.app.selection.filter((highlight): highlight is Extract<Sel, { kind: 'profile' }> => highlight.kind === 'profile' && highlight.sketch === sketchId).map(pick => pick.region);
     const ids = new Set<string>();
     if (sk) {
       const arr = arrangement(this.app.sketchCurves(sketchId));
       for (const ri of regions) {
-        const r = arr.regions[ri];
-        for (const loop of [r?.outer, ...(r?.holes ?? [])]) {
+        const region = arr.regions[ri];
+        for (const loop of [region?.outer, ...(region?.holes ?? [])]) {
           for (const ref of loop?.pieces ?? []) {
             const src = arr.prims[arr.pieces[ref.piece].prim].src;
             if (!src.startsWith('bnd-')) {
@@ -1716,7 +1716,7 @@ export class SelectTool implements Tool {
   }
 
   private deleteProfiles(): void {
-    const sel = this.app.selection.filter((s): s is Extract<Sel, { kind: 'profile' }> => s.kind === 'profile');
+    const sel = this.app.selection.filter((highlight): highlight is Extract<Sel, { kind: 'profile' }> => highlight.kind === 'profile');
     const sk = sel[0] && this.app.store.find<SketchFeature>(sel[0].sketch);
     if (!sk) {
       return;
@@ -1724,16 +1724,16 @@ export class SelectTool implements Tool {
     const arr = arrangement(this.app.sketchCurves(sk.id));
     // Remove curves that only bound the selected regions (face outline curves aren't the sketch's).
     const used = new Map<string, Set<number>>();
-    arr.regions.forEach((r) => {
-      for (const loop of [r.outer, ...r.holes]) {
+    arr.regions.forEach((region) => {
+      for (const loop of [region.outer, ...region.holes]) {
         for (const ref of loop.pieces) {
           const src = arr.prims[arr.pieces[ref.piece].prim].src;
-          used.set(src, (used.get(src) ?? new Set()).add(r.index));
+          used.set(src, (used.get(src) ?? new Set()).add(region.index));
         }
       }
     });
-    const chosen = new Set(sel.map(s => s.region));
-    const doomed = [...used].filter(([, rs]) => [...rs].every(r => chosen.has(r))).map(([id]) => id);
+    const chosen = new Set(sel.map(pick => pick.region));
+    const doomed = [...used].filter(([, rs]) => [...rs].every(region => chosen.has(region))).map(([id]) => id);
     this.app.store.update(sk.id, { entities: sk.entities.filter(e => !doomed.includes(e.id)) });
     this.app.setSelection([]);
   }
@@ -1750,27 +1750,27 @@ export class SelectTool implements Tool {
    * surfaces make them one surface (ready for a Thickness).
    */
   private connectEdges(edges: Extract<Sel, { kind: 'edge' }>[]): void {
-    const picks = edges.flatMap((x) => {
-      const mid = this.app.view.body(x.body)?.edges[x.edge]?.mid;
+    const picks = edges.flatMap((edge) => {
+      const mid = this.app.view.body(edge.body)?.edges[edge.edge]?.mid;
 
-      return mid ? [{ body: x.body, mid }] : [];
+      return mid ? [{ body: edge.body, mid }] : [];
     });
     // Copies become their own freeforms first (their ids change).
     const ids = new Map<string, string>();
-    for (const b of new Set(picks.map(p => p.body))) {
-      const f = this.ownFreeform(b);
-      if (!f) {
+    for (const b of new Set(picks.map(pick => pick.body))) {
+      const freeform = this.ownFreeform(b);
+      if (!freeform) {
         return this.app.ui.toast('Connect works on freeform surfaces');
       }
-      ids.set(b, f.id);
+      ids.set(b, freeform.id);
     }
-    const out = connectEdges(this.app.store.doc, picks.map(p => ({ body: ids.get(p.body)!, mid: p.mid })));
+    const out = connectEdges(this.app.store.doc, picks.map(pick => ({ body: ids.get(pick.body)!, mid: pick.mid })));
     if ('error' in out) {
       return this.app.ui.toast(out.error);
     }
-    this.app.store.commit((d) => {
-      d.features = out.doc.features;
-      d.hidden = out.doc.hidden;
+    this.app.store.commit((draft) => {
+      draft.features = out.doc.features;
+      draft.hidden = out.doc.hidden;
     });
     this.app.setSelection([{ kind: 'body', body: out.body }]);
     this.app.ui.toast('Connected - Thickness… makes it a solid');
@@ -1796,9 +1796,9 @@ export class SelectTool implements Tool {
 
   /** The freeform a body is made from (its own, or the one a copy was made of). */
   private freeformOf(body: string): FreeformFeature | undefined {
-    const f = this.app.store.find<FreeformFeature>(body);
-    if (f?.type === 'freeform') {
-      return editedStep<FreeformFeature>(this.app.store.features, f.id);
+    const freeform = this.app.store.find<FreeformFeature>(body);
+    if (freeform?.type === 'freeform') {
+      return editedStep<FreeformFeature>(this.app.store.features, freeform.id);
     }
 
     return freeformBodies(this.app.store.features).get(body)?.feature;
@@ -1809,24 +1809,24 @@ export class SelectTool implements Tool {
    * becomes its own freeform first, so editing it leaves the original alone.
    */
   private ownFreeform(body: string): FreeformFeature | undefined {
-    const f = this.app.store.find<FreeformFeature>(body);
-    if (f?.type === 'freeform') {
-      return editedStep<FreeformFeature>(this.app.store.features, f.id);
+    const freeform = this.app.store.find<FreeformFeature>(body);
+    if (freeform?.type === 'freeform') {
+      return editedStep<FreeformFeature>(this.app.store.features, freeform.id);
     }
     const id = this.app.store.newIdentity('freeform').id;
     const out = detachFreeformCopy(this.app.store.doc, body, id);
     if (!out) {
       return freeformBodies(this.app.store.features).get(body)?.feature;
     }
-    this.app.store.commit((d) => {
-      d.features = out.doc.features;
-      d.hidden = out.doc.hidden;
-      d.names = out.doc.names;
+    this.app.store.commit((draft) => {
+      draft.features = out.doc.features;
+      draft.hidden = out.doc.hidden;
+      draft.names = out.doc.names;
       if (out.doc.colors) {
-        d.colors = out.doc.colors;
+        draft.colors = out.doc.colors;
       }
       if (out.doc.materials) {
-        d.materials = out.doc.materials;
+        draft.materials = out.doc.materials;
       }
     });
 
@@ -1850,7 +1850,7 @@ export class SelectTool implements Tool {
       const tool = new FreeformTool(this.app, { feature: ff });
       this.app.setTool(tool);
       if (what.faces?.length) {
-        tool.deleteAt(what.faces.map(f => f.center), 'face');
+        tool.deleteAt(what.faces.map(face => face.center), 'face');
       } else if (what.edges?.length) {
         tool.deleteAt(what.edges.map(e => e.mid), 'edge');
       } else if (what.vertices?.length) {
@@ -1859,15 +1859,15 @@ export class SelectTool implements Tool {
 
       return;
     }
-    const f: DeleteGeomFeature = { ...this.app.store.newIdentity('deleteGeom'), type: 'deleteGeom', body, faces: what.faces ?? [], edges: what.edges ?? [], vertices: what.vertices ?? [] };
+    const deleteGeom: DeleteGeomFeature = { ...this.app.store.newIdentity('deleteGeom'), type: 'deleteGeom', body, faces: what.faces ?? [], edges: what.edges ?? [], vertices: what.vertices ?? [] };
     this.app.setSelection([]);
-    this.app.preview([...this.app.store.features, f]).then((r) => {
-      const err = r?.errors.find(e => e.featureId === f.id);
+    this.app.preview([...this.app.store.features, deleteGeom]).then((result) => {
+      const err = result?.errors.find(e => e.featureId === deleteGeom.id);
       if (err) {
         this.app.ui.toast(err.message);
         this.app.preview([...this.app.store.features]);
       } else {
-        this.app.store.add(f);
+        this.app.store.add(deleteGeom);
       }
     });
   }
@@ -1879,8 +1879,8 @@ export class SelectTool implements Tool {
 }
 
 /** Loft wants one profile per section. */
-export function splitRegions(s: ExtrudeSource): ExtrudeSource[] {
-  return s.kind === 'profile' ? s.regions.map(r => ({ ...s, regions: [r] })) : [s];
+export function splitRegions(extrudeSource: ExtrudeSource): ExtrudeSource[] {
+  return extrudeSource.kind === 'profile' ? extrudeSource.regions.map(region => ({ ...extrudeSource, regions: [region] })) : [extrudeSource];
 }
 
 /** Faces Offset Face can push: flat ones and round (cylindrical) ones. */
@@ -1892,26 +1892,26 @@ function flatten(items: ToolItem[]): ToolItem[] {
   return items.flatMap(i => [i, ...flatten(i.children ?? [])]);
 }
 
-function perpTo(d: Vec3): Vec3 {
-  const a: Vec3 = Math.abs(d[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-  const x: Vec3 = [a[1] * d[2] - a[2] * d[1], a[2] * d[0] - a[0] * d[2], a[0] * d[1] - a[1] * d[0]];
-  const l = Math.hypot(...x) || 1;
+function perpTo(direction: Vec3): Vec3 {
+  const a: Vec3 = Math.abs(direction[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const x: Vec3 = [a[1] * direction[2] - a[2] * direction[1], a[2] * direction[0] - a[0] * direction[2], a[0] * direction[1] - a[1] * direction[0]];
+  const length = Math.hypot(...x) || 1;
 
-  return [x[0] / l, x[1] / l, x[2] / l];
+  return [x[0] / length, x[1] / length, x[2] / length];
 }
 
-function label(s: Sel, n: number): string {
-  const base = { face: 'face', edge: 'edge', vertex: 'corner', body: 'body', profile: 'shape', curve: 'line', point: 'point', image: 'image', plane: 'plane', axis: 'axis', origin: 'origin' }[s.kind];
+function label(highlight: Sel, count: number): string {
+  const base = { face: 'face', edge: 'edge', vertex: 'corner', body: 'body', profile: 'shape', curve: 'line', point: 'point', image: 'image', plane: 'plane', axis: 'axis', origin: 'origin' }[highlight.kind];
 
-  return n === 1 ? base : base === 'body' ? 'bodies' : base === 'axis' ? 'axes' : `${base}s`;
+  return count === 1 ? base : base === 'body' ? 'bodies' : base === 'axis' ? 'axes' : `${base}s`;
 }
 
 function withArticle(word: string): string {
   return `${/^[aeio]/.test(word) ? 'an' : 'a'} ${word}`;
 }
 
-function cap(s: string): string {
-  return s[0].toUpperCase() + s.slice(1);
+function cap(text: string): string {
+  return text[0].toUpperCase() + text.slice(1);
 }
 
 /** Which Scale was used last (the button starts that one). */
@@ -1932,12 +1932,12 @@ function withGroups(items: ToolItem[]): ToolItem[] {
   const out: ToolItem[] = [];
   let last = '';
   items.forEach((it, i) => {
-    const g = GROUP[it.id] ?? last;
-    if (i > 0 && g !== last) {
+    const group = GROUP[it.id] ?? last;
+    if (i > 0 && group !== last) {
       out.push({ id: `---${i}`, label: '', icon: 'more' });
     }
     out.push(it);
-    last = g;
+    last = group;
   });
 
   return out;
@@ -1947,32 +1947,32 @@ function withGroups(items: ToolItem[]): ToolItem[] {
 export function roundAxis(app: AppContext, body: string, face: number): { origin: Vec3; dir: Vec3 } | null {
   const b = app.view.body(body);
   const info = b?.faces[face];
-  const g = b?.faceGroups.find(x => x.face === face);
-  if (!b || !info?.round || !g || g.count < 3) {
+  const faceGroup = b?.faceGroups.find(faceGroup => faceGroup.face === face);
+  if (!b || !info?.round || !faceGroup || faceGroup.count < 3) {
     return null;
   }
-  const N = b.normals;
-  const P = b.positions;
-  const I = b.indices;
-  const nAt = (i: number): Vec3 => [N[3 * i], N[3 * i + 1], N[3 * i + 2]];
-  const n0 = nAt(I[g.start]);
+  const normals = b.normals;
+  const positions = b.positions;
+  const indices = b.indices;
+  const nAt = (i: number): Vec3 => [normals[3 * i], normals[3 * i + 1], normals[3 * i + 2]];
+  const n0 = nAt(indices[faceGroup.start]);
   let best: Vec3 | null = null;
   let most = 0;
-  for (let k = g.start; k < g.start + g.count; k++) {
-    const c = cross(n0, nAt(I[k]));
-    const l = len(c);
-    if (l > most) {
-      (most = l), (best = c);
+  for (let start = faceGroup.start; start < faceGroup.start + faceGroup.count; start++) {
+    const normalCross = cross(n0, nAt(indices[start]));
+    const length = len(normalCross);
+    if (length > most) {
+      (most = length), (best = normalCross);
     }
   }
   if (!best || most < 1e-3) {
     return null;
   }
   const dir = norm(best);
-  const i = I[g.start];
-  const p: Vec3 = [P[3 * i], P[3 * i + 1], P[3 * i + 2]];
-  const o = add(p, scale(norm(n0), info.round.hole ? info.round.r : -info.round.r));
+  const i = indices[faceGroup.start];
+  const point: Vec3 = [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]];
+  const axisPoint = add(point, scale(norm(n0), info.round.hole ? info.round.r : -info.round.r));
 
   // Its middle level with the face's.
-  return { origin: add(o, scale(dir, dot(sub(info.center, o), dir))), dir };
+  return { origin: add(axisPoint, scale(dir, dot(sub(info.center, axisPoint), dir))), dir };
 }

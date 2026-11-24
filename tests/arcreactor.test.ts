@@ -31,53 +31,51 @@ const XY = (z = 0): PlaneDef => ({ origin: [0, 0, z], normal: [0, 0, 1], xDir: [
 const XYdown = (z = 0): PlaneDef => ({ origin: [0, 0, z], normal: [0, 0, -1], xDir: [1, 0, 0] });
 const XZ = (y = 0): PlaneDef => ({ origin: [0, y, 0], normal: [0, -1, 0], xDir: [1, 0, 0] }); // u = x, v = z
 const all = (es: any[]) => arrangement(es).regions.map(regionRef);
-const where = (es: any[], test: (c: number[], r: any) => boolean) => arrangement(es).regions.filter(r => test(r.centroid, r)).map(regionRef);
+const where = (es: any[], test: (c: number[], r: any) => boolean) => arrangement(es).regions.filter(region => test(region.centroid, region)).map(regionRef);
 const feats: any[] = [];
 const variables = [
   { name: 'coils', expr: '10' },
   { name: 'play', expr: '0.2 mm' }
 ];
 const doc = () => {
-  const d: any = { format: 'super', version: 2, name: 'Arc reactor', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
-  const problems = resolveDoc(d);
+  const doc: any = { format: 'super', version: 2, name: 'Arc reactor', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
+  const problems = resolveDoc(doc);
   if (problems.length) {
     console.log('problems:', problems);
   }
 
-  return d;
+  return doc;
 };
 const sections: { name: string; from: number }[] = [];
 const section = (name: string) => sections.push({ name, from: feats.length });
-const nameOf = (fid: string) => feats.find(f => f.id === fid)?.name ?? fid;
+const nameOf = (fid: string) => feats.find(feature => feature.id === fid)?.name ?? fid;
 const build = async () => {
-  const r: any = await regenerate(doc().features);
-  if (r.errors.length) {
-    console.log('errors:', r.errors.map((e: any) => `${nameOf(e.featureId)}: ${e.message}`).join('; '));
+  const result: any = await regenerate(doc().features);
+  if (result.errors.length) {
+    console.log('errors:', result.errors.map((e: any) => `${nameOf(e.featureId)}: ${e.message}`).join('; '));
   }
 
-  return r;
+  return result;
 };
 const stage = async (label: string) => {
   const t = Date.now();
-  const r = await build();
-  check(`${label} builds`, !r.errors.length, `${r.bodies.length} bodies, ${Date.now() - t} ms`);
+  const result = await build();
+  check(`${label} builds`, !result.errors.length, `${result.bodies.length} bodies, ${Date.now() - t} ms`);
 
-  return r;
+  return result;
 };
-const B = (body: string) => debugBodies().get(body) as any;
-const ref = (body: string, f: any) => ({ body, center: f.center.toTuple() as Vec3, normal: f.normalAt().toTuple() as Vec3, area: measureArea(f) });
+const bodyShape = (body: string) => debugBodies().get(body) as any;
 const edgesWhere = (body: string, test: (p: number[], e: any) => boolean) => {
-  const es = B(body).edges.filter((e: any) => test(e.pointAt(0.5).toTuple(), e));
+  const es = bodyShape(body).edges.filter((e: any) => test(e.pointAt(0.5).toTuple(), e));
   if (!es.length) {
     throw new Error(`no such edge on ${body}`);
   }
 
   return es.map((e: any) => ({ body, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length as number }));
 };
-const V = (body: string) => Math.abs(measureVolume(B(body)));
-const box = (body: string) => B(body).boundingBox.bounds as [number[], number[]];
+const box = (body: string) => bodyShape(body).boundingBox.bounds as [number[], number[]];
 const rad = (deg: number) => (deg * Math.PI) / 180;
-const polar = (r: number, deg: number): [number, number] => [r * Math.cos(rad(deg)), r * Math.sin(rad(deg))];
+const polar = (radius: number, deg: number): [number, number] => [radius * Math.cos(rad(deg)), radius * Math.sin(rad(deg))];
 const PLAY = 0.2;
 const zAxis = { origin: [0, 0, 0] as Vec3, dir: [0, 0, 1] as Vec3, ref: { kind: 'axis', feature: 'axis' } };
 
@@ -112,8 +110,8 @@ const disc = [{ id: 'disc', kind: 'circle', center: [0, 0], radius: R_OUT }];
 feats.push({ id: 'sCase', name: 'Case outline', type: 'sketch', plane: XY(0), entities: disc });
 feats.push({ id: 'case', name: 'Case', type: 'extrude', source: { kind: 'profile', sketch: 'sCase', regions: all(disc) }, distance: H_CASE, mode: 'new' });
 await build();
-feats.push({ id: 'foot', name: 'Bevel the foot', type: 'chamfer', edges: edgesWhere('case', p => Math.abs(p[2]) < 1e-6), radius: 0.6 });
-feats.push({ id: 'rimRound', name: 'Round the rim', type: 'fillet', edges: edgesWhere('case', p => Math.abs(p[2] - H_CASE) < 1e-6), radius: 2 });
+feats.push({ id: 'foot', name: 'Bevel the foot', type: 'chamfer', edges: edgesWhere('case', midpoint => Math.abs(midpoint[2]) < 1e-6), radius: 0.6 });
+feats.push({ id: 'rimRound', name: 'Round the rim', type: 'fillet', edges: edgesWhere('case', midpoint => Math.abs(midpoint[2] - H_CASE) < 1e-6), radius: 2 });
 const well = [{ id: 'well', kind: 'circle', center: [0, 0], radius: R_POCKET }];
 feats.push({ id: 'sWell', name: 'Well', type: 'sketch', plane: XYdown(H_CASE), entities: well });
 feats.push({ id: 'wellCut', name: 'Sink the well', type: 'extrude', source: { kind: 'profile', sketch: 'sWell', regions: all(well) }, distance: H_CASE - FLOOR, mode: 'cut', target: 'case' });
@@ -127,15 +125,15 @@ const ring = [
   { id: 'r1', kind: 'circle', center: [0, 0], radius: R_RING1 }
 ];
 feats.push({ id: 'sRing', name: 'Inner ring', type: 'sketch', plane: XY(FLOOR), entities: ring });
-feats.push({ id: 'ring', name: 'Inner ring', type: 'extrude', source: { kind: 'profile', sketch: 'sRing', regions: where(ring, (_, r) => r.holes.length > 0) }, distance: H_RING - FLOOR, mode: 'join', target: 'case' });
+feats.push({ id: 'ring', name: 'Inner ring', type: 'extrude', source: { kind: 'profile', sketch: 'sRing', regions: where(ring, (_, region) => region.holes.length > 0) }, distance: H_RING - FLOOR, mode: 'join', target: 'case' });
 const rib = [{ id: 'rib', kind: 'rect', center: polar((R_RING1 + R_POCKET) / 2 - 0.5, 18), w: R_POCKET - R_RING1 + 1, h: 3, rotation: rad(18) }];
 feats.push({ id: 'sRib', name: 'Rib', type: 'sketch', plane: XY(FLOOR), entities: rib });
 feats.push({ id: 'rib', name: 'Rib', type: 'extrude', source: { kind: 'profile', sketch: 'sRib', regions: all(rib) }, distance: 4, mode: 'new' });
 feats.push({ id: 'ribs', name: 'Ribs round', type: 'transform', bodies: ['rib'], copy: false, op: { kind: 'circular', axis: zAxis, count: 10, angle: 360 }, exprs: { 'op.count': 'coils' } });
-const ribIds = ['rib', ...Array.from({ length: 9 }, (_, k) => `ribs:rib:${k}`)];
+const ribIds = ['rib', ...Array.from({ length: 9 }, (_, index) => `ribs:rib:${index}`)];
 feats.push({ id: 'ribsOn', name: 'Ribs on', type: 'boolean', op: 'union', target: 'case', tools: ribIds });
 await build();
-feats.push({ id: 'ringRound', name: "Round the ring's top", type: 'fillet', edges: edgesWhere('case', p => Math.abs(p[2] - H_RING) < 1e-6), radius: 0.8 });
+feats.push({ id: 'ringRound', name: "Round the ring's top", type: 'fillet', edges: edgesWhere('case', midpoint => Math.abs(midpoint[2] - H_RING) < 1e-6), radius: 0.8 });
 await stage('stage 2 (ring, ribs)');
 
 // --- 3. Coil sockets: a wedge 0.2 bigger all round than a coil, sunk 1 into
@@ -146,7 +144,7 @@ const sock = wedge(C_IN - PLAY, C_OUT + PLAY, socketAngle, 'S');
 feats.push({ id: 'sSocket', name: 'Coil socket', type: 'sketch', plane: XYdown(FLOOR), entities: sock });
 feats.push({ id: 'socket', name: 'Coil socket', type: 'extrude', source: { kind: 'profile', sketch: 'sSocket', regions: all(sock) }, distance: C_SINK, mode: 'new' });
 feats.push({ id: 'sockets', name: 'Sockets round', type: 'transform', bodies: ['socket'], copy: false, op: { kind: 'circular', axis: zAxis, count: 10, angle: 360 }, exprs: { 'op.count': 'coils' } });
-const sockIds = ['socket', ...Array.from({ length: 9 }, (_, k) => `sockets:socket:${k}`)];
+const sockIds = ['socket', ...Array.from({ length: 9 }, (_, index) => `sockets:socket:${index}`)];
 feats.push({ id: 'socketCut', name: 'Cut the sockets', type: 'boolean', op: 'subtract', target: 'case', tools: sockIds });
 await stage('stage 3 (sockets)');
 
@@ -176,7 +174,7 @@ const slotS = [{ id: 'ss', kind: 'rect', center: [SR, 0], w: 5, h: 0.6, rotation
 feats.push({ id: 'sSlotS', name: 'Screw slot', type: 'sketch', plane: XYdown(H_CASE + 1.5), entities: slotS });
 feats.push({ id: 'slotS', name: 'Cut the screw slot', type: 'extrude', source: { kind: 'profile', sketch: 'sSlotS', regions: all(slotS) }, distance: 1, mode: 'cut', target: 'screw' });
 feats.push({ id: 'screws', name: 'Screws round', type: 'transform', bodies: ['screw'], copy: false, op: { kind: 'circular', axis: zAxis, count: 10, angle: 360 }, exprs: { 'op.count': 'coils' } });
-const screwIds = ['screw', ...Array.from({ length: 9 }, (_, k) => `screws:screw:${k}`)];
+const screwIds = ['screw', ...Array.from({ length: 9 }, (_, index) => `screws:screw:${index}`)];
 feats.push({ id: 'screwsOn', name: 'Screws on the rim', type: 'boolean', op: 'union', target: 'case', tools: screwIds });
 await stage('stage 5 (screws)');
 
@@ -188,8 +186,8 @@ const coil = wedge(C_IN, C_OUT, C_HALF, 'C');
 feats.push({ id: 'sCoil', name: 'Coil', type: 'sketch', plane: XY(FLOOR - C_SINK), entities: coil });
 feats.push({ id: 'coil', name: 'Coil', type: 'extrude', source: { kind: 'profile', sketch: 'sCoil', regions: all(coil) }, distance: C_TOP - (FLOOR - C_SINK), mode: 'new' });
 await build();
-feats.push({ id: 'coilRound', name: 'Round the coil', type: 'fillet', edges: edgesWhere('coil', p => Math.abs(p[2] - (C_TOP + FLOOR - C_SINK) / 2) < 1e-6), radius: 0.8 });
-feats.push({ id: 'coilTop', name: "Round the coil's top", type: 'fillet', edges: edgesWhere('coil', p => Math.abs(p[2] - C_TOP) < 1e-6), radius: 0.6 });
+feats.push({ id: 'coilRound', name: 'Round the coil', type: 'fillet', edges: edgesWhere('coil', midpoint => Math.abs(midpoint[2] - (C_TOP + FLOOR - C_SINK) / 2) < 1e-6), radius: 0.8 });
+feats.push({ id: 'coilTop', name: "Round the coil's top", type: 'fillet', edges: edgesWhere('coil', midpoint => Math.abs(midpoint[2] - C_TOP) < 1e-6), radius: 0.6 });
 const turns = Array.from({ length: 11 }, (_, i) => {
   const a = -10 + 2 * i;
 
@@ -198,7 +196,7 @@ const turns = Array.from({ length: 11 }, (_, i) => {
 feats.push({ id: 'sWind', name: 'Windings', type: 'sketch', plane: XYdown(C_TOP), entities: turns });
 feats.push({ id: 'wind', name: 'Groove the windings', type: 'extrude', source: { kind: 'profile', sketch: 'sWind', regions: all(turns) }, distance: 0.5, mode: 'cut', target: 'coil' });
 feats.push({ id: 'coils', name: 'Coils round', type: 'transform', bodies: ['coil'], copy: false, op: { kind: 'circular', axis: zAxis, count: 10, angle: 360 }, exprs: { 'op.count': 'coils' } });
-const coilIds = ['coil', ...Array.from({ length: 9 }, (_, k) => `coils:coil:${k}`)];
+const coilIds = ['coil', ...Array.from({ length: 9 }, (_, index) => `coils:coil:${index}`)];
 await stage('stage 6 (coils)');
 
 // --- 7. The lens: a disc 0.2 smaller than the ring's bore with a domed
@@ -213,80 +211,80 @@ const lens = [
 feats.push({ id: 'sLens', name: 'Lens profile', type: 'sketch', plane: XZ(0), entities: lens });
 feats.push({ id: 'lens', name: 'Lens', type: 'revolve', source: { kind: 'profile', sketch: 'sLens', regions: all(lens) }, axis: { origin: [0, 0, 0], dir: [0, 0, 1], ref: { kind: 'sketchLine', sketch: 'sLens', entity: 'la' } }, angle: 360, mode: 'new' });
 await build();
-feats.push({ id: 'lensFoot', name: "Bevel the lens' foot", type: 'chamfer', edges: edgesWhere('lens', p => Math.abs(p[2] - FLOOR) < 1e-6 && Math.hypot(p[0], p[1]) > LR - 0.01), radius: 0.4 });
+feats.push({ id: 'lensFoot', name: "Bevel the lens' foot", type: 'chamfer', edges: edgesWhere('lens', midpoint => Math.abs(midpoint[2] - FLOOR) < 1e-6 && Math.hypot(midpoint[0], midpoint[1]) > LR - 0.01), radius: 0.4 });
 const final = await stage('the whole reactor');
 
 // --- Checks: the parts, how they fit, and how they print.
-check('10 coils', coilIds.every(c => B(c)));
-check('the case is one solid', healthOf(B('case')).solids === 1);
+check('10 coils', coilIds.every(coilId => bodyShape(coilId)));
+check('the case is one solid', healthOf(bodyShape('case')).solids === 1);
 const parts = ['case', ...coilIds, 'lens'];
-const bad = parts.filter(p => !isHealthy(healthOf(B(p))));
+const bad = parts.filter(part => !isHealthy(healthOf(bodyShape(part))));
 check('every part is a clean solid', !bad.length, bad.join(' '));
 check('the reactor is 80 across', Math.abs(box('case')[1][0] - box('case')[0][0] - 2 * R_OUT) < 1e-6);
 {
   // Each screw's dome: a round face near r 36.5 reaching above the rim.
-  const domes = B('case').faces.filter((f: any) => f.geomType !== 'PLANE' && f.center.z > H_CASE && Math.abs(Math.hypot(f.center.x, f.center.y) - SR) < 1);
+  const domes = bodyShape('case').faces.filter((face: any) => face.geomType !== 'PLANE' && face.center.z > H_CASE && Math.abs(Math.hypot(face.center.x, face.center.y) - SR) < 1);
   check('ten screw heads on the rim', domes.length >= 10, `${domes.length} faces`);
 }
 check('the coils stand up out of the well', box('coil')[1][2] > H_CASE - 0.5 && box('coil')[0][2] === FLOOR - C_SINK, `${box('coil')[0][2]}..${box('coil')[1][2]}`);
 // Fit: no part runs into another (0.2 play), and each sits on what's under it.
-for (const p of [...coilIds, 'lens']) {
-  let v = 0;
+for (const part of [...coilIds, 'lens']) {
+  let volume = 0;
   try {
-    v = Math.abs(measureVolume(B(p).intersect(B('case'))));
+    volume = Math.abs(measureVolume(bodyShape(part).intersect(bodyShape('case'))));
   } catch {
-    v = -1;
+    volume = -1;
   }
-  if (p === 'coil' || p === 'lens') {
-    check(`${p}: clear of the case`, v === 0 || v < 1e-6, `${v.toExponential(2)} mm³ shared`);
-  } else if (v > 1e-6) {
-    check(`${p}: clear of the case`, false, `${v.toFixed(3)} mm³ shared`);
+  if (part === 'coil' || part === 'lens') {
+    check(`${part}: clear of the case`, volume === 0 || volume < 1e-6, `${volume.toExponential(2)} mm³ shared`);
+  } else if (volume > 1e-6) {
+    check(`${part}: clear of the case`, false, `${volume.toFixed(3)} mm³ shared`);
   }
 }
 check("the coil sits on its socket's floor", Math.abs(box('coil')[0][2] - (FLOOR - C_SINK)) < 1e-9);
 check('the lens sits on the ledge', Math.abs(box('lens')[0][2] - FLOOR) < 1e-9);
 // Print: each part stands on a flat face at its lowest point, and nothing
 // faces down steeper than 45° anywhere else (no supports).
-for (const p of ['case', 'coil', 'lens']) {
-  const s = B(p);
-  const zMin = box(p)[0][2];
-  const base = s.faces.filter((f: any) => f.geomType === 'PLANE' && f.normalAt().z < -0.999 && Math.abs(f.center.z - zMin) < 1e-6);
-  const baseArea = base.reduce((a: number, f: any) => a + measureArea(f), 0);
-  check(`${p}: stands on a flat base`, baseArea > 50, `${baseArea.toFixed(0)} mm²`);
-  const m = s.mesh({ tolerance: 0.02, angularTolerance: 0.2 });
+for (const part of ['case', 'coil', 'lens']) {
+  const shape = bodyShape(part);
+  const zMin = box(part)[0][2];
+  const base = shape.faces.filter((face: any) => face.geomType === 'PLANE' && face.normalAt().z < -0.999 && Math.abs(face.center.z - zMin) < 1e-6);
+  const baseArea = base.reduce((a: number, face: any) => a + measureArea(face), 0);
+  check(`${part}: stands on a flat base`, baseArea > 50, `${baseArea.toFixed(0)} mm²`);
+  const mesh = shape.mesh({ tolerance: 0.02, angularTolerance: 0.2 });
   let over = 0;
-  for (let k = 0; k < m.triangles.length; k += 3) {
-    const [a, b, c] = [0, 1, 2].map(j => m.vertices.slice(3 * m.triangles[k + j], 3 * m.triangles[k + j] + 3));
-    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    const w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
-    const area = Math.hypot(n[0], n[1], n[2]) / 2;
-    const nz = n[2] / (2 * area || 1);
-    const low = Math.min(a[2], b[2], c[2]);
+  for (let index = 0; index < mesh.triangles.length; index += 3) {
+    const [a, b, vertexC] = [0, 1, 2].map(j => mesh.vertices.slice(3 * mesh.triangles[index + j], 3 * mesh.triangles[index + j] + 3));
+    const edgeU = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const edgeV = [vertexC[0] - a[0], vertexC[1] - a[1], vertexC[2] - a[2]];
+    const normal = [edgeU[1] * edgeV[2] - edgeU[2] * edgeV[1], edgeU[2] * edgeV[0] - edgeU[0] * edgeV[2], edgeU[0] * edgeV[1] - edgeU[1] * edgeV[0]];
+    const area = Math.hypot(normal[0], normal[1], normal[2]) / 2;
+    const nz = normal[2] / (2 * area || 1);
+    const low = Math.min(a[2], b[2], vertexC[2]);
     if (nz < -0.72 && low > zMin + 1e-6) {
       over += area;
     }
   }
-  check(`${p}: no overhang steeper than 45°`, over < 0.5, `${over.toFixed(2)} mm² facing down`);
+  check(`${part}: no overhang steeper than 45°`, over < 0.5, `${over.toFixed(2)} mm² facing down`);
 }
 check('thinnest floor 2 mm (under the LED)', true);
-const used = new Set(feats.map(f => f.type));
+const used = new Set(feats.map(feature => feature.type));
 console.log(`${feats.length} steps, ${final.bodies.length} bodies; tools: ${[...used].sort().join(' ')}`);
 
 if (process.argv[2]) {
-  const d = doc();
+  const project = doc();
   const colors: Record<string, string> = { case: '#34373c', lens: '#bff3ff' };
   const names: Record<string, string> = { case: 'Housing', lens: 'Lens' };
-  coilIds.forEach((c, i) => {
-    colors[c] = '#b8733a';
-    names[c] = `Coil ${i + 1}`;
+  coilIds.forEach((coilId, i) => {
+    colors[coilId] = '#b8733a';
+    names[coilId] = `Coil ${i + 1}`;
   });
-  d.colors = colors;
-  d.names = names;
-  d.opacity = { lens: 0.55 };
-  d.hidden = feats.filter(f => f.type === 'sketch' || f.type === 'axis').map(f => f.id);
-  d.historyGroups = sections.map((s, k) => ({ id: `g${k}`, name: s.name, steps: feats.slice(s.from, sections[k + 1]?.from ?? feats.length).map(f => f.id) })).filter(g => g.steps.length > 1);
-  writeFileSync(process.argv[2], JSON.stringify(d));
+  project.colors = colors;
+  project.names = names;
+  project.opacity = { lens: 0.55 };
+  project.hidden = feats.filter(feature => feature.type === 'sketch' || feature.type === 'axis').map(feature => feature.id);
+  project.historyGroups = sections.map((section, sectionIndex) => ({ id: `g${sectionIndex}`, name: section.name, steps: feats.slice(section.from, sections[sectionIndex + 1]?.from ?? feats.length).map(feature => feature.id) })).filter(group => group.steps.length > 1);
+  writeFileSync(process.argv[2], JSON.stringify(project));
   console.log('written', process.argv[2]);
 }
 process.exit(failed ? 1 : 0);

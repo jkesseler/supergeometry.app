@@ -13,8 +13,8 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 async function tell(msg) {
-  for (const c of await self.clients.matchAll({ includeUncontrolled: true })) {
-    c.postMessage(msg);
+  for (const client of await self.clients.matchAll({ includeUncontrolled: true })) {
+    client.postMessage(msg);
   }
 }
 
@@ -37,11 +37,11 @@ async function download(fresh, keep) {
   const store = await caches.open(name);
   let done = 0;
   try {
-    for (const f of list.files) {
-      const url = new URL(f, scope).href;
+    for (const file of list.files) {
+      const url = new URL(file, scope).href;
       if (!(await store.match(url))) {
         // A file an older version already has (the same name means the same contents) is copied over.
-        const same = f !== './' && f !== 'index.html' && !fresh ? await caches.match(url, { ignoreVary: true }) : null;
+        const same = file !== './' && file !== 'index.html' && !fresh ? await caches.match(url, { ignoreVary: true }) : null;
         const res = same ?? (await fetch(url, { cache: 'no-cache' }));
         if (!res.ok) {
           throw new Error(String(res.status));
@@ -56,9 +56,9 @@ async function download(fresh, keep) {
 
     return;
   }
-  for (const k of await caches.keys()) {
-    if (k.startsWith(PREFIX) && k !== name && k !== PREFIX + keep) {
-      await caches.delete(k);
+  for (const cacheName of await caches.keys()) {
+    if (cacheName.startsWith(PREFIX) && cacheName !== name && cacheName !== PREFIX + keep) {
+      await caches.delete(cacheName);
     }
   }
   await tell({ type: 'offline-ready', build: list.build });
@@ -74,9 +74,9 @@ self.addEventListener('message', (e) => {
 
 /** The page from the store (the newest version stored). */
 async function storedPage() {
-  const names = (await caches.keys()).filter(k => k.startsWith(PREFIX));
-  for (const n of names.reverse()) {
-    const hit = (await (await caches.open(n)).match(scope)) ?? (await (await caches.open(n)).match(new URL('index.html', scope).href));
+  const names = (await caches.keys()).filter(cacheName => cacheName.startsWith(PREFIX));
+  for (const name of names.reverse()) {
+    const hit = (await (await caches.open(name)).match(scope)) ?? (await (await caches.open(name)).match(new URL('index.html', scope).href));
     if (hit) {
       return hit;
     }

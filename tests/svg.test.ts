@@ -10,13 +10,13 @@ const checks: [string, () => string][] = [
       <rect x="10" y="10" width="80" height="40"/><circle cx="150" cy="50" r="20"/></svg>`);
     const kinds = entities.map(e => e.kind).sort().join(',');
     assert.equal(kinds, 'circle,rect');
-    const r = entities.find(e => e.kind === 'rect') as any;
-    const c = entities.find(e => e.kind === 'circle') as any;
+    const entity = entities.find(e => e.kind === 'rect') as any;
+    const circle = entities.find(e => e.kind === 'circle') as any;
     // 200 user units = 100 mm → 0.5 mm each.
-    assert.ok(near(r.w, 40) && near(r.h, 20) && near(c.radius, 10), JSON.stringify([r, c]));
+    assert.ok(near(entity.w, 40) && near(entity.h, 20) && near(circle.radius, 10), JSON.stringify([entity, circle]));
     assert.equal(arrangement(entities).regions.length, 2);
 
-    return `size ${size.map(v => v.toFixed(1)).join(' × ')} mm`;
+    return `size ${size.map(value => value.toFixed(1)).join(' × ')} mm`;
   }],
   ['path with lines, a cubic, an arc and close → one closed region', () => {
     const { entities } = parseSVG(`<svg viewBox="0 0 100 100" width="100mm">

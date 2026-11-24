@@ -14,17 +14,17 @@ export class SheetCamera {
   /** The screen area (px) and the sheet (mm). */
   vw = 1;
   vh = 1;
-  W = 420;
-  H = 297;
+  sheetWidth = 420;
+  sheetHeight = 297;
 
   /** Room round the sheet when it is all in view (px). */
   static MARGIN = 16;
 
   /** Pixels per mm with all of the sheet in view. */
   fitZoom(): number {
-    const m = SheetCamera.MARGIN;
+    const margin = SheetCamera.MARGIN;
 
-    return Math.max(1e-3, Math.min((this.vw - 2 * m) / this.W, (this.vh - 2 * m) / this.H));
+    return Math.max(1e-3, Math.min((this.vw - 2 * margin) / this.sheetWidth, (this.vh - 2 * margin) / this.sheetHeight));
   }
   /** How far it may go: a quarter of the whole sheet out, 60 times in (and at least 40 px a mm). */
   minZoom(): number {
@@ -37,8 +37,8 @@ export class SheetCamera {
   /** All of the sheet, in the middle. */
   fit(): void {
     this.z = this.fitZoom();
-    this.cx = this.W / 2;
-    this.cy = this.H / 2;
+    this.cx = this.sheetWidth / 2;
+    this.cy = this.sheetHeight / 2;
     this.fitted = true;
   }
 
@@ -54,12 +54,12 @@ export class SheetCamera {
   }
 
   /** Another sheet size (A3 to A4…): all of it. */
-  setSheet(W: number, H: number): void {
-    if (W === this.W && H === this.H) {
+  setSheet(sheetWidth: number, sheetHeight: number): void {
+    if (sheetWidth === this.sheetWidth && sheetHeight === this.sheetHeight) {
       return;
     }
-    this.W = W;
-    this.H = H;
+    this.sheetWidth = sheetWidth;
+    this.sheetHeight = sheetHeight;
     this.fit();
   }
 
@@ -72,10 +72,10 @@ export class SheetCamera {
     return [this.vw / 2 + (x - this.cx) * this.z, this.vh / 2 + (y - this.cy) * this.z];
   }
 
-  /** Closer (k > 1) or further, keeping the paper under the screen point where it is. */
-  zoomAt(px: number, py: number, k: number): void {
+  /** Closer (`factor` > 1) or further, keeping the paper under the screen point where it is. */
+  zoomAt(px: number, py: number, factor: number): void {
     const [x, y] = this.toPaper(px, py);
-    this.z = Math.min(this.maxZoom(), Math.max(this.minZoom(), this.z * k));
+    this.z = Math.min(this.maxZoom(), Math.max(this.minZoom(), this.z * factor));
     this.cx = x - (px - this.vw / 2) / this.z;
     this.cy = y - (py - this.vh / 2) / this.z;
     this.fitted = false;
@@ -92,8 +92,8 @@ export class SheetCamera {
 
   /** The sheet never goes out of sight: the middle of the screen stays over it. */
   clamp(): void {
-    this.cx = Math.min(this.W, Math.max(0, this.cx));
-    this.cy = Math.min(this.H, Math.max(0, this.cy));
+    this.cx = Math.min(this.sheetWidth, Math.max(0, this.cx));
+    this.cy = Math.min(this.sheetHeight, Math.max(0, this.cy));
   }
 
   /** How close, against all of the sheet in view (1: fitted). */
@@ -103,11 +103,11 @@ export class SheetCamera {
 
   /** The SVG viewBox for what's in view. */
   viewBox(): string {
-    const w = this.vw / this.z;
-    const h = this.vh / this.z;
-    const r = (v: number) => Math.round(v * 1e4) / 1e4;
+    const width = this.vw / this.z;
+    const height = this.vh / this.z;
+    const round4 = (value: number) => Math.round(value * 1e4) / 1e4;
 
-    return `${r(this.cx - w / 2)} ${r(this.cy - h / 2)} ${r(w)} ${r(h)}`;
+    return `${round4(this.cx - width / 2)} ${round4(this.cy - height / 2)} ${round4(width)} ${round4(height)}`;
   }
 
   /** The state, to go smoothly from one to another. */

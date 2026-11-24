@@ -47,8 +47,8 @@ export class DragTyping {
   private boxTarget: DragTypingTarget | null = null;
 
   /** Show / move the value box at the pointer with this value. */
-  box(p: ToolPointer, value: string, target: DragTypingTarget): void {
-    this.at = { x: p.x, y: p.y };
+  box(pointer: ToolPointer, value: string, target: DragTypingTarget): void {
+    this.at = { x: pointer.x, y: pointer.y };
     this.boxTarget = target;
     if (!this.boxEl) {
       const box = document.createElement('div');
@@ -65,10 +65,10 @@ export class DragTyping {
         if (!t) {
           return;
         }
-        const v = evaluate(input.value, t.kind);
-        input.classList.toggle('invalid', v === null);
-        if (v !== null) {
-          mergingCommits(input, () => t.apply(v));
+        const value = evaluate(input.value, t.kind);
+        input.classList.toggle('invalid', value === null);
+        if (value !== null) {
+          mergingCommits(input, () => t.apply(value));
         }
       });
       input.addEventListener('keydown', (e) => {
@@ -92,24 +92,24 @@ export class DragTyping {
     if (document.activeElement !== this.boxInput) {
       this.boxInput!.value = value.replace(/\s*(mm|cm|m|in|ft|°|")$/, '').replace(/^×/, '');
     }
-    const r = this.app.view.canvas.getBoundingClientRect();
+    const rect = this.app.view.canvas.getBoundingClientRect();
     this.boxEl.hidden = false;
     // Below right of the finger - or left of it / above it where that runs off
     // the screen (a face pushed out at a phone's right edge had its box at
     // x 387 on a 375 screen: there, but not to be tapped).
-    const w = this.boxEl.offsetWidth;
-    const h = this.boxEl.offsetHeight;
-    const M = 8;
-    let x = r.left + p.x + 22;
-    let y = r.top + p.y + 16;
-    if (x + w > innerWidth - M) {
-      x = r.left + p.x - 22 - w;
+    const offsetWidth = this.boxEl.offsetWidth;
+    const offsetHeight = this.boxEl.offsetHeight;
+    const margin = 8;
+    let x = rect.left + pointer.x + 22;
+    let y = rect.top + pointer.y + 16;
+    if (x + offsetWidth > innerWidth - margin) {
+      x = rect.left + pointer.x - 22 - offsetWidth;
     }
-    if (y + h > innerHeight - M) {
-      y = r.top + p.y - 16 - h;
+    if (y + offsetHeight > innerHeight - margin) {
+      y = rect.top + pointer.y - 16 - offsetHeight;
     }
-    x = Math.max(M, Math.min(x, innerWidth - M - w));
-    y = Math.max(M, Math.min(y, innerHeight - M - h));
+    x = Math.max(margin, Math.min(x, innerWidth - margin - offsetWidth));
+    y = Math.max(margin, Math.min(y, innerHeight - margin - offsetHeight));
     this.boxEl.style.left = `${Math.round(x)}px`;
     this.boxEl.style.top = `${Math.round(y)}px`;
     this.app.ui.setLabel(0, 0, null);
@@ -128,8 +128,8 @@ export class DragTyping {
   }
 
   /** Remember where the pointer is (the typed value is shown next to it). */
-  track(p: ToolPointer): void {
-    this.at = { x: p.x, y: p.y };
+  track(pointer: ToolPointer): void {
+    this.at = { x: pointer.x, y: pointer.y };
     if (this.active) {
       this.show();
     }
@@ -179,13 +179,13 @@ export class DragTyping {
     } else {
       return false;
     }
-    const v = this.text ? evaluate(this.text, t.kind) : null;
-    if (v !== null) {
-      t.apply(v);
+    const value = this.text ? evaluate(this.text, t.kind) : null;
+    if (value !== null) {
+      t.apply(value);
     } else if (!this.text) {
       t.cancel?.();
     }
-    this.show(v === null && !!this.text);
+    this.show(value === null && !!this.text);
 
     return true;
   }

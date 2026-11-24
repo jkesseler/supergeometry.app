@@ -13,13 +13,13 @@ const features
 
 let failed = 0;
 for (let i = 1; i <= features.length; i++) {
-  const r = await regenerate(features.slice(0, i));
-  const open = r.bodies.filter(b => b.openEdges.length);
-  const ok = !open.length && !r.errors.length;
+  const result = await regenerate(features.slice(0, i));
+  const open = result.bodies.filter(b => b.openEdges.length);
+  const ok = !open.length && !result.errors.length;
   if (!ok) {
     failed++;
   }
-  console.log(`${ok ? 'ok  ' : 'FAIL'} ${features[i - 1].name}: ${r.bodies.map(b => `${b.name} ${b.faces.length} faces, ${b.openEdges.length} open`).join('; ')}${r.errors.length ? ' - ' + r.errors.map(e => e.message).join('; ') : ''}`);
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${features[i - 1].name}: ${result.bodies.map(b => `${b.name} ${b.faces.length} faces, ${b.openEdges.length} open`).join('; ')}${result.errors.length ? ' - ' + result.errors.map(e => e.message).join('; ') : ''}`);
 }
 if (failed) {
   process.exit(1);

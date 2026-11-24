@@ -9,11 +9,11 @@ const COARSE: [number, number][] = [
 ];
 
 /** The standard size nearest a diameter, and its coarse pitch. */
-export function isoSize(d: number): { d: number; pitch: number } {
+export function isoSize(diameter: number): { d: number; pitch: number } {
   let best = COARSE[0];
-  for (const c of COARSE) {
-    if (Math.abs(c[0] - d) < Math.abs(best[0] - d)) {
-      best = c;
+  for (const coarse of COARSE) {
+    if (Math.abs(coarse[0] - diameter) < Math.abs(best[0] - diameter)) {
+      best = coarse;
     }
   }
 
@@ -22,9 +22,9 @@ export function isoSize(d: number): { d: number; pitch: number } {
 
 /** Depth of the groove (ISO basic profile): outside threads 17/24·H, inside 5/8·H, H = 0.866 P. */
 export function threadDepth(pitch: number, inside: boolean): number {
-  const H = (Math.sqrt(3) / 2) * pitch;
+  const triangleHeight = (Math.sqrt(3) / 2) * pitch;
 
-  return inside ? (5 / 8) * H : (17 / 24) * H;
+  return inside ? (5 / 8) * triangleHeight : (17 / 24) * triangleHeight;
 }
 
 /**
@@ -41,9 +41,9 @@ export function defaultPitch(faceDiameter: number, inside: boolean): number {
   // A hole: try sizes whose tap drill (nominal − pitch) is nearest the hole.
   if (inside) {
     let best = COARSE[0];
-    for (const c of COARSE) {
-      if (Math.abs(c[0] - c[1] - faceDiameter) < Math.abs(best[0] - best[1] - faceDiameter)) {
-        best = c;
+    for (const coarse of COARSE) {
+      if (Math.abs(coarse[0] - coarse[1] - faceDiameter) < Math.abs(best[0] - best[1] - faceDiameter)) {
+        best = coarse;
       }
     }
 
@@ -55,9 +55,9 @@ export function defaultPitch(faceDiameter: number, inside: boolean): number {
 
 /** "M10 × 1.5" (or "Ø10.3 × 1.5" when it isn't a standard size). */
 export function threadLabel(faceDiameter: number, inside: boolean, pitch: number): string {
-  const n = nominalOf(faceDiameter, inside, pitch);
-  const std = isoSize(n);
-  const fmt = (v: number) => String(Math.round(v * 100) / 100);
+  const nominal = nominalOf(faceDiameter, inside, pitch);
+  const std = isoSize(nominal);
+  const fmt = (value: number) => String(Math.round(value * 100) / 100);
 
-  return Math.abs(std.d - n) < 0.05 ? `M${fmt(std.d)} × ${fmt(pitch)}` : `Ø${fmt(n)} × ${fmt(pitch)}`;
+  return Math.abs(std.d - nominal) < 0.05 ? `M${fmt(std.d)} × ${fmt(pitch)}` : `Ø${fmt(nominal)} × ${fmt(pitch)}`;
 }

@@ -15,21 +15,21 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 let seed = 5;
-const R = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const random = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 const finite = (x: unknown): boolean => {
   let ok = true;
-  JSON.stringify(x, (_k, v) => {
-    if (typeof v === 'number' && !Number.isFinite(v)) {
+  JSON.stringify(x, (_k, value) => {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
       ok = false;
     }
 
-    return v;
+    return value;
   });
 
   // JSON turns NaN into null: look for those too.
   return ok && !/\bnull\b/.test(JSON.stringify(x));
 };
-const junk = (n: number) => Array.from({ length: n }, () => String.fromCharCode(32 + Math.floor(R() * 95))).join('');
+const junk = (length: number) => Array.from({ length: length }, () => String.fromCharCode(32 + Math.floor(random() * 95))).join('');
 
 /** Run a reader; it may throw a message, but must return quickly and cleanly. */
 function tryRead<T>(name: string, read: () => T, ok: (x: T) => boolean): void {

@@ -27,21 +27,21 @@ export async function build(fs: Feature[], pieces: Record<string, number> = {}):
   const { errors } = await after(fs);
   const vol: Record<string, number> = {};
   const unsound: string[] = [];
-  for (const [id, s] of bodies()) {
-    const h = health(s);
-    vol[id] = h.volume;
+  for (const [id, body] of bodies()) {
+    const bodyHealth = health(body);
+    vol[id] = bodyHealth.volume;
     const want = pieces[id] ?? 1;
-    if (!h.valid) {
+    if (!bodyHealth.valid) {
       unsound.push(`${id} invalid`);
     }
-    if (want && h.solids !== want) {
-      unsound.push(`${id}: ${h.solids} solids`);
+    if (want && bodyHealth.solids !== want) {
+      unsound.push(`${id}: ${bodyHealth.solids} solids`);
     }
-    if (h.openEdges) {
-      unsound.push(`${id}: ${h.openEdges} open edges`);
+    if (bodyHealth.openEdges) {
+      unsound.push(`${id}: ${bodyHealth.openEdges} open edges`);
     }
-    if (h.thin) {
-      unsound.push(`${id}: ${h.thin} thin faces`);
+    if (bodyHealth.thin) {
+      unsound.push(`${id}: ${bodyHealth.thin} thin faces`);
     }
   }
 
@@ -51,10 +51,10 @@ export async function build(fs: Feature[], pieces: Record<string, number> = {}):
 /** The same number, to a part in ten thousand (or `rel`). */
 export const near = (a: number, b: number, rel = 1e-4, abs = 1e-6) => Math.abs(a - b) <= Math.max(abs, rel * Math.max(Math.abs(a), Math.abs(b)));
 
-const unit = (v: Vec3): Vec3 => {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+const unit = (vector: Vec3): Vec3 => {
+  const length = Math.hypot(vector[0], vector[1], vector[2]) || 1;
 
-  return [v[0] / l, v[1] / l, v[2] / l];
+  return [vector[0] / length, vector[1] / length, vector[2] / length];
 };
 
 /**
@@ -63,21 +63,21 @@ const unit = (v: Vec3): Vec3 => {
  * the faces are those of the last build.
  */
 export function faceRef(body: string, pick: (n: Vec3, c: Vec3, f: any) => boolean) {
-  const s = bodies().get(body) as Shape3D;
+  const shape = bodies().get(body) as Shape3D;
   // (replicad's normalAt isn't a unit vector on round faces.)
-  const f = s.faces.find(x => pick(unit(x.normalAt().toTuple() as Vec3), x.center.toTuple() as Vec3, x));
-  if (!f) {
+  const face = shape.faces.find(face => pick(unit(face.normalAt().toTuple() as Vec3), face.center.toTuple() as Vec3, face));
+  if (!face) {
     throw new Error(`no such face on ${body}`);
   }
 
-  return { body, center: f.center.toTuple() as Vec3, normal: unit(f.normalAt().toTuple() as Vec3), area: measureArea(f) };
+  return { body, center: face.center.toTuple() as Vec3, normal: unit(face.normalAt().toTuple() as Vec3), area: measureArea(face) };
 }
 
 /** Edges of a body, as the last build left it, by a test on their middle and direction. */
 export function edgeRefs(body: string, pick: (mid: Vec3, dir: Vec3, e: any) => boolean) {
-  const s = bodies().get(body) as Shape3D;
+  const shape = bodies().get(body) as Shape3D;
 
-  return s.edges
+  return shape.edges
     .filter(e => pick(e.pointAt(0.5).toTuple() as Vec3, e.tangentAt(0.5).toTuple() as Vec3, e))
     .map(e => ({ body, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length as number }));
 }

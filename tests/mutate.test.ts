@@ -31,68 +31,68 @@ const SLOW_MS = 30000;
 
 const doc = JSON.parse(readFileSync(new URL(`./fixtures/${FIXTURE}.json`, import.meta.url), 'utf8'));
 const features: Feature[] = doc.features;
-const R = rng(SEED);
+const random = rng(SEED);
 
 type Path = (string | number)[];
 /** Every value of a step worth changing: numbers, references (ids), lists. */
-function leaves(v: unknown, path: Path, out: { path: Path; v: unknown }[]): void {
+function leaves(value: unknown, path: Path, out: { path: Path; v: unknown }[]): void {
   if (path.length === 1 && ['id', 'name', 'type', 'suppressed', 'color', 'folder'].includes(String(path[0]))) {
     return;
   }
-  if (typeof v === 'number') {
-    out.push({ path, v });
-  } else if (typeof v === 'string') {
+  if (typeof value === 'number') {
+    out.push({ path, v: value });
+  } else if (typeof value === 'string') {
     // (Ids of other things; not text, modes or file contents.)
-    const k = String(path[path.length - 1]);
-    if (['body', 'sketch', 'target', 'plane', 'axis', 'step'].includes(k) || (typeof path[path.length - 1] === 'number' && ['tools', 'bodies', 'regions', 'entities', 'steps'].includes(String(path[path.length - 2])))) {
-      out.push({ path, v });
+    const key = String(path[path.length - 1]);
+    if (['body', 'sketch', 'target', 'plane', 'axis', 'step'].includes(key) || (typeof path[path.length - 1] === 'number' && ['tools', 'bodies', 'regions', 'entities', 'steps'].includes(String(path[path.length - 2])))) {
+      out.push({ path, v: value });
     }
-  } else if (Array.isArray(v)) {
-    if (v.length && path.length) {
-      out.push({ path, v });
+  } else if (Array.isArray(value)) {
+    if (value.length && path.length) {
+      out.push({ path, v: value });
     }
     // (A sketch's or a cage's hundreds of points: a few of them.)
-    const some = v.length > 6 ? [0, Math.floor(v.length / 2), v.length - 1] : v.map((_, i) => i);
+    const some = value.length > 6 ? [0, Math.floor(value.length / 2), value.length - 1] : value.map((_, i) => i);
     for (const i of some) {
-      leaves(v[i], [...path, i], out);
+      leaves(value[i], [...path, i], out);
     }
-  } else if (v && typeof v === 'object') {
-    for (const [k, x] of Object.entries(v)) {
-      if (k !== 'data' && k !== 'log') {
-        leaves(x, [...path, k], out);
+  } else if (value && typeof value === 'object') {
+    for (const [key, x] of Object.entries(value)) {
+      if (key !== 'data' && key !== 'log') {
+        leaves(x, [...path, key], out);
       }
     }
   }
 }
-function changes(v: unknown): unknown[] {
-  if (typeof v === 'number') {
-    const x = v === 0 ? 1 : v;
+function changes(value: unknown): unknown[] {
+  if (typeof value === 'number') {
+    const x = value === 0 ? 1 : value;
 
-    return [0, -x, x * 1e-6, x * 1000, 1e9, null, v === 0 ? 1e-7 : x * 1.0000001];
+    return [0, -x, x * 1e-6, x * 1000, 1e9, null, value === 0 ? 1e-7 : x * 1.0000001];
   }
-  if (typeof v === 'string') {
+  if (typeof value === 'string') {
     return ['nope', ''];
   }
 
   return [[], null];
 }
-const set = (f: Feature, path: Path, v: unknown): Feature => {
-  const c = structuredClone(f) as any;
-  let o = c;
-  for (const k of path.slice(0, -1)) {
-    o = o[k];
+const set = (feature: Feature, path: Path, value: unknown): Feature => {
+  const copy = structuredClone(feature) as any;
+  let target = copy;
+  for (const key of path.slice(0, -1)) {
+    target = target[key];
   }
-  o[path[path.length - 1]] = v;
+  target[path[path.length - 1]] = value;
 
-  return c;
+  return copy;
 };
 
 /** Words of the engine's, not a person's. */
 const ENGINE_WORDS = /undefined|\bNaN\b|\bnull\b|\[object|Standard_|BRep|TopoDS|Geom_|gp_|is not a function|is not iterable|Cannot read|Cannot set|not defined|exception|wasm|unreachable|out of bounds|\bptr\b|abort|^\s*$|^\d+$|stack/i;
 
 const found: string[] = [];
-const say = (kind: string, i: number, f: Feature, path: Path, v: unknown, info: string) => {
-  const line = `${kind} | ${FIXTURE}[${i}] ${f.type} "${f.name}" ${path.join('.')} = ${JSON.stringify(v)} | ${info}`;
+const say = (kind: string, i: number, feature: Feature, path: Path, value: unknown, info: string) => {
+  const line = `${kind} | ${FIXTURE}[${i}] ${feature.type} "${feature.name}" ${path.join('.')} = ${JSON.stringify(value)} | ${info}`;
   found.push(line);
   console.log(line);
   if (LOG) {
@@ -110,61 +110,61 @@ let refused = 0;
 let fine = 0;
 let before = new Map<string, Shape3D>();
 for (let i = 0; i < features.length && i < TO; i++) {
-  const f = features[i];
-  if (i >= FROM && !f.suppressed && !baseErr.has(f.id)) {
+  const feature = features[i];
+  if (i >= FROM && !feature.suppressed && !baseErr.has(feature.id)) {
     const all: { path: Path; v: unknown }[] = [];
-    leaves(f, [], all);
+    leaves(feature, [], all);
     // A few of them, chosen by the seed.
-    const pick = all.length <= PER_STEP ? all : Array.from({ length: PER_STEP }, () => all[Math.floor(R() * all.length)]);
+    const pick = all.length <= PER_STEP ? all : Array.from({ length: PER_STEP }, () => all[Math.floor(random() * all.length)]);
     // (MUTATE_ALL: every value of the step, every change of it.)
-    const todo = process.env.MUTATE_ALL ? all.flatMap(l => changes(l.v).map(to => ({ ...l, to }))) : pick.map(l => ({ ...l, to: changes(l.v)[Math.floor(R() * changes(l.v).length)] }));
+    const todo = process.env.MUTATE_ALL ? all.flatMap(leaf => changes(leaf.v).map(to => ({ ...leaf, to }))) : pick.map(leaf => ({ ...leaf, to: changes(leaf.v)[Math.floor(random() * changes(leaf.v).length)] }));
     for (const { path, v, to } of todo) {
-      const m = set(f, path, to);
+      const mutated = set(feature, path, to);
       if (LOG) {
-        writeFileSync(LOG + '.now', `${FIXTURE}[${i}] ${f.type} ${path.join('.')} = ${JSON.stringify(to)}\n`);
+        writeFileSync(LOG + '.now', `${FIXTURE}[${i}] ${feature.type} ${path.join('.')} = ${JSON.stringify(to)}\n`);
       }
       tried++;
       const t0 = performance.now();
-      let r: any;
+      let result: any;
       const restartsBefore = restarts;
       try {
-        r = await rebuild([...features.slice(0, i), m]);
+        result = await rebuild([...features.slice(0, i), mutated]);
       } catch (err) {
-        say('CRASH', i, f, path, to, String((err as Error)?.message ?? err).slice(0, 200));
+        say('CRASH', i, feature, path, to, String((err as Error)?.message ?? err).slice(0, 200));
         continue;
       }
       const ms = performance.now() - t0;
       if (restarts > restartsBefore) {
-        console.log(`  restart: [${i}] ${f.type} ${path.join('.')} = ${JSON.stringify(to)} (${(ms / 1000).toFixed(0)} s)`);
+        console.log(`  restart: [${i}] ${feature.type} ${path.join('.')} = ${JSON.stringify(to)} (${(ms / 1000).toFixed(0)} s)`);
       }
       if (ms > SLOW_MS) {
-        say('SLOW', i, f, path, to, `${(ms / 1000).toFixed(0)} s`);
+        say('SLOW', i, feature, path, to, `${(ms / 1000).toFixed(0)} s`);
       }
-      const errs = r.errors.filter((e: any) => !baseErr.has(e.featureId));
-      const own = errs.find((e: any) => e.featureId === f.id);
-      const others = errs.filter((e: any) => e.featureId !== f.id);
+      const errs = result.errors.filter((e: any) => !baseErr.has(e.featureId));
+      const own = errs.find((e: any) => e.featureId === feature.id);
+      const others = errs.filter((e: any) => e.featureId !== feature.id);
       if (others.length) {
-        say('OTHER', i, f, path, to, others.map((e: any) => `${e.featureId}: ${e.message}`).join(' / ').slice(0, 200));
+        say('OTHER', i, feature, path, to, others.map((e: any) => `${e.featureId}: ${e.message}`).join(' / ').slice(0, 200));
       }
       if (own) {
         refused++;
         if (ENGINE_WORDS.test(own.message)) {
-          say('WORDS', i, f, path, to, own.message.slice(0, 200));
+          say('WORDS', i, feature, path, to, own.message.slice(0, 200));
         }
         continue;
       }
       // It went through: what it changed must be sound.
       const bad: string[] = [];
-      for (const [id, s] of debugBodies()) {
-        if (before.get(id) === s) {
+      for (const [id, debugBody] of debugBodies()) {
+        if (before.get(id) === debugBody) {
           continue;
         }
         try {
-          const info = r.bodies.find((b: any) => b.id === id);
+          const info = result.bodies.find((b: any) => b.id === id);
           const open = info?.openEdges?.length ?? 0;
-          const sheet = !solids(s as Shape3D);
+          const sheet = !solids(debugBody as Shape3D);
           // (An open freeform surface is a sheet on purpose.)
-          if (sheet && (f.type === 'freeform' || f.type === 'transform' || f.type === 'import' || f.type === 'deleteGeom' || f.type === 'delete')) {
+          if (sheet && (feature.type === 'freeform' || feature.type === 'transform' || feature.type === 'import' || feature.type === 'deleteGeom' || feature.type === 'delete')) {
             continue;
           }
           if (sheet) {
@@ -173,10 +173,10 @@ for (let i = 0; i < features.length && i < TO; i++) {
             if (open) {
               bad.push(`${id}: ${open} open edges`);
             }
-            if (!shapeValid(s as Shape3D)) {
+            if (!shapeValid(debugBody as Shape3D)) {
               bad.push(`${id}: invalid`);
             }
-            const vol = measureVolume(s as Shape3D);
+            const vol = measureVolume(debugBody as Shape3D);
             if (!(Math.abs(vol) > 1e-9) || !Number.isFinite(vol)) {
               bad.push(`${id}: volume ${vol}`);
             }
@@ -189,11 +189,11 @@ for (let i = 0; i < features.length && i < TO; i++) {
         }
       }
       if (bad.length) {
-        say('BROKEN', i, f, path, to, bad.join(', ').slice(0, 300));
+        say('BROKEN', i, feature, path, to, bad.join(', ').slice(0, 300));
       } else {
         fine++;
         if (process.env.MUTATE_VERBOSE) {
-          console.log(`  sound: [${i}] ${f.type} ${path.join('.')} = ${JSON.stringify(to)} (was ${JSON.stringify(v)?.slice(0, 40)})`);
+          console.log(`  sound: [${i}] ${feature.type} ${path.join('.')} = ${JSON.stringify(to)} (was ${JSON.stringify(v)?.slice(0, 40)})`);
         }
       }
     }

@@ -15,19 +15,19 @@ function offlineFiles(): Plugin {
   return {
     name: 'offline-files',
     apply: 'build',
-    configResolved(c) {
-      outDir = c.build.outDir;
+    configResolved(config) {
+      outDir = config.build.outDir;
     },
     closeBundle() {
       const skip = new Set(['_headers', 'robots.txt', 'sitemap.xml', 'og-image.png', 'sw.js', 'offline-files.json', 'version.json']);
       const files: string[] = [];
       const walk = (dir: string) => {
-        for (const n of readdirSync(dir)) {
-          const p = join(dir, n);
-          if (statSync(p).isDirectory()) {
-            walk(p);
+        for (const name of readdirSync(dir)) {
+          const filePath = join(dir, name);
+          if (statSync(filePath).isDirectory()) {
+            walk(filePath);
           } else {
-            const rel = relative(outDir, p).replace(/\\/g, '/');
+            const rel = relative(outDir, filePath).replace(/\\/g, '/');
             if (!skip.has(rel)) {
               files.push(rel);
             }
@@ -54,8 +54,8 @@ function versionFile(): Plugin {
   return {
     name: 'version-file',
     apply: 'build',
-    configResolved(c) {
-      outDir = c.build.outDir;
+    configResolved(config) {
+      outDir = config.build.outDir;
     },
     closeBundle() {
       const git = (cmd: string) => {

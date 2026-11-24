@@ -262,13 +262,13 @@ export class Sentence {
       true
     );
     const lifted = (e: PointerEvent) => {
-      const p = viewPress;
-      if (!p || e.pointerId !== p.id) {
+      const press = viewPress;
+      if (!press || e.pointerId !== press.id) {
         return;
       }
       viewPress = null;
       // (A tap on the model: it picks, or lets go - the list was for what was picked before.)
-      if (!p.moved && e.type === 'pointerup' && e.button !== 2) {
+      if (!press.moved && e.type === 'pointerup' && e.button !== 2) {
         this.close();
       }
     };
@@ -382,12 +382,12 @@ export class Sentence {
       return;
     }
     this.placed = to;
-    const [l, r] = to.split('|');
-    this.root.style.left = to ? `${l}px` : '';
-    this.root.style.right = to ? `${r}px` : '';
+    const [leftPart, rightPart] = to.split('|');
+    this.root.style.left = to ? `${leftPart}px` : '';
+    this.root.style.right = to ? `${rightPart}px` : '';
     // (No wider than that room: past it the line slides. All of that room, though: it stopped at 980 on a wide
     // screen, and a sketch's picked line had to be slid to reach its last buttons.)
-    this.root.style.maxWidth = to ? `${Math.max(200, innerWidth - Number(l) - Number(r))}px` : '';
+    this.root.style.maxWidth = to ? `${Math.max(200, innerWidth - Number(leftPart) - Number(rightPart))}px` : '';
     this.threadSig = '';
   }
 
@@ -424,12 +424,12 @@ export class Sentence {
 
   /** A tool or action as a word (its kinds, the words it opens). */
   private verb(it: ToolItem, pre = 'v'): Word {
-    const kids = (it.children ?? []).filter(notSep).map(c => this.verb(c, `${pre}-${it.id}`));
-    const v = it.value;
+    const kids = (it.children ?? []).filter(notSep).map(toolItem => this.verb(toolItem, `${pre}-${it.id}`));
+    const value = it.value;
 
     return {
       key: `${pre}-${it.id}`,
-      kind: v ? 'value' : 'verb',
+      kind: value ? 'value' : 'verb',
       label: it.short ?? it.label,
       icon: it.swatch ? undefined : it.icon,
       swatch: it.swatch,
@@ -441,7 +441,7 @@ export class Sentence {
       soon: it.soon,
       peek: it.peek,
       first: !!it.variantsWhenActive && !!it.run,
-      value: v ? { now: Number(v.now) || 0, text: v.now, kind: v.int ? 'int' : 'number', put: n => v.put(n), min: v.min, max: v.max } : undefined
+      value: value ? { now: Number(value.now) || 0, text: value.now, kind: value.int ? 'int' : 'number', put: next => value.put(next), min: value.min, max: value.max } : undefined
     };
   }
 
@@ -454,7 +454,7 @@ export class Sentence {
     // (Nothing in it for the pick: its other tools are the list.)
     const kids = words.length ? words : rest;
 
-    return { key: `g-${id}`, kind: 'verb', label, icon, kids: kids.length ? kids : undefined, rest: words.length && rest.length ? rest : undefined, pulse: words.some(w => w.pulse), off: kids.length ? undefined : why };
+    return { key: `g-${id}`, kind: 'verb', label, icon, kids: kids.length ? kids : undefined, rest: words.length && rest.length ? rest : undefined, pulse: words.some(word => word.pulse), off: kids.length ? undefined : why };
   }
 
   /**
@@ -469,11 +469,11 @@ export class Sentence {
     let items = usable(column).filter(notSep);
     const view = usable(bar).filter(notSep);
     const by = new Map<string, ToolItem[]>();
-    const put = (g: string, it: ToolItem) => by.set(g, [...(by.get(g) ?? []), it]);
+    const put = (group: string, it: ToolItem) => by.set(group, [...(by.get(group) ?? []), it]);
     const rank = (it: ToolItem) => {
-      const k = RANK.indexOf(ALIAS[it.id] ?? it.id);
+      const rankIndex = RANK.indexOf(ALIAS[it.id] ?? it.id);
 
-      return k < 0 ? RANK.length : k;
+      return rankIndex < 0 ? RANK.length : rankIndex;
     };
     let subject: Word;
     let name = '';
@@ -482,9 +482,9 @@ export class Sentence {
       // Nothing picked: every main tool that can be started now (one that needs a pick asks for it as it starts).
       // (A group is dimmed only when nothing in it can be used - asked for: Create, Combine and Transform were
       // dimmed with nothing picked though their tools start and then say what to tap.)
-      for (const g of items) {
-        for (const it of g.children?.length ? g.children.filter(notSep) : [g]) {
-          put(g.id, it);
+      for (const item of items) {
+        for (const it of item.children?.length ? item.children.filter(notSep) : [item]) {
+          put(item.id, it);
         }
       }
       // (A tool waiting for its pick: said over the line, with an x to let it go - the guide text says what to tap.)
@@ -496,16 +496,16 @@ export class Sentence {
       name = des?.sub ?? `${sel.length} picked`;
       // Each of its tools with the main tools of its kind (as the wheel has them); its own (Delete, Color) under More.
       const where = new Map<string, string>();
-      const walk = (its: ToolItem[], g: string) => {
+      const walk = (its: ToolItem[], group: string) => {
         for (const it of its) {
           if (!where.has(it.id)) {
-            where.set(it.id, g);
+            where.set(it.id, group);
           }
-          walk(it.children ?? [], g);
+          walk(it.children ?? [], group);
         }
       };
-      for (const g of main) {
-        walk([g], g.id);
+      for (const toolItem of main) {
+        walk([toolItem], toolItem.id);
       }
       for (const it of items) {
         put(GROUP_OF[it.id] ?? where.get(ALIAS[it.id] ?? it.id) ?? 'own', it);
@@ -528,17 +528,17 @@ export class Sentence {
     const words: Word[] = [];
     const groups: Built['groups'] = [];
     for (const id of GROUPS) {
-      const g = main.find(m => m.id === id);
-      const mine = [...(by.get(id) ?? [])].sort((x, y) => rank(x) - rank(y));
+      const toolItem = main.find(mainItem => mainItem.id === id);
+      const mine = [...(by.get(id) ?? [])].sort((toolItem, other) => rank(toolItem) - rank(other));
       const its = mine.map(it => this.verb(it));
       // Something picked: every other tool of the group is there too, under the pick's own (asked for: "it shows only
       // a certain suite of tools. I want to show all available tools") - one that cannot use this pick asks for its
       // own as it starts. (Not one the pick has under a longer name: Pattern, with Pattern - Linear there.)
       const have = new Set(mine.flatMap(it => [it.id, ALIAS[it.id] ?? it.id, it.label]));
-      const rest = sel.length ? usable(g?.children ?? []).filter(notSep).filter(it => !have.has(it.id) && !have.has(it.label) && !mine.some(m => m.label.startsWith(it.label))).map(it => this.verb(it, 'r')) : [];
-      words.push(this.group(id, g?.label ?? id, g?.icon ?? 'more', its, why, rest));
+      const rest = sel.length ? usable(toolItem?.children ?? []).filter(notSep).filter(it => !have.has(it.id) && !have.has(it.label) && !mine.some(mainItem => mainItem.label.startsWith(it.label))).map(it => this.verb(it, 'r')) : [];
+      words.push(this.group(id, toolItem?.label ?? id, toolItem?.icon ?? 'more', its, why, rest));
       if (its.length) {
-        groups.push({ cap: g?.label ?? id, words: its });
+        groups.push({ cap: toolItem?.label ?? id, words: its });
       }
     }
     // More: the pick's own (Delete, Color), what is brought in, and the view's tools.
@@ -557,7 +557,7 @@ export class Sentence {
     const part = sel.length === 1 && sel[0].kind !== 'body' && 'body' in sel[0] ? sel[0].body : null;
     const also: Word[] | undefined = part ? [{ key: 's-body', kind: 'button', label: 'Whole body', icon: 'body' as IconName, run: () => this.host.pick([{ kind: 'body', body: part }]) }] : undefined;
 
-    return { subject, words, groups, others, more: plus, also, grouped: true, about: sel.length ? `pick:${sel.map(x => JSON.stringify(x)).join()}` : subject.key === 's-wait' ? `wait:${subject.label}` : 'make' };
+    return { subject, words, groups, others, more: plus, also, grouped: true, about: sel.length ? `pick:${sel.map(highlight => JSON.stringify(highlight)).join()}` : subject.key === 's-wait' ? `wait:${subject.label}` : 'make' };
   }
 
   /** A sketch: what draws something new - and, with curves picked, what can be done with them. */
@@ -570,7 +570,7 @@ export class Sentence {
     const drawing = tools.some(it => it.active);
     const at = tools.find(it => it.active);
     const retapped = (it: ToolItem): Word => {
-      const w = this.verb(it);
+      const word = this.verb(it);
       // (It acts where the view is tapped. A curve picked: on that piece, where it was picked - and one done at that
       // tap leaves picking on. Nothing picked: it is on, and the next tap is its.)
       if (picked > 0 && SK_RETAP.has(it.id) && it.run) {
@@ -581,15 +581,15 @@ export class Sentence {
             select?.run?.();
           }
         };
-        w.run = start(w.run!);
-        for (const k of w.kids ?? []) {
-          if (k.run) {
-            k.run = start(k.run);
+        word.run = start(word.run!);
+        for (const child of word.kids ?? []) {
+          if (child.run) {
+            child.run = start(child.run);
           }
         }
       }
 
-      return w;
+      return word;
     };
     const words: Word[] = [];
     const groups: Built['groups'] = [];
@@ -600,42 +600,42 @@ export class Sentence {
     // The ways the tool that is on can be used (Circle: Center, 2 Points, 3 Points), right on the line: the one in
     // use lit, another a tap away - not back through Draw > Circle. (More than three, or a line too narrow to give
     // each a finger's width - a phone held upright: one word, named for the one in use, that opens them.)
-    const ways = (at?.children ?? []).filter(notSep).map(c => this.verb(c, 'k'));
+    const ways = (at?.children ?? []).filter(notSep).map(toolItem => this.verb(toolItem, 'k'));
     const tight = (5 + ways.length) * 44 + 124 > window.innerWidth;
     if (ways.length > 3 || (ways.length > 1 && tight)) {
-      words.push({ key: 'k-ways', kind: 'choice', cap: at!.label, label: ways.find(w => w.on)?.label ?? ways[0].label, icon: at!.icon, on: true, kids: ways });
+      words.push({ key: 'k-ways', kind: 'choice', cap: at!.label, label: ways.find(way => way.on)?.label ?? ways[0].label, icon: at!.icon, on: true, kids: ways });
     } else if (ways.length > 1) {
       words.push(...ways);
     }
     const mine = panel ? this.said(panel) : [];
     words.push(...mine);
     // (Said once: the window's own Delete, not the column's too.)
-    const said = new Set(mine.map(w => w.label));
+    const said = new Set(mine.map(word => word.label));
     if (tools.length) {
       // (None while its plane is still being chosen: there is nothing to draw on yet.)
       // Its groups, each in its place: Draw, Modify, Transform - all its tools, whatever is picked (each can be started
       // now: with nothing picked it asks for its curve as it starts).
       const offered = (it: ToolItem) => !said.has(it.label);
       const placed = new Set<ToolItem>();
-      for (const g of SK_GROUPS) {
-        const its = g.tools.map(id => tools.find(it => it.id === id)).filter((it): it is ToolItem => !!it && offered(it));
+      for (const sketchGroup of SK_GROUPS) {
+        const its = sketchGroup.tools.map(id => tools.find(it => it.id === id)).filter((it): it is ToolItem => !!it && offered(it));
         for (const it of its) {
           placed.add(it);
         }
-        const w = its.map(retapped);
-        const word = this.group(g.id, g.label, g.icon, w, 'Pick a line or a shape of the sketch first.');
+        const wordList = its.map(retapped);
+        const word = this.group(sketchGroup.id, sketchGroup.label, sketchGroup.icon, wordList, 'Pick a line or a shape of the sketch first.');
         // Draw opened with no tool on: Line is on, its list open as ever - a tap on the grid draws at once, a tap
         // in the list takes another (asked for: "when I click draw, line should be automatically selected (but
         // the window with different line types should open normally) so I can start drawing right away").
-        if (g.id === 'draw' && !drawing && picked === 0) {
-          const line = w.find(x => x.key.endsWith('line') || x.label === 'Line');
+        if (sketchGroup.id === 'draw' && !drawing && picked === 0) {
+          const line = wordList.find(word => word.key.endsWith('line') || word.label === 'Line');
           if (line?.run) {
             word.opens = line.run;
           }
         }
         words.push(word);
-        if (w.length) {
-          groups.push({ cap: g.label, words: w });
+        if (wordList.length) {
+          groups.push({ cap: sketchGroup.label, words: wordList });
         }
       }
       // (Delete: a tap - the curves picked, else the tool that deletes what is tapped; unless their window has it already.)
@@ -682,9 +682,9 @@ export class Sentence {
     // ΔX, ΔY, ΔZ; folded, its tools were a tap further away than the values.)
     if (panel && !/^Freeform/.test(panel.title) && document.documentElement.dataset.screen === 'phone' && matchMedia('(max-width: 720px) and (orientation: portrait)').matches) {
       let sizes = 0;
-      const main = (w: Word) => (w.kind === 'value' && sizes++ < 2) || w.kind === 'slot' || w.blank || (w.kind === 'button' && /^(Apply|Add|Flip)/.test(w.label));
+      const main = (word: Word) => (word.kind === 'value' && sizes++ < 2) || word.kind === 'slot' || word.blank || (word.kind === 'button' && /^(Apply|Add|Flip)/.test(word.label));
       const keep = words.filter(main);
-      const fold = words.filter(w => !keep.includes(w));
+      const fold = words.filter(word => !keep.includes(word));
       if (keep.length && fold.length > 1) {
         words = [...keep, { key: 't-options', kind: 'verb', label: 'Options', icon: 'settings', kids: fold }];
       }
@@ -696,7 +696,7 @@ export class Sentence {
     return {
       subject: { key: 's-tool', kind: 'subject', label: title, on: true, quiet: true },
       // (Its own name is said once.)
-      words: words.filter(w => !(w.label === title && w.on && !w.kids)),
+      words: words.filter(word => !(word.label === title && word.on && !word.kids)),
       groups: [],
       done: panel?.done ? { label: 'Done', run: panel.done } : undefined,
       // (A way out named Done beside the tick would be the tick twice.)
@@ -706,13 +706,13 @@ export class Sentence {
   }
 
   /** A tool's window as words: blanks, words to swap, switches, numbers, things to tap. */
-  private said(p: NonNullable<ReturnType<UI['panelContent']>>): Word[] {
+  private said(panel: NonNullable<ReturnType<UI['panelContent']>>): Word[] {
     const ui = this.host.ui;
     const out: Word[] = [];
-    let k = 0;
-    for (const it of p.items) {
-      const key = `p-${it.type}-${'label' in it && it.label ? it.label : k}`;
-      k++;
+    let index = 0;
+    for (const it of panel.items) {
+      const key = `p-${it.type}-${'label' in it && it.label ? it.label : index}`;
+      index++;
       // (Not filled: a blank - what to tap for it is the guide text's to say. Filled: what it holds.)
       if (it.type === 'slot') {
         out.push({ key, kind: 'slot', cap: it.label, label: it.filled ? it.value : '', blank: it.active, on: it.filled, run: () => it.onClick() });
@@ -720,13 +720,13 @@ export class Sentence {
         if (!it.options.length) {
           continue;
         }
-        const now = it.options.find(o => o.id === it.value);
-        const kids = it.options.map((o): Word => ({ key: `${key}-${o.id}`, kind: 'verb', label: o.label, on: o.id === it.value, run: () => it.onChange(o.id) }));
+        const now = it.options.find(option => option.id === it.value);
+        const kids = it.options.map((option): Word => ({ key: `${key}-${option.id}`, kind: 'verb', label: option.label, on: option.id === it.value, run: () => it.onChange(option.id) }));
         // (One thing to do and no name - a slot's Clear: a tap.)
         if (it.options.length === 1 && !it.label) {
           out.push({ key, kind: 'button', label: it.options[0].label, run: kids[0].run });
         } else {
-          out.push({ key, kind: 'choice', cap: it.label, label: now?.label ?? it.options.map(o => o.label).slice(0, 3).join(' · '), kids });
+          out.push({ key, kind: 'choice', cap: it.label, label: now?.label ?? it.options.map(option => option.label).slice(0, 3).join(' · '), kids });
         }
       } else if (it.type === 'toggle') {
         out.push({ key, kind: 'toggle', label: it.label, on: it.value, run: () => it.onChange(!it.value) });
@@ -735,20 +735,20 @@ export class Sentence {
         const len = kind === 'length';
         const text = it.type === 'slider' ? (it.show?.(it.value) ?? String(+it.value.toFixed(2))) : len ? `${+toDisplay(it.value).toFixed(3)} ${UNIT_LABEL[units()]}` : kind === 'angle' ? `${+it.value.toFixed(2)}°` : String(+it.value.toFixed(3));
         const put = (to: number) => {
-          let v = to;
+          let value = to;
           // (A slider's value goes in its own steps - Steps and Faces are whole numbers, typed 3.4 or dragged part way.)
           if (it.type === 'slider') {
-            v = Math.min(it.max, Math.max(it.min, it.step ? +(Math.round(v / it.step) * it.step).toFixed(6) : v));
+            value = Math.min(it.max, Math.max(it.min, it.step ? +(Math.round(value / it.step) * it.step).toFixed(6) : value));
           } else if (it.min !== undefined) {
-            v = Math.max(it.min, v);
+            value = Math.max(it.min, value);
           }
           if (kind === 'int') {
-            v = Math.round(v);
+            value = Math.round(value);
           }
-          it.onInput(v);
+          it.onInput(value);
           // (A tool that does not draw its window again keeps this part: it holds the new value from now on.)
-          it.value = v;
-          ui.syncPanelValue(it, v);
+          it.value = value;
+          ui.syncPanelValue(it, value);
           this.changed();
         };
         // A size that follows a variable says so: the formula, then what it comes to ("od / 2 = 60 mm").
@@ -763,7 +763,7 @@ export class Sentence {
         if (!it.chips.length) {
           continue;
         }
-        const kids = it.chips.map((c, i): Word => ({ key: `${key}-${i}`, kind: 'toggle', label: c.glyph ? `${c.glyph} ${c.label}` : c.label, on: !!c.on, run: () => c.onClick() }));
+        const kids = it.chips.map((chip, i): Word => ({ key: `${key}-${i}`, kind: 'toggle', label: chip.glyph ? `${chip.glyph} ${chip.label}` : chip.label, on: !!chip.on, run: () => chip.onClick() }));
         if (kids.length <= 2) {
           out.push(...kids);
         } else {
@@ -771,7 +771,7 @@ export class Sentence {
         }
       }
     }
-    for (const a of usable(p.actions).filter(notSep)) {
+    for (const a of usable(panel.actions).filter(notSep)) {
       out.push(this.verb(a, 'a'));
     }
 
@@ -868,12 +868,12 @@ export class Sentence {
   /** The room an open list takes over the line (none while it is shut): what sits over the line on a phone is lifted by it. */
   private lifted = '';
   private lift(): void {
-    const h = this.sheet.hidden ? '0px' : `${Math.max(0, this.line.offsetTop - this.sheet.offsetTop)}px`;
-    if (h === this.lifted) {
+    const lift = this.sheet.hidden ? '0px' : `${Math.max(0, this.line.offsetTop - this.sheet.offsetTop)}px`;
+    if (lift === this.lifted) {
       return;
     }
-    this.lifted = h;
-    document.body.style.setProperty('--sn-sheet', h);
+    this.lifted = lift;
+    document.body.style.setProperty('--sn-sheet', lift);
   }
 
   private barTall = '';
@@ -881,34 +881,34 @@ export class Sentence {
     // (A phone held upright has the tag at the line's far end, beside undo: only the line's own height counts there.)
     const beside = document.documentElement.dataset.screen === 'phone' && matchMedia('(max-width: 720px) and (orientation: portrait)').matches;
     const tag = this.tag.hidden || beside ? 0 : this.tag.offsetHeight;
-    const h = `${this.line.offsetHeight + (tag ? tag + 6 : 0)}px`;
+    const height = `${this.line.offsetHeight + (tag ? tag + 6 : 0)}px`;
     // (The line's own height, for undo / redo beside it: the same bar, the same height.)
     const bar = `${this.line.offsetHeight}px`;
     if (bar !== this.barTall) {
       document.body.style.setProperty('--sn-bar', (this.barTall = bar));
     }
-    if (h === this.tall) {
+    if (height === this.tall) {
       return;
     }
-    this.tall = h;
-    document.body.style.setProperty('--sn-line', h);
+    this.tall = height;
+    document.body.style.setProperty('--sn-line', height);
   }
 
   /** Is there more of the line out of sight, either way? Its end buttons show only then. */
   private edges(): void {
-    const r = this.row;
+    const row = this.row;
     // Groups that do not all fit close up (a small picture over a small name each, sharing the line evenly) - and open
     // out again once there is room for them as they were.
     // (All of it is decided from the room the line is given - the screen less what is beside it - and what it says,
     // never from how it is drawn now: closing up changes the line's own size, and a choice made from that size can
     // undo itself on the next layout, over and over - on a tablet the line then jumps between the two.)
     const avail = Math.round(document.documentElement.dataset.screen === 'phone' ? this.root.clientWidth : parseFloat(this.root.style.maxWidth) || this.root.clientWidth);
-    const says = Array.from(r.children, c => (c as HTMLElement).dataset.key).join(' ');
-    if (!r.classList.contains('sn-groups')) {
+    const says = Array.from(row.children, element => (element as HTMLElement).dataset.key).join(' ');
+    if (!row.classList.contains('sn-groups')) {
       (this.line.classList.remove('sn-compact'), (this.closedAt = ''));
     } else if (!this.line.classList.contains('sn-compact')) {
-      if (r.scrollWidth > r.clientWidth + 1) {
-        this.natural = r.scrollWidth + this.end.offsetWidth + 24;
+      if (row.scrollWidth > row.clientWidth + 1) {
+        this.natural = row.scrollWidth + this.end.offsetWidth + 24;
         this.closedAt = `${avail}|${says}`;
         this.line.classList.add('sn-compact');
       }
@@ -920,14 +920,14 @@ export class Sentence {
     // (Reckoned from the line's own width and the end buttons at their bigger size, never from the row as it is now:
     // bigger names widen the end buttons, which narrowed the row, which made the names small again - on a phone
     // 390 wide, in a sketch with a tool on, it flipped on every layout and the line shook.)
-    const n = r.childElementCount;
+    const childElementCount = row.childElementCount;
     const room = avail - this.end.childElementCount * 62 - 12;
-    this.line.classList.toggle('sn-roomy', this.line.classList.contains('sn-compact') && n > 0 && room / n >= 66);
-    const more = !r.classList.contains('sn-wrap') && r.scrollWidth > r.clientWidth + 1;
+    this.line.classList.toggle('sn-roomy', this.line.classList.contains('sn-compact') && childElementCount > 0 && room / childElementCount >= 66);
+    const more = !row.classList.contains('sn-wrap') && row.scrollWidth > row.clientWidth + 1;
     // (Both keep their room while there is more either way: one coming or going must not change how much fits.)
     this.line.classList.toggle('sn-more', more);
-    this.back.classList.toggle('show', more && r.scrollLeft > 2);
-    this.fore.classList.toggle('show', more && r.scrollLeft < r.scrollWidth - r.clientWidth - 2);
+    this.back.classList.toggle('show', more && row.scrollLeft > 2);
+    this.fore.classList.toggle('show', more && row.scrollLeft < row.scrollWidth - row.clientWidth - 2);
   }
 
   private endButton(icon: IconName, title: string, run: () => void): HTMLButtonElement {
@@ -943,58 +943,58 @@ export class Sentence {
   /** The words in `box`, each kept if it was there (only what is new comes in). */
   private fill(box: HTMLElement, words: Word[], fresh: boolean): void {
     const old = new Map<string, HTMLElement>();
-    for (const c of Array.from(box.children) as HTMLElement[]) {
-      old.set(c.dataset.key ?? '', c);
+    for (const element of Array.from(box.children) as HTMLElement[]) {
+      old.set(element.dataset.key ?? '', element);
     }
-    let n = 0;
+    let count = 0;
     let at: Element | null = box.firstElementChild;
-    for (const w of words) {
-      let d = fresh ? undefined : old.get(w.key);
-      const sig = `${w.kind}|${w.label}|${w.cap ?? ''}|${w.on ? 1 : 0}|${w.blank ? 1 : 0}|${w.pulse ? 1 : 0}|${w.kids?.length ?? 0}|${w.swatch ?? ''}|${w.off ? 1 : 0}|${w.soon ? 1 : 0}`;
-      if (!d) {
-        d = this.wordEl(w);
+    for (const word of words) {
+      let element = fresh ? undefined : old.get(word.key);
+      const sig = `${word.kind}|${word.label}|${word.cap ?? ''}|${word.on ? 1 : 0}|${word.blank ? 1 : 0}|${word.pulse ? 1 : 0}|${word.kids?.length ?? 0}|${word.swatch ?? ''}|${word.off ? 1 : 0}|${word.soon ? 1 : 0}`;
+      if (!element) {
+        element = this.wordEl(word);
         if (!calm()) {
-          d.classList.add('sn-in');
-          d.style.animationDelay = `${Math.min(n++, 14) * 16}ms`;
+          element.classList.add('sn-in');
+          element.style.animationDelay = `${Math.min(count++, 14) * 16}ms`;
         }
       } else {
-        old.delete(w.key);
-        if (d.dataset.sig !== sig) {
-          this.paint(d, w);
+        old.delete(word.key);
+        if (element.dataset.sig !== sig) {
+          this.paint(element, word);
         }
       }
-      d.dataset.sig = sig;
-      (d as HTMLElement & { word?: Word }).word = w;
-      if (d !== at) {
-        box.insertBefore(d, at);
+      element.dataset.sig = sig;
+      (element as HTMLElement & { word?: Word }).word = word;
+      if (element !== at) {
+        box.insertBefore(element, at);
       } else {
         at = at.nextElementSibling;
       }
     }
-    for (const d of fresh ? Array.from(box.children).filter(c => !words.some(w => (c as HTMLElement & { word?: Word }).word === w)) : old.values()) {
-      d.remove();
+    for (const element of fresh ? Array.from(box.children).filter(childElement => !words.some(word => (childElement as HTMLElement & { word?: Word }).word === word)) : old.values()) {
+      element.remove();
     }
   }
 
-  private wordEl(w: Word): HTMLElement {
-    const d = el('button', 'sn-word');
-    d.dataset.key = w.key;
-    this.paint(d, w);
-    const word = () => (d as HTMLElement & { word?: Word }).word ?? w;
+  private wordEl(shownWord: Word): HTMLElement {
+    const button = el('button', 'sn-word');
+    button.dataset.key = shownWord.key;
+    this.paint(button, shownWord);
+    const word = () => (button as HTMLElement & { word?: Word }).word ?? shownWord;
     // A tap; a number dragged sideways; a press held on a word with kinds opens them.
     let down: { x: number; y: number; t: number; v: number; scrub: boolean; id: number } | null = null;
     let held = 0;
     // The pointer over a tool: what it would do, drawn on the model in dashed yellow, for as long as it is there.
     // (A finger has no hover: on a touch screen the tool's own preview, as it starts, is the picture.)
-    d.addEventListener('pointerenter', (e) => {
+    button.addEventListener('pointerenter', (e) => {
       if (e.pointerType === 'touch') {
         return;
       }
       const segs = word().peek?.();
       this.host.peek(segs?.length ? segs : null);
     });
-    d.addEventListener('pointerleave', () => this.host.peek(null));
-    d.addEventListener('pointerdown', (e) => {
+    button.addEventListener('pointerleave', () => this.host.peek(null));
+    button.addEventListener('pointerdown', (e) => {
       this.host.peek(null);
       const now = word();
       down = { x: e.clientX, y: e.clientY, t: performance.now(), v: now.value?.now ?? 0, scrub: false, id: e.pointerId };
@@ -1003,7 +1003,7 @@ export class Sentence {
         held = window.setTimeout(() => ((down = null), buzz(8), this.toggle({ kind: 'kids', key: now.key })), 480);
       }
     });
-    d.addEventListener('pointermove', (e) => {
+    button.addEventListener('pointermove', (e) => {
       const now = word();
       if (!down || e.pointerId !== down.id) {
         return;
@@ -1013,13 +1013,13 @@ export class Sentence {
       if (!down.scrub && now.value && !now.value.expr && Math.abs(dx) > 9 && Math.abs(dx) > Math.abs(e.clientY - down.y) * 1.5) {
         down.scrub = true;
         clearTimeout(held);
-        d.setPointerCapture(e.pointerId);
-        d.classList.add('scrub');
+        button.setPointerCapture(e.pointerId);
+        button.classList.add('scrub');
         this.typing?.end(false);
         this.close();
       }
       if (down.scrub && now.value) {
-        this.scrub(d, now, down.v, dx);
+        this.scrub(button, now, down.v, dx);
       } else if (Math.hypot(dx, e.clientY - down.y) > 9) {
         clearTimeout(held);
       }
@@ -1027,130 +1027,130 @@ export class Sentence {
     const up = (e: PointerEvent) => {
       clearTimeout(held);
       if (down?.scrub) {
-        d.classList.remove('scrub');
+        button.classList.remove('scrub');
         try {
-          d.releasePointerCapture(e.pointerId);
+          button.releasePointerCapture(e.pointerId);
         } catch {
           // (already let go)
         }
         this.changed();
       }
     };
-    d.addEventListener('pointerup', up);
-    d.addEventListener('pointercancel', e => (up(e), (down = null)));
-    d.addEventListener('click', () => {
+    button.addEventListener('pointerup', up);
+    button.addEventListener('pointercancel', e => (up(e), (down = null)));
+    button.addEventListener('click', () => {
       const was = down;
       down = null;
       // (A drag ended on it, or the held press already opened its kinds.)
       if (!was || was.scrub) {
         return;
       }
-      this.tap(word(), d);
+      this.tap(word(), button);
     });
 
-    return d;
+    return button;
   }
 
-  private paint(d: HTMLElement, w: Word): void {
-    d.className = `sn-word sn-${w.kind}${d.classList.contains('sn-in') ? ' sn-in' : ''}`;
-    d.classList.toggle('on', !!w.on);
-    d.classList.toggle('blank', !!w.blank);
-    d.classList.toggle('pulse', !!w.pulse);
-    d.classList.toggle('quiet', !!w.quiet);
-    d.classList.toggle('capped', !!w.cap);
-    d.classList.toggle('off', !!w.off || !!w.soon);
-    d.classList.toggle('opened', w.key === this.openTop);
-    (d as HTMLButtonElement).disabled = (!!w.quiet && !w.run && !w.kids) || !!w.soon;
-    d.replaceChildren();
-    if (w.cap) {
-      d.append(el('span', 'sn-cap', w.cap));
+  private paint(element: HTMLElement, word: Word): void {
+    element.className = `sn-word sn-${word.kind}${element.classList.contains('sn-in') ? ' sn-in' : ''}`;
+    element.classList.toggle('on', !!word.on);
+    element.classList.toggle('blank', !!word.blank);
+    element.classList.toggle('pulse', !!word.pulse);
+    element.classList.toggle('quiet', !!word.quiet);
+    element.classList.toggle('capped', !!word.cap);
+    element.classList.toggle('off', !!word.off || !!word.soon);
+    element.classList.toggle('opened', word.key === this.openTop);
+    (element as HTMLButtonElement).disabled = (!!word.quiet && !word.run && !word.kids) || !!word.soon;
+    element.replaceChildren();
+    if (word.cap) {
+      element.append(el('span', 'sn-cap', word.cap));
     }
     const body = el('span', 'sn-body');
-    if (w.swatch) {
+    if (word.swatch) {
       const sw = el('span', 'sn-swatch');
-      sw.style.background = w.swatch;
+      sw.style.background = word.swatch;
       body.append(sw);
-    } else if (w.icon && icons[w.icon] && w.kind !== 'value' && w.kind !== 'choice' && w.kind !== 'slot') {
+    } else if (word.icon && icons[word.icon] && word.kind !== 'value' && word.kind !== 'choice' && word.kind !== 'slot') {
       const ic = el('span', 'sn-icon');
-      ic.innerHTML = icons[w.icon];
+      ic.innerHTML = icons[word.icon];
       body.append(ic);
     }
-    body.append(el('span', 'sn-text', w.label));
-    if (w.kids?.length && !w.first) {
+    body.append(el('span', 'sn-text', word.label));
+    if (word.kids?.length && !word.first) {
       body.append(el('span', 'sn-more', '▾'));
     }
-    if (w.lets) {
+    if (word.lets) {
       body.append(el('span', 'sn-x', '×'));
     }
-    if (w.soon) {
+    if (word.soon) {
       body.append(el('span', 'sn-kbd sn-soon', 'soon'));
     }
-    if (w.kbd && matchMedia('(hover: hover) and (pointer: fine)').matches) {
-      body.append(el('kbd', 'sn-kbd', w.kbd));
+    if (word.kbd && matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      body.append(el('kbd', 'sn-kbd', word.kbd));
     }
-    d.append(body);
-    d.title = w.key === 's-add' ? 'Pick more: each tap adds to the pick' : w.lets ? 'Let go of it' : w.value ? `${w.cap ?? w.label}: tap to type, drag sideways to change` : (w.cap ?? '');
+    element.append(body);
+    element.title = word.key === 's-add' ? 'Pick more: each tap adds to the pick' : word.lets ? 'Let go of it' : word.value ? `${word.cap ?? word.label}: tap to type, drag sideways to change` : (word.cap ?? '');
   }
 
   /** A word tapped: it opens what it holds, takes a number, or does what it says. */
-  private tap(w: Word, d: HTMLElement): void {
-    if (w.soon) {
+  private tap(word: Word, element: HTMLElement): void {
+    if (word.soon) {
       return;
     }
-    if (w.off) {
-      return void (buzz(), this.host.ui.toast(w.off));
+    if (word.off) {
+      return void (buzz(), this.host.ui.toast(word.off));
     }
-    if (w.value) {
-      return void this.toggle({ kind: 'type', key: w.key });
+    if (word.value) {
+      return void this.toggle({ kind: 'type', key: word.key });
     }
     // A tool with kinds starts as it was used last; while it is the one in use, a tap shows its kinds.
-    if (w.kids?.length && (!w.first || w.on)) {
-      const opening = !(this.open?.kind === 'kids' && this.open.key === w.key);
-      this.toggle({ kind: 'kids', key: w.key });
-      if (opening && w.opens) {
+    if (word.kids?.length && (!word.first || word.on)) {
+      const opening = !(this.open?.kind === 'kids' && this.open.key === word.key);
+      this.toggle({ kind: 'kids', key: word.key });
+      if (opening && word.opens) {
         // (What it does makes another sentence - Line is on: this list stays open through that.)
-        this.stays = w.key;
-        w.opens();
+        this.stays = word.key;
+        word.opens();
       }
 
       return;
     }
-    if (!w.run) {
+    if (!word.run) {
       return;
     }
     buzz();
-    const stays = w.kind === 'toggle' || w.kind === 'slot' || d.closest('.sn-sheet') === null;
+    const stays = word.kind === 'toggle' || word.kind === 'slot' || element.closest('.sn-sheet') === null;
     if (!stays || this.open?.kind === 'all') {
       this.close();
     }
-    w.run();
+    word.run();
     this.changed();
   }
 
   /** A number dragged sideways: so much a step, a tick under the finger at each. */
-  private scrub(d: HTMLElement, w: Word, from: number, dx: number): void {
-    const v = w.value!;
+  private scrub(element: HTMLElement, word: Word, from: number, dx: number): void {
+    const value = word.value!;
     // (A length steps in the unit shown; slower past the first stretch would be finer, but a step a few px wide is felt.)
-    const unit = v.kind === 'length' ? 1 / toDisplay(1) : 1;
-    const px = v.kind === 'int' || (v.step ?? 0) >= 1 ? 14 : 7;
+    const unit = value.kind === 'length' ? 1 / toDisplay(1) : 1;
+    const px = value.kind === 'int' || (value.step ?? 0) >= 1 ? 14 : 7;
     const steps = Math.trunc(dx / px);
-    const size = v.step ? v.step : v.kind === 'int' ? 1 : v.kind === 'angle' ? 1 : v.kind === 'length' ? unit * (Math.abs(toDisplay(from)) >= 100 ? 5 : from !== 0 && Math.abs(toDisplay(from)) < 2 ? 0.1 : 1) : Math.abs(from) >= 20 ? 1 : 0.05;
+    const size = value.step ? value.step : value.kind === 'int' ? 1 : value.kind === 'angle' ? 1 : value.kind === 'length' ? unit * (Math.abs(toDisplay(from)) >= 100 ? 5 : from !== 0 && Math.abs(toDisplay(from)) < 2 ? 0.1 : 1) : Math.abs(from) >= 20 ? 1 : 0.05;
     let to = from + steps * size;
-    if (v.min !== undefined) {
-      to = Math.max(v.min, to);
+    if (value.min !== undefined) {
+      to = Math.max(value.min, to);
     }
-    if (v.max !== undefined) {
-      to = Math.min(v.max, to);
+    if (value.max !== undefined) {
+      to = Math.min(value.max, to);
     }
-    if (to === v.now) {
+    if (to === value.now) {
       return;
     }
-    v.now = to;
+    value.now = to;
     buzz(3);
-    v.put(to);
-    const t = d.querySelector('.sn-text');
+    value.put(to);
+    const t = element.querySelector('.sn-text');
     if (t) {
-      t.textContent = v.kind === 'length' ? `${+toDisplay(to).toFixed(3)} ${UNIT_LABEL[units()]}` : v.kind === 'angle' ? `${+to.toFixed(2)}°` : String(+to.toFixed(3));
+      t.textContent = value.kind === 'length' ? `${+toDisplay(to).toFixed(3)} ${UNIT_LABEL[units()]}` : value.kind === 'angle' ? `${+to.toFixed(2)}°` : String(+to.toFixed(3));
     }
   }
 
@@ -1160,10 +1160,10 @@ export class Sentence {
     this.typing?.end(true);
     this.close();
     if (!calm()) {
-      const r = this.row.getBoundingClientRect();
+      const rect = this.row.getBoundingClientRect();
       const ghost = this.row.cloneNode(true) as HTMLElement;
       ghost.className = 'sn-row sn-ghost';
-      Object.assign(ghost.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+      Object.assign(ghost.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
       ghost.scrollLeft = this.row.scrollLeft;
       document.body.append(ghost);
       ghost.animate([{ opacity: 0.9, transform: 'none' }, { opacity: 0, transform: 'translateY(-46px) scale(0.96)' }], { duration: 380, easing: 'cubic-bezier(.2,.7,.2,1)' }).finished.then(() => ghost.remove(), () => ghost.remove());
@@ -1204,26 +1204,26 @@ export class Sentence {
    * that word lit (see `openTop`); one from More is under no word of the line, and nothing was lit.
    */
   private fromMore(): boolean {
-    const o = this.open;
-    if (!o) {
+    const open = this.open;
+    if (!open) {
       return false;
     }
-    if (o.kind === 'all') {
+    if (open.kind === 'all') {
       return true;
     }
 
-    return o.kind === 'kids' && !this.pathTo(o.key).length;
+    return open.kind === 'kids' && !this.pathTo(open.key).length;
   }
 
   private pathTo(key: string): Word[] {
     const seek = (ws: Word[]): Word[] | null => {
-      for (const w of ws) {
-        if (w.key === key) {
-          return [w];
+      for (const word of ws) {
+        if (word.key === key) {
+          return [word];
         }
-        const k = (w.kids && seek(w.kids)) ?? (w.rest && seek(w.rest));
-        if (k) {
-          return [w, ...k];
+        const found = (word.kids && seek(word.kids)) ?? (word.rest && seek(word.rest));
+        if (found) {
+          return [word, ...found];
         }
       }
 
@@ -1239,9 +1239,9 @@ export class Sentence {
    * under the few things that were its own.
    */
   private beyond(b: Built): Built['groups'] {
-    const there = new Set(b.words.map(w => w.cap ?? w.label));
+    const there = new Set(b.words.map(word => word.cap ?? word.label));
 
-    return b.groups.filter(g => !there.has(g.cap));
+    return b.groups.filter(group => !there.has(group.cap));
   }
 
   /** The thread from the pick to its name is drawn (off: see `drawThread`). */
@@ -1253,37 +1253,37 @@ export class Sentence {
       return null;
     }
     const seek = (ws: Word[]): Word | null => {
-      for (const w of ws) {
-        if (w.key === key) {
-          return w;
+      for (const word of ws) {
+        if (word.key === key) {
+          return word;
         }
-        const k = (w.kids && seek(w.kids)) ?? (w.rest && seek(w.rest));
-        if (k) {
-          return k;
+        const found = (word.kids && seek(word.kids)) ?? (word.rest && seek(word.rest));
+        if (found) {
+          return found;
         }
       }
 
       return null;
     };
 
-    return seek([b.subject, ...b.words]) ?? seek(b.groups.flatMap(g => g.words));
+    return seek([b.subject, ...b.words]) ?? seek(b.groups.flatMap(group => group.words));
   }
 
   /** Over the line: everything for the pick by what it is for, one word's kinds, or a number's box. */
   private drawSheet(rise = false): void {
-    const o = this.open;
+    const open = this.open;
     const b = this.built;
     // (Open over the model: the round buttons beside the pick step back for it.)
-    document.body.classList.toggle('sn-open', !!o && !!b && this.on);
-    const path = o && o.kind !== 'all' ? this.pathTo(o.key) : [];
+    document.body.classList.toggle('sn-open', !!open && !!b && this.on);
+    const path = open && open.kind !== 'all' ? this.pathTo(open.key) : [];
     const top = path[0]?.key ?? null;
     if (top !== this.openTop) {
       this.openTop = top;
-      for (const d of Array.from(this.row.querySelectorAll<HTMLElement>('.sn-word'))) {
-        d.classList.toggle('opened', !!top && d.dataset.key === top);
+      for (const element of Array.from(this.row.querySelectorAll<HTMLElement>('.sn-word'))) {
+        element.classList.toggle('opened', !!top && element.dataset.key === top);
       }
     }
-    if (!o || !b) {
+    if (!open || !b) {
       this.sheet.hidden = true;
       this.sheet.replaceChildren();
       document.body.classList.remove('sn-crowd');
@@ -1291,12 +1291,12 @@ export class Sentence {
 
       return;
     }
-    if (o.kind === 'type') {
+    if (open.kind === 'type') {
       if (this.typing) {
         return;
       }
-      const w = this.find(o.key);
-      if (!w?.value) {
+      const word = this.find(open.key);
+      if (!word?.value) {
         return void this.close();
       }
       this.sheet.hidden = false;
@@ -1304,21 +1304,21 @@ export class Sentence {
       this.sheet.style.width = this.sheet.style.maxWidth = this.sheet.style.alignSelf = '';
       this.sheet.style.marginLeft = '';
 
-      return this.type(w);
+      return this.type(word);
     }
     const blocks: { cap: string; words: Word[] }[] = [];
-    if (o.kind === 'all') {
+    if (open.kind === 'all') {
       blocks.push(...this.beyond(b));
     } else {
-      const w = this.find(o.key);
-      if (!w?.kids?.length) {
+      const word = this.find(open.key);
+      if (!word?.kids?.length) {
         return void this.close();
       }
       // (Under another: where it is - "Transform › Pattern".)
       // (From inside More: "More › BIM" - where it is, as a list under a word of the line says.)
-      blocks.push({ cap: path.length > 1 ? path.map(x => x.cap ?? x.label).join(' › ') : `${path.length ? '' : 'More › '}${w.cap ?? w.label}`, words: w.kids });
-      if (w.rest?.length) {
-        blocks.push({ cap: `Other ${(w.cap ?? w.label).toLowerCase()} tools (each asks for its own pick)`, words: w.rest });
+      blocks.push({ cap: path.length > 1 ? path.map(word => word.cap ?? word.label).join(' › ') : `${path.length ? '' : 'More › '}${word.cap ?? word.label}`, words: word.kids });
+      if (word.rest?.length) {
+        blocks.push({ cap: `Other ${(word.cap ?? word.label).toLowerCase()} tools (each asks for its own pick)`, words: word.rest });
       }
     }
     this.sheet.hidden = false;
@@ -1326,20 +1326,20 @@ export class Sentence {
     // line's width, for a handful of buttons.)
     this.sheet.className = 'sn-sheet sn-kids';
     const old = Array.from(this.sheet.children) as HTMLElement[];
-    const had = old.filter(c => c.classList.contains('sn-group'));
-    const same = !rise && had.length === blocks.length && had.every((c, i) => c.dataset.cap === blocks[i].cap);
+    const had = old.filter(element => element.classList.contains('sn-group'));
+    const same = !rise && had.length === blocks.length && had.every((element, i) => element.dataset.cap === blocks[i].cap);
     if (!same) {
       this.sheet.replaceChildren();
     }
-    blocks.forEach((g, i) => {
+    blocks.forEach((block, i) => {
       let box = same ? had[i] : null;
       if (!box) {
         box = el('div', 'sn-group');
-        box.dataset.cap = g.cap;
-        box.append(el('div', 'sn-group-cap', g.cap), el('div', 'sn-group-words'));
+        box.dataset.cap = block.cap;
+        box.append(el('div', 'sn-group-cap', block.cap), el('div', 'sn-group-words'));
         this.sheet.append(box);
       }
-      this.fill(box.lastElementChild as HTMLElement, g.words, !same);
+      this.fill(box.lastElementChild as HTMLElement, block.words, !same);
     });
     this.sheet.querySelector('.sn-others')?.remove();
     this.fit();
@@ -1363,24 +1363,24 @@ export class Sentence {
     // (One word's kinds: over that word.)
     this.sheet.style.setProperty('--sn-at', '50%');
     {
-      const d = o.kind === 'all' ? this.end.querySelector<HTMLElement>('.sn-all') : this.row.querySelector<HTMLElement>(`[data-key="${CSS.escape((o as { key: string }).key)}"]`);
+      const element = open.kind === 'all' ? this.end.querySelector<HTMLElement>('.sn-all') : this.row.querySelector<HTMLElement>(`[data-key="${CSS.escape((open as { key: string }).key)}"]`);
       const lr = this.line.getBoundingClientRect();
       // (The line's own width: with a list standing past its end, the line is as wide as the two together.)
       const room = this.sheet.querySelector('.sn-group-words') && this.lineWidth ? this.lineWidth : lr.width;
-      if (d) {
-        const r = d.getBoundingClientRect();
-        this.sheet.style.setProperty('--sn-at', `${Math.round(Math.min(lr.width - 20, Math.max(20, r.left + r.width / 2 - lr.left)))}px`);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        this.sheet.style.setProperty('--sn-at', `${Math.round(Math.min(lr.width - 20, Math.max(20, rect.left + rect.width / 2 - lr.left)))}px`);
         // Right over its word: its middle on the word's middle, as far as the line's ends allow. (By its own width as
         // drawn - the stylesheet's guess at it left a wide list off to one side. A phone held upright: the stylesheet's.)
-        const w = this.sheet.offsetWidth;
-        this.sheet.style.marginLeft = getComputedStyle(this.sheet).alignSelf === 'stretch' ? '' : `${Math.round(Math.max(0, Math.min(room - w, r.left + r.width / 2 - lr.left - w / 2)))}px`;
+        const offsetWidth = this.sheet.offsetWidth;
+        this.sheet.style.marginLeft = getComputedStyle(this.sheet).alignSelf === 'stretch' ? '' : `${Math.round(Math.max(0, Math.min(room - offsetWidth, rect.left + rect.width / 2 - lr.left - offsetWidth / 2)))}px`;
       } else {
         // A list opened from inside another (Construct > Axis): it has no word on the line to stand over - where
         // the one before it stood, as far as its own width allows. (It kept that one's place whatever its width: a
         // wider list then ran off the edge of the screen, its last buttons with it.)
-        const w = this.sheet.offsetWidth;
+        const offsetWidth = this.sheet.offsetWidth;
         const was = parseFloat(this.sheet.style.marginLeft) || 0;
-        this.sheet.style.marginLeft = `${Math.round(Math.max(0, Math.min(room - w, was)))}px`;
+        this.sheet.style.marginLeft = `${Math.round(Math.max(0, Math.min(room - offsetWidth, was)))}px`;
       }
     }
     this.lift();
@@ -1416,20 +1416,20 @@ export class Sentence {
     sheet.style.marginLeft = stood;
     // As they come, to see how wide the widest is.
     sheet.style.width = sheet.style.maxWidth = sheet.style.alignSelf = '';
-    for (const g of groups) {
-      g.style.display = 'flex';
-      g.style.flexWrap = 'wrap';
-      g.style.gridTemplateColumns = '';
-      for (const k of Array.from(g.children) as HTMLElement[]) {
-        k.style.gridColumn = '';
+    for (const group of groups) {
+      group.style.display = 'flex';
+      group.style.flexWrap = 'wrap';
+      group.style.gridTemplateColumns = '';
+      for (const element of Array.from(group.children) as HTMLElement[]) {
+        element.style.gridColumn = '';
       }
     }
     let widest = 0;
     let most = 0;
-    for (const g of groups) {
-      most = Math.max(most, g.children.length);
-      for (const k of Array.from(g.children) as HTMLElement[]) {
-        widest = Math.max(widest, k.offsetWidth);
+    for (const group of groups) {
+      most = Math.max(most, group.children.length);
+      for (const element of Array.from(group.children) as HTMLElement[]) {
+        widest = Math.max(widest, element.offsetWidth);
       }
     }
     const gap = parseFloat(getComputedStyle(groups[0]).columnGap) || 5;
@@ -1442,17 +1442,17 @@ export class Sentence {
     const rows = Math.ceil(most / fits);
     const cols = Math.max(1, Math.ceil(most / rows));
     const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
-    for (const g of groups) {
-      const kids = Array.from(g.children) as HTMLElement[];
+    for (const group of groups) {
+      const kids = Array.from(group.children) as HTMLElement[];
       // (A short last row: its buttons share the row between them - but one button alone keeps its own width, at
       // the row's start: stretched right across, it was a bar, not a button.)
       const over = kids.length % cols;
       const left = over === 1 && cols > 1 ? 0 : over;
       const tracks = left ? (cols * left) / gcd(cols, left) : cols;
-      g.style.display = 'grid';
-      g.style.flexWrap = '';
-      g.style.gridTemplateColumns = `repeat(${tracks}, minmax(0, 1fr))`;
-      kids.forEach((k, i) => (k.style.gridColumn = `span ${i >= kids.length - left ? tracks / left : tracks / cols}`));
+      group.style.display = 'grid';
+      group.style.flexWrap = '';
+      group.style.gridTemplateColumns = `repeat(${tracks}, minmax(0, 1fr))`;
+      kids.forEach((child, i) => (child.style.gridColumn = `span ${i >= kids.length - left ? tracks / left : tracks / cols}`));
     }
     const width = cols * cell + (cols - 1) * gap + frame;
     sheet.style.maxWidth = '100%';
@@ -1465,28 +1465,28 @@ export class Sentence {
   }
 
   /** A number typed right there: Enter (or a tap elsewhere) sets it, Esc leaves it as it was. */
-  private type(w: Word): void {
-    const v = w.value!;
+  private type(word: Word): void {
+    const value = word.value!;
     const box = el('div', 'sn-type');
-    box.append(el('span', 'sn-type-label', w.cap ?? w.label));
+    box.append(el('span', 'sn-type-label', word.cap ?? word.label));
     const input = document.createElement('input');
     input.type = 'text';
     input.inputMode = 'decimal';
     input.autocomplete = 'off';
     input.spellcheck = false;
     // (What it follows, if it follows a variable: shown as its number, Enter made it that number and the link was gone.)
-    const was = v.expr ?? (v.kind === 'length' ? String(+toDisplay(v.now).toFixed(4)) : String(+v.now.toFixed(4)));
+    const was = value.expr ?? (value.kind === 'length' ? String(+toDisplay(value.now).toFixed(4)) : String(+value.now.toFixed(4)));
     input.value = was;
-    input.dataset.kind = v.kind;
-    if (v.min !== undefined) {
-      input.dataset.min = String(v.min);
+    input.dataset.kind = value.kind;
+    if (value.min !== undefined) {
+      input.dataset.min = String(value.min);
     }
-    if (v.max !== undefined) {
-      input.dataset.max = String(v.max);
+    if (value.max !== undefined) {
+      input.dataset.max = String(value.max);
     }
     numpadInput(input);
     box.append(input);
-    const unit = v.kind === 'length' ? UNIT_LABEL[units()] : v.kind === 'angle' ? '°' : '';
+    const unit = value.kind === 'length' ? UNIT_LABEL[units()] : value.kind === 'angle' ? '°' : '';
     if (unit) {
       box.append(el('span', 'sn-type-unit', unit));
     }
@@ -1494,7 +1494,7 @@ export class Sentence {
     // what is typed. (A phone's number keys have no letters to type a name with.)
     let picking = false;
     const ui = this.host.ui;
-    if (v.putExpr && ui.variableFactory) {
+    if (value.putExpr && ui.variableFactory) {
       const fx = el('button', 'fx-btn', 'ƒx');
       fx.title = 'Variables: use one here, or make a new one from this value';
       fx.addEventListener('pointerdown', () => (picking = true));
@@ -1504,7 +1504,7 @@ export class Sentence {
         const names = ui.variableNames();
         let name: string | null = null;
         if (names.length) {
-          const pick = await ui.ask('Variables', 'Use a variable for this value, or make a new one from it.', [...names.slice(0, 8).map(n => ({ id: `v:${n}`, label: n })), { id: 'new', label: 'New variable', primary: true }]);
+          const pick = await ui.ask('Variables', 'Use a variable for this value, or make a new one from it.', [...names.slice(0, 8).map(name => ({ id: `v:${name}`, label: name })), { id: 'new', label: 'New variable', primary: true }]);
           name = !pick ? null : pick === 'new' ? await ui.variableFactory!(input.value) : pick.slice(2);
         } else {
           name = await ui.variableFactory!(input.value);
@@ -1529,17 +1529,17 @@ export class Sentence {
       const text = input.value.trim();
       // (Left as it was: nothing to do - a size that follows a variable is not made a plain number by looking at it.)
       if (keep && text !== was) {
-        const n = evaluate(text, v.kind === 'int' ? 'number' : v.kind);
-        if (n === null) {
+        const typedValue = evaluate(text, value.kind === 'int' ? 'number' : value.kind);
+        if (typedValue === null) {
           // Said as it is: a name no variable has, else what was typed.
           const names = new Set(this.host.ui.variableNames());
-          const unknown = [...text.matchAll(/[a-z_][a-z0-9_]*/gi)].map(m => m[0]).filter(x => !names.has(x) && !RESERVED.test(x));
+          const unknown = [...text.matchAll(/[a-z_][a-z0-9_]*/gi)].map(match => match[0]).filter(word => !names.has(word) && !RESERVED.test(word));
           this.host.ui.toast(unknown.length ? `${[...new Set(unknown)].join(', ')}: no variable has that name` : `"${text}" isn't a value that can be worked out`, 'error');
         } else {
           // A variable's name in it: the size follows it from now on (it was made the number it came to, and the
           // link never kept); a plain number: it follows none.
-          v.putExpr?.(isExpression(text) ? text : null);
-          v.put(Math.min(v.max ?? Infinity, Math.max(v.min ?? -Infinity, v.kind === 'int' ? Math.round(n) : n)));
+          value.putExpr?.(isExpression(text) ? text : null);
+          value.put(Math.min(value.max ?? Infinity, Math.max(value.min ?? -Infinity, value.kind === 'int' ? Math.round(typedValue) : typedValue)));
         }
       }
       if (this.open?.kind === 'type') {
@@ -1565,11 +1565,11 @@ export class Sentence {
   }
 
   /** A word brought into sight on the line (a blank to fill, the tool in use). */
-  private reveal(d: HTMLElement): void {
-    const r = d.getBoundingClientRect();
+  private reveal(element: HTMLElement): void {
+    const rect = element.getBoundingClientRect();
     const box = this.row.getBoundingClientRect();
-    if (r.left < box.left + 8 || r.right > box.right - 8) {
-      this.row.scrollTo({ left: this.row.scrollLeft + r.left - box.left - 24, behavior: calm() ? 'auto' : 'smooth' });
+    if (rect.left < box.left + 8 || rect.right > box.right - 8) {
+      this.row.scrollTo({ left: this.row.scrollLeft + rect.left - box.left - 24, behavior: calm() ? 'auto' : 'smooth' });
     }
   }
 
@@ -1588,8 +1588,8 @@ export class Sentence {
     // one more thing over the model. Kept for a tool's blank it may be wanted for.)
     const a = this.threads ? this.anchor : null;
     const subject = a && this.tag.querySelector('[data-key="s-pick"]');
-    const s = a && this.host.view.toScreen(a);
-    if (!a || !subject || !s) {
+    const screenPoint = a && this.host.view.toScreen(a);
+    if (!a || !subject || !screenPoint) {
       if (this.threadSig !== 'off') {
         this.threadSig = 'off';
         this.thread.classList.remove('on');
@@ -1597,17 +1597,17 @@ export class Sentence {
 
       return;
     }
-    const c = (this.viewAt ??= this.host.view.canvas.getBoundingClientRect());
-    const x1 = Math.round(c.left + s[0]);
-    const y1 = Math.round(c.top + s[1]);
+    const canvasRect = (this.viewAt ??= this.host.view.canvas.getBoundingClientRect());
+    const x1 = Math.round(canvasRect.left + screenPoint[0]);
+    const y1 = Math.round(canvasRect.top + screenPoint[1]);
     const sig = `${x1},${y1}`;
     if (sig === this.threadSig && !fresh) {
       return;
     }
-    const r = subject.getBoundingClientRect();
+    const rect = subject.getBoundingClientRect();
     const lr = this.line.getBoundingClientRect();
-    const x0 = Math.round(Math.min(Math.max(r.left + r.width / 2, lr.left + 14), lr.right - 14));
-    const y0 = Math.round(r.top);
+    const x0 = Math.round(Math.min(Math.max(rect.left + rect.width / 2, lr.left + 14), lr.right - 14));
+    const y0 = Math.round(rect.top);
     this.threadSig = sig;
     // (Up out of the word, then over to the thing: a hanging curve, never a straight wire.)
     const lift = Math.max(30, Math.min(140, (y0 - y1) * 0.55));
@@ -1635,16 +1635,16 @@ export class Sentence {
   /** What it says now (for `sg.sentence()`): the line's words, the sheet's, the end buttons. */
   describe() {
     const b = this.built;
-    const at = (d: Element) => {
-      const r = d.getBoundingClientRect();
+    const at = (element: Element) => {
+      const rect = element.getBoundingClientRect();
 
-      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) };
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), w: Math.round(rect.width), h: Math.round(rect.height) };
     };
     const words = (box: Element) =>
-      Array.from(box.querySelectorAll<HTMLElement>('.sn-word')).map((d) => {
-        const w = (d as HTMLElement & { word?: Word }).word;
+      Array.from(box.querySelectorAll<HTMLElement>('.sn-word')).map((element) => {
+        const word = (element as HTMLElement & { word?: Word }).word;
 
-        return { key: d.dataset.key, kind: w?.kind, cap: w?.cap, label: w?.label, ...(w?.on ? { on: true } : {}), ...(w?.blank ? { blank: true } : {}), ...(w?.kids ? { opens: w.kids.map(k => k.label) } : {}), ...(w?.quiet ? { quiet: true } : {}), ...at(d) };
+        return { key: element.dataset.key, kind: word?.kind, cap: word?.cap, label: word?.label, ...(word?.on ? { on: true } : {}), ...(word?.blank ? { blank: true } : {}), ...(word?.kids ? { opens: word.kids.map(child => child.label) } : {}), ...(word?.quiet ? { quiet: true } : {}), ...at(element) };
       });
 
     return {
@@ -1653,9 +1653,9 @@ export class Sentence {
       tag: words(this.tag),
       line: words(this.row),
       compact: this.line.classList.contains('sn-compact'),
-      end: Array.from(this.end.children).map(d => ({ label: (d as HTMLElement).title, ...at(d) })),
+      end: Array.from(this.end.children).map(element => ({ label: (element as HTMLElement).title, ...at(element) })),
       open: this.open?.kind ?? null,
-      sheet: this.sheet.hidden ? [] : Array.from(this.sheet.querySelectorAll<HTMLElement>('.sn-group')).map(g => ({ cap: g.dataset.cap, words: words(g) })),
+      sheet: this.sheet.hidden ? [] : Array.from(this.sheet.querySelectorAll<HTMLElement>('.sn-group')).map(element => ({ cap: element.dataset.cap, words: words(element) })),
       thread: this.thread.classList.contains('on')
     };
   }

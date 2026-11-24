@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { arrangement } from '../src/sketch/regions';
 import type { SketchEntity } from '../src/doc/types';
 
-const rect = (id: string, cx: number, cy: number, w: number, h: number): SketchEntity => ({ id, kind: 'rect', center: [cx, cy], w, h, rotation: 0 });
+const rect = (id: string, cx: number, cy: number, width: number, height: number): SketchEntity => ({ id, kind: 'rect', center: [cx, cy], w: width, h: height, rotation: 0 });
 const line = (id: string, a: [number, number], b: [number, number]): SketchEntity => ({ id, kind: 'line', a, b });
 const summary = (es: SketchEntity[]) =>
   arrangement(es)
-    .regions.map(r => `${r.area.toFixed(2)}${r.holes.length ? `(h${r.holes.length})` : ''}`)
+    .regions.map(region => `${region.area.toFixed(2)}${region.holes.length ? `(h${region.holes.length})` : ''}`)
     .sort();
 
 const cases: [string, SketchEntity[], string[]][] = [
@@ -48,26 +48,26 @@ for (const [name, es, expected] of cases) {
 // A plate with 900 holes, and 100 lines crossing in a grid: found in a fraction
 // of a second (pieces and holes were compared each with every other: 1.1 s and 1.4 s).
 {
-  const k = 30;
-  const plate: SketchEntity[] = [{ id: 'r', kind: 'rect', center: [0, 0], w: k * 20 + 20, h: k * 20 + 20, rotation: 0 }];
-  for (let i = 0; i < k; i++) {
-    for (let j = 0; j < k; j++) {
-      plate.push({ id: `c${i}_${j}`, kind: 'circle', center: [(i - k / 2 + 0.5) * 20, (j - k / 2 + 0.5) * 20], radius: 5 });
+  const count = 30;
+  const plate: SketchEntity[] = [{ id: 'r', kind: 'rect', center: [0, 0], w: count * 20 + 20, h: count * 20 + 20, rotation: 0 }];
+  for (let i = 0; i < count; i++) {
+    for (let j = 0; j < count; j++) {
+      plate.push({ id: `c${i}_${j}`, kind: 'circle', center: [(i - count / 2 + 0.5) * 20, (j - count / 2 + 0.5) * 20], radius: 5 });
     }
   }
-  const h = 50;
+  const height = 50;
   const grid: SketchEntity[] = [];
-  for (let i = 0; i < h; i++) {
-    grid.push({ id: `g${i}`, kind: 'line', a: [0, i * 10], b: [h * 10, i * 10 + 1] }, { id: `v${i}`, kind: 'line', a: [i * 10 + 0.5, -5], b: [i * 10 + 1, h * 10 + 5] });
+  for (let i = 0; i < height; i++) {
+    grid.push({ id: `g${i}`, kind: 'line', a: [0, i * 10], b: [height * 10, i * 10 + 1] }, { id: `v${i}`, kind: 'line', a: [i * 10 + 0.5, -5], b: [i * 10 + 1, height * 10 + 5] });
   }
   for (const [name, es, want] of [
     ['a plate with 900 holes', plate, 901],
-    ['100 lines crossing in a grid', grid, (h - 1) * (h - 1)]
+    ['100 lines crossing in a grid', grid, (height - 1) * (height - 1)]
   ] as [string, SketchEntity[], number][]) {
     const t = performance.now();
     const arr = arrangement(es);
     const ms = performance.now() - t;
-    const holes = arr.regions.reduce((n, r) => n + r.holes.length, 0);
+    const holes = arr.regions.reduce((total, region) => total + region.holes.length, 0);
     const ok = arr.regions.length === want && ms < 600 && (es !== plate || holes === 900);
     if (!ok) {
       failed++;

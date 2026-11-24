@@ -21,7 +21,7 @@ import { getOC, type Shape3D } from 'replicad';
 import { measureVolume } from '../src/kernel/ocFree';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import { faceRef, edgeRefs } from './grid';
-import { check, done, sketch, profile, XY, after, bodies, health, circle, rect } from './kit';
+import { check, done, sketch, XY, after, bodies, health, circle, rect } from './kit';
 import type { Feature, SketchEntity, Vec3 } from '../src/doc/types';
 
 type P2 = [number, number];
@@ -38,9 +38,9 @@ async function stage(name: string) {
   const { errors } = await after(fs);
   const ms = Date.now() - t;
   const info: Record<string, { v: number; ok: boolean; solids: number; faces: number }> = {};
-  for (const [id, s] of bodies()) {
-    const h = health(s);
-    info[id] = { v: Math.round(h.volume * 10) / 10, ok: h.valid && !h.openEdges && !h.thin, solids: h.solids, faces: h.faces };
+  for (const [id, body] of bodies()) {
+    const bodyHealth = health(body);
+    info[id] = { v: Math.round(bodyHealth.volume * 10) / 10, ok: bodyHealth.valid && !bodyHealth.openEdges && !bodyHealth.thin, solids: bodyHealth.solids, faces: bodyHealth.faces };
   }
   const bad = Object.entries(info).filter(([, i]) => !i.ok || i.solids !== 1);
   check(`${name}: builds`, !errors.length, errors.join('; '));
@@ -50,15 +50,15 @@ async function stage(name: string) {
   return info;
 }
 
-const B = (id: string) => bodies().get(id) as Shape3D;
+const bodyShape = (id: string) => bodies().get(id) as Shape3D;
 const oc = getOC();
 /** The least distance between two bodies (0 when they touch or overlap). */
 const gap = (a: Shape3D, b: Shape3D) => {
-  const d = new oc.BRepExtrema_DistShapeShape(a.wrapped, b.wrapped);
+  const measure = new oc.BRepExtrema_DistShapeShape(a.wrapped, b.wrapped);
   try {
-    return d.IsDone() ? d.Value() : -1;
+    return measure.IsDone() ? measure.Value() : -1;
   } finally {
-    d.delete();
+    measure.delete();
   }
 };
 /** How much two bodies share (0: apart or only touching). */
@@ -72,10 +72,10 @@ const overlap = (a: Shape3D, b: Shape3D) => {
 
 // ------------------------------------------------------------------ gears
 
-const rad = (d: number) => (d * Math.PI) / 180;
-const M = 1.5, PA = rad(20), BACKLASH = 0.15;
+const rad = (degrees: number) => (degrees * Math.PI) / 180;
+const MODULE = 1.5, PA = rad(20), BACKLASH = 0.15;
 const ZS = 12, ZP = 18, ZR = 48;
-const RS = (M * ZS) / 2, RP = (M * ZP) / 2, RR = (M * ZR) / 2; // 9, 13.5, 36
+const RS = (MODULE * ZS) / 2, RP = (MODULE * ZP) / 2, RR = (MODULE * ZR) / 2; // 9, 13.5, 36
 const CD = RS + RP; // 22.5, and RR - RP too
 const inv = (a: number) => Math.tan(a) - a;
 const GAP = 0.25; // the print gap: parts that move must stay this far apart
@@ -88,50 +88,50 @@ const Z0 = 3.5, Z1 = 21.5; // the gears' faces (the floor's top is at 3)
  * circle, a flank (a spline), the outer arc, the other flank, back down, and
  * the inner arc to the next piece.
  */
-function involutes(pre: string, z: number, c: P2, turn: number, inner: number, outer: number, half: number) {
-  const rp = (M * z) / 2, rb = rp * Math.cos(PA);
-  const phi = (r: number) => half + inv(PA) - inv(Math.acos(Math.min(1, rb / r)));
-  const at = (r: number, a: number): P2 => [c[0] + r * Math.cos(a + turn), c[1] + r * Math.sin(a + turn)];
+function involutes(pre: string, z: number, center: P2, turn: number, inner: number, outer: number, half: number) {
+  const rp = (MODULE * z) / 2, rb = rp * Math.cos(PA);
+  const phi = (radius: number) => half + inv(PA) - inv(Math.acos(Math.min(1, rb / radius)));
+  const at = (radius: number, a: number): P2 => [center[0] + radius * Math.cos(a + turn), center[1] + radius * Math.sin(a + turn)];
   const r0 = Math.max(rb, inner);
-  const flank = (mid: number, s: number) => Array.from({ length: 9 }, (_, i) => r0 + ((outer - r0) * i) / 8).map(r => at(r, mid + s * phi(r)));
+  const flank = (mid: number, side: number) => Array.from({ length: 9 }, (_, i) => r0 + ((outer - r0) * i) / 8).map(radius => at(radius, mid + side * phi(radius)));
   const es: SketchEntity[] = [];
-  for (let k = 0; k < z; k++) {
-    const m = (2 * Math.PI * k) / z;
-    const right = flank(m, -1), left = flank(m, 1).reverse();
+  for (let tooth = 0; tooth < z; tooth++) {
+    const middle = (2 * Math.PI * tooth) / z;
+    const right = flank(middle, -1), left = flank(middle, 1).reverse();
     if (inner < rb) {
-      es.push({ id: `${pre}${k}a`, kind: 'line', a: at(inner, m - phi(rb)), b: right[0] } as SketchEntity);
+      es.push({ id: `${pre}${tooth}a`, kind: 'line', a: at(inner, middle - phi(rb)), b: right[0] } as SketchEntity);
     }
-    es.push({ id: `${pre}${k}b`, kind: 'spline', closed: false, mode: 'fit', points: right } as SketchEntity);
-    es.push({ id: `${pre}${k}c`, kind: 'arc', a: right[8], m: at(outer, m), b: left[0] } as SketchEntity);
-    es.push({ id: `${pre}${k}d`, kind: 'spline', closed: false, mode: 'fit', points: left } as SketchEntity);
+    es.push({ id: `${pre}${tooth}b`, kind: 'spline', closed: false, mode: 'fit', points: right } as SketchEntity);
+    es.push({ id: `${pre}${tooth}c`, kind: 'arc', a: right[8], m: at(outer, middle), b: left[0] } as SketchEntity);
+    es.push({ id: `${pre}${tooth}d`, kind: 'spline', closed: false, mode: 'fit', points: left } as SketchEntity);
     if (inner < rb) {
-      es.push({ id: `${pre}${k}e`, kind: 'line', a: left[8], b: at(inner, m + phi(rb)) } as SketchEntity);
+      es.push({ id: `${pre}${tooth}e`, kind: 'line', a: left[8], b: at(inner, middle + phi(rb)) } as SketchEntity);
     }
-    const n = (2 * Math.PI * (k + 1)) / z;
-    es.push({ id: `${pre}${k}f`, kind: 'arc', a: at(inner, m + phi(Math.max(rb, inner))), m: at(inner, (m + n) / 2), b: at(inner, n - phi(Math.max(rb, inner))) } as SketchEntity);
+    const next = (2 * Math.PI * (tooth + 1)) / z;
+    es.push({ id: `${pre}${tooth}f`, kind: 'arc', a: at(inner, middle + phi(Math.max(rb, inner))), m: at(inner, (middle + next) / 2), b: at(inner, next - phi(Math.max(rb, inner))) } as SketchEntity);
   }
 
   return es;
 }
 /** The area such an outline holds, integrated finely. */
 function involuteArea(z: number, inner: number, outer: number, half: number) {
-  const rp = (M * z) / 2, rb = rp * Math.cos(PA);
-  const phi = (r: number) => half + inv(PA) - inv(Math.acos(Math.min(1, rb / r)));
+  const rp = (MODULE * z) / 2, rb = rp * Math.cos(PA);
+  const phi = (radius: number) => half + inv(PA) - inv(Math.acos(Math.min(1, rb / radius)));
   let a = Math.PI * inner * inner;
-  const n = 20000;
-  for (let i = 0; i < n; i++) {
-    const r = inner + ((outer - inner) * (i + 0.5)) / n;
-    a += z * 2 * phi(Math.max(r, rb)) * r * ((outer - inner) / n);
+  const samples = 20000;
+  for (let i = 0; i < samples; i++) {
+    const radius = inner + ((outer - inner) * (i + 0.5)) / samples;
+    a += z * 2 * phi(Math.max(radius, rb)) * radius * ((outer - inner) / samples);
   }
 
   return a;
 }
 // Each external tooth is thinner by half the backlash, each ring space wider.
-const toothHalf = (z: number) => Math.PI / (2 * z) - BACKLASH / 4 / ((M * z) / 2);
-const spaceHalf = (z: number) => Math.PI / (2 * z) + BACKLASH / 4 / ((M * z) / 2);
-const ext = (z: number) => ({ inner: (M * z) / 2 - 1.25 * M, outer: (M * z) / 2 + M, half: toothHalf(z) });
-// The ring's teeth reach in to RR - M; its spaces go out to RR + 1.25 M.
-const ring = { inner: RR - M, outer: RR + 1.25 * M, half: spaceHalf(ZR) };
+const toothHalf = (z: number) => Math.PI / (2 * z) - BACKLASH / 4 / ((MODULE * z) / 2);
+const spaceHalf = (z: number) => Math.PI / (2 * z) + BACKLASH / 4 / ((MODULE * z) / 2);
+const ext = (z: number) => ({ inner: (MODULE * z) / 2 - 1.25 * MODULE, outer: (MODULE * z) / 2 + MODULE, half: toothHalf(z) });
+// The ring's teeth reach in to RR - MODULE; its spaces go out to RR + 1.25 MODULE.
+const ring = { inner: RR - MODULE, outer: RR + 1.25 * MODULE, half: spaceHalf(ZR) };
 
 const all = (es: SketchEntity[], keep = (_: any) => true) => ({ kind: 'profile' as const, sketch: '', regions: arrangement(es).regions.filter(keep).map(regionRef) });
 const src = (id: string, es: SketchEntity[], keep?: (r: any) => boolean) => ({ ...all(es, keep), sketch: id });
@@ -157,20 +157,20 @@ check("the ring's outline is one shape", all(ringEs).regions.length === 1, all(r
 const bore = sk('sBore', XY(0), [circle('hb', 0, 0, 4.3)]);
 fs.push({ id: 'boreCut', name: 'Shaft bore', type: 'extrude', source: src('sBore', bore), distance: 3, mode: 'cut', target: 'housing' } as Feature);
 // Four holes for the lid's screws, 2.5 (to be threaded M3 x 0.5), 10 deep.
-const holes: P2[] = [0, 1, 2, 3].map(k => [40 * Math.cos(rad(45 + 90 * k)), 40 * Math.sin(rad(45 + 90 * k))]);
-const screwEs = sk('sScrew', XY(HTOP), holes.map((p, k) => circle(`sh${k}`, p[0], p[1], 1.25)));
+const holes: P2[] = [0, 1, 2, 3].map(index => [40 * Math.cos(rad(45 + 90 * index)), 40 * Math.sin(rad(45 + 90 * index))]);
+const screwEs = sk('sScrew', XY(HTOP), holes.map((hole, holeIndex) => circle(`sh${holeIndex}`, hole[0], hole[1], 1.25)));
 fs.push({ id: 'screwHoles', name: 'Screw holes', type: 'extrude', source: src('sScrew', screwEs), distance: -10, mode: 'cut', target: 'housing' } as Feature);
 await stage('bore and screw holes');
-for (let k = 0; k < 4; k++) {
-  const [x, y] = holes[k];
-  const face = faceRef('housing', (n, c, f) => f.geomType === 'CYLINDRE' && Math.hypot(c[0] - x, c[1] - y) < 1.3 && c[2] > HTOP - 10.01 && Math.abs(n[2]) < 1e-6);
-  fs.push({ id: `thread${k}`, name: `Thread M3 ${k + 1}`, type: 'thread', face, pitch: 0.5, round: { r: 1.25, hole: true } } as Feature);
+for (let holeIndex = 0; holeIndex < 4; holeIndex++) {
+  const [x, y] = holes[holeIndex];
+  const face = faceRef('housing', (normal, center, face) => face.geomType === 'CYLINDRE' && Math.hypot(center[0] - x, center[1] - y) < 1.3 && center[2] > HTOP - 10.01 && Math.abs(normal[2]) < 1e-6);
+  fs.push({ id: `thread${holeIndex}`, name: `Thread M3 ${holeIndex + 1}`, type: 'thread', face, pitch: 0.5, round: { r: 1.25, hole: true } } as Feature);
 }
 t0 = Date.now();
 const s2 = await stage('four holes threaded M3');
 check('the threads in under 60 s', tAt(t0) < 60000, tAt(t0));
 // The foot rounded, 2.
-fs.push({ id: 'footRound', name: 'Round the foot', type: 'fillet', edges: edgeRefs('housing', (m, d, e) => Math.abs(m[2]) < 1e-6 && Math.hypot(m[0], m[1]) > HR - 1), radius: 2 } as Feature);
+fs.push({ id: 'footRound', name: 'Round the foot', type: 'fillet', edges: edgeRefs('housing', midpoint => Math.abs(midpoint[2]) < 1e-6 && Math.hypot(midpoint[0], midpoint[1]) > HR - 1), radius: 2 } as Feature);
 const s3 = await stage('housing foot rounded');
 check('the round took a little away', s3.housing.v < s2.housing.v && s3.housing.v > s2.housing.v - 2 * Math.PI * HR * 2, [s2.housing.v, s3.housing.v]);
 
@@ -191,15 +191,15 @@ const s4 = await stage('sun gear on its shaft');
 // --- 3. Planets, 18 teeth, round the sun at 22.5, on 6.5 bores (pins 6).
 // The planet at angle 0 must show the sun a space (its teeth at 0 and 180°
 // otherwise): turned half a tooth - and the ring then a tooth outward.
-const p = ext(ZP);
-const planetEs = sk('sPlanet', XY(Z0), [...involutes('p', ZP, [CD, 0], Math.PI / ZP, p.inner, p.outer, p.half), circle('pb', CD, 0, 3.25)]);
-fs.push({ id: 'planet', name: 'Planet', type: 'extrude', source: src('sPlanet', planetEs, r => r.area > Math.PI * 3.25 * 3.25 + 1), distance: Z1 - Z0, mode: 'new' } as Feature);
+const planetSizes = ext(ZP);
+const planetEs = sk('sPlanet', XY(Z0), [...involutes('p', ZP, [CD, 0], Math.PI / ZP, planetSizes.inner, planetSizes.outer, planetSizes.half), circle('pb', CD, 0, 3.25)]);
+fs.push({ id: 'planet', name: 'Planet', type: 'extrude', source: src('sPlanet', planetEs, region => region.area > Math.PI * 3.25 * 3.25 + 1), distance: Z1 - Z0, mode: 'new' } as Feature);
 fs.push({ id: 'planets', name: 'Planets', type: 'transform', bodies: ['planet'], copy: true, op: { kind: 'circular', axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, count: 3, angle: 360 } } as Feature);
 const s5 = await stage('three planets patterned round');
-const planetIds = [...bodies().keys()].filter(k => k.startsWith('planet'));
+const planetIds = [...bodies().keys()].filter(key => key.startsWith('planet'));
 check('three planets', planetIds.length === 3, planetIds);
 {
-  const want = (involuteArea(ZP, p.inner, p.outer, p.half) - Math.PI * 3.25 * 3.25) * (Z1 - Z0);
+  const want = (involuteArea(ZP, planetSizes.inner, planetSizes.outer, planetSizes.half) - Math.PI * 3.25 * 3.25) * (Z1 - Z0);
   check('each planet holds what an 18-tooth involute with its bore should (1e-4)', planetIds.every(id => Math.abs(s5[id].v - want) < want * 1e-4), [planetIds.map(id => s5[id].v), want]);
 }
 
@@ -208,17 +208,17 @@ check('three planets', planetIds.length === 3, planetIds);
 const CZ = Z1 + 0.5, CT = 3;
 const plate = sk('sCarrier', XY(CZ), [circle('cp', 0, 0, 31)]);
 fs.push({ id: 'carrier', name: 'Carrier', type: 'extrude', source: src('sCarrier', plate), distance: CT, mode: 'new' } as Feature);
-const pinAt: P2[] = [0, 1, 2].map(k => [CD * Math.cos(rad(120 * k)), CD * Math.sin(rad(120 * k))]);
-const pins = sk('sPins', XY(CZ), pinAt.map((q, k) => circle(`pin${k}`, q[0], q[1], 3)));
+const pinAt: P2[] = [0, 1, 2].map(index => [CD * Math.cos(rad(120 * index)), CD * Math.sin(rad(120 * index))]);
+const pins = sk('sPins', XY(CZ), pinAt.map((q, index) => circle(`pin${index}`, q[0], q[1], 3)));
 fs.push({ id: 'pins', name: 'Pins', type: 'extrude', source: src('sPins', pins), distance: -(CZ - 4), mode: 'join', target: 'carrier' } as Feature);
 const out = sk('sOut', XY(CZ + CT), [circle('os', 0, 0, 5)]);
 fs.push({ id: 'outShaft', name: 'Output shaft', type: 'extrude', source: src('sOut', out), distance: 15, mode: 'join', target: 'carrier' } as Feature);
-const hex = sk('sHex', XY(CZ + CT + 15), [{ id: 'hx', kind: 'polyline', closed: true, points: Array.from({ length: 6 }, (_, k) => [(5 / Math.sqrt(3)) * Math.cos(rad(60 * k)), (5 / Math.sqrt(3)) * Math.sin(rad(60 * k))]) } as SketchEntity]);
+const hex = sk('sHex', XY(CZ + CT + 15), [{ id: 'hx', kind: 'polyline', closed: true, points: Array.from({ length: 6 }, (_, index) => [(5 / Math.sqrt(3)) * Math.cos(rad(60 * index)), (5 / Math.sqrt(3)) * Math.sin(rad(60 * index))]) } as SketchEntity]);
 fs.push({ id: 'hexCut', name: 'Hex socket', type: 'extrude', source: src('sHex', hex), distance: -6, mode: 'cut', target: 'carrier' } as Feature);
 const s6 = await stage('carrier with pins, shaft and socket');
 {
   const want = Math.PI * 31 * 31 * CT + 3 * Math.PI * 9 * (CZ - 4) + Math.PI * 25 * 15 - ((3 * Math.sqrt(3)) / 2) * (5 / Math.sqrt(3)) ** 2 * 6;
-  check('the carrier holds what it should (1e-6)', Math.abs(measureVolume(B('carrier')) - want) < want * 1e-6, [measureVolume(B('carrier')), want, s6.carrier.v]);
+  check('the carrier holds what it should (1e-6)', Math.abs(measureVolume(bodyShape('carrier')) - want) < want * 1e-6, [measureVolume(bodyShape('carrier')), want, s6.carrier.v]);
 }
 
 // --- 5. Lid: a cap on the housing, room inside for the carrier, a hole for
@@ -228,11 +228,11 @@ const lidEs = sk('sLid', XY(HTOP), [circle('lo', 0, 0, HR)]);
 fs.push({ id: 'lid', name: 'Lid', type: 'extrude', source: src('sLid', lidEs), distance: LT - HTOP, mode: 'new' } as Feature);
 const room = sk('sRoom', XY(HTOP), [circle('lr', 0, 0, 32)]);
 fs.push({ id: 'room', name: 'Room for the carrier', type: 'extrude', source: src('sRoom', room), distance: CZ + CT + 0.5 - HTOP, mode: 'cut', target: 'lid' } as Feature);
-const lh = sk('sLidHoles', XY(LT), [circle('ls', 0, 0, 5.4), ...holes.map((q, k) => circle(`lh${k}`, q[0], q[1], 1.7))]);
+const lh = sk('sLidHoles', XY(LT), [circle('ls', 0, 0, 5.4), ...holes.map((q, holeIndex) => circle(`lh${holeIndex}`, q[0], q[1], 1.7))]);
 fs.push({ id: 'lidHoles', name: 'Lid holes', type: 'extrude', source: src('sLidHoles', lh), distance: -(LT - HTOP), mode: 'cut', target: 'lid' } as Feature);
 await stage('lid with its holes');
-fs.push({ id: 'lidTop', name: 'Round the lid', type: 'fillet', edges: edgeRefs('lid', m => Math.abs(m[2] - LT) < 1e-6 && Math.hypot(m[0], m[1]) > HR - 1), radius: 2 } as Feature);
-fs.push({ id: 'csk', name: 'Screw chamfers', type: 'chamfer', edges: edgeRefs('lid', (m, d, ed) => Math.abs(m[2] - LT) < 1e-6 && holes.some(q => Math.abs(Math.hypot(m[0] - q[0], m[1] - q[1]) - 1.7) < 1e-3)), radius: 0.6 } as Feature);
+fs.push({ id: 'lidTop', name: 'Round the lid', type: 'fillet', edges: edgeRefs('lid', midpoint => Math.abs(midpoint[2] - LT) < 1e-6 && Math.hypot(midpoint[0], midpoint[1]) > HR - 1), radius: 2 } as Feature);
+fs.push({ id: 'csk', name: 'Screw chamfers', type: 'chamfer', edges: edgeRefs('lid', midpoint => Math.abs(midpoint[2] - LT) < 1e-6 && holes.some(q => Math.abs(Math.hypot(midpoint[0] - q[0], midpoint[1] - q[1]) - 1.7) < 1e-3)), radius: 0.6 } as Feature);
 const s7 = await stage('lid rounded and its holes chamfered');
 check("the lid's chamfers took a little", s7.lid.v > 0, s7.lid.v);
 
@@ -249,33 +249,33 @@ function fits(label: string, gearsOnly = false) {
   }
 }
 function fitsNow(label: string, gearsOnly: boolean) {
-  const P = ids().filter(k => k.startsWith('planet'));
+  const planets = ids().filter(id => id.startsWith('planet'));
   const all: [string, string, number][] = [
     ['sun', 'housing', GAP],
     ['sun', 'carrier', GAP],
     ['carrier', 'housing', GAP],
     ['carrier', 'lid', GAP],
     ['sun', 'lid', GAP],
-    ...P.flatMap(q => [[q, 'carrier', GAP], [q, 'lid', GAP]] as [string, string, number][]),
-    ...P.flatMap((q, i) => P.slice(i + 1).map(r => [q, r, GAP] as [string, string, number])),
+    ...planets.flatMap(q => [[q, 'carrier', GAP], [q, 'lid', GAP]] as [string, string, number][]),
+    ...planets.flatMap((q, i) => planets.slice(i + 1).map(other => [q, other, GAP] as [string, string, number])),
     // Meshing gears: their backlash, no print gap.
-    ...P.flatMap(q => [[q, 'sun', 0.02], [q, 'housing', 0.02]] as [string, string, number][])
+    ...planets.flatMap(q => [[q, 'sun', 0.02], [q, 'housing', 0.02]] as [string, string, number][])
   ];
   // (Only the teeth changed: their pairs alone. A gap between twisted gears
   // takes the measurer some 20 s each, twenty times a straight gear's.)
-  const gears = new Set(['sun', 'housing', ...P]);
+  const gears = new Set(['sun', 'housing', ...planets]);
   const pairs = gearsOnly ? all.filter(([a, b]) => gears.has(a) && gears.has(b)) : all;
   const seen = new Map<string, number>();
   for (const [a, b, least] of pairs) {
-    const g = gap(B(a), B(b));
-    seen.set(`${a}|${b}`, g);
-    check(`${label}: ${a} and ${b} clear by ${least}`, g >= least - 1e-6, g.toFixed(4));
+    const clearance = gap(bodyShape(a), bodyShape(b));
+    seen.set(`${a}|${b}`, clearance);
+    check(`${label}: ${a} and ${b} clear by ${least}`, clearance >= least - 1e-6, clearance.toFixed(4));
   }
   // The meshes no looser than their backlash allows.
-  for (const q of P) {
+  for (const q of planets) {
     for (const other of ['sun', 'housing']) {
-      const g = seen.get(`${q}|${other}`) ?? gap(B(q), B(other));
-      check(`${label}: ${q} meshes with ${other} (gap under 0.15)`, g < 0.15, g.toFixed(4));
+      const clearance = seen.get(`${q}|${other}`) ?? gap(bodyShape(q), bodyShape(other));
+      check(`${label}: ${q} meshes with ${other} (gap under 0.15)`, clearance < 0.15, clearance.toFixed(4));
     }
   }
 }
@@ -285,8 +285,8 @@ fits('assembled');
 console.log(`      fits ${tAt(t0)} ms`);
 // The lid sits on the housing (touching, not running in) and its screw holes
 // clear the M3 threads.
-check('the lid sits on the housing', gap(B('lid'), B('housing')) < 1e-6 && overlap(B('lid'), B('housing')) < 1e-6, [gap(B('lid'), B('housing')), overlap(B('lid'), B('housing'))]);
-check('nothing else overlaps the housing', ['sun', 'carrier', ...ids().filter(k => k.startsWith('planet'))].every(k => overlap(B(k), B('housing')) < 1e-9));
+check('the lid sits on the housing', gap(bodyShape('lid'), bodyShape('housing')) < 1e-6 && overlap(bodyShape('lid'), bodyShape('housing')) < 1e-6, [gap(bodyShape('lid'), bodyShape('housing')), overlap(bodyShape('lid'), bodyShape('housing'))]);
+check('nothing else overlaps the housing', ['sun', 'carrier', ...ids().filter(id => id.startsWith('planet'))].every(key => overlap(bodyShape(key), bodyShape('housing')) < 1e-9));
 
 // --- 6. Turned as it runs: the ring stays, the sun turns a, the carrier
 // a·12/60, each planet about its pin by -(5/3) of the carrier's turn (on top
@@ -294,16 +294,16 @@ check('nothing else overlaps the housing', ['sun', 'carrier', ...ids().filter(k 
 async function turning(what: string, angles = [7, 23, 41], gearsOnly = false) {
   for (const a of angles) {
     const turned = fs.length;
-    const c = (a * ZS) / (ZS + ZR);
+    const carrierAngle = (a * ZS) / (ZS + ZR);
     fs.push({ id: `turnSun${a}`, name: 'Turn sun', type: 'transform', bodies: ['sun'], copy: false, op: { kind: 'move', translate: [0, 0, 0], rotate: { origin: [0, 0, 0], axis: [0, 0, 1], angle: a } } } as Feature);
-    fs.push({ id: `turnCarrier${a}`, name: 'Turn carrier', type: 'transform', bodies: ['carrier'], copy: false, op: { kind: 'move', translate: [0, 0, 0], rotate: { origin: [0, 0, 0], axis: [0, 0, 1], angle: c } } } as Feature);
-    ids().filter(k => k.startsWith('planet')).forEach((q, i) => {
+    fs.push({ id: `turnCarrier${a}`, name: 'Turn carrier', type: 'transform', bodies: ['carrier'], copy: false, op: { kind: 'move', translate: [0, 0, 0], rotate: { origin: [0, 0, 0], axis: [0, 0, 1], angle: carrierAngle } } } as Feature);
+    ids().filter(id => id.startsWith('planet')).forEach((q, i) => {
       const at = pinAt[i] as P2;
       // (which pin: by where the planet is now)
-      const box = B(q).boundingBox.center;
-      const pin = pinAt.reduce((best, x) => (Math.hypot(x[0] - box[0], x[1] - box[1]) < Math.hypot(best[0] - box[0], best[1] - box[1]) ? x : best), at);
-      fs.push({ id: `spin${a}_${i}`, name: 'Spin planet', type: 'transform', bodies: [q], copy: false, op: { kind: 'move', translate: [0, 0, 0], rotate: { origin: [pin[0], pin[1], 0], axis: [0, 0, 1], angle: -(ZR / ZP) * c } } } as Feature);
-      fs.push({ id: `orbit${a}_${i}`, name: 'Carry planet', type: 'transform', bodies: [q], copy: false, op: { kind: 'move', translate: [0, 0, 0], rotate: { origin: [0, 0, 0], axis: [0, 0, 1], angle: c } } } as Feature);
+      const box = bodyShape(q).boundingBox.center;
+      const pin = pinAt.reduce((best, pin) => (Math.hypot(pin[0] - box[0], pin[1] - box[1]) < Math.hypot(best[0] - box[0], best[1] - box[1]) ? pin : best), at);
+      fs.push({ id: `spin${a}_${i}`, name: 'Spin planet', type: 'transform', bodies: [q], copy: false, op: { kind: 'move', translate: [0, 0, 0], rotate: { origin: [pin[0], pin[1], 0], axis: [0, 0, 1], angle: -(ZR / ZP) * carrierAngle } } } as Feature);
+      fs.push({ id: `orbit${a}_${i}`, name: 'Carry planet', type: 'transform', bodies: [q], copy: false, op: { kind: 'move', translate: [0, 0, 0], rotate: { origin: [0, 0, 0], axis: [0, 0, 1], angle: carrierAngle } } } as Feature);
     });
     await stage(`${what} turned: sun ${a}°`);
     fits(`${what}, sun at ${a}°`, gearsOnly);
@@ -320,14 +320,14 @@ void ([] as Vec3[]);
 // slide along the pitch circles: the sun's one way, the planets' and the
 // ring's the other.
 const HELIX = rad(20), ZM = (Z0 + Z1) / 2;
-const deg = (r: number) => (r * 180) / Math.PI;
+const deg = (radians: number) => (radians * 180) / Math.PI;
 const XZ = (y = 0) => ({ origin: [0, y, 0] as Vec3, xDir: [1, 0, 0] as Vec3, normal: [0, -1, 0] as Vec3 });
 /** Replace the step `id` (an extrude of `sketchId`) by two sweeps twisting opposite ways, from z0 up to zm and on to z1, about the axis at x. */
-function herringbone(id: string, name: string, sketchId: string, es: SketchEntity[], remade: (turn: number) => SketchEntity[], x: number, r: number, z0: number, zm: number, z1: number, keep?: (r: any) => boolean) {
-  const at = fs.findIndex(f => f.id === id);
+function herringbone(id: string, name: string, sketchId: string, es: SketchEntity[], remade: (turn: number) => SketchEntity[], x: number, radius: number, z0: number, zm: number, z1: number, keep?: (r: any) => boolean) {
+  const at = fs.findIndex(feature => feature.id === id);
   const old = fs[at] as any;
-  const twistLo = -Math.sign(r) * deg(((zm - z0) * Math.tan(HELIX)) / Math.abs(r));
-  const twistHi = Math.sign(r) * deg(((z1 - zm) * Math.tan(HELIX)) / Math.abs(r));
+  const twistLo = -Math.sign(radius) * deg(((zm - z0) * Math.tan(HELIX)) / Math.abs(radius));
+  const twistHi = Math.sign(radius) * deg(((z1 - zm) * Math.tan(HELIX)) / Math.abs(radius));
   const mid = remade(rad(twistLo));
   const steps: Feature[] = [
     sketch(`${id}PathLo`, XZ(0), [{ id: 'ax', kind: 'line', a: [x, z0], b: [x, zm] } as SketchEntity]),
@@ -340,12 +340,12 @@ function herringbone(id: string, name: string, sketchId: string, es: SketchEntit
 }
 // (Signed radius: an external gear meshing with the sun slides the other way.)
 herringbone('sun', 'Sun gear', 'sSun', sunEs, tn => involutes('s', ZS, [0, 0], tn, e.inner, e.outer, e.half), 0, RS, Z0, ZM, Z1);
-herringbone('planet', 'Planet', 'sPlanet', planetEs, tn => [...involutes('p', ZP, [CD, 0], Math.PI / ZP + tn, p.inner, p.outer, p.half), circle('pb', CD, 0, 3.25)], CD, -RP, Z0, ZM, Z1, r => r.area > Math.PI * 3.25 * 3.25 + 1);
+herringbone('planet', 'Planet', 'sPlanet', planetEs, tn => [...involutes('p', ZP, [CD, 0], Math.PI / ZP + tn, planetSizes.inner, planetSizes.outer, planetSizes.half), circle('pb', CD, 0, 3.25)], CD, -RP, Z0, ZM, Z1, turn => turn.area > Math.PI * 3.25 * 3.25 + 1);
 // The ring's spaces run past the gears (from the floor at 3 to the top at
 // 22): their helix is the gears' carried on, the same twist per mm.
 {
   const per = Math.tan(HELIX) / RR; // rad per mm, at the ring's pitch circle
-  const at = fs.findIndex(f => f.id === 'ringCut');
+  const at = fs.findIndex(feature => feature.id === 'ringCut');
   // (The planets' way: a ring and its planets slide the same way round.)
   const lo = deg((ZM - 3) * per), hi = -deg((HTOP - ZM) * per);
   // In step with the planets where they start (z 3.5, not the floor's 3):
@@ -376,7 +376,7 @@ await turning('herringbone', [23], true);
 // pocket in the lid's top: two races (rings revolved, a groove 0.2 round the
 // balls), ten 3 mm balls patterned round. The outer race is 0.05 bigger than
 // its pocket (a press fit); the inner race sits on the shaft, line to line.
-const BZ = 30.5, BP = 7.75, BALL = 1.5, PZ0 = LT - 5;
+const BZ = 30.5, BP = 7.75, BALL = 1.5;
 const pocket = sk('sPocket', XY(LT), [circle('pk', 0, 0, 11)]);
 fs.push({ id: 'pocket', name: 'Bearing pocket', type: 'extrude', source: src('sPocket', pocket), distance: -5, mode: 'cut', target: 'lid' } as Feature);
 const races = sk('sRaces', XZ(0), [
@@ -385,11 +385,11 @@ const races = sk('sRaces', XZ(0), [
   { id: 'groove', kind: 'circle', center: [BP, BZ], radius: BALL + 0.2 } as SketchEntity,
   { id: 'axis', kind: 'line', a: [0, 20], b: [0, 40], construction: true } as SketchEntity
 ]);
-const zAxis = (s: string, ent: string, x = 0) => ({ origin: [x, 0, 0] as Vec3, dir: [0, 0, 1] as Vec3, ref: { kind: 'sketchLine', sketch: s, entity: ent } });
-const raceRegions = (inner: boolean) => src('sRaces', races, (r) => {
-  const [u, v] = regionRef(r).c as P2;
+const zAxis = (sketchId: string, ent: string, x = 0) => ({ origin: [x, 0, 0] as Vec3, dir: [0, 0, 1] as Vec3, ref: { kind: 'sketchLine', sketch: sketchId, entity: ent } });
+const raceRegions = (inner: boolean) => src('sRaces', races, (region) => {
+  const [across, along] = regionRef(region).c as P2;
 
-  return Math.hypot(u - BP, v - BZ) > BALL + 0.2 - 1e-6 && (inner ? u < BP : u > BP) && r.area > 1;
+  return Math.hypot(across - BP, along - BZ) > BALL + 0.2 - 1e-6 && (inner ? across < BP : across > BP) && region.area > 1;
 });
 check('each race is one shape with its groove', raceRegions(true).regions.length === 1 && raceRegions(false).regions.length === 1, [raceRegions(true).regions.length, raceRegions(false).regions.length]);
 fs.push({ id: 'innerRace', name: 'Inner race', type: 'revolve', source: raceRegions(true), axis: zAxis('sRaces', 'axis'), angle: 360, mode: 'new' } as Feature);
@@ -401,34 +401,34 @@ const ballEs = sk('sBall', XZ(0), [
 fs.push({ id: 'ball', name: 'Ball', type: 'revolve', source: src('sBall', ballEs), axis: zAxis('sBall', 'bAx', BP), angle: 360, mode: 'new' } as Feature);
 fs.push({ id: 'balls', name: 'Balls', type: 'transform', bodies: ['ball'], copy: true, op: { kind: 'circular', axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, count: 10, angle: 360 } } as Feature);
 t0 = Date.now();
-const b1 = await stage('ball bearing in the lid');
-const ballIds = ids().filter(k => k.startsWith('ball'));
+await stage('ball bearing in the lid');
+const ballIds = ids().filter(id => id.startsWith('ball'));
 check('ten balls', ballIds.length === 10, ballIds.length);
-check('each ball is a 3 mm sphere (1e-6)', ballIds.every(k => Math.abs(measureVolume(B(k)) - (4 / 3) * Math.PI * BALL ** 3) < 1e-6 * (4 / 3) * Math.PI * BALL ** 3), ballIds.map(k => measureVolume(B(k))));
+check('each ball is a 3 mm sphere (1e-6)', ballIds.every(ballId => Math.abs(measureVolume(bodyShape(ballId)) - (4 / 3) * Math.PI * BALL ** 3) < 1e-6 * (4 / 3) * Math.PI * BALL ** 3), ballIds.map(ballId => measureVolume(bodyShape(ballId))));
 {
   // The races: their rings less the groove's share (Pappus: the circle's
   // slice inside each ring, carried round at its own centroid).
   const ringVol = (r0: number, r1: number) => Math.PI * (r1 * r1 - r0 * r0) * 4;
-  const vi = measureVolume(B('innerRace')), vo = measureVolume(B('outerRace'));
+  const vi = measureVolume(bodyShape('innerRace')), vo = measureVolume(bodyShape('outerRace'));
   check('the races hold less than their plain rings, by about a groove', vi < ringVol(5, 7.25) && vi > ringVol(5, 7.25) - 2 * Math.PI * BP * Math.PI * 1.7 ** 2 && vo < ringVol(8.25, 11.05) && vo > ringVol(8.25, 11.05) - 2 * Math.PI * BP * Math.PI * 1.7 ** 2, [vi, vo]);
 }
 {
   const want = Math.PI * (11.05 ** 2 - 11 ** 2) * 4;
-  const got = overlap(B('outerRace'), B('lid'));
+  const got = overlap(bodyShape('outerRace'), bodyShape('lid'));
   check('the outer race is pressed in: 0.05 into the lid all round', Math.abs(got - want) < want * 0.01, [got, want]);
-  check('the inner race sits on the shaft, line to line', gap(B('innerRace'), B('carrier')) < 1e-6 && overlap(B('innerRace'), B('carrier')) < 1e-6, [gap(B('innerRace'), B('carrier')), overlap(B('innerRace'), B('carrier'))]);
-  for (const k of ballIds) {
-    const gi = gap(B(k), B('innerRace')), go = gap(B(k), B('outerRace'));
-    check(`${k} runs in its grooves, 0.2 clear`, Math.abs(gi - 0.2) < 1e-4 && Math.abs(go - 0.2) < 1e-4, [gi, go]);
+  check('the inner race sits on the shaft, line to line', gap(bodyShape('innerRace'), bodyShape('carrier')) < 1e-6 && overlap(bodyShape('innerRace'), bodyShape('carrier')) < 1e-6, [gap(bodyShape('innerRace'), bodyShape('carrier')), overlap(bodyShape('innerRace'), bodyShape('carrier'))]);
+  for (const ballId of ballIds) {
+    const gi = gap(bodyShape(ballId), bodyShape('innerRace')), go = gap(bodyShape(ballId), bodyShape('outerRace'));
+    check(`${ballId} runs in its grooves, 0.2 clear`, Math.abs(gi - 0.2) < 1e-4 && Math.abs(go - 0.2) < 1e-4, [gi, go]);
   }
-  check('the races are clear of each other', gap(B('innerRace'), B('outerRace')) >= 1 - 1e-6, gap(B('innerRace'), B('outerRace')));
-  check('the balls are clear of each other', ballIds.every((k, i) => gap(B(k), B(ballIds[(i + 1) % 10])) > GAP), ballIds.map((k, i) => gap(B(k), B(ballIds[(i + 1) % 10]))));
-  check('the inner race is clear of the lid, the balls of the lid and the carrier', gap(B('innerRace'), B('lid')) >= 0.4 - 1e-6 && ballIds.every(k => gap(B(k), B('lid')) > GAP && gap(B(k), B('carrier')) > GAP), [gap(B('innerRace'), B('lid'))]);
+  check('the races are clear of each other', gap(bodyShape('innerRace'), bodyShape('outerRace')) >= 1 - 1e-6, gap(bodyShape('innerRace'), bodyShape('outerRace')));
+  check('the balls are clear of each other', ballIds.every((ballId, i) => gap(bodyShape(ballId), bodyShape(ballIds[(i + 1) % 10])) > GAP), ballIds.map((ballId, i) => gap(bodyShape(ballId), bodyShape(ballIds[(i + 1) % 10]))));
+  check('the inner race is clear of the lid, the balls of the lid and the carrier', gap(bodyShape('innerRace'), bodyShape('lid')) >= 0.4 - 1e-6 && ballIds.every(ballId => gap(bodyShape(ballId), bodyShape('lid')) > GAP && gap(bodyShape(ballId), bodyShape('carrier')) > GAP), [gap(bodyShape('innerRace'), bodyShape('lid'))]);
 }
 // (The gears are as they were: only the bearing's neighbours to check.)
-for (const k of ['innerRace', 'outerRace', ...ballIds]) {
-  for (const o of ['sun', 'housing', ...planetIds]) {
-    check(`${k} is clear of the ${o}`, gap(B(k), B(o)) > GAP, gap(B(k), B(o)).toFixed(3));
+for (const key of ['innerRace', 'outerRace', ...ballIds]) {
+  for (const other of ['sun', 'housing', ...planetIds]) {
+    check(`${key} is clear of the ${other}`, gap(bodyShape(key), bodyShape(other)) > GAP, gap(bodyShape(key), bodyShape(other)).toFixed(3));
   }
 }
 

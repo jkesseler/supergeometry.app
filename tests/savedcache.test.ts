@@ -27,7 +27,7 @@ const r0 = await regenerate(saved, true);
 check('the saved project builds', !r0.errors.length);
 const built = debugBodies().get('ex');
 // A preview of the extrude at another height: every step from it on is rebuilt.
-const preview = saved.map(f => (f.id === 'ex' ? { ...f, distance: 30 } : f)) as Feature[];
+const preview = saved.map(feature => (feature.id === 'ex' ? { ...feature, distance: 30 } : feature)) as Feature[];
 await regenerate(preview);
 check('the preview is a different body', debugBodies().get('ex') !== built);
 // Cancel: the saved project again - the very same body, not a rebuilt one.

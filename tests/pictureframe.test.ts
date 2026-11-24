@@ -12,27 +12,27 @@ import { after, bodies, check, circle, done, health, near, poly, rect, sketch, X
 import type { Shape3D } from 'replicad';
 import type { EdgeRef, Feature, SketchEntity, Vec3 } from '../src/doc/types';
 
-const vol = (s: Shape3D) => Math.abs(measureVolume(s));
+const vol = (shape: Shape3D) => Math.abs(measureVolume(shape));
 const body = (id: string) => bodies().get(id) as Shape3D;
 const profileOf = (sk: string, es: SketchEntity[]) => ({ kind: 'profile' as const, sketch: sk, regions: arrangement(es).regions.map(regionRef) });
 const edgesOf = (id: string, test: (m: number[], d: number[]) => boolean): EdgeRef[] =>
   body(id).edges.filter(e => test(e.pointAt(0.5).toTuple(), e.tangentAt(0.5).toTuple())).map(e => ({ body: id, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length }));
 const PI = Math.PI;
 
-const W = 100, H = 80; // the path: the opening, 100 x 80
+const WIDTH = 100, HEIGHT = 80; // the path: the opening, 100 x 80
 const BW = 15, BD = 12; // the bar: 15 wide, 12 deep
 const RW = 6, RD = 4; // the rebate at the back: 6 in, 4 deep
-const F = 2; // the outside front edge rounded 2
-const C = 1; // the inside front edge chamfered 1
+const FILLET = 2; // the outside front edge rounded 2
+const CHAMFER = 1; // the inside front edge chamfered 1
 const HR = 2.5, HD = 6; // the hanging hole: 5 across, 6 deep, in the top bar's back
 
-// The loop's length at u out from the opening (mitred corners): 2(W + 2u) + 2(H + 2u).
-const loop = (u: number) => 2 * (W + H) + 8 * u;
+// The loop's length at `offset` out from the opening (mitred corners): 2(WIDTH + 2·offset) + 2(HEIGHT + 2·offset).
+const loop = (offset: number) => 2 * (WIDTH + HEIGHT) + 8 * offset;
 
 // ---------------------------------------------------------------- the frame
-const pathEs = [rect('r', -W / 2, -H / 2, W / 2, H / 2)];
+const pathEs = [rect('r', -WIDTH / 2, -HEIGHT / 2, WIDTH / 2, HEIGHT / 2)];
 // The section where the path crosses the front plane (the right bar), u = x - 50 out.
-const x0 = W / 2;
+const x0 = WIDTH / 2;
 const secEs = [poly('L', [[x0 + RW, 0], [x0 + BW, 0], [x0 + BW, BD], [x0, BD], [x0, RD], [x0 + RW, RD]])];
 const steps: Feature[] = [
   sketch('Opening', XY(), pathEs),
@@ -41,33 +41,33 @@ const steps: Feature[] = [
 ];
 let { errors } = await after(steps);
 const vFrame = vol(body('Frame'));
-// Section: the 15 x 12 less the 6 x 4 rebate; ∫ loop(u) dA = loop(0)·A + 8·∫u dA.
-const A = BW * BD - RW * RD;
+// Section: the 15 x 12 less the 6 x 4 rebate; ∫ loop(u) dA = loop(0)·SECTION_AREA + 8·∫u dA.
+const SECTION_AREA = BW * BD - RW * RD;
 const uA = (BW * BD * BW) / 2 - (RW * RD * RW) / 2;
-const vSweep = loop(0) * A + 8 * uA;
+const vSweep = loop(0) * SECTION_AREA + 8 * uA;
 check('the frame: the section swept round, mitred', !errors.length && near(vFrame, vSweep, 1e-5 * vSweep), [errors, vFrame, vSweep]);
 
 // The outside front edge: four lines at z 12, round the outside. The round's
 // spandrel ((1 - π/4)·r²) has its middle r·(10 - 3π)/(3·(4 - π)) in from it.
-const outside = edgesOf('Frame', m => near(m[2], BD, 1e-4) && (near(Math.abs(m[0]), x0 + BW, 1e-4) || near(Math.abs(m[1]), H / 2 + BW, 1e-4)));
-steps.push({ id: 'Round', name: 'Fillet', type: 'fillet', edges: outside, radius: F } as Feature);
+const outside = edgesOf('Frame', midpoint => near(midpoint[2], BD, 1e-4) && (near(Math.abs(midpoint[0]), x0 + BW, 1e-4) || near(Math.abs(midpoint[1]), HEIGHT / 2 + BW, 1e-4)));
+steps.push({ id: 'Round', name: 'Fillet', type: 'fillet', edges: outside, radius: FILLET } as Feature);
 ({ errors } = await after(steps));
 const vRound = vol(body('Frame'));
-const dF = (F * (10 - 3 * PI)) / (3 * (4 - PI));
-const lostF = (1 - PI / 4) * F * F * loop(BW - dF);
+const dF = (FILLET * (10 - 3 * PI)) / (3 * (4 - PI));
+const lostF = (1 - PI / 4) * FILLET * FILLET * loop(BW - dF);
 check('the outside front edge: rounded 2', !errors.length && outside.length === 4 && near(vFrame - vRound, lostF, 1e-4 * lostF), [errors, outside.length, vFrame - vRound, lostF]);
 
-// The inside front edge: a triangle C²/2 off it, its middle C/3 out.
-const inside = edgesOf('Frame', m => near(m[2], BD, 1e-4) && (near(Math.abs(m[0]), x0, 1e-4) || near(Math.abs(m[1]), H / 2, 1e-4)));
-steps.push({ id: 'Bevel', name: 'Chamfer', type: 'chamfer', edges: inside, radius: C } as Feature);
+// The inside front edge: a triangle CHAMFER²/2 off it, its middle CHAMFER/3 out.
+const inside = edgesOf('Frame', midpoint => near(midpoint[2], BD, 1e-4) && (near(Math.abs(midpoint[0]), x0, 1e-4) || near(Math.abs(midpoint[1]), HEIGHT / 2, 1e-4)));
+steps.push({ id: 'Bevel', name: 'Chamfer', type: 'chamfer', edges: inside, radius: CHAMFER } as Feature);
 ({ errors } = await after(steps));
 const vBevel = vol(body('Frame'));
-const lostC = ((C * C) / 2) * loop(C / 3);
+const lostC = ((CHAMFER * CHAMFER) / 2) * loop(CHAMFER / 3);
 check('the inside front edge: chamfered 1', !errors.length && inside.length === 4 && near(vRound - vBevel, lostC, 1e-4 * lostC), [errors, inside.length, vRound - vBevel, lostC]);
 
 // ---------------------------------------------------------------- the hole
 // In the back of the top bar, half way across what is left of it past the rebate (46 to 55).
-const HY = H / 2 + (RW + BW) / 2;
+const HY = HEIGHT / 2 + (RW + BW) / 2;
 const holeEs = [circle('h', 0, HY, HR)];
 steps.push(sketch('Hanger', XY(), holeEs), { id: 'Hole', name: 'Extrude', type: 'extrude', source: profileOf('Hanger', holeEs), distance: HD, mode: 'cut', target: 'Frame' } as Feature);
 ({ errors } = await after(steps));
@@ -77,8 +77,8 @@ check('the hole: 5 across, 6 deep, in the back of the top bar', !errors.length &
 const [[bx0, by0, bz0], [bx1, by1, bz1]] = body('Frame').boundingBox.bounds;
 check('the frame: 130 x 110 x 12', near(bx0, -65, 1e-3) && near(bx1, 65, 1e-3) && near(by0, -55, 1e-3) && near(by1, 55, 1e-3) && near(bz0, 0, 1e-4) && near(bz1, BD, 1e-4), body('Frame').boundingBox.bounds);
 
-const h = health(body('Frame'), 'Frame');
-check('the frame: sound, one body', h.healthy && bodies().size === 1, h.healthy ? `${Math.round(h.volume)} mm³` : h);
+const bodyHealth = health(body('Frame'), 'Frame');
+check('the frame: sound, one body', bodyHealth.healthy && bodies().size === 1, bodyHealth.healthy ? `${Math.round(bodyHealth.volume)} mm³` : bodyHealth);
 const codeVol = vol(body('Frame'));
 const codeFaces = body('Frame').faces.length;
 const codeBox = body('Frame').boundingBox.bounds;
@@ -100,7 +100,7 @@ console.log('sweep', vFrame.toFixed(1), 'round', vRound.toFixed(1), 'bevel', vBe
   const hand = JSON.parse(readFileSync(new URL('./fixtures/pictureframe-hand.json', import.meta.url), 'utf8')).features as Feature[];
   const { errors } = await after(hand);
   check('by hand: no errors', errors.length === 0, errors);
-  const Bs = [...bodies().values()].map(s => s as Shape3D);
+  const Bs = [...bodies().values()].map(body => body as Shape3D);
   check('by hand: one body, sound', Bs.length === 1 && health(Bs[0], 'hand').healthy, Bs.length);
   check('by hand: the same frame (to 0.1 %)', Bs.length === 1 && Math.abs(vol(Bs[0]) - codeVol) < codeVol * 1e-3, `${Bs[0] ? vol(Bs[0]).toFixed(1) : '-'} / ${codeVol.toFixed(1)}`);
   check('by hand: as many faces, the same box', Bs[0]?.faces.length === codeFaces && Bs[0].boundingBox.bounds.flat().every((x, i) => near(x, codeBox.flat()[i], 1e-3)), [Bs[0]?.faces.length, codeFaces, Bs[0]?.boundingBox.bounds]);

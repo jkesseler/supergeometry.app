@@ -15,7 +15,7 @@ const groups: HistoryGroup[] = [
   { id: 'g1', name: 'Base', steps: ['b', 'c', 'd', 'e'] },
   { id: 'g2', name: 'Top', steps: ['f'] }
 ];
-const show = (gs: HistoryGroup[]) => gs.map(g => `${g.name}:${g.steps.join('')}`).join(' ');
+const show = (gs: HistoryGroup[]) => gs.map(historyGroup => `${historyGroup.name}:${historyGroup.steps.join('')}`).join(' ');
 
 const mid = ungroupedSteps(order, groups, new Set(['c']));
 check('from the middle: the group splits around it (b | c | d e)', show(mid) === 'Base:b Base (2):de Top:f' && mid[0].id === 'g1', show(mid));
@@ -27,7 +27,7 @@ const two = ungroupedSteps(order, groups, new Set(['c', 'e', 'a']));
 check('two out, and one in no group: b | c | d | e', show(two) === 'Base:b Base (2):d Top:f', show(two));
 const none = ungroupedSteps(order, groups, new Set(['a']));
 check('none of them grouped: nothing changes', show(none) === show(groups));
-const ids = new Set(mid.map(g => g.id));
+const ids = new Set(mid.map(historyGroup => historyGroup.id));
 check('the split part gets an id of its own', ids.size === mid.length);
 
 console.log(failed ? `${failed} FAILED` : 'all passed');

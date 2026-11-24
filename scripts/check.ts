@@ -44,7 +44,7 @@ export interface CheckReport {
 
 /** Every body's health after the steps (name from the rebuild). */
 function bodiesNow(names: Map<string, string>): BodyHealth[] {
-  return [...debugBodies()].map(([id, s]) => healthReport(id, names.get(id) ?? id, s));
+  return [...debugBodies()].map(([id, shape]) => healthReport(id, names.get(id) ?? id, shape));
 }
 
 export async function checkProject(features: Feature[], name: string, stepwise = true): Promise<CheckReport> {
@@ -52,86 +52,86 @@ export async function checkProject(features: Feature[], name: string, stepwise =
   if (stepwise) {
     let before = new Map<string, BodyHealth>();
     for (let i = 0; i < features.length; i++) {
-      const f = features[i];
+      const feature = features[i];
       const t0 = performance.now();
-      const r = await regenerate(features.slice(0, i + 1));
-      const names = new Map(r.bodies.map(b => [b.id, b.name]));
-      const now = new Map(bodiesNow(names).map(h => [h.id, h]));
-      const step: StepReport = { index: i + 1, id: f.id, name: f.name, type: f.type, made: [], gone: [], changed: [], broke: [], ms: Math.round(performance.now() - t0) };
-      if (f.suppressed) {
+      const result = await regenerate(features.slice(0, i + 1));
+      const names = new Map(result.bodies.map(b => [b.id, b.name]));
+      const now = new Map(bodiesNow(names).map(bodyHealth => [bodyHealth.id, bodyHealth]));
+      const step: StepReport = { index: i + 1, id: feature.id, name: feature.name, type: feature.type, made: [], gone: [], changed: [], broke: [], ms: Math.round(performance.now() - t0) };
+      if (feature.suppressed) {
         step.off = true;
       }
-      const err = r.errors.find(e => e.featureId === f.id);
+      const err = result.errors.find(e => e.featureId === feature.id);
       if (err) {
         step.error = err.message;
       }
-      const note = r.notes?.find(e => e.featureId === f.id);
+      const note = result.notes?.find(e => e.featureId === feature.id);
       if (note) {
         step.note = note.message;
       }
-      for (const [id, h] of now) {
+      for (const [id, bodyHealth] of now) {
         const was = before.get(id);
         if (!was) {
-          step.made.push(h.name);
-        } else if (Math.abs(was.volume - h.volume) > 1e-6 * Math.max(1, was.volume) || was.faces !== h.faces) {
-          step.changed.push({ body: h.name, from: was.volume, to: h.volume });
+          step.made.push(bodyHealth.name);
+        } else if (Math.abs(was.volume - bodyHealth.volume) > 1e-6 * Math.max(1, was.volume) || was.faces !== bodyHealth.faces) {
+          step.changed.push({ body: bodyHealth.name, from: was.volume, to: bodyHealth.volume });
         }
-        if (was?.healthy && !h.healthy) {
-          step.broke.push(h.name);
+        if (was?.healthy && !bodyHealth.healthy) {
+          step.broke.push(bodyHealth.name);
         }
-        if (!was && !h.healthy) {
-          step.broke.push(h.name);
+        if (!was && !bodyHealth.healthy) {
+          step.broke.push(bodyHealth.name);
         }
       }
-      for (const [id, h] of before) {
+      for (const [id, bodyHealth] of before) {
         if (!now.has(id)) {
-          step.gone.push(h.name);
+          step.gone.push(bodyHealth.name);
         }
       }
       steps.push(step);
       before = now;
     }
   }
-  const r = await regenerate(features);
-  const names = new Map(r.bodies.map(b => [b.id, b.name]));
+  const rebuilt = await regenerate(features);
+  const names = new Map(rebuilt.bodies.map(b => [b.id, b.name]));
   const bodies = bodiesNow(names);
-  const byId = new Map(features.map(f => [f.id, f]));
-  const errors = r.errors.map(e => ({ step: byId.get(e.featureId)?.name ?? e.featureId, message: e.message }));
+  const byId = new Map(features.map(feature => [feature.id, feature]));
+  const errors = rebuilt.errors.map(e => ({ step: byId.get(e.featureId)?.name ?? e.featureId, message: e.message }));
 
   return { name, ...(stepwise ? { steps } : {}), bodies, errors, ok: !errors.length && bodies.every(b => b.healthy) };
 }
 
-const n = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toPrecision(3));
+const formatNumber = (value: number) => (Math.abs(value) >= 100 ? value.toFixed(0) : Math.abs(value) >= 1 ? value.toFixed(2) : value.toPrecision(3));
 
 /** The report as lines to read. */
 export function reportText(rep: CheckReport): string {
   const out: string[] = [`Project: ${rep.name}`];
   if (rep.steps) {
     out.push('', 'Steps:');
-    for (const s of rep.steps) {
+    for (const step of rep.steps) {
       const what: string[] = [];
-      if (s.off) {
+      if (step.off) {
         what.push('switched off');
       }
-      if (s.made.length) {
-        what.push(`made ${s.made.join(', ')}`);
+      if (step.made.length) {
+        what.push(`made ${step.made.join(', ')}`);
       }
-      for (const c of s.changed) {
-        what.push(`${c.body} ${c.to >= c.from ? '+' : ''}${n(c.to - c.from)} mm³`);
+      for (const change of step.changed) {
+        what.push(`${change.body} ${change.to >= change.from ? '+' : ''}${formatNumber(change.to - change.from)} mm³`);
       }
-      if (s.gone.length) {
-        what.push(`took away ${s.gone.join(', ')}`);
+      if (step.gone.length) {
+        what.push(`took away ${step.gone.join(', ')}`);
       }
-      if (s.broke.length) {
-        what.push(`!! not sound after it: ${s.broke.join(', ')}`);
+      if (step.broke.length) {
+        what.push(`!! not sound after it: ${step.broke.join(', ')}`);
       }
-      if (s.note) {
-        what.push(`note: ${s.note}`);
+      if (step.note) {
+        what.push(`note: ${step.note}`);
       }
-      if (s.error) {
-        what.push(`ERROR: ${s.error}`);
+      if (step.error) {
+        what.push(`ERROR: ${step.error}`);
       }
-      out.push(`${String(s.index).padStart(3)}. ${s.name} [${s.type}]${what.length ? ' - ' + what.join('; ') : ''}  (${s.ms} ms)`);
+      out.push(`${String(step.index).padStart(3)}. ${step.name} [${step.type}]${what.length ? ' - ' + what.join('; ') : ''}  (${step.ms} ms)`);
     }
   }
   out.push('', 'Bodies:');
@@ -139,7 +139,7 @@ export function reportText(rep: CheckReport): string {
     out.push('  (none)');
   }
   for (const b of rep.bodies) {
-    const size = b.box[1].map((v, k) => n(v - b.box[0][k])).join(' x ');
+    const size = b.box[1].map((value, axis) => formatNumber(value - b.box[0][axis])).join(' x ');
     const bad: string[] = [];
     if (!b.valid) {
       bad.push('invalid');
@@ -156,7 +156,7 @@ export function reportText(rep: CheckReport): string {
     if (!(b.volume > 0)) {
       bad.push('no volume');
     }
-    out.push(`  ${b.healthy ? 'ok  ' : 'BAD '} ${b.name}: ${n(b.volume)} mm³, ${b.faces} faces, ${b.edges} edges, ${size} mm${bad.length ? ' - ' + bad.join(', ') : ''}`);
+    out.push(`  ${b.healthy ? 'ok  ' : 'BAD '} ${b.name}: ${formatNumber(b.volume)} mm³, ${b.faces} faces, ${b.edges} edges, ${size} mm${bad.length ? ' - ' + bad.join(', ') : ''}`);
   }
   if (rep.errors.length) {
     out.push('', 'Errors:');

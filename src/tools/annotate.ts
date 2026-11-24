@@ -30,10 +30,10 @@ class DimLine {
     this.line.renderOrder = 11;
     const mat = new MeshBasicMaterial({ color, depthTest: false, transparent: true });
     this.heads = [0, 1].map(() => {
-      const m = new Mesh(new ConeGeometry(0.35, 1, 12), mat);
-      m.renderOrder = 11;
+      const mesh = new Mesh(new ConeGeometry(0.35, 1, 12), mat);
+      mesh.renderOrder = 11;
 
-      return m;
+      return mesh;
     });
     this.group.add(this.line, ...this.heads);
   }
@@ -57,20 +57,20 @@ class DimLine {
     const len = dir.length();
     const show = len > wpp * 20;
     dir.normalize();
-    const s = wpp * 11;
-    for (const [i, h] of this.heads.entries()) {
-      h.visible = show;
-      h.scale.setScalar(s);
+    const arrowSize = wpp * 11;
+    for (const [i, head] of this.heads.entries()) {
+      head.visible = show;
+      head.scale.setScalar(arrowSize);
       // Cone points +Y; tips sit on the ends, pointing outwards.
       const out = i === 0 ? dir.clone().negate() : dir.clone();
-      h.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), out);
-      h.position.copy(i === 0 ? this.a : this.b).addScaledVector(out, -s / 2);
+      head.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), out);
+      head.position.copy(i === 0 ? this.a : this.b).addScaledVector(out, -arrowSize / 2);
     }
   }
 
   dispose(): void {
     this.line.geometry.dispose();
-    this.heads.forEach(h => h.geometry.dispose());
+    this.heads.forEach(head => head.geometry.dispose());
   }
 }
 
@@ -144,11 +144,11 @@ export class DimWidget {
     view.overlay.add(this.line.group);
     if (opts.modes) {
       const sel = document.createElement('select');
-      for (const m of opts.modes) {
-        const o = document.createElement('option');
-        o.value = m.id;
-        o.textContent = m.label;
-        sel.append(o);
+      for (const mode of opts.modes) {
+        const option = document.createElement('option');
+        option.value = mode.id;
+        option.textContent = mode.label;
+        sel.append(option);
       }
       sel.value = opts.mode ?? opts.modes[0].id;
       sel.addEventListener('change', () => opts.onMode?.(sel.value));
@@ -165,11 +165,11 @@ export class DimWidget {
     // A box you type into (the tool's other values attach under it as a list).
     this.box.classList.toggle('editable', !!opts.onInput);
     this.input.addEventListener('input', () => {
-      const v = evaluate(this.input.value, this.angle ? 'angle' : 'length');
-      this.input.classList.toggle('invalid', v === null);
+      const value = evaluate(this.input.value, this.angle ? 'angle' : 'length');
+      this.input.classList.toggle('invalid', value === null);
       // Key by key into this box: one undo step for the value typed.
-      if (v !== null) {
-        mergingCommits(this, () => opts.onInput?.(v, this.input.value));
+      if (value !== null) {
+        mergingCommits(this, () => opts.onInput?.(value, this.input.value));
       }
     });
     this.input.addEventListener('keydown', (e) => {
@@ -192,10 +192,10 @@ export class DimWidget {
       head.textContent = 'ƒx';
       sel.append(head);
       for (const name of opts.variables) {
-        const o = document.createElement('option');
-        o.value = name;
-        o.textContent = name;
-        sel.append(o);
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        sel.append(option);
       }
       sel.addEventListener('change', () => {
         if (sel.value) {
@@ -223,16 +223,16 @@ export class DimWidget {
           return openNumpad(this.input);
         }
         this.input.focus();
-        const n = this.input.value.length;
-        this.input.setSelectionRange(n, n);
+        const count = this.input.value.length;
+        this.input.setSelectionRange(count, count);
       }, 0);
     }
   }
 
   private angle = false;
 
-  private show(v: number): string {
-    return this.angle ? trim(v, 2) : trim(toDisplay(v), 3);
+  private show(value: number): string {
+    return this.angle ? trim(value, 2) : trim(toDisplay(value), 3);
   }
 
   get text(): string {
@@ -256,9 +256,9 @@ export class DimWidget {
     }
   }
 
-  setValue(v: number): void {
+  setValue(value: number): void {
     if (!typingInto(this.input)) {
-      this.input.value = this.show(v);
+      this.input.value = this.show(value);
     }
     this.box.classList.remove('typing', 'invalid');
   }
@@ -288,10 +288,10 @@ export class DimWidget {
 
   private layout(): void {
     this.line.layout();
-    let s = this.view.toScreen(this.mid);
+    let screenPoint = this.view.toScreen(this.mid);
     const sa = this.view.toScreen(this.ends[0]);
     const sb = this.view.toScreen(this.ends[1]);
-    if (s && sa && sb && this.boxAt !== 'middle') {
+    if (screenPoint && sa && sb && this.boxAt !== 'middle') {
       let dx = sb[0] - sa[0];
       let dy = sb[1] - sa[1];
       // No length yet: use the given direction on screen.
@@ -301,54 +301,54 @@ export class DimWidget {
           [dx, dy] = [e[0] - sb[0], e[1] - sb[1]];
         }
       }
-      const l = Math.hypot(dx, dy) || 1;
+      const length = Math.hypot(dx, dy) || 1;
       const half = { w: this.box.offsetWidth / 2 + 10, h: this.box.offsetHeight / 2 + 10 };
       // Too short for the box beside it (it would cover both ends): behind the start.
-      const behind = this.boxAt === 'clear' && l < 2 * Math.hypot(half.w, half.h) + 24;
+      const behind = this.boxAt === 'clear' && length < 2 * Math.hypot(half.w, half.h) + 24;
       if (behind) {
-        const k = Math.abs((dx / l) * half.w) + Math.abs((dy / l) * half.h) + 6;
-        s = [sa[0] - (dx / l) * k, sa[1] - (dy / l) * k];
+        const clearance = Math.abs((dx / length) * half.w) + Math.abs((dy / length) * half.h) + 6;
+        screenPoint = [sa[0] - (dx / length) * clearance, sa[1] - (dy / length) * clearance];
       } else if (this.boxAt === 'beyond') {
         // Past the end, far enough that the box's own size clears it.
-        const k = Math.abs((dx / l) * half.w) + Math.abs((dy / l) * half.h) + this.boxGap;
-        s = [sb[0] + (dx / l) * k, sb[1] + (dy / l) * k];
+        const clearance = Math.abs((dx / length) * half.w) + Math.abs((dy / length) * half.h) + this.boxGap;
+        screenPoint = [sb[0] + (dx / length) * clearance, sb[1] + (dy / length) * clearance];
       } else {
         // Beside the middle, on the upper side of the line.
-        let n: [number, number] = [-dy / l, dx / l];
-        if (n[1] > 0) {
-          n = [-n[0], -n[1]];
+        let normal: [number, number] = [-dy / length, dx / length];
+        if (normal[1] > 0) {
+          normal = [-normal[0], -normal[1]];
         }
-        const k = Math.abs(n[0] * half.w) + Math.abs(n[1] * half.h);
-        s = [s[0] + n[0] * k, s[1] + n[1] * k];
+        const reach = Math.abs(normal[0] * half.w) + Math.abs(normal[1] * half.h);
+        screenPoint = [screenPoint[0] + normal[0] * reach, screenPoint[1] + normal[1] * reach];
       }
     }
     // Its face turned away (seen from behind): out of the way - and out of
     // the numpad's hands (on a phone it has it from the start), the value
     // then typed in the tool's card.
-    if (s && this.facing) {
-      const v = this.view.cam.viewDir();
-      if (v.x * this.facing[0] + v.y * this.facing[1] + v.z * this.facing[2] > 0.05) {
-        s = null;
+    if (screenPoint && this.facing) {
+      const viewDir = this.view.cam.viewDir();
+      if (viewDir.x * this.facing[0] + viewDir.y * this.facing[1] + viewDir.z * this.facing[2] > 0.05) {
+        screenPoint = null;
         if (this.input === document.activeElement) {
           this.input.blur();
         }
       }
     }
-    this.box.hidden = !s;
+    this.box.hidden = !screenPoint;
     // The dimension on screen (the tool's options card keeps off it).
     if (sa && sb) {
       this.box.dataset.seg = `${Math.round(sa[0])},${Math.round(sa[1])},${Math.round(sb[0])},${Math.round(sb[1])}`;
     } else {
       delete this.box.dataset.seg;
     }
-    if (s && this.input === document.activeElement && this.held) {
-      s = this.held;
+    if (screenPoint && this.input === document.activeElement && this.held) {
+      screenPoint = this.held;
     }
-    if (s) {
+    if (screenPoint) {
       // Always where you can reach it: on screen, clear of the side panels.
-      s = clampToFree(s, this.box.offsetWidth / 2, this.box.offsetHeight / 2);
-      this.held = s;
-      this.box.style.transform = `translate(${Math.round(s[0])}px, ${Math.round(s[1])}px) translate(-50%, -50%)`;
+      screenPoint = clampToFree(screenPoint, this.box.offsetWidth / 2, this.box.offsetHeight / 2);
+      this.held = screenPoint;
+      this.box.style.transform = `translate(${Math.round(screenPoint[0])}px, ${Math.round(screenPoint[1])}px) translate(-50%, -50%)`;
     }
   }
 
@@ -380,16 +380,16 @@ function freeAreas(): { sides: DOMRect[]; panel: DOMRect | null; low: DOMRect[] 
       sides.push(e.getBoundingClientRect());
     }
   }
-  const p = document.getElementById('panel');
-  const panel = document.documentElement.dataset.screen === 'phone' && p && !p.hidden && p.offsetHeight ? p.getBoundingClientRect() : null;
+  const element = document.getElementById('panel');
+  const panel = document.documentElement.dataset.screen === 'phone' && element && !element.hidden && element.offsetHeight ? element.getBoundingClientRect() : null;
   // What sits along the bottom - the line with its tools, and on a phone undo and the guide text over it: a value
   // box stays above them (pulled down into a cut on a phone, the box sat on the guide text).
   const low: DOMRect[] = [];
   for (const id of ['sentence', 'undo-dock', 'hint']) {
     const e = document.getElementById(id);
-    const r = e && !e.hidden && e.offsetHeight && getComputedStyle(e).visibility !== 'hidden' ? e.getBoundingClientRect() : null;
-    if (r && r.top > window.innerHeight * 0.5) {
-      low.push(r);
+    const rect = e && !e.hidden && e.offsetHeight && getComputedStyle(e).visibility !== 'hidden' ? e.getBoundingClientRect() : null;
+    if (rect && rect.top > window.innerHeight * 0.5) {
+      low.push(rect);
     }
   }
   low.sort((a, b) => b.top - a.top);
@@ -398,35 +398,35 @@ function freeAreas(): { sides: DOMRect[]; panel: DOMRect | null; low: DOMRect[] 
   return freeCache;
 }
 
-export function clampToFree(s: [number, number], hw: number, hh: number): [number, number] {
+export function clampToFree(screenPoint: [number, number], hw: number, hh: number): [number, number] {
   let left = 8;
   let right = window.innerWidth - 8;
   const free = freeAreas();
-  for (const r of free.sides) {
-    if (r.width > window.innerWidth * 0.6) {
+  for (const side of free.sides) {
+    if (side.width > window.innerWidth * 0.6) {
       continue;
     } // a phone sheet over everything: ignore
-    if (r.left < window.innerWidth / 2) {
-      left = Math.max(left, r.right + 8);
+    if (side.left < window.innerWidth / 2) {
+      left = Math.max(left, side.right + 8);
     } else {
-      right = Math.min(right, r.left - 8);
+      right = Math.min(right, side.left - 8);
     }
   }
   if (right - left < hw * 2) {
     [left, right] = [8, window.innerWidth - 8];
   }
-  const x = Math.max(left + hw, Math.min(right - hw, s[0]));
-  let y = Math.max(52 + hh, Math.min(window.innerHeight - 8 - hh, s[1]));
+  const x = Math.max(left + hw, Math.min(right - hw, screenPoint[0]));
+  let y = Math.max(52 + hh, Math.min(window.innerHeight - 8 - hh, screenPoint[1]));
   // Phones: the tool's options card sits fixed along the bottom - the box stays above it.
   if (free.panel) {
-    const r = free.panel;
-    if (x + hw > r.left - 6 && x - hw < r.right + 6 && y + hh > r.top - 6) {
-      y = Math.max(52 + hh, r.top - 8 - hh);
+    const panel = free.panel;
+    if (x + hw > panel.left - 6 && x - hw < panel.right + 6 && y + hh > panel.top - 6) {
+      y = Math.max(52 + hh, panel.top - 8 - hh);
     }
   }
-  for (const r of free.low) {
-    if (x + hw > r.left - 6 && x - hw < r.right + 6 && y + hh > r.top - 6 && y - hh < r.bottom + 6) {
-      y = Math.max(52 + hh, r.top - 8 - hh);
+  for (const rect of free.low) {
+    if (x + hw > rect.left - 6 && x - hw < rect.right + 6 && y + hh > rect.top - 6 && y - hh < rect.bottom + 6) {
+      y = Math.max(52 + hh, rect.top - 8 - hh);
     }
   }
 
@@ -448,19 +448,19 @@ export class PinLayer {
   }
 
   set(pins: PinDef[], visible: boolean): void {
-    this.lines.forEach(l => (this.group.remove(l.group), l.dispose()));
-    this.labels.forEach(l => l.remove());
+    this.lines.forEach(line => (this.group.remove(line.group), line.dispose()));
+    this.labels.forEach(label => label.remove());
     this.pins = pins;
     this.visible = visible;
     this.lines = [];
-    this.labels = pins.map((p) => {
-      if (p.a && p.b) {
-        const l = new DimLine(this.view, 0x8fb4ff);
-        l.set(p.a, p.b);
-        this.group.add(l.group);
-        this.lines.push(l);
+    this.labels = pins.map((pin) => {
+      if (pin.a && pin.b) {
+        const dimensionLine = new DimLine(this.view, 0x8fb4ff);
+        dimensionLine.set(pin.a, pin.b);
+        this.group.add(dimensionLine.group);
+        this.lines.push(dimensionLine);
       }
-      const tag = el('div', 'pin', p.text);
+      const tag = el('div', 'pin', pin.text);
       this.host.append(tag);
 
       return tag;
@@ -470,13 +470,13 @@ export class PinLayer {
   }
 
   private layout(): void {
-    this.lines.forEach(l => l.layout());
-    this.pins.forEach((p, i) => {
-      const s = this.view.toScreen(p.at);
+    this.lines.forEach(line => line.layout());
+    this.pins.forEach((pin, i) => {
+      const screenPoint = this.view.toScreen(pin.at);
       const tag = this.labels[i];
-      tag.hidden = !this.visible || !s;
-      if (s) {
-        tag.style.transform = `translate(${Math.round(s[0])}px, ${Math.round(s[1])}px) translate(-50%, -50%)`;
+      tag.hidden = !this.visible || !screenPoint;
+      if (screenPoint) {
+        tag.style.transform = `translate(${Math.round(screenPoint[0])}px, ${Math.round(screenPoint[1])}px) translate(-50%, -50%)`;
       }
     });
   }

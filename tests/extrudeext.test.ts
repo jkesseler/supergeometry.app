@@ -5,7 +5,7 @@ import { after, block, check, circle, cylinder, done, extrude, near, rect, sketc
 import type { Feature, FaceRef, Vec3 } from '../src/doc/types';
 
 const sq = sketch('s', XY(), [rect('r', 0, 0, 20, 20)]);
-const box = (s: { boundingBox: { bounds: [Vec3, Vec3] } } | undefined) => s?.boundingBox.bounds;
+const box = (shape: { boundingBox: { bounds: [Vec3, Vec3] } } | undefined) => shape?.boundingBox.bounds;
 
 // Draft: the sides lean in, the top is smaller - a frustum.
 {
@@ -35,15 +35,15 @@ const box = (s: { boundingBox: { bounds: [Vec3, Vec3] } } | undefined) => s?.bou
 /** A face of a built body as a step refers to it. */
 async function faceRef(fs: Feature[], bodyId: string, pick: (c: Vec3, n: Vec3) => boolean): Promise<FaceRef> {
   const { body } = await after(fs, bodyId);
-  const f = body!.faces.find(f => pick(f.center.toTuple() as Vec3, f.normalAt().toTuple() as Vec3))!;
+  const face = body!.faces.find(candidate => pick(candidate.center.toTuple() as Vec3, candidate.normalAt().toTuple() as Vec3))!;
 
-  return { body: bodyId, center: f.center.toTuple() as Vec3, normal: f.normalAt().toTuple() as Vec3, area: measureArea(f) };
+  return { body: bodyId, center: face.center.toTuple() as Vec3, normal: face.normalAt().toTuple() as Vec3, area: measureArea(face) };
 }
 
 // Up to a flat face of another body (its plane, wider than the face too).
 {
   const base = block('B', 10, 10, 5, [0, 0, 12]);
-  const under = await faceRef(base, 'B', (c, n) => near(c[2], 12) && n[2] < -0.9);
+  const under = await faceRef(base, 'B', (center, normal) => near(center[2], 12) && normal[2] < -0.9);
   const { body, err } = await after([...base, sq, extrude('E', sq, 1, 'new', { extent: 'to', to: { face: under } })], 'E');
   check('up to a flat face', !err && near(volume(body), 400 * 12, 1e-3), { err, v: volume(body) });
 }
@@ -51,7 +51,7 @@ async function faceRef(fs: Feature[], bodyId: string, pick: (c: Vec3, n: Vec3) =
 // Up to a round face: a bar from the side stops at a cylinder's wall.
 {
   const pillar = cylinder('C', 10, 20);
-  const wall = await faceRef(pillar, 'C', (c, n) => Math.abs(n[2]) < 0.1);
+  const wall = await faceRef(pillar, 'C', (center, normal) => Math.abs(normal[2]) < 0.1);
   const bar = sketch('b', YZ(-30), [rect('r', -2, 8, 2, 12)]);
   const { body, err } = await after([...pillar, bar, extrude('E', bar, 1, 'new', { extent: 'to', to: { face: wall } })], 'E');
   const b = box(body);

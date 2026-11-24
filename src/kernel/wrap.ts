@@ -8,16 +8,16 @@ import { cylinderOf } from './faceEdit';
 import { measureVolume, quickVolume } from './ocFree';
 import type { Vec3 } from '../doc/types';
 
-const tup = (v: { toTuple(): number[] }) => v.toTuple() as Vec3;
+const tup = (vector: { toTuple(): number[] }) => vector.toTuple() as Vec3;
 
 type Src = { face: Face; normal: Vec3 }[];
 
 /** A body's size: its bounding box's diagonal, and its middle. */
 function sizeOf(body: Shape3D): { d: number; c: Vec3 } {
   const bb = body.boundingBox;
-  const c = bb.center as unknown as number[];
+  const center = bb.center as unknown as number[];
 
-  return { d: Math.hypot(bb.width, bb.height, bb.depth), c: [c[0], c[1], c[2]] };
+  return { d: Math.hypot(bb.width, bb.height, bb.depth), c: [center[0], center[1], center[2]] };
 }
 
 /**
@@ -29,22 +29,22 @@ function sizeOf(body: Shape3D): { d: number; c: Vec3 } {
  */
 export function imprint(body: Shape3D, curves: Edge[], dir: Vec3, keep: (e: Edge) => boolean): Shape3D {
   const oc = getOC();
-  const { d: D, c: mid } = sizeOf(body);
-  const n = norm(dir);
+  const { d: diameter, c: mid } = sizeOf(body);
+  const normal = norm(dir);
   const kept: Edge[] = [];
   const progress = new oc.Message_ProgressRange();
   const sec = new oc.BRepAlgoAPI_Section();
   try {
     // Each curve swept both ways through the whole body: where those walls cross the body's faces.
     const walls = curves.map((e) => {
-      const far = D + dist(tup(e.pointAt(0.5)), mid) + 1;
-      const v = new oc.gp_Vec(n[0] * 2 * far, n[1] * 2 * far, n[2] * 2 * far);
-      const pr = new oc.BRepPrimAPI_MakePrism(e.clone().translate(scale(n, -far)).wrapped, v, false, true);
+      const far = diameter + dist(tup(e.pointAt(0.5)), mid) + 1;
+      const vector = new oc.gp_Vec(normal[0] * 2 * far, normal[1] * 2 * far, normal[2] * 2 * far);
+      const pr = new oc.BRepPrimAPI_MakePrism(e.clone().translate(scale(normal, -far)).wrapped, vector, false, true);
       try {
         return cast(pr.Shape());
       } finally {
         pr.delete();
-        v.delete();
+        vector.delete();
       }
     });
     sec.Init1(body.wrapped);
@@ -67,20 +67,20 @@ export function imprint(body: Shape3D, curves: Edge[], dir: Vec3, keep: (e: Edge
   return splitFaces(body, kept);
 }
 
-/** The lines seen from a sketch's plane (through o, square to n): not on the far side, nor behind other faces. */
-export function seenFrom(body: Shape3D, o: Vec3, n: Vec3): (e: Edge) => boolean {
+/** The lines seen from a sketch's plane (through `origin`, square to `normal`): not on the far side, nor behind other faces. */
+export function seenFrom(body: Shape3D, origin: Vec3, normal: Vec3): (e: Edge) => boolean {
   const eps = Math.max(1e-4, sizeOf(body).d * 1e-5);
 
-  return e => seen(e, o, norm(n), body, eps);
+  return e => seen(e, origin, norm(normal), body, eps);
 }
 
 /** The lines on one face. */
-export function onFace(body: Shape3D, F: Face): (e: Edge) => boolean {
+export function onFace(body: Shape3D, face: Face): (e: Edge) => boolean {
   const oc = getOC();
   const eps = Math.max(1e-4, sizeOf(body).d * 1e-5);
 
   return (e) => {
-    const ds = new oc.BRepExtrema_DistShapeShape(makeVertex(tup(e.pointAt(0.5))).wrapped, F.wrapped);
+    const ds = new oc.BRepExtrema_DistShapeShape(makeVertex(tup(e.pointAt(0.5))).wrapped, face.wrapped);
     try {
       return ds.IsDone() && ds.Value() < eps;
     } finally {
@@ -94,16 +94,16 @@ export function onFace(body: Shape3D, F: Face): (e: Edge) => boolean {
  * them along the normal (a step just off the edge towards the plane is in the
  * open, and so is the way on to the plane).
  */
-function seen(e: Edge, o: Vec3, n: Vec3, body: Shape3D, eps: number): boolean {
+function seen(e: Edge, origin: Vec3, normal: Vec3, body: Shape3D, eps: number): boolean {
   const oc = getOC();
   const pm = tup(e.pointAt(0.5));
-  const h = dot(sub(pm, o), n);
-  if (Math.abs(h) < 2 * eps) {
+  const height = dot(sub(pm, origin), normal);
+  if (Math.abs(height) < 2 * eps) {
     return true;
   }
-  const sg = Math.sign(h);
-  const q = sub(pm, scale(n, sg * eps));
-  const pp = sub(pm, scale(n, h - sg * eps));
+  const sg = Math.sign(height);
+  const q = sub(pm, scale(normal, sg * eps));
+  const pp = sub(pm, scale(normal, height - sg * eps));
   const seg = makeLine(q, pp);
   const ds = new oc.BRepExtrema_DistShapeShape(seg.wrapped, body.wrapped);
   try {
@@ -181,64 +181,64 @@ export function wrapOnto(body: Shape3D, round: Face, src: Src, height: number): 
   const cyl = ad.Cylinder();
   const pos = cyl.Position();
   const Loc: Vec3 = [pos.Location().X(), pos.Location().Y(), pos.Location().Z()];
-  const X = norm([pos.XDirection().X(), pos.XDirection().Y(), pos.XDirection().Z()]);
-  const Z = norm([pos.Direction().X(), pos.Direction().Y(), pos.Direction().Z()]);
-  const r = cyl.Radius();
+  const xAxis = norm([pos.XDirection().X(), pos.XDirection().Y(), pos.XDirection().Z()]);
+  const zAxis = norm([pos.Direction().X(), pos.Direction().Y(), pos.Direction().Z()]);
+  const radius = cyl.Radius();
   ad.delete();
   // The way the face's U goes round (replicad turns a left-handed one round).
-  const Y = cross(Z, X);
-  const n = norm(src[0].normal);
-  if (Math.abs(dot(n, Z)) > 1e-6) {
+  const yAxis = cross(zAxis, xAxis);
+  const normal = norm(src[0].normal);
+  if (Math.abs(dot(normal, zAxis)) > 1e-6) {
     throw new Error("Draw the sketch on a plane along the round face's axis");
   }
-  const o = tup(src[0].face.center);
+  const origin = tup(src[0].face.center);
   // The plane's nearest point to the axis: where the wrap starts.
-  let R0 = sub(o, Loc);
-  R0 = sub(R0, scale(Z, dot(R0, Z)));
+  let R0 = sub(origin, Loc);
+  R0 = sub(R0, scale(zAxis, dot(R0, zAxis)));
   // (Straight out from the axis to the plane, along its normal: not towards
   // the first shape, or a word centred on a mug's far side came out started
   // from its first letter's place, a quarter of the way round.)
-  const side = dot(R0, n);
+  const side = dot(R0, normal);
   if (Math.abs(side) > 1e-9) {
-    R0 = scale(n, Math.sign(side));
+    R0 = scale(normal, Math.sign(side));
   } else if (len(R0) < 1e-9) {
-    R0 = n;
+    R0 = normal;
   }
   R0 = norm(R0);
-  const T = cross(Z, R0);
-  const theta0 = (Math.atan2(dot(R0, Y), dot(R0, X)) + 2 * Math.PI) % (2 * Math.PI);
+  const tangent = cross(zAxis, R0);
+  const theta0 = (Math.atan2(dot(R0, yAxis), dot(R0, xAxis)) + 2 * Math.PI) % (2 * Math.PI);
   // Seen from outside the face, as it can only be read: a sketch facing in
   // towards the axis (drawn on a plane through the far side, looking out from
   // inside) is turned round, or its letters came out back to front.
-  const across = dot(n, R0) < 0 ? -1 : 1;
-  const map = (p: Vec3): [number, number] => [r * theta0 + across * dot(sub(p, Loc), T), dot(sub(p, Loc), Z)];
+  const across = dot(normal, R0) < 0 ? -1 : 1;
+  const map = (point: Vec3): [number, number] => [radius * theta0 + across * dot(sub(point, Loc), tangent), dot(sub(point, Loc), zAxis)];
 
   const solids: Shape3D[] = [];
   for (const { face } of src) {
-    const loops = [face.clone().outerWire(), ...face.clone().innerWires()].map(w => chain(w.edges as Edge[]));
+    const loops = [face.clone().outerWire(), ...face.clone().innerWires()].map(wire => chain(wire.edges as Edge[]));
     const all = loops.flat().flatMap(e => [0, 0.5, 1].map(t => map(e.at(t))[0]));
     const [lo, hi] = [Math.min(...all), Math.max(...all)];
-    if (hi - lo > 2 * Math.PI * r - 1e-6) {
+    if (hi - lo > 2 * Math.PI * radius - 1e-6) {
       throw new Error('The sketch is longer than the way round the face');
     }
-    const shift = lo < 0 ? 2 * Math.PI * r : 0;
-    const m = (p: Vec3): [number, number] => {
-      const q = map(p);
+    const shift = lo < 0 ? 2 * Math.PI * radius : 0;
+    const toPlane = (point: Vec3): [number, number] => {
+      const q = map(point);
 
       return [q[0] + shift, q[1]];
     };
-    const drawings = loops.map(loop => loopDrawing(loop, m));
+    const drawings = loops.map(loop => loopDrawing(loop, toPlane));
     let dr = drawings[0];
-    for (const h of drawings.slice(1)) {
-      dr = dr.cut(h);
+    for (const drawing of drawings.slice(1)) {
+      dr = dr.cut(drawing);
     }
     const sk = dr.sketchOnFace(round, 'original') as unknown as { faces?: () => Face; face?: () => Face };
     const onFace = sk.faces ? sk.faces() : sk.face!();
     solids.push(thicken(onFace, height, cy));
   }
   let out = body;
-  for (const s of solids) {
-    out = (height > 0 ? out.fuse(s) : out.cut(s)) as Shape3D;
+  for (const solid of solids) {
+    out = (height > 0 ? out.fuse(solid) : out.cut(solid)) as Shape3D;
   }
 
   return out;
@@ -256,13 +256,13 @@ function chain(edges: Edge[]): Run[] {
     let flip = false;
     if (end) {
       let best = Infinity;
-      left.forEach((x, k) => {
-        const [da, db] = [dist(x.a, end!), dist(x.b, end!)];
+      left.forEach((piece, index) => {
+        const [da, db] = [dist(piece.a, end!), dist(piece.b, end!)];
         if (da < best) {
-          [best, i, flip] = [da, k, false];
+          [best, i, flip] = [da, index, false];
         }
         if (db < best) {
-          [best, i, flip] = [db, k, true];
+          [best, i, flip] = [db, index, true];
         }
       });
     }
@@ -276,21 +276,21 @@ function chain(edges: Edge[]): Run[] {
 }
 
 /** A loop in the unrolled face (lengths round it, heights along it): lines stay lines, circles circles. */
-function loopDrawing(loop: Run[], m: (p: Vec3) => [number, number]): Drawing {
-  let pen = draw(m(loop[0].at(0)));
+function loopDrawing(loop: Run[], toPlane: (p: Vec3) => [number, number]): Drawing {
+  let pen = draw(toPlane(loop[0].at(0)));
   for (const run of loop) {
     const closed = dist(run.at(0), run.at(1)) < 1e-9;
     if (run.kind === 'LINE') {
-      pen = pen.lineTo(m(run.at(1)));
+      pen = pen.lineTo(toPlane(run.at(1)));
     } else if (run.kind === 'CIRCLE') {
       if (closed) {
-        pen = pen.threePointsArcTo(m(run.at(0.5)), m(run.at(0.25))).threePointsArcTo(m(run.at(1)), m(run.at(0.75)));
+        pen = pen.threePointsArcTo(toPlane(run.at(0.5)), toPlane(run.at(0.25))).threePointsArcTo(toPlane(run.at(1)), toPlane(run.at(0.75)));
       } else {
-        pen = pen.threePointsArcTo(m(run.at(1)), m(run.at(0.5)));
+        pen = pen.threePointsArcTo(toPlane(run.at(1)), toPlane(run.at(0.5)));
       }
     } else {
-      for (let k = 1; k <= 32; k++) {
-        pen = pen.lineTo(m(run.at(k / 32)));
+      for (let step = 1; step <= 32; step++) {
+        pen = pen.lineTo(toPlane(run.at(step / 32)));
       }
     }
   }
@@ -303,19 +303,19 @@ function thicken(face: Face, height: number, cy: { s: number }): Shape3D {
   const oc = getOC();
   // Away from the axis on a boss raised, or a hole sunk; towards it otherwise.
   const want = Math.sign(height) * cy.s;
-  const make = (k: number): Shape3D | null => {
+  const make = (scale: number): Shape3D | null => {
     const th = new oc.BRepOffsetAPI_MakeThickSolid();
     try {
-      th.MakeThickSolidBySimple(face.wrapped, k);
+      th.MakeThickSolidBySimple(face.wrapped, scale);
       if (!th.IsDone()) {
         return null;
       }
-      let s = cast(th.Shape()) as Shape3D;
-      if (quickVolume(s) < 0) {
-        s = cast(s.wrapped.Reversed()) as Shape3D;
+      let shape = cast(th.Shape()) as Shape3D;
+      if (quickVolume(shape) < 0) {
+        shape = cast(shape.wrapped.Reversed()) as Shape3D;
       }
 
-      return s;
+      return shape;
     } catch {
       return null;
     } finally {
@@ -326,7 +326,7 @@ function thicken(face: Face, height: number, cy: { s: number }): Shape3D {
   // told by its centre of mass: a slab bent round an arc has that nearer the axis than it is.)
   const both = [make(Math.abs(height)), make(-Math.abs(height))];
   if (both[0] && both[1]) {
-    const [a, b] = both.map(s => measureVolume(s!));
+    const [a, b] = both.map(shape => measureVolume(shape!));
     const outer = a > b ? both[0] : both[1];
     const inner = a > b ? both[1] : both[0];
 

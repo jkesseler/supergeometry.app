@@ -17,12 +17,12 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 
-const vol = (s: any) => {
+const vol = (shape: any) => {
   const oc: any = getOC();
-  const p = new oc.GProp_GProps();
-  oc.BRepGProp.VolumeProperties(s.wrapped, p, 1e-6, true, false);
+  const props = new oc.GProp_GProps();
+  oc.BRepGProp.VolumeProperties(shape.wrapped, props, 1e-6, true, false);
 
-  return p.Mass();
+  return props.Mass();
 };
 const cases: [string, () => any, [number, number, number]?][] = [
   ['hole stretched across (elliptic)', () => makeBaseBox(20, 10, 6).cut(makeCylinder(2, 30, [-15, 0, 3], [1, 0, 0])), [1, 1, 2]],
@@ -35,19 +35,19 @@ const cases: [string, () => any, [number, number, number]?][] = [
   ['box with a hole', () => makeBaseBox(20, 10, 6).cut(makeCylinder(2, 20, [0, 0, -5]))],
   ['sphere', () => makeSphere(5)]
 ];
-for (const [name, make, k] of cases) {
-  const K = k ?? ([1, 1, 2.5] as [number, number, number]);
-  const s = make();
-  const v0 = Math.abs(vol(s));
-  const b0 = s.boundingBox.bounds;
+for (const [name, make, factors] of cases) {
+  const stretch = factors ?? ([1, 1, 2.5] as [number, number, number]);
+  const shape = make();
+  const v0 = Math.abs(vol(shape));
+  const b0 = shape.boundingBox.bounds;
   const t = Date.now();
   try {
-    const out = stretchShape(s, [0, 0, 0], K);
+    const out = stretchShape(shape, [0, 0, 0], stretch);
     const v1 = Math.abs(vol(out));
     const b1 = out.boundingBox.bounds;
     const sizes = [0, 1, 2].map(i => (b1[1][i] - b1[0][i]) / (b0[1][i] - b0[0][i]));
-    const okSize = sizes.every((r, i) => Math.abs(r - K[i]) < 2e-3);
-    check(`${name} stretched ×${K.join('/')}`, isHealthy(healthOf(out)) && Math.abs(v1 - v0 * K[0] * K[1] * K[2]) < v0 * 2e-3 && okSize, `volume ${v0.toFixed(2)} → ${v1.toFixed(2)}, sizes ×${sizes.map(r => r.toFixed(4)).join('/')}, ${out.faces.length} faces, ${Date.now() - t} ms`);
+    const okSize = sizes.every((size, i) => Math.abs(size - stretch[i]) < 2e-3);
+    check(`${name} stretched ×${stretch.join('/')}`, isHealthy(healthOf(out)) && Math.abs(v1 - v0 * stretch[0] * stretch[1] * stretch[2]) < v0 * 2e-3 && okSize, `volume ${v0.toFixed(2)} → ${v1.toFixed(2)}, sizes ×${sizes.map(size => size.toFixed(4)).join('/')}, ${out.faces.length} faces, ${Date.now() - t} ms`);
   } catch (e) {
     check(`${name} stretched`, false, String((e as Error).message));
   }
@@ -56,24 +56,24 @@ for (const [name, make, k] of cases) {
   // A threaded rod (a thread's twisted faces), through the app's own steps:
   // stretched along its length and across it.
   const XY = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] };
-  const c = [{ id: 'c', kind: 'circle', center: [0, 0], radius: 5 }];
+  const entities = [{ id: 'c', kind: 'circle', center: [0, 0], radius: 5 }];
   const rod: any[] = [
-    { id: 's', name: 'S', type: 'sketch', plane: XY, entities: c },
-    { id: 'b', name: 'Rod', type: 'extrude', source: { kind: 'profile', sketch: 's', regions: arrangement(c as any).regions.map(regionRef) }, distance: 20, mode: 'new' }
+    { id: 's', name: 'S', type: 'sketch', plane: XY, entities: entities },
+    { id: 'b', name: 'Rod', type: 'extrude', source: { kind: 'profile', sketch: 's', regions: arrangement(entities as any).regions.map(regionRef) }, distance: 20, mode: 'new' }
   ];
   const r0: any = await regenerate(rod);
-  const side = r0.bodies[0].faces.find((f: any) => f.type === 'CYLINDRE');
+  const side = r0.bodies[0].faces.find((face: any) => face.type === 'CYLINDRE');
   const r1: any = await regenerate([...rod, { id: 't', name: 'Thread', type: 'thread', face: { body: 'b', center: side.center, normal: side.normal, area: side.area }, pitch: 1.5 }]);
   const threaded = debugBodies().get('b')!;
-  for (const K of [[1, 1, 1.5], [1.4, 1, 1]] as [number, number, number][]) {
+  for (const stretch of [[1, 1, 1.5], [1.4, 1, 1]] as [number, number, number][]) {
     const t = Date.now();
     try {
       const v0 = vol(threaded);
-      const out = stretchShape(threaded, [0, 0, 0], K);
+      const out = stretchShape(threaded, [0, 0, 0], stretch);
       const v1 = vol(out);
-      check(`threaded rod stretched ×${K.join('/')}`, !r1.errors.length && isHealthy(healthOf(out)) && Math.abs(v1 - v0 * K[0] * K[1] * K[2]) < v0 * 2e-3, `${v0.toFixed(1)} → ${v1.toFixed(1)}, ${threaded.faces.length} → ${out.faces.length} faces, ${Date.now() - t} ms`);
+      check(`threaded rod stretched ×${stretch.join('/')}`, !r1.errors.length && isHealthy(healthOf(out)) && Math.abs(v1 - v0 * stretch[0] * stretch[1] * stretch[2]) < v0 * 2e-3, `${v0.toFixed(1)} → ${v1.toFixed(1)}, ${threaded.faces.length} → ${out.faces.length} faces, ${Date.now() - t} ms`);
     } catch (e) {
-      check(`threaded rod stretched ×${K.join('/')}`, false, String((e as Error).message));
+      check(`threaded rod stretched ×${stretch.join('/')}`, false, String((e as Error).message));
     }
   }
 }

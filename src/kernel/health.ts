@@ -86,24 +86,24 @@ function findEdgeUse(shape: Shape3D): { open: number[]; pinched: number } {
   const edges = shape.edges;
   const buckets = new Map<number, { e: Edge; i: number; n: number; faces: Set<number> }[]>();
   edges.forEach((e, i) => {
-    const h = e.hashCode;
-    buckets.set(h, [...(buckets.get(h) ?? []), { e, i, n: 0, faces: new Set<number>() }]);
+    const hashCode = e.hashCode;
+    buckets.set(hashCode, [...(buckets.get(hashCode) ?? []), { e, i, n: 0, faces: new Set<number>() }]);
   });
   const oc = getOC();
-  shape.faces.forEach((f, k) => {
-    for (const fe of f.edges) {
-      const m = buckets.get(fe.hashCode)?.find(x => x.e.isSame(fe));
+  shape.faces.forEach((face, faceIndex) => {
+    for (const fe of face.edges) {
+      const match = buckets.get(fe.hashCode)?.find(entry => entry.e.isSame(fe));
       // A seam (cylinder/torus) belongs to its face twice but is listed once.
-      if (m) {
-        m.n += oc.BRep_Tool.IsClosed(fe.wrapped, f.wrapped) ? 2 : 1;
+      if (match) {
+        match.n += oc.BRep_Tool.IsClosed(fe.wrapped, face.wrapped) ? 2 : 1;
       }
-      m?.faces.add(k);
+      match?.faces.add(faceIndex);
     }
   });
   // A pole (where a revolved profile touches the axis) is a point-edge, not a gap.
   const all = [...buckets.values()].flat();
 
-  return { open: all.filter(x => x.n < 2 && !oc.BRep_Tool.Degenerated(x.e.wrapped)).map(x => x.i), pinched: all.filter(x => x.faces.size > 2).length };
+  return { open: all.filter(entry => entry.n < 2 && !oc.BRep_Tool.Degenerated(entry.e.wrapped)).map(entry => entry.i), pinched: all.filter(entry => entry.faces.size > 2).length };
 }
 
 /**
@@ -117,13 +117,13 @@ function findEdgeUse(shape: Shape3D): { open: number[]; pinched: number } {
  * and in with it, and is taken off: a copy has none.)
  */
 let copies = 0;
-export function deepCopy(s: Shape3D): Shape3D {
+export function deepCopy(shape: Shape3D): Shape3D {
   const oc = getOC();
   const name = `/copy-${copies++}.bin`;
   const progress = new oc.Message_ProgressRange();
   const read = new oc.TopoDS_Shape();
   try {
-    if (oc.BinTools.Write(s.wrapped, name, progress) && oc.BinTools.Read(read, name, progress) && !read.IsNull()) {
+    if (oc.BinTools.Write(shape.wrapped, name, progress) && oc.BinTools.Read(read, name, progress) && !read.IsNull()) {
       oc.BRepTools.Clean(read, true);
 
       return cast(read) as Shape3D;
@@ -144,18 +144,18 @@ export function deepCopy(s: Shape3D): Shape3D {
   }
   // The old way, if it can't be written.
   const t = new oc.gp_Trsf();
-  const mk = new oc.BRepBuilderAPI_Transform(s.wrapped, t, true, false);
+  const mk = new oc.BRepBuilderAPI_Transform(shape.wrapped, t, true, false);
   try {
-    return cast(mk.ModifiedShape(s.wrapped)) as Shape3D;
+    return cast(mk.ModifiedShape(shape.wrapped)) as Shape3D;
   } finally {
     mk.delete();
     t.delete();
   }
 }
 
-export function subShapes(s: Shape3D, kind: 'SOLID' | 'SHELL'): any[] {
+export function subShapes(shape: Shape3D, kind: 'SOLID' | 'SHELL'): any[] {
   const oc = getOC();
-  const ex = new oc.TopExp_Explorer(s.wrapped, kind === 'SOLID' ? oc.TopAbs_ShapeEnum.TopAbs_SOLID : oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  const ex = new oc.TopExp_Explorer(shape.wrapped, kind === 'SOLID' ? oc.TopAbs_ShapeEnum.TopAbs_SOLID : oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   const out: any[] = [];
   for (; ex.More(); ex.Next()) {
     const item = ex.Current();
@@ -169,33 +169,33 @@ export function subShapes(s: Shape3D, kind: 'SOLID' | 'SHELL'): any[] {
 
 /** How many faces are next to nothing in area (once per shape: every face's area is slow on curved faces). */
 const thinCache = new WeakMap<Shape3D, number>();
-export function hairThin(s: Shape3D): number {
-  let known = thinCache.get(s);
+export function hairThin(shape: Shape3D): number {
+  let known = thinCache.get(shape);
   if (known === undefined) {
-    thinCache.set(s, (known = countHairThin(s)));
+    thinCache.set(shape, (known = countHairThin(shape)));
   }
 
   return known;
 }
 
-function countHairThin(s: Shape3D): number {
-  const areas = s.faces.map(f => measureArea(f));
+function countHairThin(shape: Shape3D): number {
+  const areas = shape.faces.map(face => measureArea(face));
   const total = areas.reduce((a, b) => a + b, 0);
 
   return areas.filter(a => a < total * 1e-7).length;
 }
 
 /** A solid's volume counted from a mesh of it (coarse, so the view's own finer mesh still gets made). */
-export function meshVolume(s: Shape3D, size: number): number {
-  const m = meshFaces(s, size * 1e-3, 0.3);
-  meshOff(s);
-  const p = m.vertices;
-  const t = m.triangles;
-  let v = 0;
-  for (let k = 0; k < t.length; k += 3) {
-    const [i, j, l] = [3 * t[k], 3 * t[k + 1], 3 * t[k + 2]];
-    v += p[i] * (p[j + 1] * p[l + 2] - p[j + 2] * p[l + 1]) - p[i + 1] * (p[j] * p[l + 2] - p[j + 2] * p[l]) + p[i + 2] * (p[j] * p[l + 1] - p[j + 1] * p[l]);
+export function meshVolume(shape: Shape3D, size: number): number {
+  const faceMesh = meshFaces(shape, size * 1e-3, 0.3);
+  meshOff(shape);
+  const vertices = faceMesh.vertices;
+  const t = faceMesh.triangles;
+  let volume = 0;
+  for (let index = 0; index < t.length; index += 3) {
+    const [i, j, indexC] = [3 * t[index], 3 * t[index + 1], 3 * t[index + 2]];
+    volume += vertices[i] * (vertices[j + 1] * vertices[indexC + 2] - vertices[j + 2] * vertices[indexC + 1]) - vertices[i + 1] * (vertices[j] * vertices[indexC + 2] - vertices[j + 2] * vertices[indexC]) + vertices[i + 2] * (vertices[j] * vertices[indexC + 1] - vertices[j + 1] * vertices[indexC]);
   }
 
-  return v / 6;
+  return volume / 6;
 }

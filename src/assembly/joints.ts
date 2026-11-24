@@ -39,47 +39,47 @@ export type Mat4 = number[];
 export const IDENTITY: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 export function mul(a: Mat4, b: Mat4): Mat4 {
-  const o = new Array<number>(16);
-  for (let c = 0; c < 4; c++) {
-    for (let r = 0; r < 4; r++) {
-      o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+  const product = new Array<number>(16);
+  for (let column = 0; column < 4; column++) {
+    for (let row = 0; row < 4; row++) {
+      product[column * 4 + row] = a[row] * b[column * 4] + a[4 + row] * b[column * 4 + 1] + a[8 + row] * b[column * 4 + 2] + a[12 + row] * b[column * 4 + 3];
     }
   }
 
-  return o;
+  return product;
 }
 
-export function translation(v: Vec3): Mat4 {
-  return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, v[0], v[1], v[2], 1];
+export function translation(vector: Vec3): Mat4 {
+  return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, vector[0], vector[1], vector[2], 1];
 }
 
-export function apply(m: Mat4, p: Vec3): Vec3 {
-  return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]];
+export function apply(matrix: Mat4, point: Vec3): Vec3 {
+  return [matrix[0] * point[0] + matrix[4] * point[1] + matrix[8] * point[2] + matrix[12], matrix[1] * point[0] + matrix[5] * point[1] + matrix[9] * point[2] + matrix[13], matrix[2] * point[0] + matrix[6] * point[1] + matrix[10] * point[2] + matrix[14]];
 }
 
 /** A direction through a matrix (its turning only). */
-export function turn(m: Mat4, d: Vec3): Vec3 {
-  return [m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]];
+export function turn(matrix: Mat4, direction: Vec3): Vec3 {
+  return [matrix[0] * direction[0] + matrix[4] * direction[1] + matrix[8] * direction[2], matrix[1] * direction[0] + matrix[5] * direction[1] + matrix[9] * direction[2], matrix[2] * direction[0] + matrix[6] * direction[1] + matrix[10] * direction[2]];
 }
 
-const unit = (v: Vec3): Vec3 => {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+const unit = (vector: Vec3): Vec3 => {
+  const length = Math.hypot(vector[0], vector[1], vector[2]) || 1;
 
-  return [v[0] / l, v[1] / l, v[2] / l];
+  return [vector[0] / length, vector[1] / length, vector[2] / length];
 };
 
 /** A turn of `deg` round the line through `origin` along `axis`, and `along` mm along it. */
 export function about(origin: Vec3, axis: Vec3, deg: number, along = 0): Mat4 {
   const [x, y, z] = unit(axis);
   const t = (deg * Math.PI) / 180;
-  const c = Math.cos(t);
-  const s = Math.sin(t);
-  const k = 1 - c;
+  const cos = Math.cos(t);
+  const sin = Math.sin(t);
+  const oneMinusCos = 1 - cos;
   // Rodrigues, column by column.
-  const r = [c + x * x * k, y * x * k + z * s, z * x * k - y * s, x * y * k - z * s, c + y * y * k, z * y * k + x * s, x * z * k + y * s, y * z * k - x * s, c + z * z * k];
-  const ro: Vec3 = [r[0] * origin[0] + r[3] * origin[1] + r[6] * origin[2], r[1] * origin[0] + r[4] * origin[1] + r[7] * origin[2], r[2] * origin[0] + r[5] * origin[1] + r[8] * origin[2]];
+  const rotation = [cos + x * x * oneMinusCos, y * x * oneMinusCos + z * sin, z * x * oneMinusCos - y * sin, x * y * oneMinusCos - z * sin, cos + y * y * oneMinusCos, z * y * oneMinusCos + x * sin, x * z * oneMinusCos + y * sin, y * z * oneMinusCos - x * sin, cos + z * z * oneMinusCos];
+  const ro: Vec3 = [rotation[0] * origin[0] + rotation[3] * origin[1] + rotation[6] * origin[2], rotation[1] * origin[0] + rotation[4] * origin[1] + rotation[7] * origin[2], rotation[2] * origin[0] + rotation[5] * origin[1] + rotation[8] * origin[2]];
 
-  return [r[0], r[1], r[2], 0, r[3], r[4], r[5], 0, r[6], r[7], r[8], 0, origin[0] - ro[0] + x * along, origin[1] - ro[1] + y * along, origin[2] - ro[2] + z * along, 1];
+  return [rotation[0], rotation[1], rotation[2], 0, rotation[3], rotation[4], rotation[5], 0, rotation[6], rotation[7], rotation[8], 0, origin[0] - ro[0] + x * along, origin[1] - ro[1] + y * along, origin[2] - ro[2] + z * along, 1];
 }
 
 /** What a joint does to its `b` at a value: the move from home. */
@@ -97,7 +97,7 @@ export function motion(j: Joint, value: number): Mat4 {
   return IDENTITY;
 }
 
-const clamp = (j: Joint, v: number): number => Math.min(j.max ?? Infinity, Math.max(j.min ?? -Infinity, v));
+const clamp = (j: Joint, value: number): number => Math.min(j.max ?? Infinity, Math.max(j.min ?? -Infinity, value));
 
 /** Each joint's value as it is: its own, kept in its limits - or what the joint it follows gives it. */
 export function effective(joints: Joint[], values: Record<string, number>): Record<string, number> {
@@ -107,10 +107,10 @@ export function effective(joints: Joint[], values: Record<string, number>): Reco
     if (j.id in out) {
       return out[j.id];
     }
-    const d = j.drive && depth < 32 ? by.get(j.drive.joint) : undefined;
-    const v = j.type === 'fixed' ? 0 : d && d.id !== j.id ? of(d, depth + 1) * j.drive!.ratio : clamp(j, values[j.id] ?? 0);
+    const joint = j.drive && depth < 32 ? by.get(j.drive.joint) : undefined;
+    const value = j.type === 'fixed' ? 0 : joint && joint.id !== j.id ? of(joint, depth + 1) * j.drive!.ratio : clamp(j, values[j.id] ?? 0);
 
-    return (out[j.id] = v);
+    return (out[j.id] = value);
   };
   for (const j of joints) {
     of(j, 0);
@@ -125,12 +125,12 @@ export function driverOf(joints: Joint[], id: string): { joint: Joint; ratio: nu
   let j = by.get(id);
   let ratio = 1;
   for (let i = 0; j && i < 32; i++) {
-    const d = j.drive ? by.get(j.drive.joint) : undefined;
-    if (!d || d.id === j.id) {
+    const joint = j.drive ? by.get(j.drive.joint) : undefined;
+    if (!joint || joint.id === j.id) {
       return { joint: j, ratio };
     }
     ratio *= j.drive!.ratio;
-    j = d;
+    j = joint;
   }
 
   return null;
@@ -162,16 +162,16 @@ export function tree(joints: Joint[], bodies: string[], ground?: string): Tree {
     seen.add(root);
     const queue = [root];
     while (queue.length) {
-      const p = queue.shift()!;
-      const depth = (up.get(p)?.depth ?? 0) + 1;
+      const parent = queue.shift()!;
+      const depth = (up.get(parent)?.depth ?? 0) + 1;
       for (const j of live) {
-        const c = j.a === p ? j.b : j.b === p ? j.a : null;
-        if (!c || seen.has(c)) {
+        const child = j.a === parent ? j.b : j.b === parent ? j.a : null;
+        if (!child || seen.has(child)) {
           continue;
         }
-        seen.add(c);
-        up.set(c, { joint: j, parent: p, depth });
-        queue.push(c);
+        seen.add(child);
+        up.set(child, { joint: j, parent: parent, depth });
+        queue.push(child);
       }
     }
   }
@@ -193,17 +193,17 @@ export interface Explode {
  */
 export function solve(joints: Joint[], bodies: string[], values: Record<string, number>, ground?: string, explode?: Explode): Map<string, Mat4> {
   const t = tree(joints, bodies, ground);
-  const v = effective(joints, values);
+  const jointValues = effective(joints, values);
   const out = new Map<string, Mat4>();
   const push = new Map<string, Vec3>();
-  for (const r of t.roots) {
-    out.set(r, IDENTITY);
+  for (const root of t.roots) {
+    out.set(root, IDENTITY);
   }
   // (Parents before children: by how far from the ground they are.)
-  const order = [...t.up.entries()].sort((p, q) => p[1].depth - q[1].depth);
+  const order = [...t.up.entries()].sort((entry, q) => entry[1].depth - q[1].depth);
   for (const [body, { joint, parent }] of order) {
-    const m = motion(joint, joint.b === body ? v[joint.id] : -v[joint.id]);
-    out.set(body, mul(out.get(parent) ?? IDENTITY, m));
+    const matrix = motion(joint, joint.b === body ? jointValues[joint.id] : -jointValues[joint.id]);
+    out.set(body, mul(out.get(parent) ?? IDENTITY, matrix));
     if (!explode || !(explode.factor > 0)) {
       continue;
     }
@@ -221,8 +221,8 @@ export function solve(joints: Joint[], bodies: string[], values: Record<string, 
     const base = push.get(parent) ?? [0, 0, 0];
     push.set(body, [base[0] + dir[0] * far, base[1] + dir[1] * far, base[2] + dir[2] * far]);
   }
-  for (const [body, p] of push) {
-    out.set(body, mul(translation(p), out.get(body)!));
+  for (const [body, offset] of push) {
+    out.set(body, mul(translation(offset), out.get(body)!));
   }
 
   return out;
@@ -254,15 +254,15 @@ export function propose(a: PickLine | null, b: PickLine | null, pitch?: number):
     return { type: 'fixed', ...base };
   }
   const da = unit(a.dir);
-  const d = unit(b.dir);
-  const parallel = Math.abs(da[0] * d[0] + da[1] * d[1] + da[2] * d[2]) > (a.rough || b.rough ? 0.995 : 0.999);
+  const directionB = unit(b.dir);
+  const parallel = Math.abs(da[0] * directionB[0] + da[1] * directionB[1] + da[2] * directionB[2]) > (a.rough || b.rough ? 0.995 : 0.999);
   if (!parallel) {
     return { type: 'fixed', ...base };
   }
-  const w: Vec3 = [b.origin[0] - a.origin[0], b.origin[1] - a.origin[1], b.origin[2] - a.origin[2]];
-  const along = w[0] * axis[0] + w[1] * axis[1] + w[2] * axis[2];
-  const off = Math.hypot(w[0] - axis[0] * along, w[1] - axis[1] * along, w[2] - axis[2] * along);
-  const size = Math.max(1, Math.hypot(...w));
+  const between: Vec3 = [b.origin[0] - a.origin[0], b.origin[1] - a.origin[1], b.origin[2] - a.origin[2]];
+  const along = between[0] * axis[0] + between[1] * axis[1] + between[2] * axis[2];
+  const off = Math.hypot(between[0] - axis[0] * along, between[1] - axis[1] * along, between[2] - axis[2] * along);
+  const size = Math.max(1, Math.hypot(...between));
   // (To a hundredth of a millimetre and a thousandth of how far apart they are: faces are found by their drawn points.)
   if (off < 1e-3 * size + (a.rough || b.rough ? 0.15 : 1e-2)) {
     return pitch ? { type: 'screw', ...base, pitch } : { type: 'hinge', ...base };
@@ -278,90 +278,90 @@ export function propose(a: PickLine | null, b: PickLine | null, pitch?: number):
  * Null where there is no such line (a flat face, a ball, a freeform face).
  */
 export function turnAxis(points: Vec3[], normals: Vec3[]): { origin: Vec3; dir: Vec3 } | null {
-  const n = Math.min(points.length, normals.length);
-  if (n < 6) {
+  const count = Math.min(points.length, normals.length);
+  if (count < 6) {
     return null;
   }
   const mean: Vec3 = [0, 0, 0];
-  for (let i = 0; i < n; i++) {
-    for (let k = 0; k < 3; k++) {
-      mean[k] += normals[i][k] / n;
+  for (let i = 0; i < count; i++) {
+    for (let axis = 0; axis < 3; axis++) {
+      mean[axis] += normals[i][axis] / count;
     }
   }
   // How the normals spread, as a symmetric 3 x 3; its axes by Jacobi turns.
   const a = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  for (let i = 0; i < n; i++) {
-    for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
-        a[r][c] += ((normals[i][r] - mean[r]) * (normals[i][c] - mean[c])) / n;
+  for (let i = 0; i < count; i++) {
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 3; column++) {
+        a[row][column] += ((normals[i][row] - mean[row]) * (normals[i][column] - mean[column])) / count;
       }
     }
   }
-  const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const eigenvectors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
   for (let sweep = 0; sweep < 24; sweep++) {
-    for (const [p, q] of [[0, 1], [0, 2], [1, 2]] as const) {
-      if (Math.abs(a[p][q]) < 1e-15) {
+    for (const [pivot, q] of [[0, 1], [0, 2], [1, 2]] as const) {
+      if (Math.abs(a[pivot][q]) < 1e-15) {
         continue;
       }
-      const th = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+      const th = (a[q][q] - a[pivot][pivot]) / (2 * a[pivot][q]);
       const tt = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1));
-      const c = 1 / Math.sqrt(tt * tt + 1);
-      const s = tt * c;
-      for (let k = 0; k < 3; k++) {
-        const akp = a[k][p];
-        const akq = a[k][q];
-        a[k][p] = c * akp - s * akq;
-        a[k][q] = s * akp + c * akq;
+      const cos = 1 / Math.sqrt(tt * tt + 1);
+      const sin = tt * cos;
+      for (let axis = 0; axis < 3; axis++) {
+        const akp = a[axis][pivot];
+        const akq = a[axis][q];
+        a[axis][pivot] = cos * akp - sin * akq;
+        a[axis][q] = sin * akp + cos * akq;
       }
-      for (let k = 0; k < 3; k++) {
-        const apk = a[p][k];
-        const aqk = a[q][k];
-        a[p][k] = c * apk - s * aqk;
-        a[q][k] = s * apk + c * aqk;
+      for (let axis = 0; axis < 3; axis++) {
+        const apk = a[pivot][axis];
+        const aqk = a[q][axis];
+        a[pivot][axis] = cos * apk - sin * aqk;
+        a[q][axis] = sin * apk + cos * aqk;
       }
-      for (let k = 0; k < 3; k++) {
-        const vkp = v[k][p];
-        const vkq = v[k][q];
-        v[k][p] = c * vkp - s * vkq;
-        v[k][q] = s * vkp + c * vkq;
+      for (let axis = 0; axis < 3; axis++) {
+        const vkp = eigenvectors[axis][pivot];
+        const vkq = eigenvectors[axis][q];
+        eigenvectors[axis][pivot] = cos * vkp - sin * vkq;
+        eigenvectors[axis][q] = sin * vkp + cos * vkq;
       }
     }
   }
   const ev = [a[0][0], a[1][1], a[2][2]];
   const lo = ev.indexOf(Math.min(...ev));
   const hi = Math.max(...ev);
-  const mid = ev.filter((_, i) => i !== lo).reduce((p, q) => Math.min(p, q));
+  const mid = ev.filter((_, i) => i !== lo).reduce((smallest, q) => Math.min(smallest, q));
   // Round a line: no spread along it, and a spread both ways across it (a face that only bends one way has none).
   if (!(hi > 1e-6) || ev[lo] > 0.02 * hi || mid < 0.05 * hi) {
     return null;
   }
-  const dir = unit([v[0][lo], v[1][lo], v[2][lo]]);
+  const dir = unit([eigenvectors[0][lo], eigenvectors[1][lo], eigenvectors[2][lo]]);
   // Across the line: each normal's part there points along a line through the axis. Where those lines meet.
   const x = unit(Math.abs(dir[0]) < 0.9 ? [0, -dir[2], dir[1]] : [-dir[2], 0, dir[0]]);
   const y: Vec3 = [dir[1] * x[2] - dir[2] * x[1], dir[2] * x[0] - dir[0] * x[2], dir[0] * x[1] - dir[1] * x[0]];
-  const d3 = (p: Vec3, q: Vec3) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const d3 = (left: Vec3, q: Vec3) => left[0] * q[0] + left[1] * q[1] + left[2] * q[2];
   let m00 = 0;
   let m01 = 0;
   let m11 = 0;
   let b0 = 0;
   let b1 = 0;
   let used = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < count; i++) {
     const nx = d3(normals[i], x);
     const ny = d3(normals[i], y);
-    const l = Math.hypot(nx, ny);
-    if (l < 0.2) {
+    const length = Math.hypot(nx, ny);
+    if (length < 0.2) {
       continue;
     }
     // (The line through the point along its normal: every point c of it has u.c = u.p, u across the normal.)
-    const ux = -ny / l;
-    const uy = nx / l;
-    const k = ux * d3(points[i], x) + uy * d3(points[i], y);
+    const ux = -ny / length;
+    const uy = nx / length;
+    const offset = ux * d3(points[i], x) + uy * d3(points[i], y);
     m00 += ux * ux;
     m01 += ux * uy;
     m11 += uy * uy;
-    b0 += ux * k;
-    b1 += uy * k;
+    b0 += ux * offset;
+    b1 += uy * offset;
     used++;
   }
   const det = m00 * m11 - m01 * m01;
@@ -372,8 +372,8 @@ export function turnAxis(points: Vec3[], normals: Vec3[]): { origin: Vec3; dir: 
   const cy = (m00 * b1 - m01 * b0) / det;
   // (A point of the line, level with the face's points.)
   let along = 0;
-  for (let i = 0; i < n; i++) {
-    along += d3(points[i], dir) / n;
+  for (let i = 0; i < count; i++) {
+    along += d3(points[i], dir) / count;
   }
 
   return { origin: [x[0] * cx + y[0] * cy + dir[0] * along, x[1] * cx + y[1] * cy + dir[1] * along, x[2] * cx + y[2] * cy + dir[2] * along], dir };

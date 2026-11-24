@@ -31,21 +31,21 @@ const cases: { name: string; face: any; d: number; round: number; note?: boolean
 ];
 
 let failed = 0;
-for (const c of cases) {
-  const r = await regenerate([...base, { id: 'o1', name: 'Offset', type: 'extrude', source: { kind: 'face', face: c.face }, distance: c.d, mode: 'auto', target: 'e1' }]);
-  const b = r.bodies[0];
-  const round = b?.faces.filter(f => f.type !== 'PLANE').length ?? -1;
+for (const testCase of cases) {
+  const result = await regenerate([...base, { id: 'o1', name: 'Offset', type: 'extrude', source: { kind: 'face', face: testCase.face }, distance: testCase.d, mode: 'auto', target: 'e1' }]);
+  const b = result.bodies[0];
+  const round = b?.faces.filter(face => face.type !== 'PLANE').length ?? -1;
   const problems = [
-    r.errors.length ? `error: ${r.errors.map(e => e.message).join('; ')}` : '',
-    r.bodies.length !== 1 ? `${r.bodies.length} bodies` : '',
+    result.errors.length ? `error: ${result.errors.map(e => e.message).join('; ')}` : '',
+    result.bodies.length !== 1 ? `${result.bodies.length} bodies` : '',
     b && b.openEdges.length ? `${b.openEdges.length} open edges` : '',
-    round !== c.round ? `${round} round faces (expected ${c.round})` : '',
-    !!c.note !== !!r.notes?.length ? `note: ${JSON.stringify(r.notes ?? [])}` : ''
+    round !== testCase.round ? `${round} round faces (expected ${testCase.round})` : '',
+    !!testCase.note !== !!result.notes?.length ? `note: ${JSON.stringify(result.notes ?? [])}` : ''
   ].filter(Boolean);
   if (problems.length) {
     failed++;
   }
-  console.log(`${problems.length ? 'FAIL' : 'ok  '} ${c.name}${problems.length ? ' - ' + problems.join(', ') : ''}`);
+  console.log(`${problems.length ? 'FAIL' : 'ok  '} ${testCase.name}${problems.length ? ' - ' + problems.join(', ') : ''}`);
 }
 if (failed) {
   process.exit(1);

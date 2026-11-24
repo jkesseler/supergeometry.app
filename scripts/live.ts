@@ -16,7 +16,7 @@ const git = (cmd: string) => {
   }
 };
 const want = git('rev-parse origin/main');
-const short = (c: string) => c.slice(0, 7);
+const short = (commit: string) => commit.slice(0, 7);
 
 interface Version {
   version: string;
@@ -28,12 +28,12 @@ interface Version {
 
 async function live(): Promise<Version | null> {
   try {
-    const r = await fetch(`${site}/version.json?t=${Date.now()}`, { cache: 'no-store' });
-    if (!r.ok) {
+    const response = await fetch(`${site}/version.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) {
       return null;
     }
 
-    return (await r.json()) as Version;
+    return (await response.json()) as Version;
   } catch {
     return null;
   }
@@ -41,18 +41,18 @@ async function live(): Promise<Version | null> {
 
 const until = Date.now() + 20 * 60_000;
 for (;;) {
-  const v = await live();
-  if (v?.commit && v.commit === want) {
-    console.log(`Live: ${short(v.commit)} ${v.subject} (built ${v.built}, ${v.script})`);
+  const version = await live();
+  if (version?.commit && version.commit === want) {
+    console.log(`Live: ${short(version.commit)} ${version.subject} (built ${version.built}, ${version.script})`);
     process.exit(0);
   }
   if (!args.includes('--wait') || Date.now() > until) {
-    if (!v) {
+    if (!version) {
       console.log(`${site} has no version.json yet (built before it was added), main is ${short(want)}`);
     } else {
-      console.log(`Not live yet: the site is ${short(v.commit)} ${v.subject} (built ${v.built}), main is ${short(want)} ${git(`log -1 --format=%s ${want}`)}`);
+      console.log(`Not live yet: the site is ${short(version.commit)} ${version.subject} (built ${version.built}), main is ${short(want)} ${git(`log -1 --format=%s ${want}`)}`);
     }
     process.exit(1);
   }
-  await new Promise(r => setTimeout(r, 20_000));
+  await new Promise(resolve => setTimeout(resolve, 20_000));
 }

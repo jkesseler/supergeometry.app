@@ -42,7 +42,7 @@ export function infoLine(): string {
 /** Reddit's "new text post" page for the subreddit, filled in. */
 export function submitUrl(title: string, text: string): string {
   // %20 for spaces, not "+": every reader of the address takes it as a space.
-  const q = Object.entries({ title, text, selftext: 'true', type: 'TEXT' }).map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
+  const q = Object.entries({ title, text, selftext: 'true', type: 'TEXT' }).map(([key, value]) => `${key}=${encodeURIComponent(value)}`);
 
   return `https://www.reddit.com/r/${SUBREDDIT}/submit?${q.join('&')}`;
 }
@@ -64,14 +64,14 @@ export function showFeedback(): void {
   let kind: Kind = 'bug';
   const kinds = el('div', 'chip-list feedback-kinds');
   kinds.setAttribute('role', 'radiogroup');
-  const chips = KINDS.map((k) => {
-    const c = el('button', 'chip', k.label);
-    c.type = 'button';
-    c.setAttribute('role', 'radio');
-    c.addEventListener('click', () => pick(k.id));
-    kinds.append(c);
+  const chips = KINDS.map((kindOption) => {
+    const button = el('button', 'chip', kindOption.label);
+    button.type = 'button';
+    button.setAttribute('role', 'radio');
+    button.addEventListener('click', () => pick(kindOption.id));
+    kinds.append(button);
 
-    return c;
+    return button;
   });
 
   const titleField = el('label', 'dialog-field');
@@ -98,14 +98,14 @@ export function showFeedback(): void {
 
   const pick = (id: Kind) => {
     kind = id;
-    const k = KINDS.find(x => x.id === id)!;
-    chips.forEach((c, i) => {
+    const kindOption = KINDS.find(option => option.id === id)!;
+    chips.forEach((chip, i) => {
       const on = KINDS[i].id === id;
-      c.classList.toggle('on', on);
-      c.setAttribute('aria-checked', String(on));
+      chip.classList.toggle('on', on);
+      chip.setAttribute('aria-checked', String(on));
     });
-    title.placeholder = k.title;
-    text.placeholder = k.text;
+    title.placeholder = kindOption.title;
+    text.placeholder = kindOption.text;
     // Version and browser help most with a bug: on for it, off for the others (it can still be ticked).
     infoBox.checked = id === 'bug';
     paint();
@@ -132,7 +132,7 @@ export function showFeedback(): void {
     if (!t) {
       return void title.focus();
     }
-    const tag = KINDS.find(k => k.id === kind)!.tag;
+    const tag = KINDS.find(kindOption => kindOption.id === kind)!.tag;
     let body = text.value.trim().slice(0, MAX_TEXT);
     if (infoBox.checked) {
       body += `${body ? '\n\n' : ''}---\n${infoLine()}`;

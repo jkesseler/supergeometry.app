@@ -12,20 +12,20 @@ export function uniqueEnds(edges: readonly { start: Vec3; end: Vec3 }[]): Vector
   // Cells by a hash of their coordinates (two cells sharing a hash is
   // harmless: the distance check still decides).
   const cells = new Map<number, number[]>();
-  const h = (x: number, y: number, z: number) => (Math.imul(x | 0, 73856093) ^ Math.imul(y | 0, 19349663) ^ Math.imul(z | 0, 83492791)) | 0;
-  const C = 1e-6;
+  const hashCell = (x: number, y: number, z: number) => (Math.imul(x | 0, 73856093) ^ Math.imul(y | 0, 19349663) ^ Math.imul(z | 0, 83492791)) | 0;
+  const cellSize = 1e-6;
   for (const e of edges) {
-    for (const p of [e.start, e.end]) {
-      const v = new Vector3(p[0], p[1], p[2]);
-      const cx = Math.floor(p[0] / C), cy = Math.floor(p[1] / C), cz = Math.floor(p[2] / C);
+    for (const point of [e.start, e.end]) {
+      const vector = new Vector3(point[0], point[1], point[2]);
+      const cx = Math.floor(point[0] / cellSize), cy = Math.floor(point[1] / cellSize), cz = Math.floor(point[2] / cellSize);
       let found = false;
       for (let dx = -1; dx <= 1 && !found; dx++) {
         for (let dy = -1; dy <= 1 && !found; dy++) {
           for (let dz = -1; dz <= 1 && !found; dz++) {
-            const l = cells.get(h(cx + dx, cy + dy, cz + dz));
-            if (l) {
-              for (const i of l) {
-                if (out[i].distanceToSquared(v) < 1e-12) {
+            const cell = cells.get(hashCell(cx + dx, cy + dy, cz + dz));
+            if (cell) {
+              for (const i of cell) {
+                if (out[i].distanceToSquared(vector) < 1e-12) {
                   found = true; break; 
                 }
               }
@@ -36,14 +36,14 @@ export function uniqueEnds(edges: readonly { start: Vec3; end: Vec3 }[]): Vector
       if (found) {
         continue;
       }
-      const k = h(cx, cy, cz);
-      const l = cells.get(k);
-      if (l) {
-        l.push(out.length);
+      const key = hashCell(cx, cy, cz);
+      const bucket = cells.get(key);
+      if (bucket) {
+        bucket.push(out.length);
       } else {
-        cells.set(k, [out.length]);
+        cells.set(key, [out.length]);
       }
-      out.push(v);
+      out.push(vector);
     }
   }
 

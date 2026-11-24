@@ -5,7 +5,7 @@ import { after, check, circle, done, line, near, poly, sketch, volume, XY, XZ, Y
 import type { Feature, Vec3 } from '../src/doc/types';
 
 const regions = (sk: Feature) => arrangement((sk as { entities: never }).entities).regions.map(regionRef);
-const bounds = (s: { boundingBox: { bounds: [Vec3, Vec3] } } | undefined) => s?.boundingBox.bounds;
+const bounds = (shape: { boundingBox: { bounds: [Vec3, Vec3] } } | undefined) => shape?.boundingBox.bounds;
 
 // An L-shaped path in XY: (0,0) → (40,0) → (40,40).
 const path = sketch('p', XY(), [line('a', [0, 0], [40, 0]), line('b', [40, 0], [40, 40])]);
@@ -25,10 +25,10 @@ const sq = sketch('q', YZ(), [poly('r', [[-3, -3], [3, -3], [3, 3], [-3, 3]])]);
 // Profile position: a circle drawn off to the side, flat on XY - moved onto the path's start.
 {
   const off = sketch('o', XY(), [circle('c', -20, 30, 2)]);
-  const s = await after([path, off, sweep('S', off, { position: 'start' })], 'S');
+  const swept = await after([path, off, sweep('S', off, { position: 'start' })], 'S');
   const want = Math.PI * 4 * 80; // about: the bend's a little less
-  check("on the path's start: a tube along the path", !s.err && Math.abs(volume(s.body) - want) < want * 0.05, { err: s.err, v: volume(s.body), want });
-  const b = bounds(s.body);
+  check("on the path's start: a tube along the path", !swept.err && Math.abs(volume(swept.body) - want) < want * 0.05, { err: swept.err, v: volume(swept.body), want });
+  const b = bounds(swept.body);
   check('it runs along the path (x 0…42, y -2…40)', !!b && near(b[0][0], 0, 0.05) && near(b[1][1], 40, 0.05), b);
 }
 
@@ -38,8 +38,8 @@ const sq = sketch('q', YZ(), [poly('r', [[-3, -3], [3, -3], [3, 3], [-3, 3]])]);
 {
   const slant = sketch('p', XY(), [line('a', [0, 0], [40, 20])]);
   const one = (extra: Record<string, unknown>): Feature => ({ ...sweep('S', sq, extra), path: { kind: 'sketch', sketch: 'p', entities: ['a'] } }) as Feature;
-  const s = await after([slant, sq, one({ orientation: 'parallel' })], 'S');
-  check('parallel to profile: the square keeps facing +X', !s.err && near(volume(s.body), 36 * 40, 0.5), { err: s.err, v: volume(s.body) });
+  const swept = await after([slant, sq, one({ orientation: 'parallel' })], 'S');
+  check('parallel to profile: the square keeps facing +X', !swept.err && near(volume(swept.body), 36 * 40, 0.5), { err: swept.err, v: volume(swept.body) });
   const t = await after([slant, sq, one({ orientation: 'parallel', twist: 30 })], 'S');
   check("a twist with parallel says why it can't", !!t.err && /Normal to path/.test(t.err), t.err);
 }
@@ -49,7 +49,7 @@ const sq = sketch('q', YZ(), [poly('r', [[-3, -3], [3, -3], [3, 3], [-3, 3]])]);
   const a = sketch('la', XY(), [poly('r', [[-10, -10], [10, -10], [10, 10], [-10, 10]])]);
   const b = sketch('lb', XY(30), [poly('r', [[-4, -4], [4, -4], [4, 4], [-4, 4]])]);
   const loft = (extra: Record<string, unknown> = {}): Feature =>
-    ({ id: 'L', name: 'L', type: 'loft', sections: [a, b].map(s => ({ kind: 'profile', sketch: s.id, regions: regions(s) })), ruled: false, mode: 'new', ...extra }) as Feature;
+    ({ id: 'L', name: 'L', type: 'loft', sections: [a, b].map(feature => ({ kind: 'profile', sketch: feature.id, regions: regions(feature) })), ruled: false, mode: 'new', ...extra }) as Feature;
   const free = await after([a, b, loft()], 'L');
   const g1 = await after([a, b, loft({ startContinuity: 'g1' })], 'L');
   const g2 = await after([a, b, loft({ startContinuity: 'g2', endContinuity: 'g1', endWeight: 2 })], 'L');

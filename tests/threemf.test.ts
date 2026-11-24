@@ -13,9 +13,9 @@ const feats: Feature[] = [
   { id: 's', name: 's', type: 'sketch', plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: rect as any },
   { id: 'b', name: 'b', type: 'extrude', source: { kind: 'profile', sketch: 's', regions: arrangement(rect as any).regions.map(regionRef) }, distance: 10, mode: 'new' }
 ];
-const r = await regenerate(feats);
+const result = await regenerate(feats);
 const step = await exportBodies(feats, 'step');
-const blob = await exportThreeMF(r.bodies.map(b => ({ name: 'Box', positions: b.positions, indices: b.indices, color: '#3d8bff' })), 'Test', step);
+const blob = await exportThreeMF(result.bodies.map(b => ({ name: 'Box', positions: b.positions, indices: b.indices, color: '#3d8bff' })), 'Test', step);
 const buf = Buffer.from(await blob.arrayBuffer());
 if (process.argv[2]) {
   writeFileSync(process.argv[2], buf);

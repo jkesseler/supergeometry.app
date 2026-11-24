@@ -24,7 +24,7 @@ const KEY = 'sg-browser';
 const BAR = 34;
 const MIN_W = 220;
 const MIN_H = 160;
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const clamp = (value: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, value));
 
 /** Sites known to refuse being shown inside another page (by the end of their host name). */
 const REFUSE = [
@@ -46,42 +46,42 @@ export function pageFor(text: string): { src: string; shown: string; video?: 'yo
     }
     t = `https://${t}`;
   }
-  let u: URL;
+  let url: URL;
   try {
-    u = new URL(t);
+    url = new URL(t);
   } catch {
     return { refuse: "That isn't an address this can open.", shown: text };
   }
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     return { refuse: 'Only web pages (http, https) open here.', shown: text };
   }
-  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  const host = url.hostname.replace(/^(www|m|music)\./, '');
   // A YouTube video (watch, youtu.be, shorts, live, embed): its own player, which may be shown in a page.
   const yt
-    = host === 'youtu.be' ? u.pathname.slice(1).split('/')[0] : host.endsWith('youtube.com') ? (u.searchParams.get('v') ?? u.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{6,})/)?.[1] ?? null) : null;
+    = host === 'youtu.be' ? url.pathname.slice(1).split('/')[0] : host.endsWith('youtube.com') ? (url.searchParams.get('v') ?? url.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{6,})/)?.[1] ?? null) : null;
   if (yt && /^[\w-]{6,}$/.test(yt)) {
-    const start = parseInt(u.searchParams.get('t') ?? u.searchParams.get('start') ?? '', 10);
-    const list = u.searchParams.get('list');
+    const start = parseInt(url.searchParams.get('t') ?? url.searchParams.get('start') ?? '', 10);
+    const list = url.searchParams.get('list');
     const q = new URLSearchParams({ autoplay: '1', rel: '0', ...(start > 0 ? { start: String(start) } : {}), ...(list ? { list } : {}) });
 
-    return { src: `https://www.youtube.com/embed/${yt}?${q}`, shown: u.href, video: 'youtube' };
+    return { src: `https://www.youtube.com/embed/${yt}?${q}`, shown: url.href, video: 'youtube' };
   }
   if (host.endsWith('youtube.com')) {
     return {
       refuse: "YouTube won't show its pages inside another page. Find the video in a tab of its own, then copy its link (Share › Copy) and paste it here: it plays in this window, full screen too.",
-      shown: u.href,
-      open: u.href
+      shown: url.href,
+      open: url.href
     };
   }
-  const vimeo = host === 'vimeo.com' ? u.pathname.match(/^\/(\d+)/)?.[1] : null;
+  const vimeo = host === 'vimeo.com' ? url.pathname.match(/^\/(\d+)/)?.[1] : null;
   if (vimeo) {
-    return { src: `https://player.vimeo.com/video/${vimeo}?autoplay=1`, shown: u.href, video: 'vimeo' };
+    return { src: `https://player.vimeo.com/video/${vimeo}?autoplay=1`, shown: url.href, video: 'vimeo' };
   }
-  if (REFUSE.some(h => host === h || host.endsWith(`.${h}`))) {
-    return { refuse: `${host} won't show its pages inside another page.`, shown: u.href, open: u.href };
+  if (REFUSE.some(refused => host === refused || host.endsWith(`.${refused}`))) {
+    return { refuse: `${host} won't show its pages inside another page.`, shown: url.href, open: url.href };
   }
 
-  return { src: u.href, shown: u.href };
+  return { src: url.href, shown: url.href };
 }
 
 const button = (icon: string, title: string) => {
@@ -104,21 +104,21 @@ export class WebWindow {
   /** Over the page: a press held (or dragged) there moves the window - the page itself never tells this one what the pointer does. */
   private grab!: HTMLElement;
   private wired = false;
-  private s: Saved = { url: '', x: 0, y: 0, w: 0, h: 0, min: false, open: false };
+  private state: Saved = { url: '', x: 0, y: 0, w: 0, h: 0, min: false, open: false };
 
   constructor() {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        const k = JSON.parse(raw) as Saved;
+        const stored = JSON.parse(raw) as Saved;
         // (Kept as parts of the screen: a phone turned, a window resized since.)
-        this.s = { ...this.s, ...k, x: k.x * innerWidth, y: k.y * innerHeight };
+        this.state = { ...this.state, ...stored, x: stored.x * innerWidth, y: stored.y * innerHeight };
       }
     } catch {
       // nothing kept
     }
     // Open when the page was left: open again, where it was.
-    if (this.s.open) {
+    if (this.state.open) {
       setTimeout(() => this.open(), 0);
     }
     window.addEventListener('resize', () => this.el && this.fit(true));
@@ -133,12 +133,12 @@ export class WebWindow {
     if (!this.el) {
       this.make();
     }
-    this.s.open = true;
-    this.s.min = false;
+    this.state.open = true;
+    this.state.min = false;
     this.draw();
     if (url !== undefined) {
       this.go(url);
-    } else if (!this.s.url) {
+    } else if (!this.state.url) {
       setTimeout(() => this.address.focus(), 0);
     }
     this.save();
@@ -147,7 +147,7 @@ export class WebWindow {
   close(): void {
     this.el?.remove();
     this.el = null;
-    this.s.open = false;
+    this.state.open = false;
     this.save();
   }
 
@@ -201,16 +201,16 @@ export class WebWindow {
     this.holdToMove(grab);
 
     el.addEventListener('pointerdown', () => el.style.setProperty('--z', '999'), true);
-    reload.addEventListener('click', () => this.s.url && this.go(this.s.url));
+    reload.addEventListener('click', () => this.state.url && this.go(this.state.url));
     out.addEventListener('click', () => {
-      const p = pageFor(this.address.value || this.s.url);
-      const href = 'src' in p ? p.shown : p.open;
+      const page = pageFor(this.address.value || this.state.url);
+      const href = 'src' in page ? page.shown : page.open;
       if (href) {
         window.open(href, '_blank', 'noopener');
       }
     });
     fold.addEventListener('click', () => {
-      this.s.min = !this.s.min;
+      this.state.min = !this.state.min;
       this.draw();
       this.save();
     });
@@ -219,14 +219,14 @@ export class WebWindow {
     this.dragBy(bar);
     this.resizeBy(grip);
 
-    if (!this.s.w) {
-      const w = Math.min(640, innerWidth - 24);
-      const h = Math.min(420, innerHeight - 140);
-      this.s = { ...this.s, x: (innerWidth - w) / 2, y: 90, w, h };
+    if (!this.state.w) {
+      const width = Math.min(640, innerWidth - 24);
+      const height = Math.min(420, innerHeight - 140);
+      this.state = { ...this.state, x: (innerWidth - width) / 2, y: 90, w: width, h: height };
     }
     this.fit(true);
     // (Nothing typed yet: what to type, in the window.)
-    this.go(this.s.url);
+    this.go(this.state.url);
   }
 
   /** What was typed, shown: the page, or a note saying why it can't be (and a button to open it in a tab). */
@@ -234,33 +234,33 @@ export class WebWindow {
     if (!this.el) {
       return;
     }
-    const p = pageFor(text);
-    this.address.value = p.shown;
-    if ('src' in p) {
-      this.s.url = p.shown;
+    const page = pageFor(text);
+    this.address.value = page.shown;
+    if ('src' in page) {
+      this.state.url = page.shown;
       this.note.hidden = true;
       this.frame.hidden = false;
-      this.frame.src = p.src;
+      this.frame.src = page.src;
       this.arm(true);
     } else {
       this.frame.hidden = true;
       this.frame.removeAttribute('src');
       this.note.replaceChildren();
       const say = document.createElement('p');
-      say.textContent = p.refuse;
+      say.textContent = page.refuse;
       this.note.append(say);
-      if (p.open) {
+      if (page.open) {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'web-open';
         b.textContent = 'Open it in a new tab';
-        const href = p.open;
+        const href = page.open;
         b.addEventListener('click', () => window.open(href, '_blank', 'noopener'));
         this.note.append(b);
       }
       this.note.hidden = false;
-      if (p.shown) {
-        this.s.url = p.shown;
+      if (page.shown) {
+        this.state.url = page.shown;
       }
     }
     this.save();
@@ -270,32 +270,32 @@ export class WebWindow {
     if (!this.el) {
       return;
     }
-    this.el.classList.toggle('min', this.s.min);
-    this.fold.innerHTML = this.s.min ? icons.restore : icons.minimize;
-    this.fold.title = this.fold.ariaLabel = this.s.min ? 'Restore' : 'Minimize';
+    this.el.classList.toggle('min', this.state.min);
+    this.fold.innerHTML = this.state.min ? icons.restore : icons.minimize;
+    this.fold.title = this.fold.ariaLabel = this.state.min ? 'Restore' : 'Minimize';
     this.el.style.setProperty('--z', '999');
     this.fit();
   }
 
   /** Kept on the screen (some of its bar always within reach); `whole` brings it all in. */
   private fit(whole = false): void {
-    const s = this.s;
+    const state = this.state;
     if (!this.el) {
       return;
     }
-    s.w = clamp(s.w, MIN_W, Math.max(MIN_W, innerWidth - 16));
-    s.h = clamp(s.h, MIN_H, Math.max(MIN_H, innerHeight - 16));
+    state.w = clamp(state.w, MIN_W, Math.max(MIN_W, innerWidth - 16));
+    state.h = clamp(state.h, MIN_H, Math.max(MIN_H, innerHeight - 16));
     if (whole) {
-      s.x = clamp(s.x, 8, Math.max(8, innerWidth - s.w - 8));
-      s.y = clamp(s.y, 8, Math.max(8, innerHeight - (s.min ? BAR : s.h) - 8));
+      state.x = clamp(state.x, 8, Math.max(8, innerWidth - state.w - 8));
+      state.y = clamp(state.y, 8, Math.max(8, innerHeight - (state.min ? BAR : state.h) - 8));
     }
-    s.x = clamp(s.x, 8 - s.w + 80, innerWidth - 80);
-    s.y = clamp(s.y, 0, innerHeight - BAR);
+    state.x = clamp(state.x, 8 - state.w + 80, innerWidth - 80);
+    state.y = clamp(state.y, 0, innerHeight - BAR);
     const st = this.el.style;
-    st.left = `${Math.round(s.x)}px`;
-    st.top = `${Math.round(s.y)}px`;
-    st.width = `${Math.round(s.w)}px`;
-    st.height = s.min ? '' : `${Math.round(s.h)}px`;
+    st.left = `${Math.round(state.x)}px`;
+    st.top = `${Math.round(state.y)}px`;
+    st.width = `${Math.round(state.w)}px`;
+    st.height = state.min ? '' : `${Math.round(state.h)}px`;
   }
 
   /**
@@ -310,7 +310,7 @@ export class WebWindow {
         return;
       }
       e.preventDefault();
-      const start = { x: e.clientX, y: e.clientY, dx: e.clientX - this.s.x, dy: e.clientY - this.s.y };
+      const start = { x: e.clientX, y: e.clientY, dx: e.clientX - this.state.x, dy: e.clientY - this.state.y };
       try {
         grab.setPointerCapture(e.pointerId);
       } catch {
@@ -325,16 +325,16 @@ export class WebWindow {
         this.el?.classList.add('moving', 'lifted');
       };
       const hold = window.setTimeout(lift, 350);
-      const move = (m: PointerEvent) => {
-        if (!moving && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 8) {
+      const move = (event: PointerEvent) => {
+        if (!moving && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8) {
           return;
         }
         lift();
-        this.s.x = m.clientX - start.dx;
-        this.s.y = m.clientY - start.dy;
+        this.state.x = event.clientX - start.dx;
+        this.state.y = event.clientY - start.dy;
         this.fit();
       };
-      const up = (u: PointerEvent) => {
+      const up = (event: PointerEvent) => {
         clearTimeout(hold);
         grab.removeEventListener('pointermove', move);
         grab.removeEventListener('pointerup', up);
@@ -343,7 +343,7 @@ export class WebWindow {
         if (moving) {
           return this.save();
         }
-        if (u.type !== 'pointerup') {
+        if (event.type !== 'pointerup') {
           return;
         }
         // A tap: the page (or the video, with its own controls - volume, seek, full screen) is yours to use.
@@ -383,13 +383,13 @@ export class WebWindow {
         return;
       }
       e.preventDefault();
-      const dx = e.clientX - this.s.x;
-      const dy = e.clientY - this.s.y;
+      const dx = e.clientX - this.state.x;
+      const dy = e.clientY - this.state.y;
       bar.setPointerCapture(e.pointerId);
       this.el?.classList.add('moving');
-      const move = (m: PointerEvent) => {
-        this.s.x = m.clientX - dx;
-        this.s.y = m.clientY - dy;
+      const move = (event: PointerEvent) => {
+        this.state.x = event.clientX - dx;
+        this.state.y = event.clientY - dy;
         this.fit();
       };
       const up = () => {
@@ -412,12 +412,12 @@ export class WebWindow {
       }
       e.preventDefault();
       e.stopPropagation();
-      const from = { x: e.clientX, y: e.clientY, w: this.s.w, h: this.s.h };
+      const from = { x: e.clientX, y: e.clientY, w: this.state.w, h: this.state.h };
       grip.setPointerCapture(e.pointerId);
       this.el?.classList.add('moving');
-      const move = (m: PointerEvent) => {
-        this.s.w = from.w + m.clientX - from.x;
-        this.s.h = from.h + m.clientY - from.y;
+      const move = (event: PointerEvent) => {
+        this.state.w = from.w + event.clientX - from.x;
+        this.state.h = from.h + event.clientY - from.y;
         this.fit();
       };
       const up = () => {
@@ -435,8 +435,8 @@ export class WebWindow {
 
   private save(): void {
     try {
-      const s = this.s;
-      localStorage.setItem(KEY, JSON.stringify({ ...s, x: s.x / innerWidth, y: s.y / innerHeight }));
+      const state = this.state;
+      localStorage.setItem(KEY, JSON.stringify({ ...state, x: state.x / innerWidth, y: state.y / innerHeight }));
     } catch {
       // private window: not kept
     }
@@ -444,6 +444,6 @@ export class WebWindow {
 
   /** For checking from the console. */
   describe(): { open: boolean; url: string; min: boolean; src: string | null; note: string | null } {
-    return { open: !!this.el, url: this.s.url, min: this.s.min, src: this.el && !this.frame.hidden ? this.frame.src : null, note: this.el && !this.note.hidden ? this.note.textContent : null };
+    return { open: !!this.el, url: this.state.url, min: this.state.min, src: this.el && !this.frame.hidden ? this.frame.src : null, note: this.el && !this.note.hidden ? this.note.textContent : null };
   }
 }

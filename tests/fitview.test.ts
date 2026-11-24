@@ -37,31 +37,31 @@ const views: [string, number, number][] = [
   ['front', -90, 0]
 ];
 
-for (const [sn, W, H, px] of screens) {
+for (const [sn, screenWidth, screenHeight, px] of screens) {
   for (const [bn, box] of boxes) {
     for (const [vn, az, el] of views) {
       for (const ortho of [false, true]) {
-        const free: Insets = { left: px[0] / W, right: px[1] / W, top: px[2] / H, bottom: px[3] / H };
-        const c = new CameraController(W / H);
-        c.animate = false;
-        c.setOrtho(ortho);
-        c.azimuth = MathUtils.degToRad(az);
-        c.elevation = MathUtils.degToRad(el);
-        c.update();
-        c.fit(box, false, free);
+        const free: Insets = { left: px[0] / screenWidth, right: px[1] / screenWidth, top: px[2] / screenHeight, bottom: px[3] / screenHeight };
+        const cameraController = new CameraController(screenWidth / screenHeight);
+        cameraController.animate = false;
+        cameraController.setOrtho(ortho);
+        cameraController.azimuth = MathUtils.degToRad(az);
+        cameraController.elevation = MathUtils.degToRad(el);
+        cameraController.update();
+        cameraController.fit(box, false, free);
         const xs: number[] = [], ys: number[] = [];
         for (let i = 0; i < 8; i++) {
-          const p = new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(c.camera);
-          xs.push(((p.x + 1) / 2) * W);
-          ys.push(((1 - p.y) / 2) * H);
+          const projected = new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(cameraController.camera);
+          xs.push(((projected.x + 1) / 2) * screenWidth);
+          ys.push(((1 - projected.y) / 2) * screenHeight);
         }
         const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-        const inside = x0 >= px[0] - 0.5 && x1 <= W - px[1] + 0.5 && y0 >= px[2] - 0.5 && y1 <= H - px[3] + 0.5;
+        const inside = x0 >= px[0] - 0.5 && x1 <= screenWidth - px[1] + 0.5 && y0 >= px[2] - 0.5 && y1 <= screenHeight - px[3] + 0.5;
         // …and fills it reasonably (not a speck in the middle).
-        const fill = Math.max((x1 - x0) / (W - px[0] - px[1]), (y1 - y0) / (H - px[2] - px[3]));
+        const fill = Math.max((x1 - x0) / (screenWidth - px[0] - px[1]), (y1 - y0) / (screenHeight - px[2] - px[3]));
         const ok = inside && fill > 0.6;
         if (!ok) {
-          check(`${bn} on ${sn}, ${vn}${ortho ? ' ortho' : ''}`, false, `x ${x0.toFixed(0)}–${x1.toFixed(0)} of ${px[0]}–${W - px[1]}, y ${y0.toFixed(0)}–${y1.toFixed(0)} of ${px[2]}–${H - px[3]}, fills ${(fill * 100).toFixed(0)} %`);
+          check(`${bn} on ${sn}, ${vn}${ortho ? ' ortho' : ''}`, false, `x ${x0.toFixed(0)}–${x1.toFixed(0)} of ${px[0]}–${screenWidth - px[1]}, y ${y0.toFixed(0)}–${y1.toFixed(0)} of ${px[2]}–${screenHeight - px[3]}, fills ${(fill * 100).toFixed(0)} %`);
         }
       }
     }

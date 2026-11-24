@@ -10,8 +10,8 @@ cam.resize(1000, 700);
 const fitZ = Math.min((1000 - 32) / 420, (700 - 32) / 297);
 check('it starts with all of an A3 sheet in view, in the middle', near(cam.z, fitZ) && near(cam.cx, 210) && near(cam.cy, 148.5) && cam.fitted, cam.state);
 check('  ...100 %', near(cam.ratio(), 1));
-const [l, t, w, h] = cam.viewBox().split(' ').map(Number);
-check("  ...the viewBox has the screen's shape, the sheet inside it", near(w / h, 1000 / 700, 1e-3) && l <= 0 && t <= 0 && l + w >= 420 && t + h >= 297, cam.viewBox());
+const [left, t, width, height] = cam.viewBox().split(' ').map(Number);
+check("  ...the viewBox has the screen's shape, the sheet inside it", near(width / height, 1000 / 700, 1e-3) && left <= 0 && t <= 0 && left + width >= 420 && t + height >= 297, cam.viewBox());
 
 // The wheel at a point: the paper under it stays under it.
 const under = cam.toPaper(300, 200);

@@ -10,37 +10,37 @@ setOC(await (opencascade as unknown as () => Promise<any>)());
 
 const plane = (z: number, flip = false): PlaneDef => ({ origin: [0, 0, z], xDir: [1, 0, 0], normal: flip ? [0, 0, -1] : [0, 0, 1] });
 const XZ: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, -1, 0] };
-const sketch = (id: string, p: PlaneDef, entities: any[]): Feature => ({ id, name: id, type: 'sketch', plane: p, entities });
+const sketch = (id: string, plane: PlaneDef, entities: any[]): Feature => ({ id, name: id, type: 'sketch', plane: plane, entities });
 const prof = (id: string, entities: any[]): ExtrudeSource => ({ kind: 'profile', sketch: id, regions: arrangement(entities).regions.map(regionRef) });
 const loft = (sections: ExtrudeSource[], ruled = false): Feature => ({ id: 'lo', name: 'Loft', type: 'loft', sections, ruled, mode: 'new' });
 
-const rect = (w: number, h: number, rot = 0) => [{ id: 'r', kind: 'rect', center: [0, 0], w, h, rotation: rot }];
-const circle = (r: number, c: [number, number] = [0, 0]) => [{ id: 'c', kind: 'circle', center: c, radius: r }];
+const rect = (width: number, height: number, rot = 0) => [{ id: 'r', kind: 'rect', center: [0, 0], w: width, h: height, rotation: rot }];
+const circle = (radius: number, center: [number, number] = [0, 0]) => [{ id: 'c', kind: 'circle', center: center, radius: radius }];
 const hexagon = [{ id: 'h', kind: 'polygon', center: [0, 0], radius: 10, sides: 6, angle: 0.3 }];
 const blob = [{ id: 's', kind: 'spline', points: [[10, 0], [4, 8], [-9, 5], [-7, -6], [3, -9]], closed: true, mode: 'fit' }];
 
 function volume(b: BodyMesh): number {
-  const p = b.positions;
+  const positions = b.positions;
   const ix = b.indices;
-  let v = 0;
+  let volume = 0;
   for (let i = 0; i < ix.length; i += 3) {
-    const [a, c, d] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
-    v += (p[a] * (p[c + 1] * p[d + 2] - p[c + 2] * p[d + 1]) - p[a + 1] * (p[c] * p[d + 2] - p[c + 2] * p[d]) + p[a + 2] * (p[c] * p[d + 1] - p[c + 1] * p[d])) / 6;
+    const [a, offsetB, offsetC] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
+    volume += (positions[a] * (positions[offsetB + 1] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC + 1]) - positions[a + 1] * (positions[offsetB] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC]) + positions[a + 2] * (positions[offsetB] * positions[offsetC + 1] - positions[offsetB + 1] * positions[offsetC])) / 6;
   }
 
-  return v;
+  return volume;
 }
 
 let failed = 0;
 async function check(name: string, feats: Feature[], lo: number, hi: number): Promise<void> {
-  const r = await regenerate(feats);
-  const b = r.bodies.find(x => x.id === 'lo' || x.id === 'rv') ?? r.bodies[r.bodies.length - 1];
-  const v = b ? volume(b) : NaN;
-  const ok = !r.errors.length && !!b && b.openEdges.length === 0 && v > lo && v < hi;
+  const result = await regenerate(feats);
+  const b = result.bodies.find(body => body.id === 'lo' || body.id === 'rv') ?? result.bodies[result.bodies.length - 1];
+  const bodyVolume = b ? volume(b) : NaN;
+  const ok = !result.errors.length && !!b && b.openEdges.length === 0 && bodyVolume > lo && bodyVolume < hi;
   if (!ok) {
     failed++;
   }
-  console.log(ok ? 'ok  ' : 'FAIL', name, `vol=${v.toFixed(0)} (${lo}..${hi}) faces=${b?.faces.length} open=${b?.openEdges.length}`, r.errors.map(e => e.message).join('; '));
+  console.log(ok ? 'ok  ' : 'FAIL', name, `vol=${bodyVolume.toFixed(0)} (${lo}..${hi}) faces=${b?.faces.length} open=${b?.openEdges.length}`, result.errors.map(e => e.message).join('; '));
 }
 
 // Prism-like bounds: between the smaller and the larger section × height.
@@ -73,8 +73,8 @@ const vase = [
   const feats: Feature[] = [sketch('v', XZ, vase), { id: 'rv', name: 'Revolve', type: 'revolve', source: prof('v', vase), axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, angle: 360, mode: 'new' }];
   await check('spline vase revolve', feats, Math.PI * 8 * 8 * 40, Math.PI * 14 * 14 * 40);
   // The spline side is one smooth face (not a stack of strips from a fitted curve).
-  const r = await regenerate(feats);
-  const side = r.bodies[0].faces.filter(f => f.type !== 'PLANE').length;
+  const result = await regenerate(feats);
+  const side = result.bodies[0].faces.filter(face => face.type !== 'PLANE').length;
   const ok = side === 1;
   if (!ok) {
     failed++;

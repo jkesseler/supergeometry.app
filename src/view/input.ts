@@ -114,9 +114,9 @@ export class InputRouter {
   }
 
   private local(e: PointerEvent | WheelEvent): [number, number] {
-    const r = this.view.canvas.getBoundingClientRect();
+    const rect = this.view.canvas.getBoundingClientRect();
 
-    return [e.clientX - r.left, e.clientY - r.top];
+    return [e.clientX - rect.left, e.clientY - rect.top];
   }
 
   private tp(t: Tracked): ToolPointer {
@@ -272,10 +272,10 @@ export class InputRouter {
       case 'box': {
         const a = { x: t.x0, y: t.y0 };
         const b = { x, y };
-        const r = this.view.canvas.getBoundingClientRect();
+        const rect = this.view.canvas.getBoundingClientRect();
         Object.assign(this.marquee.style, {
-          left: `${r.left + Math.min(a.x, b.x)}px`,
-          top: `${r.top + Math.min(a.y, b.y)}px`,
+          left: `${rect.left + Math.min(a.x, b.x)}px`,
+          top: `${rect.top + Math.min(a.y, b.y)}px`,
           width: `${Math.abs(b.x - a.x)}px`,
           height: `${Math.abs(b.y - a.y)}px`
         });
@@ -307,15 +307,15 @@ export class InputRouter {
 
         return;
       case 'pinch': {
-        const s = this.pinchState();
-        if (!s || !this.lastPinch) {
+        const pinch = this.pinchState();
+        if (!pinch || !this.lastPinch) {
           return;
         }
-        this.view.cam.pan(s.cx - this.lastPinch.cx, s.cy - this.lastPinch.cy, this.view.height);
-        if (s.d > 0 && this.lastPinch.d > 0) {
-          this.view.cam.zoom(this.lastPinch.d / s.d, this.view.worldUnder(s.cx, s.cy));
+        this.view.cam.pan(pinch.cx - this.lastPinch.cx, pinch.cy - this.lastPinch.cy, this.view.height);
+        if (pinch.d > 0 && this.lastPinch.d > 0) {
+          this.view.cam.zoom(this.lastPinch.d / pinch.d, this.view.worldUnder(pinch.cx, pinch.cy));
         }
-        this.lastPinch = s;
+        this.lastPinch = pinch;
         this.view.requestRender();
 
         return;

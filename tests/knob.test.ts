@@ -12,27 +12,27 @@ import { after, bodies, check, circle, done, health, near, poly, sketch, XY, XZ 
 import type { Shape3D } from 'replicad';
 import type { EdgeRef, Feature, SketchEntity, Vec3 } from '../src/doc/types';
 
-const vol = (s: Shape3D) => Math.abs(measureVolume(s));
+const vol = (shape: Shape3D) => Math.abs(measureVolume(shape));
 const body = (id: string) => bodies().get(id) as Shape3D;
 const profileOf = (sk: string, es: SketchEntity[]) => ({ kind: 'profile' as const, sketch: sk, regions: arrangement(es).regions.map(regionRef) });
-const unit = (v: number[]): Vec3 => {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
+const unit = (vector: number[]): Vec3 => {
+  const length = Math.hypot(vector[0], vector[1], vector[2]) || 1;
 
-  return [v[0] / l, v[1] / l, v[2] / l]; 
+  return [vector[0] / length, vector[1] / length, vector[2] / length]; 
 };
 const edgesOf = (id: string, test: (m: Vec3, d: Vec3, len: number) => boolean): EdgeRef[] =>
   body(id).edges.filter(e => test(e.pointAt(0.5).toTuple() as Vec3, unit(e.tangentAt(0.5).toTuple()), e.length)).map(e => ({ body: id, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length }));
-const Z = { origin: [0, 0, 0] as Vec3, dir: [0, 0, 1] as Vec3 };
+const Z_AXIS = { origin: [0, 0, 0] as Vec3, dir: [0, 0, 1] as Vec3 };
 const PI = Math.PI;
 
 const RS = 6, HS = 10; // the stem: 12 across, 10 tall
 const RC = 15, HC = 8; // the cap: 30 across, 8 thick
-const F = 2; // the inside corner's round
-const RN = 2, N = 12; // the notches: 4 across, twelve, centred on the rim
+const FILLET = 2; // the inside corner's round
+const RN = 2, NOTCHES = 12; // the notches: 4 across, twelve, centred on the rim
 
 // ---------------------------------------------------------------- the knob
 const secEs = [poly('sec', [[0, 0], [RS, 0], [RS, HS], [RC, HS], [RC, HS + HC], [0, HS + HC]])];
-const steps: Feature[] = [sketch('Section', XZ(), secEs), { id: 'Knob', name: 'Revolve', type: 'revolve', source: profileOf('Section', secEs), axis: Z, angle: 360, mode: 'new' } as Feature];
+const steps: Feature[] = [sketch('Section', XZ(), secEs), { id: 'Knob', name: 'Revolve', type: 'revolve', source: profileOf('Section', secEs), axis: Z_AXIS, angle: 360, mode: 'new' } as Feature];
 let { errors } = await after(steps);
 const vRev = vol(body('Knob'));
 check('the knob: a stem 12 x 10 under a cap 30 x 8', !errors.length && near(vRev, PI * (RS * RS * HS + RC * RC * HC), 1e-6), [errors, vRev]);
@@ -40,28 +40,28 @@ check('the knob: a stem 12 x 10 under a cap 30 x 8', !errors.length && near(vRev
 // ------------------------------------------------------------ the inside corner
 // Where the stem meets the cap's underside, rounded 2: the corner's spandrel
 // ((1 - π/4)·r²) turned round Z, its middle (10 - 3π)/(12 - 3π)·r out from the stem.
-const corner = edgesOf('Knob', m => near(m[2], HS, 1e-6) && near(Math.hypot(m[0], m[1]), RS, 1e-6));
-steps.push({ id: 'Neck', name: 'Fillet', type: 'fillet', edges: corner, radius: F } as Feature);
+const corner = edgesOf('Knob', midpoint => near(midpoint[2], HS, 1e-6) && near(Math.hypot(midpoint[0], midpoint[1]), RS, 1e-6));
+steps.push({ id: 'Neck', name: 'Fillet', type: 'fillet', edges: corner, radius: FILLET } as Feature);
 ({ errors } = await after(steps));
 const vNeck = vol(body('Knob'));
-const added = 2 * PI * (RS + ((10 - 3 * PI) / (12 - 3 * PI)) * F) * (1 - PI / 4) * F * F;
+const added = 2 * PI * (RS + ((10 - 3 * PI) / (12 - 3 * PI)) * FILLET) * (1 - PI / 4) * FILLET * FILLET;
 check('the inside corner: rounded 2 (Pappus)', !errors.length && corner.length >= 1 && near(vNeck - vRev, added, 1e-4), [errors, corner.length, vNeck - vRev, added]);
 
 // ---------------------------------------------------------------- the notches
 // Each takes the lens a circle 2 round on the rim shares with the cap, 8 deep.
-const lens = (R: number, r: number, d: number) =>
-  r * r * Math.acos((d * d + r * r - R * R) / (2 * d * r)) + R * R * Math.acos((d * d + R * R - r * r) / (2 * d * R)) - 0.5 * Math.sqrt((-d + r + R) * (d + r - R) * (d - r + R) * (d + r + R));
-const notchEs = Array.from({ length: N }, (_, i) => circle(`n${i}`, RC * Math.cos((2 * PI * i) / N), RC * Math.sin((2 * PI * i) / N), RN));
+const lens = (bigRadius: number, smallRadius: number, distance: number) =>
+  smallRadius * smallRadius * Math.acos((distance * distance + smallRadius * smallRadius - bigRadius * bigRadius) / (2 * distance * smallRadius)) + bigRadius * bigRadius * Math.acos((distance * distance + bigRadius * bigRadius - smallRadius * smallRadius) / (2 * distance * bigRadius)) - 0.5 * Math.sqrt((-distance + smallRadius + bigRadius) * (distance + smallRadius - bigRadius) * (distance - smallRadius + bigRadius) * (distance + smallRadius + bigRadius));
+const notchEs = Array.from({ length: NOTCHES }, (_, i) => circle(`n${i}`, RC * Math.cos((2 * PI * i) / NOTCHES), RC * Math.sin((2 * PI * i) / NOTCHES), RN));
 steps.push(sketch('Grip', XY(HS + HC), notchEs), { id: 'Notches', name: 'Extrude', type: 'extrude', source: profileOf('Grip', notchEs), distance: -1, extent: 'through', mode: 'cut', target: 'Knob' } as Feature);
 ({ errors } = await after(steps));
 const vNotch = vol(body('Knob'));
-check('the notches: twelve round the rim, through the cap', !errors.length && bodies().size === 1 && near(vNeck - vNotch, N * lens(RC, RN, RC) * HC, 1e-3), [errors, vNeck - vNotch, N * lens(RC, RN, RC) * HC]);
+check('the notches: twelve round the rim, through the cap', !errors.length && bodies().size === 1 && near(vNeck - vNotch, NOTCHES * lens(RC, RN, RC) * HC, 1e-3), [errors, vNeck - vNotch, NOTCHES * lens(RC, RN, RC) * HC]);
 const [[bx0, , bz0], [bx1, , bz1]] = body('Knob').boundingBox.bounds;
 // (A notch at 0° takes the rim off where X is greatest: between notches it's still 15 out.)
-check('the knob: 18 tall, the rim notched where X is greatest', bx1 < RC && bx1 > RC * Math.cos(PI / N) - 1e-3 && near(bx0, -bx1, 1e-6) && near(bz1 - bz0, HS + HC, 1e-4), body('Knob').boundingBox.bounds);
+check('the knob: 18 tall, the rim notched where X is greatest', bx1 < RC && bx1 > RC * Math.cos(PI / NOTCHES) - 1e-3 && near(bx0, -bx1, 1e-6) && near(bz1 - bz0, HS + HC, 1e-4), body('Knob').boundingBox.bounds);
 
-const h = health(body('Knob'), 'Knob');
-check('the knob: sound, one body', h.healthy && bodies().size === 1, h.healthy ? `${Math.round(h.volume)} mm³` : h);
+const bodyHealth = health(body('Knob'), 'Knob');
+check('the knob: sound, one body', bodyHealth.healthy && bodies().size === 1, bodyHealth.healthy ? `${Math.round(bodyHealth.volume)} mm³` : bodyHealth);
 const codeVol = vol(body('Knob'));
 const codeFaces = body('Knob').faces.length;
 const codeBox = body('Knob').boundingBox.bounds;
@@ -81,10 +81,10 @@ console.log('revolve', vRev.toFixed(1), 'neck', vNeck.toFixed(1), 'final', codeV
   const hand = JSON.parse(readFileSync(new URL('./fixtures/knob-hand.json', import.meta.url), 'utf8')).features as Feature[];
   const { errors } = await after(hand);
   check('by hand: no errors', errors.length === 0, errors);
-  const B = [...bodies().values()].map(s => s as Shape3D);
-  check('by hand: one body, sound', B.length === 1 && health(B[0], 'hand').healthy, B.length);
-  check('by hand: the same knob (to 0.1 %)', B.length === 1 && Math.abs(vol(B[0]) - codeVol) < codeVol * 1e-3, `${B[0] ? vol(B[0]).toFixed(1) : '-'} / ${codeVol.toFixed(1)}`);
-  check('by hand: as many faces, the same box', B[0]?.faces.length === codeFaces && B[0].boundingBox.bounds.flat().every((x, i) => near(x, codeBox.flat()[i], 1e-3)), [B[0]?.faces.length, codeFaces, B[0]?.boundingBox.bounds]);
+  const shapesB = [...bodies().values()].map(body => body as Shape3D);
+  check('by hand: one body, sound', shapesB.length === 1 && health(shapesB[0], 'hand').healthy, shapesB.length);
+  check('by hand: the same knob (to 0.1 %)', shapesB.length === 1 && Math.abs(vol(shapesB[0]) - codeVol) < codeVol * 1e-3, `${shapesB[0] ? vol(shapesB[0]).toFixed(1) : '-'} / ${codeVol.toFixed(1)}`);
+  check('by hand: as many faces, the same box', shapesB[0]?.faces.length === codeFaces && shapesB[0].boundingBox.bounds.flat().every((x, i) => near(x, codeBox.flat()[i], 1e-3)), [shapesB[0]?.faces.length, codeFaces, shapesB[0]?.boundingBox.bounds]);
 }
 
 if (process.argv[2]) {

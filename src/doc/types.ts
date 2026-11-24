@@ -696,7 +696,7 @@ export interface FillFeature extends FeatureBase {
 }
 
 /** Which boundary edge of a Fill an edge continuity is for. */
-export const fillEdgeKey = (r: EdgeRef): string => `${r.body}@${r.mid.map(x => x.toFixed(3)).join(',')}`;
+export const fillEdgeKey = (edgeRef: EdgeRef): string => `${edgeRef.body}@${edgeRef.mid.map(x => x.toFixed(3)).join(',')}`;
 
 export type Feature =
   | FillFeature

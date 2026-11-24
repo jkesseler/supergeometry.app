@@ -11,31 +11,31 @@ import { arrangement, regionRef } from '../src/sketch/regions';
 import { after, bodies, check, done, health, near, poly, rect, sketch, XY, YZ } from './kit';
 import type { FaceRef, Feature, SketchEntity, Vec3 } from '../src/doc/types';
 
-const vol = (s: Shape3D) => Math.abs(measureVolume(s));
+const vol = (shape: Shape3D) => Math.abs(measureVolume(shape));
 const body = (id: string) => bodies().get(id) as Shape3D;
 const profileOf = (sk: string, es: SketchEntity[]) => ({ kind: 'profile' as const, sketch: sk, regions: arrangement(es).regions.map(regionRef) });
-const faceRef = (id: string, f: Face): FaceRef => ({ body: id, center: f.center.toTuple() as Vec3, normal: f.normalAt().toTuple() as Vec3, area: measureArea(f) });
+const faceRef = (id: string, face: Face): FaceRef => ({ body: id, center: face.center.toTuple() as Vec3, normal: face.normalAt().toTuple() as Vec3, area: measureArea(face) });
 const PI = Math.PI;
 
 const HX = 200; // 400 wide: 200 either side of the side plane
-const D = 300, DS = 150; // 300 deep, the step the front 150
+const DEPTH = 300, DS = 150; // 300 deep, the step the front 150
 const HS = 200, HH = 400; // the step 200 high (then 220), the seat 400
 const UP = 20; // the step's top offset up 20
-const T = 15; // the shell
+const THICKNESS = 15; // the shell
 const SW = 120, SL = 30; // the hand hole: 120 by 30, through the seat's middle
 
 // ---------------------------------------------------------------- the L
 // On the side plane (x = 0): y back from the front, z up.
-const L: [number, number][] = [[0, 0], [D, 0], [D, HH], [DS, HH], [DS, HS], [0, HS]];
-const sideEs = [poly('l', L)];
+const L_SHAPE: [number, number][] = [[0, 0], [DEPTH, 0], [DEPTH, HH], [DS, HH], [DS, HS], [0, HS]];
+const sideEs = [poly('l', L_SHAPE)];
 const steps: Feature[] = [sketch('Side', YZ(), sideEs), { id: 'Stool', name: 'Extrude', type: 'extrude', source: profileOf('Side', sideEs), distance: HX, symmetric: true, mode: 'new' } as Feature];
 let { errors } = await after(steps);
-const area0 = D * HS + (D - DS) * (HH - HS);
+const area0 = DEPTH * HS + (DEPTH - DS) * (HH - HS);
 const v0 = vol(body('Stool'));
 check('the L: 400 wide', !errors.length && near(v0, area0 * 2 * HX, 1e-6 * v0), [errors, v0, area0 * 2 * HX]);
 
 // ---------------------------------------------------------------- the step up 20
-const stepTop = faceRef('Stool', body('Stool').faces.find(f => f.geomType === 'PLANE' && near(f.center.z, HS, 1e-6) && f.normalAt().z > 0.99)!);
+const stepTop = faceRef('Stool', body('Stool').faces.find(face => face.geomType === 'PLANE' && near(face.center.z, HS, 1e-6) && face.normalAt().z > 0.99)!);
 steps.push({ id: 'Raise', name: 'Offset Face', type: 'extrude', source: { kind: 'face', face: stepTop }, distance: UP, mode: 'join', target: 'Stool' } as Feature);
 ({ errors } = await after(steps));
 const v1 = vol(body('Stool'));
@@ -44,30 +44,30 @@ check("the step's top: up 20", !errors.length && bodies().size === 1 && near(v1 
 // ---------------------------------------------------------------- the shell
 // Inside: the L moved in 15 (but not at the floor), 370 wide. Round the step's
 // inside corner the inside goes round too (everything 15 from that edge):
-// a quarter circle 15 across instead of a square corner, T²·(1 - π/4) more.
+// a quarter circle 15 across instead of a square corner, THICKNESS²·(1 - π/4) more.
 const HS2 = HS + UP;
-const inner = (D - 2 * T) * (HS2 - T) + (D - DS - 2 * T) * (HH - HS2);
-const corner = T * T * (1 - PI / 4);
-const floor = faceRef('Stool', body('Stool').faces.find(f => f.geomType === 'PLANE' && near(f.center.z, 0, 1e-6))!);
-steps.push({ id: 'Hollow', name: 'Shell', type: 'shell', body: 'Stool', faces: [floor], thickness: T } as Feature);
+const inner = (DEPTH - 2 * THICKNESS) * (HS2 - THICKNESS) + (DEPTH - DS - 2 * THICKNESS) * (HH - HS2);
+const corner = THICKNESS * THICKNESS * (1 - PI / 4);
+const floor = faceRef('Stool', body('Stool').faces.find(face => face.geomType === 'PLANE' && near(face.center.z, 0, 1e-6))!);
+steps.push({ id: 'Hollow', name: 'Shell', type: 'shell', body: 'Stool', faces: [floor], thickness: THICKNESS } as Feature);
 ({ errors } = await after(steps));
 const v2 = vol(body('Stool'));
-const wantRound = (inner + corner) * (2 * HX - 2 * T);
-const wantSharp = inner * (2 * HX - 2 * T);
+const wantRound = (inner + corner) * (2 * HX - 2 * THICKNESS);
+const wantSharp = inner * (2 * HX - 2 * THICKNESS);
 check("the shell: 15 thick, open at the bottom, round inside the step's corner", !errors.length && bodies().size === 1 && near(v1 - v2, wantRound, 1e-6 * wantRound), [errors, v1 - v2, 'round', wantRound, 'sharp', wantSharp]);
 
 // ---------------------------------------------------------------- the hand hole
 // A slot 120 by 30 through the seat (15 thick), in its middle.
-const holeEs = [rect('h', -SW / 2, DS + (D - DS) / 2 - SL / 2, SW / 2, DS + (D - DS) / 2 + SL / 2)];
-steps.push(sketch('Grip', XY(HH), holeEs), { id: 'Hole', name: 'Extrude', type: 'extrude', source: profileOf('Grip', holeEs), distance: -T, mode: 'cut', target: 'Stool' } as Feature);
+const holeEs = [rect('h', -SW / 2, DS + (DEPTH - DS) / 2 - SL / 2, SW / 2, DS + (DEPTH - DS) / 2 + SL / 2)];
+steps.push(sketch('Grip', XY(HH), holeEs), { id: 'Hole', name: 'Extrude', type: 'extrude', source: profileOf('Grip', holeEs), distance: -THICKNESS, mode: 'cut', target: 'Stool' } as Feature);
 ({ errors } = await after(steps));
 const v3 = vol(body('Stool'));
-check('the hand hole: through the seat', !errors.length && bodies().size === 1 && near(v2 - v3, SW * SL * T, 1e-6 * v3), [errors, v2 - v3, SW * SL * T]);
+check('the hand hole: through the seat', !errors.length && bodies().size === 1 && near(v2 - v3, SW * SL * THICKNESS, 1e-6 * v3), [errors, v2 - v3, SW * SL * THICKNESS]);
 const [[x0, y0, z0], [x1, y1, z1]] = body('Stool').boundingBox.bounds;
-check('the stool: 400 wide, 300 deep, 400 high', near(x0, -HX, 1e-4) && near(x1, HX, 1e-4) && near(y0, 0, 1e-4) && near(y1, D, 1e-4) && near(z0, 0, 1e-4) && near(z1, HH, 1e-4), body('Stool').boundingBox.bounds);
+check('the stool: 400 wide, 300 deep, 400 high', near(x0, -HX, 1e-4) && near(x1, HX, 1e-4) && near(y0, 0, 1e-4) && near(y1, DEPTH, 1e-4) && near(z0, 0, 1e-4) && near(z1, HH, 1e-4), body('Stool').boundingBox.bounds);
 
-const h = health(body('Stool'), 'Stool');
-check('the stool: sound, one body', h.healthy && bodies().size === 1, h.healthy ? `${Math.round(h.volume)} mm³` : h);
+const bodyHealth = health(body('Stool'), 'Stool');
+check('the stool: sound, one body', bodyHealth.healthy && bodies().size === 1, bodyHealth.healthy ? `${Math.round(bodyHealth.volume)} mm³` : bodyHealth);
 const codeVol = vol(body('Stool'));
 const codeFaces = body('Stool').faces.length;
 const codeBox = body('Stool').boundingBox.bounds;
@@ -87,7 +87,7 @@ console.log('L', v0.toFixed(1), 'raised', v1.toFixed(1), 'shell', v2.toFixed(1),
   const hand = JSON.parse(readFileSync(new URL('./fixtures/stepstool-hand.json', import.meta.url), 'utf8')).features as Feature[];
   const { errors } = await after(hand);
   check('by hand: no errors', errors.length === 0, errors);
-  const Bs = [...bodies().values()].map(s => s as Shape3D);
+  const Bs = [...bodies().values()].map(body => body as Shape3D);
   check('by hand: one body, sound', Bs.length === 1 && health(Bs[0], 'hand').healthy, Bs.length);
   check('by hand: the same stool (to 0.1 %)', Bs.length === 1 && Math.abs(vol(Bs[0]) - codeVol) < codeVol * 1e-3, `${Bs[0] ? vol(Bs[0]).toFixed(1) : '-'} / ${codeVol.toFixed(1)}`);
   check('by hand: as many faces, the same box', Bs[0]?.faces.length === codeFaces && Bs[0].boundingBox.bounds.flat().every((x, i) => near(x, codeBox.flat()[i], 1e-3)), [Bs[0]?.faces.length, codeFaces, Bs[0]?.boundingBox.bounds]);

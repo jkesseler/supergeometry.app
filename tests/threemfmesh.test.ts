@@ -15,19 +15,19 @@ const check = (name: string, ok: boolean, info = '') => {
   }
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
-const R = 20;
+const RADIUS = 20;
 const feats: any[] = [
-  { id: 'sk', name: 'Sketch 01', type: 'sketch', plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: [{ id: 'c', kind: 'circle', center: [0, 0], radius: R }] },
-  { id: 'cyl', name: 'Extrude 01', type: 'extrude', source: { kind: 'profile', sketch: 'sk', regions: [{ c: [0, 0], a: Math.PI * R * R }] }, distance: 30, mode: 'auto' }
+  { id: 'sk', name: 'Sketch 01', type: 'sketch', plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: [{ id: 'c', kind: 'circle', center: [0, 0], radius: RADIUS }] },
+  { id: 'cyl', name: 'Extrude 01', type: 'extrude', source: { kind: 'profile', sketch: 'sk', regions: [{ c: [0, 0], a: Math.PI * RADIUS * RADIUS }] }, distance: 30, mode: 'auto' }
 ];
-const r = await regenerate(feats);
-const view = r.bodies[0];
+const result = await regenerate(feats);
+const view = result.bodies[0];
 const fine = JSON.parse(await (await exportBodies(feats, 'mesh')).text());
 // Facets round the rim: distinct angles of the vertices on the top circle.
 const rim = (pos: ArrayLike<number>) => {
   const a = new Set<string>();
   for (let i = 0; i < pos.length; i += 3) {
-    if (Math.abs(pos[i + 2] - 30) < 1e-6 && Math.abs(Math.hypot(pos[i], pos[i + 1]) - R) < 1e-3) {
+    if (Math.abs(pos[i + 2] - 30) < 1e-6 && Math.abs(Math.hypot(pos[i], pos[i + 1]) - RADIUS) < 1e-3) {
       a.add(Math.atan2(pos[i + 1], pos[i]).toFixed(5));
     }
   }
@@ -38,7 +38,7 @@ const nView = rim(view.positions);
 const nFine = rim(fine[0].positions);
 check("the 3MF's cylinder is much rounder than the view's (facets round the rim)", nFine >= 120 && nFine > nView * 1.9, `${nView} → ${nFine}`);
 // Worst gap between the facets and the true circle (the chord's sag): R(1 - cos(π/n)).
-const sag = R * (1 - Math.cos(Math.PI / nFine));
+const sag = RADIUS * (1 - Math.cos(Math.PI / nFine));
 check('…within 0.01 mm of the true surface', sag < 0.01, `${sag.toFixed(4)} mm`);
 const blob = await exportThreeMF([{ name: 'Cylinder', positions: new Float32Array(fine[0].positions), indices: new Uint32Array(fine[0].indices), color: '#3d8bff' }], 'Test', new Blob(['STEP']));
 const out = new URL('./fixtures/_out.3mf', import.meta.url);

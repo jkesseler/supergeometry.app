@@ -65,8 +65,8 @@ class Numpad {
   private fresh = false;
   /** The keys, to grey the ones a box can't take (no point for whole numbers, no minus where it can't go below 0). */
   private keys = new Map<string, HTMLButtonElement>();
-  private off = (k: string, t: HTMLInputElement | null) =>
-    !!t && ((k === '.' && t.dataset.kind === 'int') || (k === '−' && t.dataset.min !== undefined && Number(t.dataset.min) >= 0));
+  private off = (keyLabel: string, t: HTMLInputElement | null) =>
+    !!t && ((keyLabel === '.' && t.dataset.kind === 'int') || (keyLabel === '−' && t.dataset.min !== undefined && Number(t.dataset.min) >= 0));
   /** The first key was − (the sign flipped): digits next type a new negative number. */
   private minusFirst = false;
   /** ƒx on: operators and the variables' names to type formulas with. */
@@ -88,8 +88,8 @@ class Numpad {
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const r = this.el.getBoundingClientRect();
-      drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+      const rect = this.el.getBoundingClientRect();
+      drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top, moved: false };
       grip.setPointerCapture(e.pointerId);
     });
     grip.addEventListener('pointermove', (e) => {
@@ -118,12 +118,12 @@ class Numpad {
     grip.addEventListener('pointerup', end);
     grip.addEventListener('pointercancel', end);
     this.el.append(grip);
-    const key = (k: string, host: HTMLElement, cls = '') => {
+    const key = (keyLabel: string, host: HTMLElement, cls = '') => {
       const b = document.createElement('button');
       b.type = 'button';
       b.tabIndex = -1;
-      b.textContent = k;
-      b.className = cls || (k === '↵' ? 'np-enter' : k === 'ƒx' ? 'np-fx' : '');
+      b.textContent = keyLabel;
+      b.className = cls || (keyLabel === '↵' ? 'np-enter' : keyLabel === 'ƒx' ? 'np-fx' : '');
       let downId: number | null = null;
       // Keep the focus where it is (and stop iOS from zooming, selecting or
       // sending the tap anywhere else).
@@ -142,7 +142,7 @@ class Numpad {
           return;
         }
         downId = null;
-        this.press(k);
+        this.press(keyLabel);
       });
       b.addEventListener('pointercancel', () => ((downId = null), b.classList.remove('down')));
       b.addEventListener('pointerleave', () => ((downId = null), b.classList.remove('down')));
@@ -152,16 +152,16 @@ class Numpad {
 
       return b;
     };
-    for (const k of KEYS) {
-      this.keys.set(k, key(k, this.el));
+    for (const keyLabel of KEYS) {
+      this.keys.set(keyLabel, key(keyLabel, this.el));
     }
     this.fxRow.className = 'np-fx-row';
-    for (const k of FX_KEYS) {
-      key(k, this.fxRow, k === 'abc' ? 'np-abc' : 'np-op');
+    for (const keyLabel of FX_KEYS) {
+      key(keyLabel, this.fxRow, keyLabel === 'abc' ? 'np-abc' : 'np-op');
     }
     this.chips.className = 'np-chips';
     this.el.append(this.fxRow, this.chips);
-    this.keyFor = k => key(k, this.chips, k === '+ New' ? 'np-chip np-new' : 'np-chip');
+    this.keyFor = keyLabel => key(keyLabel, this.chips, keyLabel === '+ New' ? 'np-chip np-new' : 'np-chip');
     this.el.addEventListener('pointerdown', e => (e.preventDefault(), e.stopPropagation()));
     this.el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
     document.body.append(this.el);
@@ -213,11 +213,11 @@ class Numpad {
       true
     );
     // Switched on/off: boxes already on screen follow (system keyboard back when off).
-    settings.onChange((v) => {
+    settings.onChange((settings) => {
       for (const i of document.querySelectorAll<HTMLInputElement>("input[data-numpad='1']")) {
-        i.inputMode = v.numpad ? 'none' : 'decimal';
+        i.inputMode = settings.numpad ? 'none' : 'decimal';
       }
-      if (!v.numpad) {
+      if (!settings.numpad) {
         this.close();
       }
     });
@@ -231,8 +231,8 @@ class Numpad {
     this.el.classList.toggle('fx', on);
     this.chips.innerHTML = '';
     if (on) {
-      for (const n of varHooks?.names() ?? []) {
-        this.keyFor(n).dataset.name = n;
+      for (const name of varHooks?.names() ?? []) {
+        this.keyFor(name).dataset.name = name;
       }
       if (varHooks) {
         this.keyFor('+ New');
@@ -248,8 +248,8 @@ class Numpad {
     const at = stay ? { left: this.el.style.left, top: this.el.style.top } : null;
     this.target?.classList.remove('np-all');
     this.target = input;
-    for (const [k, b] of this.keys) {
-      b.disabled = this.off(k, input);
+    for (const [keyLabel, b] of this.keys) {
+      b.disabled = this.off(keyLabel, input);
     }
     this.fresh = true;
     this.minusFirst = false;
@@ -353,10 +353,10 @@ class Numpad {
 
   /** On screen, whole. */
   private moveTo(x: number, y: number): void {
-    const w = this.el.offsetWidth;
-    const h = this.el.offsetHeight;
-    this.el.style.left = `${Math.round(Math.max(4, Math.min(window.innerWidth - w - 4, x)))}px`;
-    this.el.style.top = `${Math.round(Math.max(4, Math.min(window.innerHeight - h - 4, y)))}px`;
+    const offsetWidth = this.el.offsetWidth;
+    const offsetHeight = this.el.offsetHeight;
+    this.el.style.left = `${Math.round(Math.max(4, Math.min(window.innerWidth - offsetWidth - 4, x)))}px`;
+    this.el.style.top = `${Math.round(Math.max(4, Math.min(window.innerHeight - offsetHeight - 4, y)))}px`;
   }
 
   /** Where it was dragged to last (on this kind of screen); else below the box (or above it near the bottom). */
@@ -369,88 +369,88 @@ class Numpad {
     if (spot) {
       return this.moveTo(spot.x, spot.y);
     }
-    const r = t.getBoundingClientRect();
-    const w = this.el.offsetWidth;
-    const h = this.el.offsetHeight;
-    const below = r.bottom + 8 + h < window.innerHeight;
-    const left = Math.min(window.innerWidth - w - 8, Math.max(8, r.left + r.width / 2 - w / 2));
+    const rect = t.getBoundingClientRect();
+    const offsetWidth = this.el.offsetWidth;
+    const offsetHeight = this.el.offsetHeight;
+    const below = rect.bottom + 8 + offsetHeight < window.innerHeight;
+    const left = Math.min(window.innerWidth - offsetWidth - 8, Math.max(8, rect.left + rect.width / 2 - offsetWidth / 2));
     this.el.style.left = `${left}px`;
-    this.el.style.top = `${below ? r.bottom + 8 : Math.max(8, r.top - h - 8)}px`;
+    this.el.style.top = `${below ? rect.bottom + 8 : Math.max(8, rect.top - offsetHeight - 8)}px`;
   }
 
-  private press(k: string): void {
+  private press(keyLabel: string): void {
     const t = this.target;
-    if (this.off(k, t)) {
+    if (this.off(keyLabel, t)) {
       return;
     }
     // The box went away (its tool finished): nothing to type into.
     if (!t || !t.isConnected) {
       return this.close();
     }
-    let v = t.value;
-    let s = Math.min(this.selStart, v.length);
-    let e = Math.min(this.selEnd, v.length);
+    let fieldText = t.value;
+    let start = Math.min(this.selStart, fieldText.length);
+    let e = Math.min(this.selEnd, fieldText.length);
     // First key after opening: a digit or point types over the number (a
     // minus in front stays); ⌫ clears it all, sign too - then type it positive.
     // (A line's Up showing -2.7, only where the finger last was: 34 typed
     // went down, -34 - the outline drawn upside down.)
-    if (this.fresh && (k === '.' || /^\d$/.test(k))) {
-      [s, e] = [v.startsWith('-') && t.dataset.follows !== '1' ? 1 : 0, v.length];
+    if (this.fresh && (keyLabel === '.' || /^\d$/.test(keyLabel))) {
+      [start, e] = [fieldText.startsWith('-') && t.dataset.follows !== '1' ? 1 : 0, fieldText.length];
     }
     // A variable tapped first: the box becomes it.
-    if (this.fresh && varHooks?.names().includes(k)) {
-      [s, e] = [0, v.length];
+    if (this.fresh && varHooks?.names().includes(keyLabel)) {
+      [start, e] = [0, fieldText.length];
     }
-    if (this.fresh && k === '⌫') {
-      [s, e] = [0, v.length];
+    if (this.fresh && keyLabel === '⌫') {
+      [start, e] = [0, fieldText.length];
     }
     // − first, then digits: that number, negative. (−24 in a box showing
     // -24.6224 flipped it, then put the 24 on the end: 24.622424. − then ↵
     // still flips the sign.)
-    if (this.minusFirst && (k === '.' || /^\d$/.test(k))) {
-      [v, s, e] = ['-', 1, 1];
+    if (this.minusFirst && (keyLabel === '.' || /^\d$/.test(keyLabel))) {
+      [fieldText, start, e] = ['-', 1, 1];
     }
-    this.minusFirst = this.fresh && k === '−' && !this.fx;
-    if (k !== '↵') {
+    this.minusFirst = this.fresh && keyLabel === '−' && !this.fx;
+    if (keyLabel !== '↵') {
       this.fresh = false;
     }
     const put = (text: string) => {
-      v = v.slice(0, s) + text + v.slice(e);
-      s = e = s + text.length;
+      fieldText = fieldText.slice(0, start) + text + fieldText.slice(e);
+      start = e = start + text.length;
     };
-    if (k === '⌫') {
-      if (s !== e) {
+    if (keyLabel === '⌫') {
+      if (start !== e) {
         put('');
-      } else if (s > 0) {
-        v = v.slice(0, s - 1) + v.slice(s);
-        s = e = s - 1;
+      } else if (start > 0) {
+        fieldText = fieldText.slice(0, start - 1) + fieldText.slice(start);
+        start = e = start - 1;
       }
-    } else if (k === '−' && this.fx) {
+    } else if (keyLabel === '−' && this.fx) {
       put('-');
-    } else if (k === '−') {
+    } else if (keyLabel === '−') {
       // Flip the sign of the whole value.
-      v = v.startsWith('-') ? v.slice(1) : `-${v}`;
-      s = e = v.length;
-    } else if (k === '↵') {
+      fieldText = fieldText.startsWith('-') ? fieldText.slice(1) : `-${fieldText}`;
+      start = e = fieldText.length;
+    } else if (keyLabel === '↵') {
       // Only now does the value count: the box hears it, then Enter.
       t.dispatchEvent(new Event('input', { bubbles: true }));
       t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       t.dispatchEvent(new Event('change', { bubbles: true }));
 
       return this.close();
-    } else if (k === 'ƒx') {
+    } else if (keyLabel === 'ƒx') {
       // Operators and the variables' names on the numpad.
       this.setFx(!this.fx);
 
       return;
-    } else if (k === 'abc') {
+    } else if (keyLabel === 'abc') {
       // Anything else (a name not made yet): the system keyboard.
       this.close();
       t.inputMode = 'text';
       t.focus({ preventScroll: true });
 
       return;
-    } else if (k === '+ New') {
+    } else if (keyLabel === '+ New') {
       // A variable from this value: it's made, and the box uses it.
       const value = t.value;
       this.close();
@@ -464,15 +464,15 @@ class Numpad {
       });
 
       return;
-    } else if (k === '×') {
+    } else if (keyLabel === '×') {
       put('*');
-    } else if (k === '+' || k === '/') {
-      put(k);
+    } else if (keyLabel === '+' || keyLabel === '/') {
+      put(keyLabel);
     } else {
-      put(k);
+      put(keyLabel);
     }
-    t.value = v;
-    this.selStart = s;
+    t.value = fieldText;
+    this.selStart = start;
     this.selEnd = e;
     this.showSelection();
     // Every box hears each key: the model follows what's typed (↵ finishes).
@@ -506,9 +506,9 @@ export function numpadInput(input: HTMLInputElement): void {
 
 /** Length, angle or plain number: the box's own kind, else its unit. */
 function kindOf(input: HTMLInputElement): 'length' | 'angle' | 'number' | 'int' {
-  const k = input.dataset.kind;
-  if (k === 'length' || k === 'angle' || k === 'number' || k === 'int') {
-    return k;
+  const kind = input.dataset.kind;
+  if (kind === 'length' || kind === 'angle' || kind === 'number' || kind === 'int') {
+    return kind;
   }
   const unit = input.parentElement?.querySelector('.dim-unit, .field-unit')?.textContent?.trim() ?? '';
 
@@ -516,14 +516,14 @@ function kindOf(input: HTMLInputElement): 'length' | 'angle' | 'number' | 'int' 
 }
 
 /** A step a few pixels of drag should move this value by. */
-function scrubStep(v: number, kind: string): number {
+function scrubStep(value: number, kind: string): number {
   if (kind === 'int') {
     return 1;
   }
   if (kind === 'angle') {
     return 1;
   }
-  const a = Math.abs(v);
+  const a = Math.abs(value);
   if (kind === 'number') {
     return a < 1 ? 0.01 : a < 10 ? 0.1 : 1;
   }
@@ -549,11 +549,11 @@ function caretAt(input: HTMLInputElement, clientX: number): number {
   }
   const cs = getComputedStyle(input);
   measure.font = cs.font;
-  const r = input.getBoundingClientRect();
+  const rect = input.getBoundingClientRect();
   const left = parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
-  const inner = r.width - left - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
-  const width = (s: string) => measure!.measureText(s).width;
-  let x = clientX - r.left - left + input.scrollLeft;
+  const inner = rect.width - left - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+  const width = (text: string) => measure!.measureText(text).width;
+  let x = clientX - rect.left - left + input.scrollLeft;
   const free = Math.max(0, inner - width(text));
   if (cs.textAlign === 'center') {
     x -= free / 2;
@@ -592,13 +592,13 @@ function scrubbable(input: HTMLInputElement): void {
       return;
     }
     const kind = kindOf(input);
-    const v = plainNumber(input);
+    const value = plainNumber(input);
     cursor();
-    if (v === null) {
+    if (value === null) {
       return;
     }
     const mouse = e.pointerType === 'mouse';
-    start = { x: e.clientX, v, id: e.pointerId, kind, step: scrubStep(v, kind), mouse, focused: document.activeElement === input };
+    start = { x: e.clientX, v: value, id: e.pointerId, kind, step: scrubStep(value, kind), mouse, focused: document.activeElement === input };
     moved = false;
     // A mouse: no text selecting by dragging - it's a click (handled on let go) or a drag.
     if (mouse) {
@@ -627,8 +627,8 @@ function scrubbable(input: HTMLInputElement): void {
       pad?.closeIf(input);
     }
     e.preventDefault();
-    const n = Math.round(dx / 4);
-    let nv = start.v + n * start.step;
+    const steps = Math.round(dx / 4);
+    let nv = start.v + steps * start.step;
     if (start.kind === 'int') {
       nv = Math.round(nv);
     }
@@ -650,7 +650,7 @@ function scrubbable(input: HTMLInputElement): void {
     if (!start || e.pointerId !== start.id) {
       return;
     }
-    const s = start;
+    const dragStart = start;
     start = null;
     if (moved) {
       input.classList.remove('scrubbing');
@@ -658,10 +658,10 @@ function scrubbable(input: HTMLInputElement): void {
       input.blur();
       // (the click that follows mustn't open the numpad)
       setTimeout(() => delete input.dataset.scrubbed, 0);
-    } else if (e.type === 'pointerup' && s.mouse) {
+    } else if (e.type === 'pointerup' && dragStart.mouse) {
       // A first click: the whole value, ready to be typed over. In use
       // already: the caret where it was clicked (to add to it).
-      if (!s.focused || document.activeElement !== input) {
+      if (!dragStart.focused || document.activeElement !== input) {
         input.focus({ preventScroll: true });
         input.select();
       } else {

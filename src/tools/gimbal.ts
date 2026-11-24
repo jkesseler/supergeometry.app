@@ -22,14 +22,14 @@ const ARC_FROM = 0.25;
 const ARC_TO = 1.32;
 
 /** Points of the rotation arc around axis i, in unit gimbal space. */
-function arcPoints(axes: Vec3[], i: number, n = 24): Vector3[] {
-  const u = new Vector3(...axes[(i + 1) % 3]);
-  const v = new Vector3(...axes[(i + 2) % 3]);
+function arcPoints(axes: Vec3[], i: number, count = 24): Vector3[] {
+  const vector = new Vector3(...axes[(i + 1) % 3]);
+  const vAxis = new Vector3(...axes[(i + 2) % 3]);
 
-  return Array.from({ length: n + 1 }, (_, k) => {
-    const t = ARC_FROM + ((ARC_TO - ARC_FROM) * k) / n;
+  return Array.from({ length: count + 1 }, (_, step) => {
+    const t = ARC_FROM + ((ARC_TO - ARC_FROM) * step) / count;
 
-    return u.clone().multiplyScalar(Math.cos(t) * 1.1).addScaledVector(v, Math.sin(t) * 1.1);
+    return vector.clone().multiplyScalar(Math.cos(t) * 1.1).addScaledVector(vAxis, Math.sin(t) * 1.1);
   });
 }
 
@@ -43,10 +43,10 @@ export interface GimbalOptions {
 }
 
 /** Scale gimbal: the three axis handles (cube ends) and the centre (uniform). */
-export const SCALE_PARTS = (p: GimbalPart) => p.kind === 'axis' || p.kind === 'center';
+export const SCALE_PARTS = (gimbalPart: GimbalPart) => gimbalPart.kind === 'axis' || gimbalPart.kind === 'center';
 
 /** Parts of a gimbal that keep things in a plane whose normal is axis 2. */
-export const IN_PLANE = (p: GimbalPart) => p.kind === 'center' || (p.kind === 'axis' && p.i < 2) || (p.kind !== 'axis' && p.i === 2);
+export const IN_PLANE = (gimbalPart: GimbalPart) => gimbalPart.kind === 'center' || (gimbalPart.kind === 'axis' && gimbalPart.i < 2) || (gimbalPart.kind !== 'axis' && gimbalPart.i === 2);
 
 export class Gimbal {
   private group = new Group();
@@ -76,17 +76,17 @@ export class Gimbal {
       arrow.add(shaft, head);
       this.add({ kind: 'axis', i: i as 0 | 1 | 2 }, arrow, color);
       // Plane square (moves in the plane perpendicular to this axis)
-      const u = new Vector3(...AX[(i + 1) % 3]);
-      const v = new Vector3(...AX[(i + 2) % 3]);
+      const vector = new Vector3(...AX[(i + 1) % 3]);
+      const vAxis = new Vector3(...AX[(i + 2) % 3]);
       const sq = new Mesh(new PlaneGeometry(0.17, 0.17), new MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: DoubleSide, depthTest: false }));
-      sq.position.copy(u.clone().add(v).multiplyScalar(0.33));
+      sq.position.copy(vector.clone().add(vAxis).multiplyScalar(0.33));
       sq.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
       this.add({ kind: 'plane', i: i as 0 | 1 | 2 }, sq, color);
       // Rotation arc
       const pts = arcPoints(AX, i);
       const seg: number[] = [];
-      for (let k = 0; k < pts.length - 1; k++) {
-        seg.push(...pts[k].toArray(), ...pts[k + 1].toArray());
+      for (let pointIndex = 0; pointIndex < pts.length - 1; pointIndex++) {
+        seg.push(...pts[pointIndex].toArray(), ...pts[pointIndex + 1].toArray());
       }
       const arc = new LineSegments2(new LineSegmentsGeometry().setPositions(seg), view.lineMaterial(color, 3));
       this.add({ kind: 'ring', i: i as 0 | 1 | 2 }, arc, color);
@@ -94,11 +94,11 @@ export class Gimbal {
     const ball = new Mesh(new SphereGeometry(0.075, 16, 12), new MeshBasicMaterial({ color: 0xffffff, depthTest: false }));
     this.add({ kind: 'center' }, ball, 0xffffff);
     // Over everything, selection highlights included (see Handle).
-    this.group.traverse((o) => {
-      o.renderOrder = 50;
-      const m = (o as Mesh).material as MeshBasicMaterial | undefined;
-      if (m && 'transparent' in m) {
-        m.transparent = true;
+    this.group.traverse((object) => {
+      object.renderOrder = 50;
+      const material = (object as Mesh).material as MeshBasicMaterial | undefined;
+      if (material && 'transparent' in material) {
+        material.transparent = true;
       }
     });
     view.overlay.add(this.group);
@@ -112,8 +112,8 @@ export class Gimbal {
     this.group.add(obj);
   }
 
-  setCenter(c: Vec3): void {
-    this.center.set(...c);
+  setCenter(center: Vec3): void {
+    this.center.set(...center);
     this.layout();
     this.view.requestRender();
   }
@@ -154,11 +154,11 @@ export class Gimbal {
   }
 
   private faceView(): void {
-    const d = this.view.cam.camera.getWorldDirection(new Vector3());
-    if (d.distanceToSquared(this.looked) < 1e-8) {
+    const direction = this.view.cam.camera.getWorldDirection(new Vector3());
+    if (direction.distanceToSquared(this.looked) < 1e-8) {
       return;
     }
-    this.looked.copy(d);
+    this.looked.copy(direction);
     for (const { part, obj } of this.parts) {
       obj.visible = this.usable(part);
     }
@@ -169,24 +169,24 @@ export class Gimbal {
   }
 
   /** Which part is under the pointer (centre, planes, arrows, arcs - in that order). */
-  hit(p: ToolPointer): GimbalPart | null {
-    const tol = Math.max(10, p.tol * 1.2);
-    const c = this.screen(new Vector3());
+  hit(pointer: ToolPointer): GimbalPart | null {
+    const tol = Math.max(10, pointer.tol * 1.2);
+    const screenCenter = this.screen(new Vector3());
     this.faceView();
-    if (c && this.allow({ kind: 'center' }) && Math.hypot(c[0] - p.x, c[1] - p.y) < tol) {
+    if (screenCenter && this.allow({ kind: 'center' }) && Math.hypot(screenCenter[0] - pointer.x, screenCenter[1] - pointer.y) < tol) {
       return { kind: 'center' };
     }
     for (let i = 0; i < 3; i++) {
       if (!this.usable({ kind: 'plane', i: i as 0 | 1 | 2 })) {
         continue;
       }
-      const u = new Vector3(...this.axes[(i + 1) % 3]);
-      const v = new Vector3(...this.axes[(i + 2) % 3]);
-      const m = u.clone().add(v).multiplyScalar(0.33);
-      const quad = [m.clone().addScaledVector(u, -0.085).addScaledVector(v, -0.085), m.clone().addScaledVector(u, 0.085).addScaledVector(v, -0.085), m.clone().addScaledVector(u, 0.085).addScaledVector(v, 0.085), m.clone().addScaledVector(u, -0.085).addScaledVector(v, 0.085)]
+      const vector = new Vector3(...this.axes[(i + 1) % 3]);
+      const vAxis = new Vector3(...this.axes[(i + 2) % 3]);
+      const midpoint = vector.clone().add(vAxis).multiplyScalar(0.33);
+      const quad = [midpoint.clone().addScaledVector(vector, -0.085).addScaledVector(vAxis, -0.085), midpoint.clone().addScaledVector(vector, 0.085).addScaledVector(vAxis, -0.085), midpoint.clone().addScaledVector(vector, 0.085).addScaledVector(vAxis, 0.085), midpoint.clone().addScaledVector(vector, -0.085).addScaledVector(vAxis, 0.085)]
         .map(q => this.screen(q))
         .filter((q): q is [number, number] => !!q);
-      if (quad.length === 4 && inPoly(p.x, p.y, quad)) {
+      if (quad.length === 4 && inPoly(pointer.x, pointer.y, quad)) {
         return { kind: 'plane', i: i as 0 | 1 | 2 };
       }
     }
@@ -197,21 +197,21 @@ export class Gimbal {
       const a = this.screen(dir.clone().multiplyScalar(0.18));
       const b = this.screen(dir.clone().multiplyScalar(1.02));
       if (a && b && this.usable({ kind: 'axis', i: i as 0 | 1 | 2 })) {
-        const d = segDist(p.x, p.y, a, b);
-        if (d < tol && (!arrow || d < arrow.d)) {
-          arrow = { part: { kind: 'axis', i: i as 0 | 1 | 2 }, d };
+        const distance = segDist(pointer.x, pointer.y, a, b);
+        if (distance < tol && (!arrow || distance < arrow.d)) {
+          arrow = { part: { kind: 'axis', i: i as 0 | 1 | 2 }, d: distance };
         }
       }
       const pts = this.usable({ kind: 'ring', i: i as 0 | 1 | 2 }) ? arcPoints(this.axes, i, 16).map(q => this.screen(q)) : [];
-      for (let k = 0; k < pts.length - 1; k++) {
-        const s0 = pts[k];
-        const s1 = pts[k + 1];
+      for (let pointIndex = 0; pointIndex < pts.length - 1; pointIndex++) {
+        const s0 = pts[pointIndex];
+        const s1 = pts[pointIndex + 1];
         if (!s0 || !s1) {
           continue;
         }
-        const d = segDist(p.x, p.y, s0, s1);
-        if (d < tol && (!best || d < best.d)) {
-          best = { part: { kind: 'ring', i: i as 0 | 1 | 2 }, d };
+        const distance = segDist(pointer.x, pointer.y, s0, s1);
+        if (distance < tol && (!best || distance < best.d)) {
+          best = { part: { kind: 'ring', i: i as 0 | 1 | 2 }, d: distance };
         }
       }
     }
@@ -228,10 +228,10 @@ export class Gimbal {
     this.hot = part;
     for (const { part: q, obj, color } of this.parts) {
       const on = !!part && JSON.stringify(part) === JSON.stringify(q);
-      obj.traverse((o) => {
-        const m = (o as Mesh).material as MeshBasicMaterial & { color?: { setHex(n: number): void } };
-        if (m?.color) {
-          m.color.setHex(on ? 0xffd34d : color);
+      obj.traverse((object) => {
+        const material = (object as Mesh).material as MeshBasicMaterial & { color?: { setHex(n: number): void } };
+        if (material?.color) {
+          material.color.setHex(on ? 0xffd34d : color);
         }
       });
     }
@@ -242,13 +242,13 @@ export class Gimbal {
     this.view.helpers.delete(this);
     this.view.frameHooks.delete(this.hook);
     this.view.overlay.remove(this.group);
-    this.group.traverse((o) => {
-      const m = o as Mesh;
-      if (m.geometry instanceof BufferGeometry) {
-        m.geometry.dispose();
+    this.group.traverse((object) => {
+      const mesh = object as Mesh;
+      if (mesh.geometry instanceof BufferGeometry) {
+        mesh.geometry.dispose();
       }
-      if (m.material instanceof LineMaterial) {
-        this.view.releaseLineMaterial(m.material);
+      if (mesh.material instanceof LineMaterial) {
+        this.view.releaseLineMaterial(mesh.material);
       }
     });
     this.view.requestRender();

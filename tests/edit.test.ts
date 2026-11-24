@@ -27,26 +27,26 @@ const checks: [string, () => void][] = [
     const es: SketchEntity[] = [{ id: 'r', kind: 'rect', center: [0, 0], w: 20, h: 10, rotation: 0 }];
     const out = filletCorner(es, [10, 5], 2, 0.5)!;
     assert.equal(kinds(out), 'arc,line,line,line,line');
-    const r = arrangement(out).regions;
-    assert.equal(r.length, 1);
-    assert.ok(Math.abs(r[0].area - (200 - (4 - Math.PI)) ) < 0.05, `area ${r[0].area}`);
+    const regions = arrangement(out).regions;
+    assert.equal(regions.length, 1);
+    assert.ok(Math.abs(regions[0].area - (200 - (4 - Math.PI)) ) < 0.05, `area ${regions[0].area}`);
   }],
   ['offset rect outward', () => {
-    const o = offsetEntity({ id: 'r', kind: 'rect', center: [0, 0], w: 20, h: 10, rotation: 0 }, 2)!;
-    assert.deepEqual([o.kind, (o as any).w, (o as any).h], ['rect', 24, 14]);
+    const sketchEntity = offsetEntity({ id: 'r', kind: 'rect', center: [0, 0], w: 20, h: 10, rotation: 0 }, 2)!;
+    assert.deepEqual([sketchEntity.kind, (sketchEntity as any).w, (sketchEntity as any).h], ['rect', 24, 14]);
   }],
   ['extend a line to a circle', () => {
     const es: SketchEntity[] = [{ id: 'l', kind: 'line', a: [-5, 0], b: [0, 0] }, { id: 'c', kind: 'circle', center: [20, 0], radius: 5 }];
     const out = extend(es, 'l', [0, 0])!;
-    const l = out.find(e => e.id === 'l') as any;
-    assert.ok(Math.abs(l.b[0] - 15) < 0.05, `x=${l.b[0]}`);
+    const line = out.find(e => e.id === 'l') as any;
+    assert.ok(Math.abs(line.b[0] - 15) < 0.05, `x=${line.b[0]}`);
   }],
   ['join two lines into a corner (picked halves)', () => {
     const es: SketchEntity[] = [{ id: 'h', kind: 'line', a: [0, 0], b: [10, 0] }, { id: 'v', kind: 'line', a: [20, 5], b: [20, 15] }];
     const out = joinEnds(es, { id: 'h', at: [8, 0] }, { id: 'v', at: [20, 7] })!;
-    const h = out.find(e => e.id === 'h') as any;
-    const v = out.find(e => e.id === 'v') as any;
-    assert.deepEqual([h.a, h.b, v.a, v.b].map(p => p.map((x: number) => Math.round(x * 1e6) / 1e6)), [[0, 0], [20, 0], [20, 0], [20, 15]]);
+    const horizontal = out.find(e => e.id === 'h') as any;
+    const vertical = out.find(e => e.id === 'v') as any;
+    assert.deepEqual([horizontal.a, horizontal.b, vertical.a, vertical.b].map(point => point.map((x: number) => Math.round(x * 1e6) / 1e6)), [[0, 0], [20, 0], [20, 0], [20, 15]]);
     assert.equal(arrangement(out).regions.length, 0);
   }],
   ['join line to arc: arc follows its circle', () => {
@@ -54,9 +54,9 @@ const checks: [string, () => void][] = [
     const es: SketchEntity[] = [{ id: 'a', kind: 'arc', a: [10, 0], m: [7.0710678, 7.0710678], b: [0, 10] }, { id: 'l', kind: 'line', a: [-20, -5], b: [-12, -5] }];
     const out = joinEnds(es, { id: 'a', at: [1, 9.9] }, { id: 'l', at: [-13, -5] })!;
     const a = out.find(e => e.id === 'a') as any;
-    const l = out.find(e => e.id === 'l') as any;
+    const line = out.find(e => e.id === 'l') as any;
     const meet = [-Math.sqrt(75), -5];
-    assert.ok(Math.hypot(a.b[0] - meet[0], a.b[1] - meet[1]) < 1e-6 && Math.hypot(l.b[0] - meet[0], l.b[1] - meet[1]) < 1e-6, JSON.stringify([a.b, l.b]));
+    assert.ok(Math.hypot(a.b[0] - meet[0], a.b[1] - meet[1]) < 1e-6 && Math.hypot(line.b[0] - meet[0], line.b[1] - meet[1]) < 1e-6, JSON.stringify([a.b, line.b]));
     assert.ok(Math.abs(Math.hypot(...(a.m as [number, number])) - 10) < 1e-6 && a.m[1] > 0, 'mid stays on the circle, upper side');
   }],
   ['both halves of one arc close it into a circle', () => {
@@ -77,14 +77,14 @@ const checks: [string, () => void][] = [
     const es: SketchEntity[] = [{ id: 'h', kind: 'line', a: [0, 0], b: [10, 0] }, { id: 'v', kind: 'line', a: [20, 5], b: [20, 15] }];
     const out = filletEnds(es, { id: 'h', at: [8, 0] }, { id: 'v', at: [20, 7] }, 3)!;
     assert.equal(kinds(out), 'arc,line,line');
-    const h = out.find(e => e.id === 'h') as any;
-    assert.ok(Math.abs(h.b[0] - 17) < 1e-6, `h ends at ${h.b}`);
+    const horizontal = out.find(e => e.id === 'h') as any;
+    assert.ok(Math.abs(horizontal.b[0] - 17) < 1e-6, `h ends at ${horizontal.b}`);
   }],
   ['chain: a square of four lines is found and closed', () => {
     const sq: SketchEntity[] = [{ id: '1', kind: 'line', a: [0, 0], b: [10, 0] }, { id: '2', kind: 'line', a: [10, 10], b: [10, 0] }, { id: '3', kind: 'line', a: [10, 10], b: [0, 10] }, { id: '4', kind: 'line', a: [0, 10], b: [0, 0] }];
-    const c = connectedChain(sq, '3')!;
-    assert.equal(c.links.length, 4);
-    assert.ok(c.closed);
+    const chain = connectedChain(sq, '3')!;
+    assert.equal(chain.links.length, 4);
+    assert.ok(chain.closed);
   }],
   ['offset a closed chain outward stays closed', () => {
     const sq: SketchEntity[] = [{ id: '1', kind: 'line', a: [0, 0], b: [10, 0] }, { id: '2', kind: 'line', a: [10, 10], b: [10, 0] }, { id: '3', kind: 'line', a: [10, 10], b: [0, 10] }, { id: '4', kind: 'line', a: [0, 10], b: [0, 0] }];
@@ -108,13 +108,13 @@ const checks: [string, () => void][] = [
     assert.ok(Math.abs(regions[0].area - expect) < 0.05, `area ${regions[0].area} vs ${expect}`);
   }],
   ['mirror a rect keeps size', () => {
-    const m = transformEntity({ id: 'r', kind: 'rect', center: [10, 0], w: 4, h: 2, rotation: 0 }, mirrorXf([0, -1], [0, 1]), true) as any;
-    assert.ok(Math.abs(m.center[0] + 10) < 1e-9 && Math.abs(m.w - 4) < 1e-9);
+    const mirrored = transformEntity({ id: 'r', kind: 'rect', center: [10, 0], w: 4, h: 2, rotation: 0 }, mirrorXf([0, -1], [0, 1]), true) as any;
+    assert.ok(Math.abs(mirrored.center[0] + 10) < 1e-9 && Math.abs(mirrored.w - 4) < 1e-9);
   }]
 ];
 
-let n = 0;
-const nid = () => `n${++n}`;
+let count = 0;
+const nid = () => `n${++count}`;
 checks.push(
   ['split a rectangle side: it comes apart into lines, that side in two', () => {
     const es: SketchEntity[] = [{ id: 'r', kind: 'rect', center: [0, 0], w: 20, h: 10, rotation: 0 }];
@@ -128,17 +128,17 @@ checks.push(
     assert.equal(kinds(out.entities), 'arc,arc');
     const a = out.entities[0] as any;
     // On a grid line (x or y a whole number).
-    assert.ok([a.a[0], a.a[1]].some((v: number) => Math.abs(v - Math.round(v)) < 1e-6), JSON.stringify(a.a));
+    assert.ok([a.a[0], a.a[1]].some((value: number) => Math.abs(value - Math.round(value)) < 1e-6), JSON.stringify(a.a));
     assert.equal(arrangement(out.entities).regions.length, 1);
   }],
   ['split an open spline and open a closed one', () => {
     const open: SketchEntity = { id: 's', kind: 'spline', points: [[0, 0], [10, 5], [20, 0], [30, 5]], closed: false, mode: 'fit' };
-    const o = splitAny([open], 's', [14.8, 3], 1, false, nid)!;
-    assert.equal(o.entities.length, 2);
+    const openSplit = splitAny([open], 's', [14.8, 3], 1, false, nid)!;
+    assert.equal(openSplit.entities.length, 2);
     const ring: SketchEntity = { id: 'k', kind: 'spline', points: [[0, 0], [10, 0], [10, 10], [0, 10]], closed: true, mode: 'fit' };
-    const k = splitAny([ring], 'k', [5, -0.4], 1, false, nid)!;
-    assert.equal(k.entities.length, 1);
-    assert.equal((k.entities[0] as any).closed, false);
+    const ringSplit = splitAny([ring], 'k', [5, -0.4], 1, false, nid)!;
+    assert.equal(ringSplit.entities.length, 1);
+    assert.equal((ringSplit.entities[0] as any).closed, false);
   }],
   ['control-point spline starts and ends on its first and last points', () => {
     const pts = splinePoints([[0, 0], [10, 10], [20, -5], [30, 0]], false, 'control');

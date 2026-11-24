@@ -13,30 +13,30 @@ const LINK_PREFIX = 'rpc-';
 /** No more copies than this from one pattern (a count that came to thousands by a slip). */
 export const REPEAT_MOST = 500;
 
-const mine = (id: string, r: SketchRepeat) => id.startsWith(`${REPEAT_PREFIX}${r.id}-`) || id.startsWith(`${LINK_PREFIX}${r.id}-`);
+const mine = (id: string, sketchRepeat: SketchRepeat) => id.startsWith(`${REPEAT_PREFIX}${sketchRepeat.id}-`) || id.startsWith(`${LINK_PREFIX}${sketchRepeat.id}-`);
 
 /** How many times the pattern's curves are there now, the originals counted (1: no copies). */
-export function repeatCountNow(entities: SketchEntity[], r: SketchRepeat): number {
-  const copies = new Set(entities.filter(e => mine(e.id, r)).map(e => e.id.slice(`${REPEAT_PREFIX}${r.id}-`.length).split('-')[0]));
+export function repeatCountNow(entities: SketchEntity[], sketchRepeat: SketchRepeat): number {
+  const copies = new Set(entities.filter(e => mine(e.id, sketchRepeat)).map(e => e.id.slice(`${REPEAT_PREFIX}${sketchRepeat.id}-`.length).split('-')[0]));
 
   return copies.size + 1;
 }
 
 /** The pattern's copies and their links, for its originals as they are now. */
-export function repeatCurves(entities: SketchEntity[], r: SketchRepeat): { curves: SketchEntity[]; links: SketchConstraint[] } {
-  const src = r.src.map(id => entities.find(e => e.id === id)).filter((e): e is SketchEntity => !!e);
-  const n = Math.max(1, Math.min(REPEAT_MOST, Math.round(r.count)));
+export function repeatCurves(entities: SketchEntity[], sketchRepeat: SketchRepeat): { curves: SketchEntity[]; links: SketchConstraint[] } {
+  const src = sketchRepeat.src.map(id => entities.find(e => e.id === id)).filter((e): e is SketchEntity => !!e);
+  const count = Math.max(1, Math.min(REPEAT_MOST, Math.round(sketchRepeat.count)));
   const curves: SketchEntity[] = [];
   const links: SketchConstraint[] = [];
-  const full = Math.abs(Math.abs(r.angle ?? 0) - 360) < 1e-6;
-  const turn = (r.angle ?? 0) / (full ? n : Math.max(1, n - 1));
-  for (let k = 1; k < n; k++) {
+  const full = Math.abs(Math.abs(sketchRepeat.angle ?? 0) - 360) < 1e-6;
+  const turn = (sketchRepeat.angle ?? 0) / (full ? count : Math.max(1, count - 1));
+  for (let copyIndex = 1; copyIndex < count; copyIndex++) {
     src.forEach((e, i) => {
-      const id = `${REPEAT_PREFIX}${r.id}-${k}-${i}`;
-      const xf = r.kind === 'linear' ? translateXf(r.step![0] * k, r.step![1] * k) : rotateXf(r.at!, (turn * k * Math.PI) / 180);
+      const id = `${REPEAT_PREFIX}${sketchRepeat.id}-${copyIndex}-${i}`;
+      const xf = sketchRepeat.kind === 'linear' ? translateXf(sketchRepeat.step![0] * copyIndex, sketchRepeat.step![1] * copyIndex) : rotateXf(sketchRepeat.at!, (turn * copyIndex * Math.PI) / 180);
       curves.push({ ...transformEntity(e, xf, true), id });
-      const base = { id: `${LINK_PREFIX}${r.id}-${k}-${i}`, type: 'pattern' as const, curves: [e.id, id] };
-      links.push(r.kind === 'linear' ? { ...base, at: [r.step![0] * k, r.step![1] * k] } : { ...base, turn: true, at: r.at!, value: turn * k });
+      const base = { id: `${LINK_PREFIX}${sketchRepeat.id}-${copyIndex}-${i}`, type: 'pattern' as const, curves: [e.id, id] };
+      links.push(sketchRepeat.kind === 'linear' ? { ...base, at: [sketchRepeat.step![0] * copyIndex, sketchRepeat.step![1] * copyIndex] } : { ...base, turn: true, at: sketchRepeat.at!, value: turn * copyIndex });
     });
   }
 
@@ -53,19 +53,19 @@ export function applyRepeats(entities: SketchEntity[], constraints: SketchConstr
     return null;
   }
   let changed = false;
-  for (const r of repeats) {
-    const want = Math.max(1, Math.min(REPEAT_MOST, Math.round(r.count)));
-    if (!force && repeatCountNow(entities, r) === want) {
+  for (const repeat of repeats) {
+    const want = Math.max(1, Math.min(REPEAT_MOST, Math.round(repeat.count)));
+    if (!force && repeatCountNow(entities, repeat) === want) {
       continue;
     }
-    if (!r.src.some(id => entities.some(e => e.id === id))) {
+    if (!repeat.src.some(id => entities.some(e => e.id === id))) {
       continue;
     }
-    const base = entities.filter(e => !mine(e.id, r));
-    const made = repeatCurves(base, r);
+    const base = entities.filter(e => !mine(e.id, repeat));
+    const made = repeatCurves(base, repeat);
     entities = [...base, ...made.curves];
-    const gone = (c: SketchConstraint) => mine(c.id, r) || [...(c.curves ?? []), ...(c.pts ?? []).map(q => q.e)].some(id => mine(id, r) && !made.curves.some(e => e.id === id));
-    constraints = [...constraints.filter(c => !gone(c)), ...made.links];
+    const gone = (sketchConstraint: SketchConstraint) => mine(sketchConstraint.id, repeat) || [...(sketchConstraint.curves ?? []), ...(sketchConstraint.pts ?? []).map(q => q.e)].some(id => mine(id, repeat) && !made.curves.some(e => e.id === id));
+    constraints = [...constraints.filter(constraint => !gone(constraint)), ...made.links];
     changed = true;
   }
 

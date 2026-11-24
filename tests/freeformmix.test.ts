@@ -42,15 +42,15 @@ const check = (name: string, ok: boolean, info = '') => {
   }
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
-const solids = (s: Shape3D) => {
-  const ex = new oc.TopExp_Explorer(s.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SOLID, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-  let n = 0;
+const solids = (shape: Shape3D) => {
+  const ex = new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SOLID, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  let count = 0;
   for (; ex.More(); ex.Next()) {
-    n++;
+    count++;
   }
   ex.delete();
 
-  return n;
+  return count;
 };
 const vol = (id: string) => {
   const b = debugBodies().get(id);
@@ -63,8 +63,8 @@ const vol = (id: string) => {
 const sketch = (id: string, es: any[], plane: PlaneDef = XY): Feature => ({ id, name: id, type: 'sketch', plane, entities: es }) as Feature;
 const extrude = (id: string, sk: string, es: any[], distance: number, mode: 'new' | 'join' | 'cut' | 'auto' = 'new', target?: string): Feature =>
   ({ id, name: id, type: 'extrude', source: { kind: 'profile', sketch: sk, regions: arrangement(es).regions.map(regionRef) }, distance, mode, ...(target ? { target } : {}) }) as Feature;
-const rect = (w: number, h: number, cx = 0, cy = 0) => [{ id: 'r', kind: 'rect', center: [cx, cy], w, h, rotation: 0 }];
-const circle = (r: number, cx = 0, cy = 0) => [{ id: 'c', kind: 'circle', center: [cx, cy], radius: r }];
+const rect = (width: number, height: number, cx = 0, cy = 0) => [{ id: 'r', kind: 'rect', center: [cx, cy], w: width, h: height, rotation: 0 }];
+const circle = (radius: number, cx = 0, cy = 0) => [{ id: 'c', kind: 'circle', center: [cx, cy], radius: radius }];
 
 /** A body from a sketch, id "A": its steps. */
 const SK: Record<string, () => Feature[]> = {
@@ -79,11 +79,11 @@ const SK: Record<string, () => Feature[]> = {
 
 /** A freeform, id "B", centred on the origin (moved / scaled for each placement). */
 const pulled = () => {
-  const c = boxCage([30, 30, 30], 2);
-  const top = c.verts.reduce((best, v, i) => (v[2] > c.verts[best][2] + 1e-9 || (Math.abs(v[2] - c.verts[best][2]) < 1e-9 && v[0] + v[1] > c.verts[best][0] + c.verts[best][1]) ? i : best), 0);
-  c.verts[top] = [c.verts[top][0] + 6, c.verts[top][1] + 6, c.verts[top][2] + 12];
+  const cage = boxCage([30, 30, 30], 2);
+  const top = cage.verts.reduce((best, vertex, i) => (vertex[2] > cage.verts[best][2] + 1e-9 || (Math.abs(vertex[2] - cage.verts[best][2]) < 1e-9 && vertex[0] + vertex[1] > cage.verts[best][0] + cage.verts[best][1]) ? i : best), 0);
+  cage.verts[top] = [cage.verts[top][0] + 6, cage.verts[top][1] + 6, cage.verts[top][2] + 12];
 
-  return c;
+  return cage;
 };
 const FF: Record<string, () => { cage: Cage; thickness?: number }> = {
   sphere: () => ({ cage: sphereCage(30) }),
@@ -92,13 +92,13 @@ const FF: Record<string, () => { cage: Cage; thickness?: number }> = {
   'refined, pulled': () => ({ cage: refineCage(pulled()) }),
   'thick sheet': () => ({ cage: planeCage([40, 40], 4), thickness: 4 })
 };
-const freeform = (id: string, ff: { cage: Cage; thickness?: number }, at: Vec3 = [0, 0, 0], k = 1): Feature =>
+const freeform = (id: string, ff: { cage: Cage; thickness?: number }, at: Vec3 = [0, 0, 0], scale = 1): Feature =>
   ({
     id,
     name: id,
     type: 'freeform',
-    cage: { faces: ff.cage.faces, verts: ff.cage.verts.map(v => [at[0] + v[0] * k, at[1] + v[1] * k, at[2] + v[2] * k] as Vec3) },
-    ...(ff.thickness ? { surface: true, thickness: ff.thickness * k, thickSide: 'both' } : {})
+    cage: { faces: ff.cage.faces, verts: ff.cage.verts.map(vertex => [at[0] + vertex[0] * scale, at[1] + vertex[1] * scale, at[2] + vertex[2] * scale] as Vec3) },
+    ...(ff.thickness ? { surface: true, thickness: ff.thickness * scale, thickSide: 'both' } : {})
   }) as Feature;
 
 /** Bounding box of a body as built. */
@@ -111,29 +111,29 @@ function bbox(id: string): { lo: Vec3; hi: Vec3 } {
 
 /** Builds; the bodies' problems (empty: fine). `parts`: more than one solid is fine (a cut in two). */
 async function build(features: Feature[], parts = false): Promise<{ errors: string; bad: string; r: any }> {
-  let r: any;
+  let result: any;
   try {
-    r = await regenerate(features);
+    result = await regenerate(features);
   } catch (e) {
     return { errors: `threw: ${(e as Error).message}`, bad: '', r: null };
   }
-  const errors = r.errors.map((e: any) => `${e.featureId}: ${e.message}`).join(' | ');
+  const errors = result.errors.map((e: any) => `${e.featureId}: ${e.message}`).join(' | ');
   const bad: string[] = [];
-  for (const [id, s] of debugBodies()) {
-    const info = r.bodies.find((b: any) => b.id === id);
-    if (!shapeValid(s as Shape3D)) {
+  for (const [id, debugBody] of debugBodies()) {
+    const info = result.bodies.find((b: any) => b.id === id);
+    if (!shapeValid(debugBody as Shape3D)) {
       bad.push(`${id} invalid`);
     }
-    const n = solids(s as Shape3D);
-    if (n < 1 || (n > 1 && !parts)) {
-      bad.push(`${id}: ${n} solids`);
+    const solidCount = solids(debugBody as Shape3D);
+    if (solidCount < 1 || (solidCount > 1 && !parts)) {
+      bad.push(`${id}: ${solidCount} solids`);
     }
     if (info?.openEdges?.length) {
       bad.push(`${id}: ${info.openEdges.length} open edges`);
     }
   }
 
-  return { errors, bad: bad.join(', '), r };
+  return { errors, bad: bad.join(', '), r: result };
 }
 
 const rel = (a: number, b: number) => Math.abs(a - b) / Math.max(1, Math.abs(a), Math.abs(b));
@@ -154,12 +154,12 @@ const PLACES: { name: string; place: (a: { lo: Vec3; hi: Vec3 }, b: { lo: Vec3; 
   { name: 'same middle', place: a => ({ at: mid(a), k: 1 }) },
   { name: 'apart', place: a => ({ at: [a.hi[0] + 60, 0, 0], k: 1 }), empty: true }
 ];
-const mid = (b: { lo: Vec3; hi: Vec3 }): Vec3 => [0, 1, 2].map(k => (b.lo[k] + b.hi[k]) / 2) as Vec3;
-const size = (b: { lo: Vec3; hi: Vec3 }): Vec3 => [0, 1, 2].map(k => b.hi[k] - b.lo[k]) as Vec3;
+const mid = (b: { lo: Vec3; hi: Vec3 }): Vec3 => [0, 1, 2].map(axis => (b.lo[axis] + b.hi[axis]) / 2) as Vec3;
+const size = (b: { lo: Vec3; hi: Vec3 }): Vec3 => [0, 1, 2].map(axis => b.hi[axis] - b.lo[axis]) as Vec3;
 
 const skNames = QUICK ? ['box'] : Object.keys(SK);
 const ffNames = QUICK ? ['sphere', 'thick sheet'] : Object.keys(FF);
-const placeNames = QUICK ? ['overlapping', 'inside'] : PLACES.map(p => p.name);
+const placeNames = QUICK ? ['overlapping', 'inside'] : PLACES.map(place => place.name);
 let combos = 0;
 const t0 = performance.now();
 for (const sk of PART === 'rest' ? [] : skNames) {
@@ -169,50 +169,50 @@ for (const sk of PART === 'rest' ? [] : skNames) {
   for (const ffn of ffNames) {
     await build([freeform('B', FF[ffn]())]);
     const boxB0 = bbox('B');
-    for (const pl of PLACES.filter(p => placeNames.includes(p.name))) {
+    for (const pl of PLACES.filter(place => placeNames.includes(place.name))) {
       const { at, k } = pl.place(boxA, boxB0);
       // Placed by its middle (the cage isn't centred on its box when pulled).
       const c0 = mid(boxB0).map(x => x * k);
-      const B = freeform('B', FF[ffn](), [at[0] - c0[0], at[1] - c0[1], at[2] - c0[2]], k);
+      const featureB = freeform('B', FF[ffn](), [at[0] - c0[0], at[1] - c0[1], at[2] - c0[2]], k);
       const label = `${sk} + ${ffn}, ${pl.name}`;
-      const alone = await build([B]);
+      const alone = await build([featureB]);
       const vB = vol('B');
       if (alone.errors || alone.bad) {
         check(`${label}: the freeform builds`, false, alone.errors + alone.bad);
         continue;
       }
       combos++;
-      const op = async (o: 'union' | 'subtract' | 'intersect', target: string, tool: string) => {
-        const res = await build([...SK[sk](), B, { id: 'bo', name: 'bo', type: 'boolean', op: o, target, tools: [tool] } as Feature], true);
+      const op = async (operation: 'union' | 'subtract' | 'intersect', target: string, tool: string) => {
+        const res = await build([...SK[sk](), featureB, { id: 'bo', name: 'bo', type: 'boolean', op: operation, target, tools: [tool] } as Feature], true);
 
         return { ...res, v: vol(target) };
       };
-      const I = await op('intersect', 'A', 'B');
-      const vI = I.errors ? (/empty/i.test(I.errors) ? 0 : NaN) : I.v;
+      const intersected = await op('intersect', 'A', 'B');
+      const vI = intersected.errors ? (/empty/i.test(intersected.errors) ? 0 : NaN) : intersected.v;
       if (pl.empty) {
-        check(`${label}: intersect says it's empty`, vI === 0, I.errors || `${I.v}`);
+        check(`${label}: intersect says it's empty`, vI === 0, intersected.errors || `${intersected.v}`);
       } else {
-        check(`${label}: intersect`, !I.errors && !I.bad && vI > 0, I.errors + I.bad);
+        check(`${label}: intersect`, !intersected.errors && !intersected.bad && vI > 0, intersected.errors + intersected.bad);
       }
       const I2 = await op('intersect', 'B', 'A');
       if (!pl.empty) {
         check(`${label}: intersect the other way round, the same`, !I2.errors && !I2.bad && rel(I2.v, vI) < TOL, `${I2.errors}${I2.bad} ${I2.v.toFixed(1)} vs ${vI.toFixed(1)}`);
       }
-      const U = await op('union', 'A', 'B');
+      const united = await op('union', 'A', 'B');
       const U2 = await op('union', 'B', 'A');
       if (pl.empty) {
         // Apart: refused, saying why.
-        check(`${label}: union refused - they don't touch`, /don't touch/.test(U.errors) && /don't touch/.test(U2.errors), U.errors + U2.errors);
+        check(`${label}: union refused - they don't touch`, /don't touch/.test(united.errors) && /don't touch/.test(U2.errors), united.errors + U2.errors);
       } else {
-        check(`${label}: union`, !U.errors && !U.bad && rel(U.v, vA + vB - vI) < TOL, `${U.errors}${U.bad} ${U.v.toFixed(1)} want ${(vA + vB - vI).toFixed(1)}`);
+        check(`${label}: union`, !united.errors && !united.bad && rel(united.v, vA + vB - vI) < TOL, `${united.errors}${united.bad} ${united.v.toFixed(1)} want ${(vA + vB - vI).toFixed(1)}`);
         check(`${label}: union into the freeform`, !U2.errors && !U2.bad && rel(U2.v, vA + vB - vI) < TOL, `${U2.errors}${U2.bad} ${U2.v.toFixed(1)}`);
       }
-      for (const [t, o, vt] of [['A', 'B', vA], ['B', 'A', vB]] as const) {
-        const S = await op('subtract', t, o);
+      for (const [t, tool, vt] of [['A', 'B', vA], ['B', 'A', vB]] as const) {
+        const subtracted = await op('subtract', t, tool);
         const want = vt - vI;
         const gone = want < vt * 1e-6;
-        const ok = gone ? /empty/i.test(S.errors) : !S.errors && !S.bad && rel(S.v, want) < TOL;
-        check(`${label}: ${t === 'A' ? 'freeform cut out of the sketch body' : 'sketch body cut out of the freeform'}`, ok, `${S.errors}${S.bad} ${S.v.toFixed(1)} want ${want.toFixed(1)}`);
+        const ok = gone ? /empty/i.test(subtracted.errors) : !subtracted.errors && !subtracted.bad && rel(subtracted.v, want) < TOL;
+        check(`${label}: ${t === 'A' ? 'freeform cut out of the sketch body' : 'sketch body cut out of the freeform'}`, ok, `${subtracted.errors}${subtracted.bad} ${subtracted.v.toFixed(1)} want ${want.toFixed(1)}`);
       }
     }
   }
@@ -234,19 +234,19 @@ const vBox = 40 * 30 * 20;
 {
   const es = circle(6, 15, 10);
   const up = [sphere(), sketch('s', es), extrude('e', 's', es, 30, 'join', 'B')];
-  let r = await build(up);
+  let result = await build(up);
   const vJoin = vol('B');
   await build([sphere(), sketch('s', es), extrude('e', 's', es, 30, 'new')]);
   const vPeg = vol('e');
   await build([sphere(), sketch('s', es), extrude('e', 's', es, 30, 'new'), { id: 'i', name: 'i', type: 'boolean', op: 'intersect', target: 'e', tools: ['B'], keepTools: true } as Feature]);
   const vCommon = vol('e');
-  check('extrude joined into a freeform (mode Add)', !r.errors && !r.bad && rel(vJoin, vSphere + vPeg - vCommon) < TOL, `${r.errors}${r.bad} ${vJoin.toFixed(1)} want ${(vSphere + vPeg - vCommon).toFixed(1)}`);
-  r = await build([sphere(), sketch('s', es), extrude('e', 's', es, 30, 'cut', 'B')]);
-  check('extrude cut through a freeform (a hole down through the sphere)', !r.errors && !r.bad && rel(vol('B'), vSphere - vCommon) < TOL, `${r.errors}${r.bad} ${vol('B').toFixed(1)} want ${(vSphere - vCommon).toFixed(1)}`);
+  check('extrude joined into a freeform (mode Add)', !result.errors && !result.bad && rel(vJoin, vSphere + vPeg - vCommon) < TOL, `${result.errors}${result.bad} ${vJoin.toFixed(1)} want ${(vSphere + vPeg - vCommon).toFixed(1)}`);
+  result = await build([sphere(), sketch('s', es), extrude('e', 's', es, 30, 'cut', 'B')]);
+  check('extrude cut through a freeform (a hole down through the sphere)', !result.errors && !result.bad && rel(vol('B'), vSphere - vCommon) < TOL, `${result.errors}${result.bad} ${vol('B').toFixed(1)} want ${(vSphere - vCommon).toFixed(1)}`);
   // Auto: a negative distance from a sketch above the sphere cuts into it.
   const top: PlaneDef = { origin: [0, 0, 40], xDir: [1, 0, 0], normal: [0, 0, 1] };
-  r = await build([sphere(), sketch('s', es, top), extrude('e', 's', es, -25, 'auto', 'B')]);
-  check('extrude Auto with a negative distance cuts down into a freeform', !r.errors && !r.bad && vol('B') < vSphere - 1, `${r.errors}${r.bad} ${vol('B').toFixed(1)}`);
+  result = await build([sphere(), sketch('s', es, top), extrude('e', 's', es, -25, 'auto', 'B')]);
+  check('extrude Auto with a negative distance cuts down into a freeform', !result.errors && !result.bad && vol('B') < vSphere - 1, `${result.errors}${result.bad} ${vol('B').toFixed(1)}`);
 }
 
 // A sketch on the box's top face, extruded up into a freeform sitting on it.
@@ -254,8 +254,8 @@ const vBox = 40 * 30 * 20;
   const es = rect(10, 10, 12, 8);
   const top: PlaneDef = { origin: [0, 0, 20], xDir: [1, 0, 0], normal: [0, 0, 1] };
   const sk2 = { ...sketch('s2', es, top), attachedTo: { body: 'A', center: [0, 0, 20], normal: [0, 0, 1], area: 1200, step: 'A' } } as Feature;
-  const r = await build([...boxSteps(), sphere(), union(), sk2, extrude('e2', 's2', es, 15, 'auto', 'A')]);
-  check("sketch on the box's top face, extruded up through the freeform joined to it", !r.errors && !r.bad && vol('A') > vBox, `${r.errors}${r.bad}`);
+  const result = await build([...boxSteps(), sphere(), union(), sk2, extrude('e2', 's2', es, 15, 'auto', 'A')]);
+  check("sketch on the box's top face, extruded up through the freeform joined to it", !result.errors && !result.bad && vol('A') > vBox, `${result.errors}${result.bad}`);
 }
 
 // The seam where a box and a freeform meet, rounded and chamfered.
@@ -264,27 +264,27 @@ for (const kind of ['fillet', 'chamfer'] as const) {
   const r0 = await build(base);
   const body = r0.r.bodies.find((b: any) => b.id === 'A');
   const seam = body.edges.filter((e: any) => e.steps?.length === 2);
-  const r = await build([...base, { id: 'f', name: 'f', type: kind, radius: 2, edges: seam.map((e: any) => ({ body: 'A', mid: e.mid, dir: e.dir, length: e.length, steps: e.steps })) } as Feature]);
-  check(`the seam where a freeform cylinder stands on a box, ${kind === 'fillet' ? 'rounded' : 'chamfered'} (${seam.length} edges)`, seam.length > 0 && !r.errors && !r.bad && vol('A') > vol('A') * 0, `${r.errors}${r.bad}`);
+  const result = await build([...base, { id: 'f', name: 'f', type: kind, radius: 2, edges: seam.map((e: any) => ({ body: 'A', mid: e.mid, dir: e.dir, length: e.length, steps: e.steps })) } as Feature]);
+  check(`the seam where a freeform cylinder stands on a box, ${kind === 'fillet' ? 'rounded' : 'chamfered'} (${seam.length} edges)`, seam.length > 0 && !result.errors && !result.bad && vol('A') > vol('A') * 0, `${result.errors}${result.bad}`);
 }
 
 // Box edges rounded after a freeform was joined to it; and the other way round.
 {
-  const fil = (r: number): Feature => ({ id: 'fb', name: 'fb', type: 'fillet', radius: r, edges: [[20, 15], [-20, 15], [20, -15], [-20, -15]].map(([x, y]) => ({ body: 'A', mid: [x, y, 10], dir: [0, 0, 1], length: 20, steps: ['A'] })) }) as Feature;
-  let r = await build([...boxSteps(), freeform('B', FF.sphere(), [0, 0, 20]), union(), fil(3)]);
-  check('box corners rounded after a freeform was joined on top', !r.errors && !r.bad, `${r.errors}${r.bad}`);
-  r = await build([...boxSteps(), fil(3), freeform('B', FF.sphere(), [0, 0, 20]), union()]);
-  check('…and before it was joined', !r.errors && !r.bad, `${r.errors}${r.bad}`);
+  const fil = (radius: number): Feature => ({ id: 'fb', name: 'fb', type: 'fillet', radius: radius, edges: [[20, 15], [-20, 15], [20, -15], [-20, -15]].map(([x, y]) => ({ body: 'A', mid: [x, y, 10], dir: [0, 0, 1], length: 20, steps: ['A'] })) }) as Feature;
+  let result = await build([...boxSteps(), freeform('B', FF.sphere(), [0, 0, 20]), union(), fil(3)]);
+  check('box corners rounded after a freeform was joined on top', !result.errors && !result.bad, `${result.errors}${result.bad}`);
+  result = await build([...boxSteps(), fil(3), freeform('B', FF.sphere(), [0, 0, 20]), union()]);
+  check('…and before it was joined', !result.errors && !result.bad, `${result.errors}${result.bad}`);
 }
 
 // Shells.
 {
-  let r = await build([...boxSteps(), sphere(), union(), { id: 'sh', name: 'sh', type: 'shell', body: 'A', faces: [{ body: 'A', center: [0, -15, 10], normal: [0, -1, 0], area: 800, step: 'A' }], thickness: 1.5 } as Feature]);
-  check('box + freeform joined, then shelled with the front open', !r.errors && !r.bad && vol('A') < vBox, `${r.errors}${r.bad}`);
-  r = await build([sphere(), { id: 'sh', name: 'sh', type: 'shell', body: 'B', faces: [], thickness: 2 } as Feature]);
-  check('a freeform hollowed (closed shell)', !r.errors && !r.bad && vol('B') < vSphere && vol('B') > 0, `${r.errors}${r.bad}`);
-  r = await build([...boxSteps(), sphere(), { id: 'sh', name: 'sh', type: 'shell', body: 'B', faces: [], thickness: 2 } as Feature, union()]);
-  check('a hollow freeform joined to a box', !r.errors && !r.bad, `${r.errors}${r.bad}`);
+  let result = await build([...boxSteps(), sphere(), union(), { id: 'sh', name: 'sh', type: 'shell', body: 'A', faces: [{ body: 'A', center: [0, -15, 10], normal: [0, -1, 0], area: 800, step: 'A' }], thickness: 1.5 } as Feature]);
+  check('box + freeform joined, then shelled with the front open', !result.errors && !result.bad && vol('A') < vBox, `${result.errors}${result.bad}`);
+  result = await build([sphere(), { id: 'sh', name: 'sh', type: 'shell', body: 'B', faces: [], thickness: 2 } as Feature]);
+  check('a freeform hollowed (closed shell)', !result.errors && !result.bad && vol('B') < vSphere && vol('B') > 0, `${result.errors}${result.bad}`);
+  result = await build([...boxSteps(), sphere(), { id: 'sh', name: 'sh', type: 'shell', body: 'B', faces: [], thickness: 2 } as Feature, union()]);
+  check('a hollow freeform joined to a box', !result.errors && !result.bad, `${result.errors}${result.bad}`);
 }
 
 // Moved, mirrored, patterned freeforms joined to / cut from a box.
@@ -302,9 +302,9 @@ for (const kind of ['fillet', 'chamfer'] as const) {
     const steps = [...boxSteps(), sphere(), { id: 't', name: 't', type: 'transform', bodies: ['B'], copy, op } as Feature];
     const r0 = await build(steps, true);
     const ffs = [...debugBodies().keys()].filter(id => id !== 'A');
-    for (const o of ['union', 'subtract'] as const) {
-      const r = await build([...steps, { id: 'bo', name: 'bo', type: 'boolean', op: o, target: 'A', tools: ffs } as Feature], true);
-      check(`freeform ${name}, ${o === 'union' ? 'joined to' : 'cut out of'} a box (${ffs.length} of them)`, !r0.errors && !r.errors && !r.bad, `${r0.errors}${r.errors}${r.bad}`);
+    for (const operation of ['union', 'subtract'] as const) {
+      const result = await build([...steps, { id: 'bo', name: 'bo', type: 'boolean', op: operation, target: 'A', tools: ffs } as Feature], true);
+      check(`freeform ${name}, ${operation === 'union' ? 'joined to' : 'cut out of'} a box (${ffs.length} of them)`, !r0.errors && !result.errors && !result.bad, `${r0.errors}${result.errors}${result.bad}`);
     }
   }
 }
@@ -314,9 +314,9 @@ for (const kind of ['fillet', 'chamfer'] as const) {
   const steps = [...boxSteps(), sphere(), union()];
   await build(steps);
   const whole = vol('A');
-  const r = await build([...steps, { id: 'sp', name: 'sp', type: 'split', body: 'A', plane: { origin: [15, 0, 0], xDir: [0, 1, 0], normal: [1, 0, 0] } } as Feature], true);
-  const sum = [...debugBodies().keys()].reduce((s, id) => s + vol(id), 0);
-  check('box + freeform split through the freeform: the pieces add up', !r.errors && !r.bad && rel(sum, whole) < TOL, `${r.errors}${r.bad} ${sum.toFixed(1)} vs ${whole.toFixed(1)}`);
+  const result = await build([...steps, { id: 'sp', name: 'sp', type: 'split', body: 'A', plane: { origin: [15, 0, 0], xDir: [0, 1, 0], normal: [1, 0, 0] } } as Feature], true);
+  const sum = [...debugBodies().keys()].reduce((total, id) => total + vol(id), 0);
+  check('box + freeform split through the freeform: the pieces add up', !result.errors && !result.bad && rel(sum, whole) < TOL, `${result.errors}${result.bad} ${sum.toFixed(1)} vs ${whole.toFixed(1)}`);
 }
 
 // The cage changed after the union: the union follows.
@@ -326,38 +326,38 @@ for (const kind of ['fillet', 'chamfer'] as const) {
   const vB2 = vol('B');
   await build([...boxSteps(), bigger, { id: 'i', name: 'i', type: 'boolean', op: 'intersect', target: 'A', tools: ['B'] } as Feature]);
   const vI = vol('A');
-  const r = await build([...boxSteps(), bigger, union()]);
-  check('cage made bigger after the union: the union follows', !r.errors && !r.bad && rel(vol('A'), vBox + vB2 - vI) < TOL, `${r.errors}${r.bad}`);
+  const result = await build([...boxSteps(), bigger, union()]);
+  check('cage made bigger after the union: the union follows', !result.errors && !result.bad && rel(vol('A'), vBox + vB2 - vI) < TOL, `${result.errors}${result.bad}`);
 }
 
 // A sheet with a thickness, and a sheet without (a surface: refused, with a way out).
 {
   const sheet = (t?: number) => freeform('B', { cage: planeCage([30, 30], 3), thickness: t }, [10, 5, 20]);
-  let r = await build([...boxSteps(), sheet(3), { id: 'bo', name: 'bo', type: 'boolean', op: 'subtract', target: 'A', tools: ['B'] } as Feature]);
-  check("a thick sheet cut out of a box's top (a groove)", !r.errors && !r.bad && vol('A') < vBox, `${r.errors}${r.bad}`);
-  r = await build([...boxSteps(), sheet(), union()]);
-  check('a sheet with no thickness joined to a box: refused, saying what to do', /open surface.*Thickness/.test(r.errors), r.errors);
+  let result = await build([...boxSteps(), sheet(3), { id: 'bo', name: 'bo', type: 'boolean', op: 'subtract', target: 'A', tools: ['B'] } as Feature]);
+  check("a thick sheet cut out of a box's top (a groove)", !result.errors && !result.bad && vol('A') < vBox, `${result.errors}${result.bad}`);
+  result = await build([...boxSteps(), sheet(), union()]);
+  check('a sheet with no thickness joined to a box: refused, saying what to do', /open surface.*Thickness/.test(result.errors), result.errors);
 }
 
 // Two freeforms and a box, all in one union; then a freeform joined into a freeform.
 {
-  const C = freeform('C', FF['box cage'](), [-15, -10, 15]);
-  let r = await build([...boxSteps(), sphere(), C, union('A', ['B', 'C'])]);
-  check('box + two freeforms in one union', !r.errors && !r.bad, `${r.errors}${r.bad}`);
-  r = await build([sphere(), freeform('C', FF['cylinder cage'](), [15, 10, 30]), union('B', ['C'])]);
-  check('freeform joined into a freeform', !r.errors && !r.bad, `${r.errors}${r.bad}`);
+  const featureC = freeform('C', FF['box cage'](), [-15, -10, 15]);
+  let result = await build([...boxSteps(), sphere(), featureC, union('A', ['B', 'C'])]);
+  check('box + two freeforms in one union', !result.errors && !result.bad, `${result.errors}${result.bad}`);
+  result = await build([sphere(), freeform('C', FF['cylinder cage'](), [15, 10, 30]), union('B', ['C'])]);
+  check('freeform joined into a freeform', !result.errors && !result.bad, `${result.errors}${result.bad}`);
 }
 
 // A flat face of the box moved after the union (the freeform part rides along).
 {
-  const r = await build([...boxSteps(), freeform('B', FF.sphere(), [0, 0, 20]), union(), { id: 'mf', name: 'mf', type: 'moveFace', face: { body: 'A', center: [-20, 0, 10], normal: [-1, 0, 0], area: 600, step: 'A' }, translate: [-8, 0, 0] } as Feature]);
-  check('a box face pushed out after a freeform was joined on top', !r.errors && !r.bad && vol('A') > vBox, `${r.errors}${r.bad}`);
+  const result = await build([...boxSteps(), freeform('B', FF.sphere(), [0, 0, 20]), union(), { id: 'mf', name: 'mf', type: 'moveFace', face: { body: 'A', center: [-20, 0, 10], normal: [-1, 0, 0], area: 600, step: 'A' }, translate: [-8, 0, 0] } as Feature]);
+  check('a box face pushed out after a freeform was joined on top', !result.errors && !result.bad && vol('A') > vBox, `${result.errors}${result.bad}`);
 }
 
 // A freeform inside a box, cut out: a hidden hollow.
 {
-  const r = await build([...boxSteps(), freeform('B', FF.sphere(), [0, 0, 10], 0.4), { id: 'bo', name: 'bo', type: 'boolean', op: 'subtract', target: 'A', tools: ['B'] } as Feature]);
-  check('a small freeform cut out of the inside of a box (a hollow)', !r.errors && !r.bad && vol('A') < vBox, `${r.errors}${r.bad}`);
+  const result = await build([...boxSteps(), freeform('B', FF.sphere(), [0, 0, 10], 0.4), { id: 'bo', name: 'bo', type: 'boolean', op: 'subtract', target: 'A', tools: ['B'] } as Feature]);
+  check('a small freeform cut out of the inside of a box (a hollow)', !result.errors && !result.bad && vol('A') < vBox, `${result.errors}${result.bad}`);
 }
 
 process.exit(failed ? 1 : 0);

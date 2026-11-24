@@ -11,58 +11,58 @@ import { build, faceRef, near, say } from './grid';
 import type { Feature, SketchEntity } from '../src/doc/types';
 
 const shell = (body: string, faces: any[], thickness: number): Feature => ({ id: 'S', name: 'S', type: 'shell', body, faces, thickness }) as Feature;
-const told = (g: Awaited<ReturnType<typeof build>>, body = 'A') => `${g.errors.join(' | ')} ${g.unsound} got ${g.vol[body]?.toFixed(2)}`;
-const sound = (g: Awaited<ReturnType<typeof build>>) => !g.errors.length && !g.unsound.length;
+const told = (got: Awaited<ReturnType<typeof build>>, body = 'A') => `${got.errors.join(' | ')} ${got.unsound} got ${got.vol[body]?.toFixed(2)}`;
+const sound = (got: Awaited<ReturnType<typeof build>>) => !got.errors.length && !got.unsound.length;
 
 // ------------------------------------------------------------ plain shapes
 {
-  const W = 40, D = 30, H = 20;
-  const A = block('A', W, D, H);
+  const WIDTH = 40, DEPTH = 30, HEIGHT = 20;
+  const featuresA = block('A', WIDTH, DEPTH, HEIGHT);
   for (const t of [0.5, 2, 5, 9, 9.99]) {
-    await build(A);
-    const top = faceRef('A', n => n[2] > 0.99);
-    const side = faceRef('A', n => n[0] > 0.99);
-    const bottom = faceRef('A', n => n[2] < -0.99);
+    await build(featuresA);
+    const top = faceRef('A', normal => normal[2] > 0.99);
+    const side = faceRef('A', normal => normal[0] > 0.99);
+    const bottom = faceRef('A', normal => normal[2] < -0.99);
     const cases: [string, any[], number][] = [
-      ['its top open', [top], W * D * H - (W - 2 * t) * (D - 2 * t) * (H - t)],
-      ['top and bottom open (a tube)', [top, bottom], W * D * H - (W - 2 * t) * (D - 2 * t) * H],
-      ['its top and a side open', [top, side], W * D * H - (W - t) * (D - 2 * t) * (H - t)],
-      ['sealed (no face open)', [], W * D * H - (W - 2 * t) * (D - 2 * t) * (H - 2 * t)]
+      ['its top open', [top], WIDTH * DEPTH * HEIGHT - (WIDTH - 2 * t) * (DEPTH - 2 * t) * (HEIGHT - t)],
+      ['top and bottom open (a tube)', [top, bottom], WIDTH * DEPTH * HEIGHT - (WIDTH - 2 * t) * (DEPTH - 2 * t) * HEIGHT],
+      ['its top and a side open', [top, side], WIDTH * DEPTH * HEIGHT - (WIDTH - t) * (DEPTH - 2 * t) * (HEIGHT - t)],
+      ['sealed (no face open)', [], WIDTH * DEPTH * HEIGHT - (WIDTH - 2 * t) * (DEPTH - 2 * t) * (HEIGHT - 2 * t)]
     ];
-    for (const [name, faces, v] of cases) {
-      const g = await build([...A, shell('A', faces, t)]);
-      say(sound(g) && near(g.vol.A, v, 2e-4), `a block shelled ${t}, ${name}`, `${told(g)} want ${v.toFixed(2)}`);
+    for (const [name, faces, volume] of cases) {
+      const got = await build([...featuresA, shell('A', faces, t)]);
+      say(sound(got) && near(got.vol.A, volume, 2e-4), `a block shelled ${t}, ${name}`, `${told(got)} want ${volume.toFixed(2)}`);
     }
   }
-  const C = cylinder('C', 15, 30);
+  const featuresC = cylinder('C', 15, 30);
   for (const t of [1, 5, 14]) {
-    await build(C);
-    const g = await build([...C, shell('C', [faceRef('C', n => n[2] > 0.99)], t)]);
-    const v = Math.PI * (225 * 30 - (15 - t) ** 2 * (30 - t));
-    say(sound(g) && near(g.vol.C, v, 3e-4), `a cylinder shelled ${t}, its top open`, `${told(g, 'C')} want ${v.toFixed(2)}`);
+    await build(featuresC);
+    const got = await build([...featuresC, shell('C', [faceRef('C', normal => normal[2] > 0.99)], t)]);
+    const volume = Math.PI * (225 * 30 - (15 - t) ** 2 * (30 - t));
+    say(sound(got) && near(got.vol.C, volume, 3e-4), `a cylinder shelled ${t}, its top open`, `${told(got, 'C')} want ${volume.toFixed(2)}`);
   }
   // An L: the wall is as thick at its inside corner as anywhere (the hollow's corner there is round).
   const sL = sketch('s', XY(), [poly('p', [[0, 0], [40, 0], [40, 15], [15, 15], [15, 40], [0, 40]])]);
-  const L = [sL, extrude('L', sL, 10)];
+  const features = [sL, extrude('L', sL, 10)];
   for (const t of [1, 3, 7]) {
-    await build(L);
-    const g = await build([...L, shell('L', [faceRef('L', n => n[2] > 0.99)], t)]);
-    const v = 9750 - ((15 - 2 * t) * (65 - 2 * t) + (1 - Math.PI / 4) * t * t) * (10 - t);
-    say(sound(g) && near(g.vol.L, v, 3e-4), `an L shelled ${t}, its top open`, `${told(g, 'L')} want ${v.toFixed(2)}`);
+    await build(features);
+    const got = await build([...features, shell('L', [faceRef('L', normal => normal[2] > 0.99)], t)]);
+    const volume = 9750 - ((15 - 2 * t) * (65 - 2 * t) + (1 - Math.PI / 4) * t * t) * (10 - t);
+    say(sound(got) && near(got.vol.L, volume, 3e-4), `an L shelled ${t}, its top open`, `${told(got, 'L')} want ${volume.toFixed(2)}`);
   }
 }
 
 // ------------------------------------------------------------ faces closer together than two walls
-const A = block('A', 40, 30, 20);
+const blockA = block('A', 40, 30, 20);
 const cutIn = (id: string, es: SketchEntity[], depth: number): Feature[] => {
-  const s = sketch(`${id}-s`, XY(20), es);
+  const feature = sketch(`${id}-s`, XY(20), es);
 
-  return [s, extrude(id, s, -depth, 'cut', { target: 'A' })];
+  return [feature, extrude(id, feature, -depth, 'cut', { target: 'A' })];
 };
-/** The part of a disc of radius r beyond a line d from its middle. */
-const beyond = (r: number, d: number) => (d >= r ? 0 : r * r * Math.acos(d / r) - d * Math.sqrt(r * r - d * d));
-/** What two discs of radius r, d apart, cover together. */
-const twoDiscs = (r: number, d: number) => 2 * Math.PI * r * r - (d >= 2 * r ? 0 : 2 * r * r * Math.acos(d / (2 * r)) - (d / 2) * Math.sqrt(4 * r * r - d * d));
+/** The part of a disc of `radius` beyond a line `distance` from its middle. */
+const beyond = (radius: number, distance: number) => (distance >= radius ? 0 : radius * radius * Math.acos(distance / radius) - distance * Math.sqrt(radius * radius - distance * distance));
+/** What two discs of `radius`, `distance` apart, cover together. */
+const twoDiscs = (radius: number, distance: number) => 2 * Math.PI * radius * radius - (distance >= 2 * radius ? 0 : 2 * radius * radius * Math.acos(distance / (2 * radius)) - (distance / 2) * Math.sqrt(4 * radius * radius - distance * distance));
 /** The hollow of the block with its bottom open, before what stands in it is taken out: its footprint and height. */
 const room = (t: number) => ({ area: (40 - 2 * t) * (30 - 2 * t), high: 20 - t });
 
@@ -105,73 +105,73 @@ const close: [string, Feature[], (t: number) => number | null][] = [
       if (t > 2) {
         return null;
       }
-      const [r, a, b] = [5 + t, 6 - t, 3 - t];
-      const F = (u: number) => (u / 2) * Math.sqrt(r * r - u * u) + ((r * r) / 2) * Math.asin(u / r);
-      const u1 = Math.sqrt(r * r - a * a);
-      const shared = u1 > b ? F(u1) - F(b) - a * (u1 - b) : 0;
-      const hollow = room(t).area * room(t).high - Math.PI * r * r * room(t).high - (10 + 2 * t) * (7 + 2 * t) * 8 + shared * 8;
+      const [radius, a, b] = [5 + t, 6 - t, 3 - t];
+      const integral = (offset: number) => (offset / 2) * Math.sqrt(radius * radius - offset * offset) + ((radius * radius) / 2) * Math.asin(offset / radius);
+      const u1 = Math.sqrt(radius * radius - a * a);
+      const shared = u1 > b ? integral(u1) - integral(b) - a * (u1 - b) : 0;
+      const hollow = room(t).area * room(t).high - Math.PI * radius * radius * room(t).high - (10 + 2 * t) * (7 + 2 * t) * 8 + shared * 8;
 
       return 24000 - 25 * Math.PI * 20 - 560 - hollow;
     }
   ]
 ];
 for (const [name, extra, right] of close) {
-  const fs = [...A, ...extra];
+  const fs = [...blockA, ...extra];
   for (const t of [0.5, 1, 1.5, 2.5]) {
-    const pre = await build(fs);
-    const bottom = faceRef('A', n => n[2] < -0.99);
-    const g = await build([...fs, shell('A', [bottom], t)]);
+    await build(fs);
+    const bottom = faceRef('A', normal => normal[2] < -0.99);
+    const got = await build([...fs, shell('A', [bottom], t)]);
     const want = right(t);
     if (name.startsWith('a hole 1.7')) {
       if (t === 0.5) {
-        say(sound(g) && near(g.vol.A, 2368.2, 2e-4), `${name}, shelled ${t}: walls round both`, `${told(g)} want 2368.2`);
+        say(sound(got) && near(got.vol.A, 2368.2, 2e-4), `${name}, shelled ${t}: walls round both`, `${told(got)} want 2368.2`);
       }
       // (Between one wall and two apart: the whole part offset inward fails there - it is put together from the hole and the pocket, each grown on its own.)
       else if (t < 2.5) {
-        say(sound(g) && near(g.vol.A, want!, 1e-4), `${name}, shelled ${t}: the hole's tube and the pocket's walls run into each other`, `${told(g)} want ${want?.toFixed(2)}`);
+        say(sound(got) && near(got.vol.A, want!, 1e-4), `${name}, shelled ${t}: the hole's tube and the pocket's walls run into each other`, `${told(got)} want ${want?.toFixed(2)}`);
       }
       // (At 2.5 the two walls are one lump, and it builds again.)
       else {
-        say(sound(g) && near(g.vol.A, 10804, 2e-3), `${name}, shelled ${t}: their walls one lump`, `${told(g)} want about 10804`);
+        say(sound(got) && near(got.vol.A, 10804, 2e-3), `${name}, shelled ${t}: their walls one lump`, `${told(got)} want about 10804`);
       }
       continue;
     }
-    say(sound(g) && want !== null && near(g.vol.A, want, 3e-4), `${name}, shelled ${t}`, `${told(g)} want ${want?.toFixed(1)}`);
+    say(sound(got) && want !== null && near(got.vol.A, want, 3e-4), `${name}, shelled ${t}`, `${told(got)} want ${want?.toFixed(1)}`);
   }
 }
 
 // More cut-outs closer than two walls, their walls one lump with sharp inside corners (each grown by t,
 // what they share counted once): two pockets side by side, and a row of hole, hole, pocket.
 {
-  const pockets = [...A, ...cutIn('p', [rect('r', 5, 5, 15, 25)], 8), ...cutIn('q', [rect('r', 16.5, 5, 26.5, 25)], 8)];
+  const pockets = [...blockA, ...cutIn('p', [rect('r', 5, 5, 15, 25)], 8), ...cutIn('q', [rect('r', 16.5, 5, 26.5, 25)], 8)];
   for (const t of [1, 1.5]) {
     await build(pockets);
-    const g = await build([...pockets, shell('A', [faceRef('A', n => n[2] < -0.99)], t)]);
+    const got = await build([...pockets, shell('A', [faceRef('A', normal => normal[2] < -0.99)], t)]);
     const want = 20800 - (room(t).area * room(t).high - (21.5 + 2 * t) * (20 + 2 * t) * 8);
-    say(sound(g) && near(g.vol.A, want, 1e-4), `two pockets 1.5 mm apart, shelled ${t}: one wall between them`, `${told(g)} want ${want.toFixed(2)}`);
+    say(sound(got) && near(got.vol.A, want, 1e-4), `two pockets 1.5 mm apart, shelled ${t}: one wall between them`, `${told(got)} want ${want.toFixed(2)}`);
   }
-  const row = [...A, ...cutIn('h', [circle('c', 10, 15, 4)], 20), ...cutIn('g', [circle('c', 19.2, 15, 4)], 20), ...cutIn('p', [rect('r', 24.4, 8, 34, 22)], 8)];
+  const row = [...blockA, ...cutIn('h', [circle('c', 10, 15, 4)], 20), ...cutIn('g', [circle('c', 19.2, 15, 4)], 20), ...cutIn('p', [rect('r', 24.4, 8, 34, 22)], 8)];
   {
     const t = 1;
     await build(row);
-    const g = await build([...row, shell('A', [faceRef('A', n => n[2] < -0.99)], t)]);
+    const got = await build([...row, shell('A', [faceRef('A', normal => normal[2] < -0.99)], t)]);
     // Two tubes of 5 (their middles 9.2 apart), the pocket grown to 11.6 x 16, and the bit of the second tube inside it.
     const tubes = twoDiscs(5, 9.2);
     const hollow = room(t).area * room(t).high - tubes * room(t).high - 11.6 * 16 * 8 + beyond(5, 4.2) * 8;
     const want = 24000 - 2 * Math.PI * 16 * 20 - 9.6 * 14 * 8 - hollow;
-    say(sound(g) && near(g.vol.A, want, 1e-4), `a hole 1.2 mm from a hole 1.2 mm from a pocket, shelled ${t}: all three walls one lump`, `${told(g)} want ${want.toFixed(2)}`);
+    say(sound(got) && near(got.vol.A, want, 1e-4), `a hole 1.2 mm from a hole 1.2 mm from a pocket, shelled ${t}: all three walls one lump`, `${told(got)} want ${want.toFixed(2)}`);
   }
 }
 
 // A pocket cut into the face that is opened hangs from that face alone: said, not left loose.
 {
-  const fs = [...A, ...cutIn('h', [rect('r', 15, 10, 25, 20)], 8)];
+  const fs = [...blockA, ...cutIn('h', [rect('r', 15, 10, 25, 20)], 8)];
   await build(fs);
-  const top = faceRef('A', (n, c) => n[2] > 0.99 && Math.abs(c[2] - 20) < 1e-6);
-  const g = await build([...fs, shell('A', [top], 1)]);
-  say(/standing loose/.test(g.errors.join()), 'a block with a pocket in its top, the top opened: refused (the pocket would come loose)', told(g));
+  const top = faceRef('A', (normal, center) => normal[2] > 0.99 && Math.abs(center[2] - 20) < 1e-6);
+  const got = await build([...fs, shell('A', [top], 1)]);
+  say(/standing loose/.test(got.errors.join()), 'a block with a pocket in its top, the top opened: refused (the pocket would come loose)', told(got));
   await build(fs);
-  const bottom = faceRef('A', n => n[2] < -0.99);
+  const bottom = faceRef('A', normal => normal[2] < -0.99);
   const b = await build([...fs, shell('A', [bottom], 1)]);
   // The room, less the pocket grown by 1 with its edges round (as the one-step shell makes them).
   const grown = (12 * 12 - (4 - Math.PI)) * 7 + (100 + 40 * (Math.PI / 4) + (2 / 3) * Math.PI);

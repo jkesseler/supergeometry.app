@@ -48,17 +48,17 @@ const KEY = 'sg-ref-images';
 const MAX = 2048;
 const BAR = 34;
 /** Where a window is among the others (higher: in front). */
-const zOf = (w: Win) => +(w.el.style.getPropertyValue('--z') || 0);
+const zOf = (floatingWindow: Win) => +(floatingWindow.el.style.getPropertyValue('--z') || 0);
 const MIN_W = 160;
 /** As far as a picture zooms in its window. */
 const MAX_ZOOM = 12;
 const MIN_H = 120;
 
 const div = (cls: string) => {
-  const d = document.createElement('div');
-  d.className = cls;
+  const element = document.createElement('div');
+  element.className = cls;
 
-  return d;
+  return element;
 };
 const button = (cls: string, icon: string, title: string) => {
   const b = document.createElement('button');
@@ -70,7 +70,7 @@ const button = (cls: string, icon: string, title: string) => {
 
   return b;
 };
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const clamp = (value: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, value));
 
 export class RefImages {
   private wins: Win[] = [];
@@ -80,16 +80,16 @@ export class RefImages {
   private z = 0;
   /** Where the windows are: over the model, under every button (a window moved about never hides them). */
   private readonly layer = (() => {
-    const d = div('');
-    d.id = 'ref-layer';
-    document.body.append(d);
+    const element = div('');
+    element.id = 'ref-layer';
+    document.body.append(element);
 
-    return d;
+    return element;
   })();
 
   constructor(private toast: (text: string, kind?: 'info' | 'error') => void) {
     void this.load();
-    window.addEventListener('resize', () => this.wins.forEach(w => this.fit(w, true)));
+    window.addEventListener('resize', () => this.wins.forEach(win => this.fit(win, true)));
   }
 
   /** Pick one or more pictures; each opens as a tab of the last window used (or a new window). */
@@ -99,13 +99,13 @@ export class RefImages {
       return;
     }
     let win = this.last && this.wins.includes(this.last) ? this.last : null;
-    for (const f of files) {
-      const src = await readImage(f);
+    for (const file of files) {
+      const src = await readImage(file);
       if (!src) {
-        this.toast(`${f.name} can't be shown here - save it as JPG or PNG first (an iPhone's HEIC photos too)`, 'error');
+        this.toast(`${file.name} can't be shown here - save it as JPG or PNG first (an iPhone's HEIC photos too)`, 'error');
         continue;
       }
-      win = this.add(f.name.replace(/\.[^.]+$/, ''), src, win);
+      win = this.add(file.name.replace(/\.[^.]+$/, ''), src, win);
     }
   }
 
@@ -129,11 +129,11 @@ export class RefImages {
   // ------------------------------------------------------------- windows
 
   private spot(): { x: number; y: number; w: number; h: number } {
-    const w = Math.min(360, innerWidth - 24);
-    const h = Math.min(300, innerHeight - 120);
-    const n = this.wins.length;
+    const width = Math.min(360, innerWidth - 24);
+    const height = Math.min(300, innerHeight - 120);
+    const count = this.wins.length;
 
-    return { x: clamp(innerWidth / 2 - w / 2 + n * 24, 8, innerWidth - w - 8), y: clamp(80 + n * 24, 8, innerHeight - h - 8), w, h };
+    return { x: clamp(innerWidth / 2 - width / 2 + count * 24, 8, innerWidth - width - 8), y: clamp(80 + count * 24, 8, innerHeight - height - 8), w: width, h: height };
   }
 
   private make(refs: Ref[], at: { x: number; y: number; w: number; h: number }, active = 0, min = false): Win {
@@ -192,10 +192,10 @@ export class RefImages {
     const close = win.bar.querySelectorAll('.ref-btn')[2] as HTMLElement;
     close.title = win.refs.length > 1 ? 'Close this picture' : 'Close';
     win.tabs.replaceChildren(
-      ...win.refs.map((r, i) => {
+      ...win.refs.map((ref, i) => {
         const t = div(`ref-tab${i === win.active ? ' on' : ''}`);
-        t.textContent = r.name;
-        t.title = r.name;
+        t.textContent = ref.name;
+        t.title = ref.name;
         this.tabDrag(t, win, i);
 
         return t;
@@ -224,12 +224,12 @@ export class RefImages {
     }
     win.x = clamp(win.x, 8 - win.w + 80, innerWidth - 80);
     win.y = clamp(win.y, 0, innerHeight - BAR);
-    const s = win.el.style;
-    s.left = `${Math.round(win.x)}px`;
-    s.top = `${Math.round(win.y)}px`;
+    const style = win.el.style;
+    style.left = `${Math.round(win.x)}px`;
+    style.top = `${Math.round(win.y)}px`;
     // (Minimized: just as wide as its tabs and the three buttons.)
-    s.width = win.min ? '' : `${Math.round(win.w)}px`;
-    s.height = win.min ? '' : `${Math.round(win.h)}px`;
+    style.width = win.min ? '' : `${Math.round(win.w)}px`;
+    style.height = win.min ? '' : `${Math.round(win.h)}px`;
   }
 
   private front(win: Win): void {
@@ -241,7 +241,7 @@ export class RefImages {
     win.refs.splice(i, 1);
     if (!win.refs.length) {
       win.el.remove();
-      this.wins = this.wins.filter(w => w !== win);
+      this.wins = this.wins.filter(floatingWindow => floatingWindow !== win);
       if (this.last === win) {
         this.last = this.wins[this.wins.length - 1] ?? null;
       }
@@ -268,13 +268,13 @@ export class RefImages {
       const dx = e.clientX - win.x;
       const dy = e.clientY - win.y;
       handle.setPointerCapture(e.pointerId);
-      const move = (m: PointerEvent) => {
+      const move = (event: PointerEvent) => {
         // (A second finger came down on the picture: a pinch, not a move.)
         if (win.fingers > 1) {
           return up();
         }
-        win.x = m.clientX - dx;
-        win.y = m.clientY - dy;
+        win.x = event.clientX - dx;
+        win.y = event.clientY - dy;
         this.fit(win);
       };
       const up = () => {
@@ -297,15 +297,15 @@ export class RefImages {
   private zoomBy(body: HTMLElement, win: Win): void {
     // Where a point of the window is, from the middle of the picture's box.
     const rel = (cx: number, cy: number) => {
-      const r = body.getBoundingClientRect();
+      const rect = body.getBoundingClientRect();
 
-      return { x: cx - r.left - r.width / 2, y: cy - r.top - r.height / 2 };
+      return { x: cx - rect.left - rect.width / 2, y: cy - rect.top - rect.height / 2 };
     };
-    // Zoomed to k about a point p (from the middle): the point under p stays under it.
-    const about = (k: number, p: { x: number; y: number }) => {
+    // Zoomed to `zoom` about `point` (from the middle): what is under the point stays under it.
+    const about = (zoom: number, point: { x: number; y: number }) => {
       const z = win.zoom;
-      const f = clamp(k, 1, MAX_ZOOM) / z.k;
-      this.zoomTo(win, z.k * f, p.x - (p.x - z.x) * f, p.y - (p.y - z.y) * f);
+      const ratio = clamp(zoom, 1, MAX_ZOOM) / z.k;
+      this.zoomTo(win, z.k * ratio, point.x - (point.x - z.x) * ratio, point.y - (point.y - z.y) * ratio);
     };
     body.addEventListener(
       'wheel',
@@ -327,8 +327,8 @@ export class RefImages {
       pan = null;
       pinch = null;
       if (a && b) {
-        const m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
-        pinch = { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), k: win.zoom.k, m, z: { x: win.zoom.x, y: win.zoom.y } };
+        const midpoint = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
+        pinch = { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), k: win.zoom.k, m: midpoint, z: { x: win.zoom.x, y: win.zoom.y } };
       } else if (a && win.zoom.k > 1) {
         pan = { x: a.x, y: a.y, zx: win.zoom.x, zy: win.zoom.y };
       }
@@ -353,11 +353,11 @@ export class RefImages {
       down.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pinch) {
         const [a, b] = [...down.values()];
-        const k = clamp((pinch.k * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.d, 1, MAX_ZOOM);
-        const m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
+        const zoom = clamp((pinch.k * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.d, 1, MAX_ZOOM);
+        const midpoint = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
         // The point first between the fingers stays between them.
-        const f = k / pinch.k;
-        this.zoomTo(win, k, m.x - (pinch.m.x - pinch.z.x) * f, m.y - (pinch.m.y - pinch.z.y) * f);
+        const ratio = zoom / pinch.k;
+        this.zoomTo(win, zoom, midpoint.x - (pinch.m.x - pinch.z.x) * ratio, midpoint.y - (pinch.m.y - pinch.z.y) * ratio);
       } else if (pan) {
         this.zoomTo(win, win.zoom.k, pan.zx + e.clientX - pan.x, pan.zy + e.clientY - pan.y);
       }
@@ -373,12 +373,12 @@ export class RefImages {
     body.addEventListener('pointercancel', up);
   }
 
-  /** The picture at zoom k, moved (x, y) from the middle - kept so some of it is always in the window. */
-  private zoomTo(win: Win, k: number, x: number, y: number): void {
-    k = clamp(k, 1, MAX_ZOOM);
-    const w = (win.img.offsetWidth * k) / 2;
-    const h = (win.img.offsetHeight * k) / 2;
-    win.zoom = k <= 1.001 ? { k: 1, x: 0, y: 0 } : { k, x: clamp(x, -w, w), y: clamp(y, -h, h) };
+  /** The picture at `zoom`, moved (x, y) from the middle - kept so some of it is always in the window. */
+  private zoomTo(win: Win, zoom: number, x: number, y: number): void {
+    zoom = clamp(zoom, 1, MAX_ZOOM);
+    const halfWidth = (win.img.offsetWidth * zoom) / 2;
+    const halfHeight = (win.img.offsetHeight * zoom) / 2;
+    win.zoom = zoom <= 1.001 ? { k: 1, x: 0, y: 0 } : { k: zoom, x: clamp(x, -halfWidth, halfWidth), y: clamp(y, -halfHeight, halfHeight) };
     const z = win.zoom;
     win.img.style.transform = z.k === 1 ? '' : `translate(${z.x}px, ${z.y}px) scale(${z.k})`;
     win.el.classList.toggle('zoomed', z.k > 1);
@@ -393,9 +393,9 @@ export class RefImages {
       e.stopPropagation();
       const from = { x: e.clientX, y: e.clientY, w: win.w, h: win.h };
       grip.setPointerCapture(e.pointerId);
-      const move = (m: PointerEvent) => {
-        win.w = from.w + m.clientX - from.x;
-        win.h = from.h + m.clientY - from.y;
+      const move = (event: PointerEvent) => {
+        win.w = from.w + event.clientX - from.x;
+        win.h = from.h + event.clientY - from.y;
         this.fit(win);
       };
       const up = () => {
@@ -430,8 +430,8 @@ export class RefImages {
       const start = { x: e.clientX, y: e.clientY };
       const off = tab.getBoundingClientRect();
       let ghost: HTMLElement | null = null;
-      const move = (m: PointerEvent) => {
-        if (!ghost && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 8) {
+      const move = (event: PointerEvent) => {
+        if (!ghost && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8) {
           return;
         }
         if (!ghost) {
@@ -440,19 +440,19 @@ export class RefImages {
           document.body.append(ghost);
           tab.classList.add('dragged');
         }
-        ghost.style.left = `${m.clientX - (start.x - off.left)}px`;
-        ghost.style.top = `${m.clientY - (start.y - off.top)}px`;
-        const over = this.barAt(m.clientX, m.clientY);
-        for (const w of this.wins) {
-          w.bar.classList.toggle('drop', w === over);
+        ghost.style.left = `${event.clientX - (start.x - off.left)}px`;
+        ghost.style.top = `${event.clientY - (start.y - off.top)}px`;
+        const over = this.barAt(event.clientX, event.clientY);
+        for (const win of this.wins) {
+          win.bar.classList.toggle('drop', win === over);
         }
       };
-      const up = (u: PointerEvent) => {
+      const up = (event: PointerEvent) => {
         tab.removeEventListener('pointermove', move);
         tab.removeEventListener('pointerup', up);
         tab.removeEventListener('pointercancel', cancel);
-        for (const w of this.wins) {
-          w.bar.classList.remove('drop');
+        for (const win of this.wins) {
+          win.bar.classList.remove('drop');
         }
         if (!ghost) {
           win.active = i;
@@ -464,7 +464,7 @@ export class RefImages {
         }
         ghost.remove();
         tab.classList.remove('dragged');
-        this.dropTab(win, i, u.clientX, u.clientY, u.clientX - (start.x - off.left), u.clientY - (start.y - off.top));
+        this.dropTab(win, i, event.clientX, event.clientY, event.clientX - (start.x - off.left), event.clientY - (start.y - off.top));
       };
       const cancel = () => {
         tab.removeEventListener('pointermove', move);
@@ -472,8 +472,8 @@ export class RefImages {
         tab.removeEventListener('pointercancel', cancel);
         ghost?.remove();
         tab.classList.remove('dragged');
-        for (const w of this.wins) {
-          w.bar.classList.remove('drop');
+        for (const win of this.wins) {
+          win.bar.classList.remove('drop');
         }
       };
       tab.addEventListener('pointermove', move);
@@ -487,13 +487,13 @@ export class RefImages {
     const dx = e.clientX - win.x;
     const dy = e.clientY - win.y;
     let moved = false;
-    const move = (m: PointerEvent) => {
-      if (!moved && Math.hypot(m.clientX - start.x, m.clientY - start.y) < 8) {
+    const move = (event: PointerEvent) => {
+      if (!moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8) {
         return;
       }
       moved = true;
-      win.x = m.clientX - dx;
-      win.y = m.clientY - dy;
+      win.x = event.clientX - dx;
+      win.y = event.clientY - dy;
       this.fit(win);
     };
     const up = () => {
@@ -515,10 +515,10 @@ export class RefImages {
   /** The window whose bar is under the point (the one in front). */
   private barAt(x: number, y: number): Win | null {
     let best: Win | null = null;
-    for (const w of this.wins) {
-      const b = w.bar.getBoundingClientRect();
-      if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom && (!best || zOf(w) > zOf(best))) {
-        best = w;
+    for (const win of this.wins) {
+      const b = win.bar.getBoundingClientRect();
+      if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom && (!best || zOf(win) > zOf(best))) {
+        best = win;
       }
     }
 
@@ -579,7 +579,7 @@ export class RefImages {
       const all: Saved[] = this.wins
         .slice()
         .sort((a, b) => zOf(a) - zOf(b))
-        .map(w => ({ x: w.x / innerWidth, y: w.y / innerHeight, w: w.w, h: w.h, min: w.min, active: w.active, refs: w.refs }));
+        .map(win => ({ x: win.x / innerWidth, y: win.y / innerHeight, w: win.w, h: win.h, min: win.min, active: win.active, refs: win.refs }));
       void idbSet(KEY, JSON.stringify(all));
     }, 300);
   }
@@ -588,9 +588,9 @@ export class RefImages {
     try {
       const raw = await idbGet(KEY);
       const all = raw ? (JSON.parse(raw) as Saved[]) : [];
-      for (const s of all) {
-        if (s.refs?.length) {
-          this.fit(this.make(s.refs, { x: s.x * innerWidth, y: s.y * innerHeight, w: s.w, h: s.h }, s.active, s.min), true);
+      for (const saved of all) {
+        if (saved.refs?.length) {
+          this.fit(this.make(saved.refs, { x: saved.x * innerWidth, y: saved.y * innerHeight, w: saved.w, h: saved.h }, saved.active, saved.min), true);
         }
       }
     } catch {
@@ -600,7 +600,7 @@ export class RefImages {
 
   /** For checking from the console: the windows and their tabs. */
   describe(): { x: number; y: number; w: number; h: number; min: boolean; active: number; tabs: string[] }[] {
-    return this.wins.map(w => ({ x: Math.round(w.x), y: Math.round(w.y), w: Math.round(w.w), h: Math.round(w.h), min: w.min, active: w.active, tabs: w.refs.map(r => r.name) }));
+    return this.wins.map(win => ({ x: Math.round(win.x), y: Math.round(win.y), w: Math.round(win.w), h: Math.round(win.h), min: win.min, active: win.active, tabs: win.refs.map(ref => ref.name) }));
   }
 }
 
@@ -618,9 +618,9 @@ function pickImages(): Promise<File[]> {
 /** The picture as a data URL, made smaller when it is huge (null: the browser can't show it). */
 async function readImage(file: File): Promise<string | null> {
   let src = await new Promise<string>((resolve) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.readAsDataURL(file);
+    const fileReader = new FileReader();
+    fileReader.onload = () => resolve(fileReader.result as string);
+    fileReader.readAsDataURL(file);
   });
   const img = new Image();
   img.src = src;
@@ -629,13 +629,13 @@ async function readImage(file: File): Promise<string | null> {
   } catch {
     return null;
   }
-  const k = Math.min(1, MAX / Math.max(img.width, img.height));
-  if (k < 1 || file.size > 2e6) {
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.width * k);
-    c.height = Math.round(img.height * k);
-    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-    src = file.type === 'image/png' ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+  const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+  if (scale < 1 || file.size > 2e6) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    src = file.type === 'image/png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
   }
 
   return src;

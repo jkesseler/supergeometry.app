@@ -21,53 +21,53 @@ export async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>>
   let at = dv.getUint32(end + 16, true);
   const out = new Map<string, Uint8Array>();
   const dec = new TextDecoder();
-  for (let k = 0; k < count; k++) {
+  for (let entry = 0; entry < count; entry++) {
     if (dv.getUint32(at, true) !== 0x02014b50) {
       throw new Error('the file is damaged');
     }
     const method = dv.getUint16(at + 10, true);
     const packed = dv.getUint32(at + 20, true);
-    const n = dv.getUint16(at + 28, true);
+    const nameLength = dv.getUint16(at + 28, true);
     const extra = dv.getUint16(at + 30, true);
     const comment = dv.getUint16(at + 32, true);
     const local = dv.getUint32(at + 42, true);
-    const name = dec.decode(bytes.subarray(at + 46, at + 46 + n));
+    const name = dec.decode(bytes.subarray(at + 46, at + 46 + nameLength));
     const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
     const data = bytes.subarray(start, start + packed);
     if (!name.endsWith('/')) {
       out.set(name, method === 8 ? await inflate(data) : data);
     }
-    at += 46 + n + extra + comment;
+    at += 46 + nameLength + extra + comment;
   }
 
   return out;
 }
 
-async function inflate(d: Uint8Array): Promise<Uint8Array> {
-  const s = new Blob([d as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
 
-  return new Uint8Array(await new Response(s).arrayBuffer());
+  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 // -------------------------------------------------------------------- 3MF
 
 const UNIT_MM: Record<string, number> = { micron: 0.001, millimeter: 1, centimeter: 10, inch: 25.4, foot: 304.8, meter: 1000 };
-const attrs = (s: string) => Object.fromEntries([...s.matchAll(/([\w:]+)\s*=\s*"([^"]*)"/g)].map(m => [m[1].replace(/^\w+:/, ''), m[2]]));
+const attrs = (text: string) => Object.fromEntries([...text.matchAll(/([\w:]+)\s*=\s*"([^"]*)"/g)].map(match => [match[1].replace(/^\w+:/, ''), match[2]]));
 type M = number[];
-/** 3MF's 3×4 matrix ("m00 m01 m02 m10 … m32"), points as rows: p·M. */
+/** 3MF's 3×4 matrix ("m00 m01 m02 m10 … m32"), points as rows: point·matrix. */
 const matrix = (t?: string): M => (t ? t.trim().split(/\s+/).map(Number) : [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
-const apply = (m: M, p: number[]) => [p[0] * m[0] + p[1] * m[3] + p[2] * m[6] + m[9], p[0] * m[1] + p[1] * m[4] + p[2] * m[7] + m[10], p[0] * m[2] + p[1] * m[5] + p[2] * m[8] + m[11]];
+const apply = (matrix: M, point: number[]) => [point[0] * matrix[0] + point[1] * matrix[3] + point[2] * matrix[6] + matrix[9], point[0] * matrix[1] + point[1] * matrix[4] + point[2] * matrix[7] + matrix[10], point[0] * matrix[2] + point[1] * matrix[5] + point[2] * matrix[8] + matrix[11]];
 /** a then b. */
 const compose = (a: M, b: M): M => {
-  const r: M = [];
+  const product: M = [];
   for (let i = 0; i < 3; i++) {
     for (let j = 0; j < 3; j++) {
-      r[3 * i + j] = a[3 * i] * b[j] + a[3 * i + 1] * b[3 + j] + a[3 * i + 2] * b[6 + j];
+      product[3 * i + j] = a[3 * i] * b[j] + a[3 * i + 1] * b[3 + j] + a[3 * i + 2] * b[6 + j];
     }
   }
   const t = apply(b, [a[9], a[10], a[11]]);
 
-  return [...r, ...t];
+  return [...product, ...t];
 };
 
 /**
@@ -82,7 +82,7 @@ export async function read3mf(bytes: Uint8Array): Promise<{ format: 'step' | 'st
       return { format: 'step', bytes: data };
     }
   }
-  const modelName = [...files.keys()].find(n => /^\/?3D\/.*\.model$/i.test(n));
+  const modelName = [...files.keys()].find(name => /^\/?3D\/.*\.model$/i.test(name));
   if (!modelName) {
     throw new Error('it has no 3D model in it');
   }
@@ -90,42 +90,42 @@ export async function read3mf(bytes: Uint8Array): Promise<{ format: 'step' | 'st
   const unit = UNIT_MM[attrs(xml.match(/<(?:\w+:)?model\b([^>]*)>/)?.[1] ?? '').unit ?? 'millimeter'] ?? 1;
   type Obj = { v: number[][]; t: number[][]; parts: { id: string; m: M }[] };
   const objects = new Map<string, Obj>();
-  for (const o of xml.matchAll(/<(?:\w+:)?object\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?object>)/g)) {
-    const body = o[2] ?? '';
-    const v = [...body.matchAll(/<(?:\w+:)?vertex\b([^>]*)>/g)].map((m) => {
-      const a = attrs(m[1]);
+  for (const match of xml.matchAll(/<(?:\w+:)?object\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?object>)/g)) {
+    const body = match[2] ?? '';
+    const vertices = [...body.matchAll(/<(?:\w+:)?vertex\b([^>]*)>/g)].map((vertexMatch) => {
+      const a = attrs(vertexMatch[1]);
 
       return [Number(a.x), Number(a.y), Number(a.z)];
     });
-    const t = [...body.matchAll(/<(?:\w+:)?triangle\b([^>]*)>/g)].map((m) => {
-      const a = attrs(m[1]);
+    const t = [...body.matchAll(/<(?:\w+:)?triangle\b([^>]*)>/g)].map((triangleMatch) => {
+      const a = attrs(triangleMatch[1]);
 
       return [Number(a.v1), Number(a.v2), Number(a.v3)];
     });
-    const parts = [...body.matchAll(/<(?:\w+:)?component\b([^>]*)>/g)].map((m) => {
-      const a = attrs(m[1]);
+    const parts = [...body.matchAll(/<(?:\w+:)?component\b([^>]*)>/g)].map((componentMatch) => {
+      const a = attrs(componentMatch[1]);
 
       return { id: a.objectid, m: matrix(a.transform) };
     });
-    objects.set(attrs(o[1]).id, { v, t, parts });
+    objects.set(attrs(match[1]).id, { v: vertices, t, parts });
   }
   const tris: number[][][] = [];
-  const add = (id: string, m: M, depth: number) => {
-    const o = objects.get(id);
-    if (!o || depth > 16) {
+  const add = (id: string, matrix: M, depth: number) => {
+    const obj = objects.get(id);
+    if (!obj || depth > 16) {
       return;
     }
-    for (const [a, b, c] of o.t) {
-      if (![a, b, c].every(k => Number.isInteger(k) && k >= 0 && k < o.v.length)) {
+    for (const [a, b, indexC] of obj.t) {
+      if (![a, b, indexC].every(vertex => Number.isInteger(vertex) && vertex >= 0 && vertex < obj.v.length)) {
         continue;
       }
-      tris.push([a, b, c].map(k => apply(m, o.v[k]).map(x => x * unit)));
+      tris.push([a, b, indexC].map(vertex => apply(matrix, obj.v[vertex]).map(x => x * unit)));
     }
-    for (const p of o.parts) {
-      add(p.id, compose(p.m, m), depth + 1);
+    for (const part of obj.parts) {
+      add(part.id, compose(part.m, matrix), depth + 1);
     }
   };
-  const items = [...xml.matchAll(/<(?:\w+:)?item\b([^>]*)>/g)].map(m => attrs(m[1]));
+  const items = [...xml.matchAll(/<(?:\w+:)?item\b([^>]*)>/g)].map(match => attrs(match[1]));
   if (items.length) {
     for (const it of items) {
       add(it.objectid, matrix(it.transform), 0);
@@ -147,15 +147,15 @@ function stlOf(tris: number[][][]): Uint8Array {
   const buf = new ArrayBuffer(84 + tris.length * 50);
   const dv = new DataView(buf);
   dv.setUint32(80, tris.length, true);
-  let o = 84;
+  let offset = 84;
   for (const t of tris) {
-    o += 12;
-    for (const p of t) {
-      for (const x of p) {
-        (dv.setFloat32(o, x, true), (o += 4));
+    offset += 12;
+    for (const point of t) {
+      for (const x of point) {
+        (dv.setFloat32(offset, x, true), (offset += 4));
       }
     }
-    o += 2;
+    offset += 2;
   }
 
   return new Uint8Array(buf);
@@ -175,9 +175,9 @@ export interface GlbBody {
 /** sRGB "#rrggbb" to glTF's linear colour. */
 const linear = (hex: string) =>
   [1, 3, 5].map((i) => {
-    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    const channel = parseInt(hex.slice(i, i + 2), 16) / 255;
 
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
   });
 
 /**
@@ -205,37 +205,37 @@ export function glb(bodies: GlbBody[], title: string): Uint8Array {
   const materials: object[] = [];
   const nodes: object[] = [{ name: title, rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: [0.001, 0.001, 0.001], children: bodies.map((_, i) => i + 1) }];
   bodies.forEach((b, i) => {
-    const p = b.positions;
-    const n = new Float32Array(p.length);
+    const positions = b.positions;
+    const values = new Float32Array(positions.length);
     // Smooth normals: each corner's, from the triangles round it (weighted by their size).
     for (let t = 0; t < b.indices.length; t += 3) {
-      const [a, c, d] = [b.indices[t], b.indices[t + 1], b.indices[t + 2]];
-      const u = [p[3 * c] - p[3 * a], p[3 * c + 1] - p[3 * a + 1], p[3 * c + 2] - p[3 * a + 2]];
-      const v = [p[3 * d] - p[3 * a], p[3 * d + 1] - p[3 * a + 1], p[3 * d + 2] - p[3 * a + 2]];
-      const x = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-      for (const k of [a, c, d]) {
+      const [a, indexB, indexC] = [b.indices[t], b.indices[t + 1], b.indices[t + 2]];
+      const edgeU = [positions[3 * indexB] - positions[3 * a], positions[3 * indexB + 1] - positions[3 * a + 1], positions[3 * indexB + 2] - positions[3 * a + 2]];
+      const edgeV = [positions[3 * indexC] - positions[3 * a], positions[3 * indexC + 1] - positions[3 * a + 1], positions[3 * indexC + 2] - positions[3 * a + 2]];
+      const x = [edgeU[1] * edgeV[2] - edgeU[2] * edgeV[1], edgeU[2] * edgeV[0] - edgeU[0] * edgeV[2], edgeU[0] * edgeV[1] - edgeU[1] * edgeV[0]];
+      for (const vertex of [a, indexB, indexC]) {
         for (let j = 0; j < 3; j++) {
-          n[3 * k + j] += x[j];
+          values[3 * vertex + j] += x[j];
         }
       }
     }
-    for (let k = 0; k < n.length; k += 3) {
-      const l = Math.hypot(n[k], n[k + 1], n[k + 2]) || 1;
-      n[k] /= l;
-      n[k + 1] /= l;
-      n[k + 2] /= l;
+    for (let offset = 0; offset < values.length; offset += 3) {
+      const length = Math.hypot(values[offset], values[offset + 1], values[offset + 2]) || 1;
+      values[offset] /= length;
+      values[offset + 1] /= length;
+      values[offset + 2] /= length;
     }
     const min = [Infinity, Infinity, Infinity];
     const max = [-Infinity, -Infinity, -Infinity];
-    for (let k = 0; k < p.length; k += 3) {
+    for (let offset = 0; offset < positions.length; offset += 3) {
       for (let j = 0; j < 3; j++) {
-        min[j] = Math.min(min[j], p[k + j]);
-        max[j] = Math.max(max[j], p[k + j]);
+        min[j] = Math.min(min[j], positions[offset + j]);
+        max[j] = Math.max(max[j], positions[offset + j]);
       }
     }
-    const count = p.length / 3;
-    accessors.push({ bufferView: push(new Float32Array(p), 34962), componentType: 5126, count, type: 'VEC3', min, max });
-    accessors.push({ bufferView: push(n, 34962), componentType: 5126, count, type: 'VEC3' });
+    const count = positions.length / 3;
+    accessors.push({ bufferView: push(new Float32Array(positions), 34962), componentType: 5126, count, type: 'VEC3', min, max });
+    accessors.push({ bufferView: push(values, 34962), componentType: 5126, count, type: 'VEC3' });
     accessors.push({ bufferView: push(new Uint32Array(b.indices), 34963), componentType: 5125, count: b.indices.length, type: 'SCALAR' });
     const alpha = b.opacity ?? 1;
     materials.push({
@@ -273,12 +273,12 @@ export function glb(bodies: GlbBody[], title: string): Uint8Array {
   dv.setUint32(12, jsonBytes.length, true);
   dv.setUint32(16, 0x4e4f534a, true); // "JSON"
   out.set(jsonBytes, 20);
-  let o = 20 + jsonBytes.length;
-  dv.setUint32(o, length, true);
-  dv.setUint32(o + 4, 0x004e4942, true); // "BIN"
-  o += 8;
-  for (const c of chunks) {
-    (out.set(c, o), (o += c.length));
+  let cursor = 20 + jsonBytes.length;
+  dv.setUint32(cursor, length, true);
+  dv.setUint32(cursor + 4, 0x004e4942, true); // "BIN"
+  cursor += 8;
+  for (const chunk of chunks) {
+    (out.set(chunk, cursor), (cursor += chunk.length));
   }
 
   return out;

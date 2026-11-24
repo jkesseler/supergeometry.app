@@ -9,30 +9,30 @@ import { polylineOutlines } from './textPolylineRef';
 import type { SketchEntity, Vec2 } from '../src/doc/types';
 
 const fonts = ['roboto/files/roboto-latin-400-normal', 'roboto-slab/files/roboto-slab-latin-400-normal', 'roboto-mono/files/roboto-mono-latin-400-normal', 'oswald/files/oswald-latin-400-normal', 'bebas-neue/files/bebas-neue-latin-400-normal', 'pacifico/files/pacifico-latin-400-normal'];
-const load = (f: string): Font => {
-  const b = readFileSync(new URL(`../node_modules/@fontsource/${f}.woff`, import.meta.url));
+const load = (fileName: string): Font => {
+  const b = readFileSync(new URL(`../node_modules/@fontsource/${fileName}.woff`, import.meta.url));
 
   return parse(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
 };
 const SIZE = 10;
 const TEXT = 'Hello SG-1 O8gB&@ Qwerty 2026';
 
-const edges = (es: SketchEntity[]) => es.reduce((n, e) => n + (e.kind === 'polyline' ? e.points.length : 1), 0);
-const ink = (es: SketchEntity[]) => materialRegions(arrangement(es)).reduce((a, r) => a + r.area, 0);
+const edges = (es: SketchEntity[]) => es.reduce((total, e) => total + (e.kind === 'polyline' ? e.points.length : 1), 0);
+const ink = (es: SketchEntity[]) => materialRegions(arrangement(es)).reduce((a, materialRegion) => a + materialRegion.area, 0);
 
 let failed = 0;
 for (const name of fonts) {
   try {
-    const f = load(name);
+    const font = load(name);
     const t0 = performance.now();
-    const es = textOutlines(f, TEXT, [0, 0], SIZE);
+    const es = textOutlines(font, TEXT, [0, 0], SIZE);
     const ms = performance.now() - t0;
-    const was = polylineOutlines(8, f, TEXT, [0, 0], SIZE);
+    const was = polylineOutlines(8, font, TEXT, [0, 0], SIZE);
     const oldEdges = edges(was);
     // How far the curves stray from the font's outline (finely sampled).
     let dev = 0;
-    for (const c of polylineOutlines(16, f, TEXT, [0, 0], SIZE)) {
-      for (const q of (c as any).points as Vec2[]) {
+    for (const polylineOutline of polylineOutlines(16, font, TEXT, [0, 0], SIZE)) {
+      for (const q of (polylineOutline as any).points as Vec2[]) {
         dev = Math.max(dev, Math.min(...es.map(e => closestOnEntity(e, q).d)));
       }
     }
@@ -44,7 +44,7 @@ for (const name of fonts) {
     assert.ok(Math.abs(a1 - a0) / a0 < 0.005, `ink ${a0.toFixed(2)} → ${a1.toFixed(2)}`);
     // Letter by letter too: a lost hole hides in the total of a long text.
     for (const ch of new Set(TEXT.replace(/ /g, ''))) {
-      const [x0, x1] = [ink(polylineOutlines(8, f, ch, [0, 0], SIZE)), ink(textOutlines(f, ch, [0, 0], SIZE))];
+      const [x0, x1] = [ink(polylineOutlines(8, font, ch, [0, 0], SIZE)), ink(textOutlines(font, ch, [0, 0], SIZE))];
       assert.ok(Math.abs(x1 - x0) / x0 < 0.015, `"${ch}" ink ${x0.toFixed(2)} → ${x1.toFixed(2)}`);
     }
     assert.ok(edges(es) < oldEdges * 0.45, `${edges(es)} edges (was ${oldEdges})`);

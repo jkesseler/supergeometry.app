@@ -21,13 +21,13 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
   const lists: Record<string, (host: HTMLElement) => void> = {};
   const kept = (id: string, open: (host: HTMLElement) => void) => (lists[id] = open);
   ui.addRight('snap', 'magnet', 'Snapping', kept('snap', (host) => {
-    const s = settings.value;
+    const value = settings.value;
     host.append(heading('Snap to'));
     const snapRow = (key: keyof Settings['snap'], label: string) =>
-      toggleRow(label, s.snap[key], v => settings.set('snap', { ...settings.value.snap, [key]: v }));
+      toggleRow(label, value.snap[key], isOn => settings.set('snap', { ...settings.value.snap, [key]: isOn }));
     host.append(snapRow('grid', 'Grid'), snapRow('guideLines', 'Sketch guide lines'), snapRow('guidePoints', 'Sketch guide points'), snapRow('points3d', '3D guide points'), snapRow('distantEdges', 'Distant edges'));
     host.append(heading('Show'));
-    host.append(toggleRow('Guide points', s.showGuidePoints, v => settings.set('showGuidePoints', v)), toggleRow('Snapping hints', s.showSnapHints, v => settings.set('showSnapHints', v)));
+    host.append(toggleRow('Guide points', value.showGuidePoints, isOn => settings.set('showGuidePoints', isOn)), toggleRow('Snapping hints', value.showSnapHints, isOn => settings.set('showSnapHints', isOn)));
     host.append(el('div', 'pop-note', 'Hold Shift while drawing to place a point without snapping.'));
   }), undefined, stash);
 
@@ -44,18 +44,18 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
         ['in', 'Inch'],
         ['ft', 'Foot']
       ];
-      for (const [u, label] of list) {
-        host.append(choiceRow(label, units() === u, () => (onUnits(u), ui.refreshPopover())));
+      for (const [unit, label] of list) {
+        host.append(choiceRow(label, units() === unit, () => (onUnits(unit), ui.refreshPopover())));
       }
       host.append(heading('Grid'));
-      const s = settings.value;
+      const value = settings.value;
       // Switched on, it keeps the squares as they are right now, at this zoom (asked for: "I want the lock grid size
       // toggle to adjust to whatever the zoom level is so I can just click toggle on").
-      const lockRow = toggleRow(s.gridLocked ? `Lock grid size (${fmtStep(s.gridStep)})` : `Lock grid size (now ${fmtStep(view.grid.step)})`, s.gridLocked, (v) => {
-        if (v) {
+      const lockRow = toggleRow(value.gridLocked ? `Lock grid size (${fmtStep(value.gridStep)})` : `Lock grid size (now ${fmtStep(view.grid.step)})`, value.gridLocked, (isOn) => {
+        if (isOn) {
           settings.set('gridStep', +view.grid.step.toPrecision(6));
         }
-        settings.set('gridLocked', v);
+        settings.set('gridLocked', isOn);
         ui.refreshPopover();
       });
       host.append(lockRow);
@@ -64,21 +64,21 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
       const input = textField('pop-input');
       input.inputMode = 'decimal';
       // (Not locked: the squares' size right now - what locking would keep.)
-      input.value = String(s.gridLocked ? s.gridStep : +view.grid.step.toPrecision(6));
+      input.value = String(value.gridLocked ? value.gridStep : +view.grid.step.toPrecision(6));
       input.addEventListener('change', () => {
-        const v = Number(input.value);
-        if (v > 0) {
-          settings.set('gridStep', v);
+        const typed = Number(input.value);
+        if (typed > 0) {
+          settings.set('gridStep', typed);
         }
       });
       stepRow.append(input);
       host.append(stepRow);
-      const gridNote = el('div', 'pop-note', s.gridLocked ? 'The squares stay this size at any zoom, and a sketch snaps to them. Switch the lock off for a grid that follows the zoom.' : `The grid follows the zoom (now ${fmtStep(view.grid.step)} a square), and a sketch snaps to the squares shown. Lock it to keep them as they are now.`);
+      const gridNote = el('div', 'pop-note', value.gridLocked ? 'The squares stay this size at any zoom, and a sketch snaps to them. Switch the lock off for a grid that follows the zoom.' : `The grid follows the zoom (now ${fmtStep(view.grid.step)} a square), and a sketch snaps to the squares shown. Lock it to keep them as they are now.`);
       host.append(gridNote);
       // Not locked, the size follows the zoom while this is open: the row, the box and the note say the squares'
       // size as it is now (asked for: "the lock grid size should change on the fly when I zoom so I can see what
       // size grid it is in that moment"). They said the size it was when the window opened.
-      if (!s.gridLocked) {
+      if (!value.gridLocked) {
         let shown = view.grid.step;
         const follow = () => {
           // (Closed, or drawn again: this one is done.)
@@ -99,7 +99,7 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
         view.frameHooks.add(follow);
       }
       host.append(heading('Degree format'));
-      host.append(choiceRow('Decimal (27.15°)', s.degrees === 'decimal', () => (settings.set('degrees', 'decimal'), ui.refreshPopover())), choiceRow('Fractional (27° 15′)', s.degrees === 'fractional', () => (settings.set('degrees', 'fractional'), ui.refreshPopover())));
+      host.append(choiceRow('Decimal (27.15°)', value.degrees === 'decimal', () => (settings.set('degrees', 'decimal'), ui.refreshPopover())), choiceRow('Fractional (27° 15′)', value.degrees === 'fractional', () => (settings.set('degrees', 'fractional'), ui.refreshPopover())));
     }),
     () => UNIT_LABEL[units()],
     stash
@@ -107,13 +107,13 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
 
   // Appearance (camera, projection, grid, axes): back in the right-hand column.
   ui.addRight('appearance', 'eye', 'Appearance', kept('appearance', (host) => {
-    const s = settings.value;
+    const value = settings.value;
     host.append(
       heading('Appearance'),
-      toggleRow('Animate camera', s.animateCamera, v => settings.set('animateCamera', v)),
-      toggleRow('Orthographic', s.ortho, v => settings.set('ortho', v)),
-      toggleRow('Show grid', s.showGrid, v => settings.set('showGrid', v)),
-      toggleRow('Show world axes', s.showAxes, v => settings.set('showAxes', v))
+      toggleRow('Animate camera', value.animateCamera, isOn => settings.set('animateCamera', isOn)),
+      toggleRow('Orthographic', value.ortho, isOn => settings.set('ortho', isOn)),
+      toggleRow('Show grid', value.showGrid, isOn => settings.set('showGrid', isOn)),
+      toggleRow('Show world axes', value.showAxes, isOn => settings.set('showAxes', isOn))
     );
   }), undefined, stash);
 
@@ -121,17 +121,17 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
   // to it (asked for by many: "a setting menu with a list: default, Autodesk, onshape, etc", then "it should have
   // controls presets from all major CAD apps"). Only where there is a mouse.
   lists.mouse = (host) => {
-    const s = settings.value;
-    const now = mousePreset(s.mouse);
+    const value = settings.value;
+    const now = mousePreset(value.mouse);
     host.append(heading('Mouse like in'));
-    for (const m of MOUSE_PRESETS) {
-      const row = choiceRow(m.apps, now.id === m.id, () => (settings.set('mouse', m.id), ui.refreshPopover()));
-      row.title = m.text;
+    for (const mousePreset of MOUSE_PRESETS) {
+      const row = choiceRow(mousePreset.apps, now.id === mousePreset.id, () => (settings.set('mouse', mousePreset.id), ui.refreshPopover()));
+      row.title = mousePreset.text;
       host.append(row);
     }
     host.append(el('div', 'pop-note', now.text));
     host.append(heading('Wheel'));
-    host.append(toggleRow('Forward zooms out', s.wheelReverse, v => settings.set('wheelReverse', v)));
+    host.append(toggleRow('Forward zooms out', value.wheelReverse, isOn => settings.set('wheelReverse', isOn)));
     host.append(el('div', 'pop-note', 'Always: the wheel zooms where the pointer is, a plain right drag turns the view, Alt + left drag turns it too (a trackpad), and a left drag on empty space draws a box to select with.'));
   };
 
@@ -143,17 +143,17 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
     const showViews = () => {
       body.innerHTML = '';
       // Picking a view closes the list (it would only cover the view picked).
-      const go = (label: string, n: Vec3, x?: Vec3) => choiceRow(label, false, () => (view.cam.flatUntilTurned(), view.cam.lookAlong(n, x), ui.closePopover()));
+      const go = (label: string, direction: Vec3, x?: Vec3) => choiceRow(label, false, () => (view.cam.flatUntilTurned(), view.cam.lookAlong(direction, x), ui.closePopover()));
       body.append(choiceRow('⌂ Default view', false, () => (view.cam.iso(), view.fitAll(), ui.closePopover())));
       body.append(go('Top', [0, 0, 1]), go('Bottom', [0, 0, -1]), go('Front', [0, -1, 0]), go('Back', [0, 1, 0], [-1, 0, 0]), go('Right', [1, 0, 0], [0, 1, 0]), go('Left', [-1, 0, 0], [0, -1, 0]));
       body.append(heading('Saved views'));
-      for (const v of store.doc.views) {
-        const row = choiceRow(v.name, false, () => (view.cam.restore(v), ui.closePopover()));
+      for (const savedView of store.doc.views) {
+        const row = choiceRow(savedView.name, false, () => (view.cam.restore(savedView), ui.closePopover()));
         const del = el('button', 'icon-btn small', '✕');
         del.title = 'Delete view';
         del.addEventListener('click', (e) => {
           e.stopPropagation();
-          store.commit(d => (d.views = d.views.filter(x => x.name !== v.name)));
+          store.commit(draft => (draft.views = draft.views.filter(view => view.name !== savedView.name)));
           showViews();
         });
         row.append(del);
@@ -163,7 +163,7 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
         choiceRow('＋ Save current view', false, () => {
           const name = `View ${store.doc.views.length + 1}`;
           const sv: SavedView = view.cam.savedView(name);
-          store.commit(d => d.views.push(sv));
+          store.commit(draft => draft.views.push(sv));
           showViews();
         })
       );
@@ -172,28 +172,28 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
   }, undefined, { host: cube, className: 'vc-roll bottom right vc-views' });
 
   ui.addRight('display', 'display', 'Display modes', (host) => {
-    const s = settings.value;
+    const value = settings.value;
     host.append(heading('Shaders'));
     for (const [id, label] of [['wireframe', 'Wireframe'], ['xray', 'X-Ray'], ['shaded', 'Shaded']] as const) {
-      host.append(choiceRow(label, s.shader === id, () => (settings.set('shader', id), ui.refreshPopover())));
+      host.append(choiceRow(label, value.shader === id, () => (settings.set('shader', id), ui.refreshPopover())));
     }
     host.append(heading('Options'));
-    host.append(toggleRow('Show edges', s.showEdges, v => settings.set('showEdges', v)), toggleRow('Show hidden edges', s.showHiddenEdges, v => settings.set('showHiddenEdges', v)));
+    host.append(toggleRow('Show edges', value.showEdges, isOn => settings.set('showEdges', isOn)), toggleRow('Show hidden edges', value.showHiddenEdges, isOn => settings.set('showHiddenEdges', isOn)));
     // Surface analysis: how smoothly faces meet (zebra), how much they bend (curvature).
     host.append(heading('Analysis'));
     for (const [id, label] of [['none', 'Off'], ['zebra', 'Zebra stripes'], ['curvature', 'Curvature map']] as const) {
-      host.append(choiceRow(label, s.analysis === id, () => (settings.set('analysis', id), ui.refreshPopover())));
+      host.append(choiceRow(label, value.analysis === id, () => (settings.set('analysis', id), ui.refreshPopover())));
     }
-    if (s.analysis === 'zebra') {
+    if (value.analysis === 'zebra') {
       host.append(
-        toggleRow('Horizontal stripes', s.zebraDirection === 'horizontal', v => settings.set('zebraDirection', v ? 'horizontal' : 'vertical')),
-        sliderRow('Stripes', 4, 48, 1, s.zebraStripes, v => settings.set('zebraStripes', v), v => String(v))
+        toggleRow('Horizontal stripes', value.zebraDirection === 'horizontal', isOn => settings.set('zebraDirection', isOn ? 'horizontal' : 'vertical')),
+        sliderRow('Stripes', 4, 48, 1, value.zebraStripes, stripes => settings.set('zebraStripes', stripes), stripeCount => String(stripeCount))
       );
     }
-    if (s.analysis === 'curvature') {
+    if (value.analysis === 'curvature') {
       // On a log scale: a 0.5 mm fillet and a 5 m roof both get a useful setting.
       host.append(
-        sliderRow('Full colour at radius', Math.log10(0.5), Math.log10(5000), 0.01, Math.log10(s.curvatureRadius), v => settings.set('curvatureRadius', +(10 ** v).toPrecision(2)), v => fmtLen(10 ** v)),
+        sliderRow('Full colour at radius', Math.log10(0.5), Math.log10(5000), 0.01, Math.log10(value.curvatureRadius), logRadius => settings.set('curvatureRadius', +(10 ** logRadius).toPrecision(2)), shownLogRadius => fmtLen(10 ** shownLogRadius)),
         el('div', 'pop-note', 'Red: domed. Green: flat. Blue: hollow.')
       );
     }
@@ -230,7 +230,7 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
     'settings',
     'Settings',
     (host) => {
-      const s = settings.value;
+      const value = settings.value;
       if (page) {
         const back = el('button', 'pop-row pop-back', '‹  Settings');
         back.addEventListener('click', () => ((page = null), ui.refreshPopover()));
@@ -246,16 +246,16 @@ export function setupRightColumn(ui: UI, view: Viewport, store: DocStore, onUnit
 
         return row;
       };
-      const snaps = Object.values(s.snap).filter(Boolean).length;
+      const snaps = Object.values(value.snap).filter(Boolean).length;
       host.append(
         heading('Settings'),
-        nav('Units & grid', `${UNIT_LABEL[units()]}${s.gridLocked ? ` · grid ${s.gridStep} mm` : ''}`, 'units'),
-        nav('Snapping', snaps ? `${snaps} of ${Object.keys(s.snap).length} on` : 'Off', 'snap'),
-        toggleRow('Number pad on screen', s.numpad, v => settings.set('numpad', v)),
-        nav('Appearance', `${s.ortho ? 'Orthographic' : 'Perspective'}${s.showGrid ? '' : ' · no grid'}`, 'appearance')
+        nav('Units & grid', `${UNIT_LABEL[units()]}${value.gridLocked ? ` · grid ${value.gridStep} mm` : ''}`, 'units'),
+        nav('Snapping', snaps ? `${snaps} of ${Object.keys(value.snap).length} on` : 'Off', 'snap'),
+        toggleRow('Number pad on screen', value.numpad, isOn => settings.set('numpad', isOn)),
+        nav('Appearance', `${value.ortho ? 'Orthographic' : 'Perspective'}${value.showGrid ? '' : ' · no grid'}`, 'appearance')
       );
       if (matchMedia('(any-pointer: fine)').matches) {
-        host.append(nav('Mouse', mousePreset(s.mouse).apps.split(',')[0], 'mouse'));
+        host.append(nav('Mouse', mousePreset(value.mouse).apps.split(',')[0], 'mouse'));
       }
     },
     () => UNIT_LABEL[units()]
@@ -307,9 +307,9 @@ function sliderRow(label: string, min: number, max: number, step: number, value:
 }
 
 function fmtLen(mm: number): string {
-  const v = +mm.toPrecision(2);
+  const rounded = +mm.toPrecision(2);
 
-  return v >= 1000 ? `${v / 1000} m` : `${v} mm`;
+  return rounded >= 1000 ? `${rounded / 1000} m` : `${rounded} mm`;
 }
 
 function choiceRow(label: string, active: boolean, run: () => void): HTMLElement {

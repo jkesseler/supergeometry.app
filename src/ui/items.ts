@@ -90,11 +90,11 @@ export class ItemsPanel {
     this.last = result;
     // Nothing that the list shows changed: keep the rows (rebuilding them under a
     // click that's in progress would swallow that click).
-    const d = this.store.doc;
+    const doc = this.store.doc;
     const sig = JSON.stringify([
-      d.hidden, d.names, d.folders, this.h.isolated(), [...this.checked], this.picking, this.moving, [...this.collapsed],
+      doc.hidden, doc.names, doc.folders, this.h.isolated(), [...this.checked], this.picking, this.moving, [...this.collapsed],
       result?.bodies.map(b => [b.id, b.name]),
-      d.features.filter(f => ['sketch', 'plane', 'axis', 'image'].includes(f.type)).map(f => [f.id, f.name, f.type])
+      doc.features.filter(feature => ['sketch', 'plane', 'axis', 'image'].includes(feature.type)).map(feature => [feature.id, feature.name, feature.type])
     ]);
     if (sig === this.shown) {
       return;
@@ -103,22 +103,22 @@ export class ItemsPanel {
     this.list.innerHTML = '';
     const hidden = new Set(this.store.doc.hidden);
     const iso = this.h.isolated();
-    const inFolder = new Set(this.folders.flatMap(f => f.items));
+    const inFolder = new Set(this.folders.flatMap(folder => folder.items));
     const section = (title: string) => this.list.append(el('li', 'items-heading', title));
 
     // Everything there is, by kind.
     const bodies = result?.bodies ?? [];
     const names = this.store.doc.names ?? {};
     const feats = this.store.doc.features;
-    const of = <T extends Feature['type']>(t: T) => feats.filter(f => f.type === t);
+    const of = <T extends Feature['type']>(t: T) => feats.filter(feature => feature.type === t);
     const rows: Record<string, Row[]> = {
       Bodies: bodies.map(b => ({ id: b.id, name: names[b.id] ?? b.name, icon: 'body' as IconName, open: () => this.h.selectBody(b.id), remove: () => this.h.deleteBody(b.id), extra: iso && !iso.includes(b.id) ? ' isolated-out' : '', isBody: true })),
       // Greyed while something else is isolated (they're hidden until Isolate is off).
-      Sketches: of('sketch').map(s => ({ id: s.id, name: s.name, icon: 'sketch' as IconName, open: () => this.h.editSketch(s.id), remove: () => this.h.deleteFeature(s.id), extra: iso && !iso.includes(s.id) ? ' isolated-out' : '' })),
-      'Planes & axes': [...of('plane'), ...of('axis')].map(c => ({ id: c.id, name: c.name, icon: (c.type === 'plane' ? PLANE_ICON[(c as { kind?: string }).kind ?? 'offset'] ?? 'plane' : AXIS_ICON[(c as { kind?: string }).kind ?? ''] ?? 'axis') as IconName, open: () => this.h.selectPlane(c.id), remove: () => this.h.deleteFeature(c.id), extra: iso && !iso.includes(c.id) ? ' isolated-out' : '' })),
+      Sketches: of('sketch').map(feature => ({ id: feature.id, name: feature.name, icon: 'sketch' as IconName, open: () => this.h.editSketch(feature.id), remove: () => this.h.deleteFeature(feature.id), extra: iso && !iso.includes(feature.id) ? ' isolated-out' : '' })),
+      'Planes & axes': [...of('plane'), ...of('axis')].map(feature => ({ id: feature.id, name: feature.name, icon: (feature.type === 'plane' ? PLANE_ICON[(feature as { kind?: string }).kind ?? 'offset'] ?? 'plane' : AXIS_ICON[(feature as { kind?: string }).kind ?? ''] ?? 'axis') as IconName, open: () => this.h.selectPlane(feature.id), remove: () => this.h.deleteFeature(feature.id), extra: iso && !iso.includes(feature.id) ? ' isolated-out' : '' })),
       Images: of('image').map(i => ({ id: i.id, name: i.name, icon: 'image' as IconName, open: () => this.h.selectImage(i.id), remove: () => this.h.deleteFeature(i.id) }))
     };
-    const byId = new Map(Object.values(rows).flat().map(r => [r.id, r]));
+    const byId = new Map(Object.values(rows).flat().map(row => [row.id, row]));
 
     // Each kind folds away under its heading (a long list of sketches and
     // planes buried the bodies).
@@ -141,7 +141,7 @@ export class ItemsPanel {
       return !this.collapsed.has(key);
     };
     for (const [title, list] of Object.entries(rows)) {
-      const loose = list.filter(r => !inFolder.has(r.id));
+      const loose = list.filter(row => !inFolder.has(row.id));
       if (title !== 'Bodies' && !loose.length) {
         continue;
       }
@@ -151,46 +151,46 @@ export class ItemsPanel {
       if (!loose.length) {
         this.list.append(el('li', 'items-empty', bodies.length ? 'All in folders' : 'No bodies yet'));
       }
-      for (const r of loose) {
-        this.row(r, hidden, 0);
+      for (const row of loose) {
+        this.row(row, hidden, 0);
       }
     }
 
     // Folders last, each with its subfolders and then what it holds.
-    const ids = new Set(this.folders.map(f => f.id));
-    const top = this.folders.filter(f => !f.parent || !ids.has(f.parent));
-    const subs = (f: ItemFolder) => this.folders.filter(x => x.parent === f.id && x.id !== f.id);
-    const rowsOf = (f: ItemFolder) => f.items.map(id => byId.get(id)).filter((r): r is Row => !!r);
-    const allRows = (f: ItemFolder, seen = new Set<string>()): Row[] => {
-      if (seen.has(f.id)) {
+    const ids = new Set(this.folders.map(folder => folder.id));
+    const top = this.folders.filter(folder => !folder.parent || !ids.has(folder.parent));
+    const subs = (itemFolder: ItemFolder) => this.folders.filter(folder => folder.parent === itemFolder.id && folder.id !== itemFolder.id);
+    const rowsOf = (itemFolder: ItemFolder) => itemFolder.items.map(id => byId.get(id)).filter((row): row is Row => !!row);
+    const allRows = (itemFolder: ItemFolder, seen = new Set<string>()): Row[] => {
+      if (seen.has(itemFolder.id)) {
         return [];
       }
-      seen.add(f.id);
+      seen.add(itemFolder.id);
 
-      return [...rowsOf(f), ...subs(f).flatMap(s => allRows(s, seen))];
+      return [...rowsOf(itemFolder), ...subs(itemFolder).flatMap(subfolder => allRows(subfolder, seen))];
     };
-    const drawFolder = (f: ItemFolder, depth: number, seen: Set<string>) => {
-      if (seen.has(f.id)) {
+    const drawFolder = (itemFolder: ItemFolder, depth: number, seen: Set<string>) => {
+      if (seen.has(itemFolder.id)) {
         return;
       }
-      seen.add(f.id);
-      this.folderRow(f, allRows(f), hidden, depth);
-      if (this.collapsed.has(f.id)) {
+      seen.add(itemFolder.id);
+      this.folderRow(itemFolder, allRows(itemFolder), hidden, depth);
+      if (this.collapsed.has(itemFolder.id)) {
         return;
       }
-      for (const s of subs(f)) {
-        drawFolder(s, depth + 1, seen);
+      for (const subfolder of subs(itemFolder)) {
+        drawFolder(subfolder, depth + 1, seen);
       }
-      for (const r of rowsOf(f)) {
-        this.row(r, hidden, depth + 1);
+      for (const row of rowsOf(itemFolder)) {
+        this.row(row, hidden, depth + 1);
       }
     };
     if (top.length) {
       section(`Folders (${top.length})`);
     }
     const drawn = new Set<string>();
-    for (const f of top) {
-      drawFolder(f, 0, drawn);
+    for (const itemFolder of top) {
+      drawFolder(itemFolder, 0, drawn);
     }
 
     // Grouping bar.
@@ -200,7 +200,7 @@ export class ItemsPanel {
     if (this.checked.size) {
       const bar = el('li', 'items-groupbar');
       // All ticked items in the same folder: the new folder goes inside it.
-      const homes = new Set([...this.checked].map(id => this.folders.find(f => f.items.includes(id))?.id ?? ''));
+      const homes = new Set([...this.checked].map(id => this.folders.find(folder => folder.items.includes(id))?.id ?? ''));
       const parent = homes.size === 1 ? [...homes][0] || undefined : undefined;
       const make = el('button', 'text-btn primary', `${parent ? 'New subfolder' : 'New folder'} (${this.checked.size})`);
       make.addEventListener('click', () => void this.makeFolder(parent));
@@ -214,16 +214,16 @@ export class ItemsPanel {
         remove.title = 'Take the ticked items out of their folders';
         remove.addEventListener('click', () => {
           this.checked.clear();
-          this.store.commit((d) => {
-            const fs = d.folders ?? [];
+          this.store.commit((draft) => {
+            const fs = draft.folders ?? [];
             const up = new Map<string, string[]>();
-            for (const f of fs) {
-              const out = f.items.filter(x => filed.includes(x));
-              if (out.length && f.parent && fs.some(p => p.id === f.parent)) {
-                up.set(f.parent, [...(up.get(f.parent) ?? []), ...out]);
+            for (const itemFolder of fs) {
+              const out = itemFolder.items.filter(item => filed.includes(item));
+              if (out.length && itemFolder.parent && fs.some(otherFolder => otherFolder.id === itemFolder.parent)) {
+                up.set(itemFolder.parent, [...(up.get(itemFolder.parent) ?? []), ...out]);
               }
             }
-            d.folders = fs.map(f => ({ ...f, items: [...f.items.filter(x => !filed.includes(x)), ...(up.get(f.id) ?? [])] }));
+            draft.folders = fs.map(itemFolder => ({ ...itemFolder, items: [...itemFolder.items.filter(item => !filed.includes(item)), ...(up.get(itemFolder.id) ?? [])] }));
           });
         });
         bar.append(remove);
@@ -244,8 +244,8 @@ export class ItemsPanel {
     }
   }
 
-  private row(r: Row, hidden: Set<string>, depth: number): void {
-    const li = el('li', `items-row${hidden.has(r.id) ? ' hidden-item' : ''}${r.extra ?? ''}${this.checked.has(r.id) ? ' checked' : ''}${depth ? ' in-folder' : ''}`);
+  private row(row: Row, hidden: Set<string>, depth: number): void {
+    const li = el('li', `items-row${hidden.has(row.id) ? ' hidden-item' : ''}${row.extra ?? ''}${this.checked.has(row.id) ? ' checked' : ''}${depth ? ' in-folder' : ''}`);
     // Deeper in subfolders: a step further in each level.
     if (depth > 1) {
       li.style.paddingLeft = `${18 * depth}px`;
@@ -254,34 +254,34 @@ export class ItemsPanel {
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'items-check';
-      box.checked = this.checked.has(r.id);
-      box.addEventListener('change', () => this.check(r.id, box.checked));
+      box.checked = this.checked.has(row.id);
+      box.addEventListener('change', () => this.check(row.id, box.checked));
       li.append(box);
     }
     const eye = el('button', 'icon-btn');
-    eye.title = hidden.has(r.id) ? 'Show' : 'Hide';
-    eye.innerHTML = icons[hidden.has(r.id) ? 'eyeOff' : 'eye'];
+    eye.title = hidden.has(row.id) ? 'Show' : 'Hide';
+    eye.innerHTML = icons[hidden.has(row.id) ? 'eyeOff' : 'eye'];
     eye.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.store.commit(d => (d.hidden = hidden.has(r.id) ? d.hidden.filter(x => x !== r.id) : [...d.hidden, r.id]));
+      this.store.commit(draft => (draft.hidden = hidden.has(row.id) ? draft.hidden.filter(hiddenId => hiddenId !== row.id) : [...draft.hidden, row.id]));
     });
     const label = el('button', 'items-name');
-    label.innerHTML = icons[r.icon];
-    label.append(r.name);
+    label.innerHTML = icons[row.icon];
+    label.append(row.name);
     // Ctrl/Cmd/Shift+click ticks the row for grouping; a plain click opens it.
-    label.addEventListener('click', e => (e.ctrlKey || e.metaKey || e.shiftKey || this.picking ? this.check(r.id, !this.checked.has(r.id)) : r.open()));
+    label.addEventListener('click', e => (e.ctrlKey || e.metaKey || e.shiftKey || this.picking ? this.check(row.id, !this.checked.has(row.id)) : row.open()));
     const ren = el('button', 'icon-btn');
     ren.title = 'Rename';
     ren.innerHTML = icons.rename;
-    ren.addEventListener('click', e => (e.stopPropagation(), this.h.rename(r.id, r.name, !!r.isBody)));
+    ren.addEventListener('click', e => (e.stopPropagation(), this.h.rename(row.id, row.name, !!row.isBody)));
     const del = el('button', 'icon-btn');
     del.title = 'Delete';
     del.innerHTML = icons.trash;
-    twoTap(del, `items:${r.id}`, () => r.remove());
+    twoTap(del, `items:${row.id}`, () => row.remove());
     li.append(eye, label, ren, del);
-    li.dataset.id = r.id;
-    li.classList.toggle('selected', this.selectedIds.has(r.id));
-    li.classList.toggle('flash', this.revealed.has(r.id));
+    li.dataset.id = row.id;
+    li.classList.toggle('selected', this.selectedIds.has(row.id));
+    li.classList.toggle('flash', this.revealed.has(row.id));
     this.list.append(li);
   }
 
@@ -315,11 +315,11 @@ export class ItemsPanel {
       addEventListener('pointerdown', stop, true);
       addEventListener('keydown', stop, true);
     });
-    const byId = new Map(this.folders.map(f => [f.id, f]));
-    for (const f of this.folders) {
-      if (f.items.some(i => want.has(i))) {
-        for (let g: ItemFolder | undefined = f; g; g = g.parent ? byId.get(g.parent) : undefined) {
-          this.collapsed.delete(g.id);
+    const byId = new Map(this.folders.map(folder => [folder.id, folder]));
+    for (const folder of this.folders) {
+      if (folder.items.some(i => want.has(i))) {
+        for (let itemFolder: ItemFolder | undefined = folder; itemFolder; itemFolder = itemFolder.parent ? byId.get(itemFolder.parent) : undefined) {
+          this.collapsed.delete(itemFolder.id);
         }
       }
     }
@@ -328,16 +328,16 @@ export class ItemsPanel {
     let li = find();
     if (!li) {
       // Under a heading folded away: the headings open.
-      for (const k of [...this.collapsed]) {
-        if (k.startsWith('cat:')) {
-          this.collapsed.delete(k);
+      for (const collapsedKey of [...this.collapsed]) {
+        if (collapsedKey.startsWith('cat:')) {
+          this.collapsed.delete(collapsedKey);
         }
       }
       this.render(this.last);
       li = find();
     }
-    for (const r of this.list.querySelectorAll<HTMLElement>('li[data-id]')) {
-      r.classList.toggle('flash', want.has(r.dataset.id!));
+    for (const element of this.list.querySelectorAll<HTMLElement>('li[data-id]')) {
+      element.classList.toggle('flash', want.has(element.dataset.id!));
     }
     li?.scrollIntoView({ block: 'center' });
   }
@@ -365,7 +365,7 @@ export class ItemsPanel {
   }
 
   /** A folder's row; `items` is everything in it, its subfolders' too. */
-  private folderRow(f: ItemFolder, items: Row[], hidden: Set<string>, depth = 0): void {
+  private folderRow(itemFolder: ItemFolder, items: Row[], hidden: Set<string>, depth = 0): void {
     const li = el('li', `items-row folder-row${depth ? ' in-folder' : ''}${this.moving ? ' move-target' : ''}`);
     if (depth > 1) {
       li.style.paddingLeft = `${18 * depth}px`;
@@ -375,29 +375,29 @@ export class ItemsPanel {
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'items-check';
-      box.title = `Move into ${f.name}`;
-      box.addEventListener('change', () => this.moveInto(f.id));
+      box.title = `Move into ${itemFolder.name}`;
+      box.addEventListener('change', () => this.moveInto(itemFolder.id));
       li.append(box);
     }
-    const allHidden = items.length > 0 && items.every(r => hidden.has(r.id));
+    const allHidden = items.length > 0 && items.every(item => hidden.has(item.id));
     const eye = el('button', 'icon-btn');
     eye.title = allHidden ? 'Show all in folder' : 'Hide all in folder';
     eye.innerHTML = icons[allHidden ? 'eyeOff' : 'eye'];
     eye.addEventListener('click', () =>
-      this.store.commit((d) => {
-        const ids = new Set(items.map(r => r.id));
-        d.hidden = allHidden ? d.hidden.filter(x => !ids.has(x)) : [...new Set([...d.hidden, ...ids])];
+      this.store.commit((draft) => {
+        const ids = new Set(items.map(item => item.id));
+        draft.hidden = allHidden ? draft.hidden.filter(hiddenId => !ids.has(hiddenId)) : [...new Set([...draft.hidden, ...ids])];
       })
     );
     const label = el('button', 'items-name');
     label.innerHTML = icons.folder;
-    label.append(f.name, el('span', 'items-count', ` ${items.length}`), el('span', 'items-caret', this.collapsed.has(f.id) ? ' ▸' : ' ▾'));
+    label.append(itemFolder.name, el('span', 'items-count', ` ${items.length}`), el('span', 'items-caret', this.collapsed.has(itemFolder.id) ? ' ▸' : ' ▾'));
     label.title = 'Show / hide its contents';
     label.addEventListener('click', () => {
-      if (this.collapsed.has(f.id)) {
-        this.collapsed.delete(f.id);
+      if (this.collapsed.has(itemFolder.id)) {
+        this.collapsed.delete(itemFolder.id);
       } else {
-        this.collapsed.add(f.id);
+        this.collapsed.add(itemFolder.id);
       }
       this.render(this.last);
     });
@@ -405,22 +405,22 @@ export class ItemsPanel {
     ren.title = 'Rename folder';
     ren.innerHTML = icons.rename;
     ren.addEventListener('click', async () => {
-      const name = await this.h.askName('Rename folder', f.name);
+      const name = await this.h.askName('Rename folder', itemFolder.name);
       if (name) {
-        this.store.commit(d => (d.folders = (d.folders ?? []).map(x => (x.id === f.id ? { ...x, name } : x))));
+        this.store.commit(draft => (draft.folders = (draft.folders ?? []).map(folder => (folder.id === itemFolder.id ? { ...folder, name } : folder))));
       }
     });
     const del = el('button', 'icon-btn');
     del.title = "Remove folder (keeps what's in it)";
     del.innerHTML = icons.trash;
     // What it held - items and subfolders - moves up to where it was.
-    twoTap(del, `folder:${f.id}`, () =>
-      this.store.commit((d) => {
-        const fs = d.folders ?? [];
-        const parent = f.parent && fs.some(p => p.id === f.parent) ? f.parent : undefined;
-        d.folders = fs
-          .filter(x => x.id !== f.id)
-          .map(x => (x.id === parent ? { ...x, items: [...x.items, ...f.items] } : x.parent === f.id ? { ...x, parent } : x));
+    twoTap(del, `folder:${itemFolder.id}`, () =>
+      this.store.commit((draft) => {
+        const fs = draft.folders ?? [];
+        const parent = itemFolder.parent && fs.some(otherFolder => otherFolder.id === itemFolder.parent) ? itemFolder.parent : undefined;
+        draft.folders = fs
+          .filter(folder => folder.id !== itemFolder.id)
+          .map(folder => (folder.id === parent ? { ...folder, items: [...folder.items, ...itemFolder.items] } : folder.parent === itemFolder.id ? { ...folder, parent } : folder));
       })
     );
     li.append(eye, label, ren, del);
@@ -432,7 +432,7 @@ export class ItemsPanel {
     const ids = [...this.checked];
     this.checked.clear();
     this.moving = false;
-    this.store.commit(d => (d.folders = (d.folders ?? []).map(f => ({ ...f, items: f.id === id ? [...f.items.filter(x => !ids.includes(x)), ...ids] : f.items.filter(x => !ids.includes(x)) }))));
+    this.store.commit(draft => (draft.folders = (draft.folders ?? []).map(itemFolder => ({ ...itemFolder, items: itemFolder.id === id ? [...itemFolder.items.filter(item => !ids.includes(item)), ...ids] : itemFolder.items.filter(item => !ids.includes(item)) }))));
   }
 
   private check(id: string, on: boolean): void {
@@ -455,9 +455,9 @@ export class ItemsPanel {
     this.picking = false;
     document.getElementById('items-pick')!.classList.remove('on');
     // An item lives in one folder at a time.
-    this.store.commit((d) => {
-      const rest = (d.folders ?? []).map(f => ({ ...f, items: f.items.filter(x => !ids.includes(x)) }));
-      d.folders = [...rest, { id: `folder-${Date.now().toString(36)}`, name, items: ids, ...(parent ? { parent } : {}) }];
+    this.store.commit((draft) => {
+      const rest = (draft.folders ?? []).map(itemFolder => ({ ...itemFolder, items: itemFolder.items.filter(item => !ids.includes(item)) }));
+      draft.folders = [...rest, { id: `folder-${Date.now().toString(36)}`, name, items: ids, ...(parent ? { parent } : {}) }];
     });
   }
 }

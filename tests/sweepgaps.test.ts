@@ -20,17 +20,17 @@ const check = (name: string, ok: boolean, info = '') => {
   }
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
-const chords = (pts: number[][]) => pts.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
+const chords = (pts: number[][]) => pts.slice(1).reduce((total, point, i) => total + Math.hypot(point[0] - pts[i][0], point[1] - pts[i][1]), 0);
 
-async function tube(name: string, feats: any[], id: string, r: number, path: number[][]) {
+async function tube(name: string, feats: any[], id: string, radius: number, path: number[][]) {
   const res: any = await regenerate(feats);
-  const s = debugBodies().get(id)!;
-  check(`${name}: builds, one clean solid`, !res.errors.length && !!s && isHealthy(healthOf(s)), res.errors.map((e: any) => e.message).join('; '));
-  const side = s.faces.reduce((a, f) => Math.max(a, measureArea(f)), 0);
-  const byside = side / (2 * Math.PI * r);
-  const byvol = Math.abs(measureVolume(s)) / (Math.PI * r * r);
-  const c = chords(path);
-  check('…as long as its path', byside >= c && byside < c * 1.1, `${byside.toFixed(2)} (straight lines ${c.toFixed(2)})`);
+  const shape = debugBodies().get(id)!;
+  check(`${name}: builds, one clean solid`, !res.errors.length && !!shape && isHealthy(healthOf(shape)), res.errors.map((e: any) => e.message).join('; '));
+  const side = shape.faces.reduce((a, face) => Math.max(a, measureArea(face)), 0);
+  const byside = side / (2 * Math.PI * radius);
+  const byvol = Math.abs(measureVolume(shape)) / (Math.PI * radius * radius);
+  const chordLength = chords(path);
+  check('…as long as its path', byside >= chordLength && byside < chordLength * 1.1, `${byside.toFixed(2)} (straight lines ${chordLength.toFixed(2)})`);
   check('…volume and side agree (no pieces jumping off)', Math.abs(byvol - byside) < byside * 0.005, `${byvol.toFixed(2)} vs ${byside.toFixed(2)}`);
 }
 

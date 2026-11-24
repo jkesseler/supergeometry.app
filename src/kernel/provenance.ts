@@ -38,14 +38,14 @@ interface Tagged {
 
 /** A 3 x 4 matrix, row by row: where a point is after a move. */
 type Moved = number[];
-/** First m, then n. */
-function then(m: Moved, n: Moved): Moved {
+/** First `moved`, then `after`. */
+function then(moved: Moved, after: Moved): Moved {
   const out: number[] = [];
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      out.push(n[r * 4] * m[c] + n[r * 4 + 1] * m[4 + c] + n[r * 4 + 2] * m[8 + c]);
+  for (let row = 0; row < 3; row++) {
+    for (let column = 0; column < 3; column++) {
+      out.push(after[row * 4] * moved[column] + after[row * 4 + 1] * moved[4 + column] + after[row * 4 + 2] * moved[8 + column]);
     }
-    out.push(n[r * 4] * m[3] + n[r * 4 + 1] * m[7] + n[r * 4 + 2] * m[11] + n[r * 4 + 3]);
+    out.push(after[row * 4] * moved[3] + after[row * 4 + 1] * moved[7] + after[row * 4 + 2] * moved[11] + after[row * 4 + 3]);
   }
 
   return out;
@@ -53,18 +53,18 @@ function then(m: Moved, n: Moved): Moved {
 
 /** A point (or a direction a face looks) taken back to where it was before a move. */
 export type Back = (v: [number, number, number], direction?: boolean) => [number, number, number];
-function backOf(m: Moved): Back {
-  const [a, b, c, d, e, f, g, h, i] = [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]];
-  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+function backOf(moved: Moved): Back {
+  const [a, b, m02, m10, e, m12, m20, m21, i] = [moved[0], moved[1], moved[2], moved[4], moved[5], moved[6], moved[8], moved[9], moved[10]];
+  const det = a * (e * i - m12 * m21) - b * (m10 * i - m12 * m20) + m02 * (m10 * m21 - e * m20);
   // The matrix turned back (its inverse).
-  const inv = [e * i - f * h, c * h - b * i, b * f - c * e, f * g - d * i, a * i - c * g, c * d - a * f, d * h - e * g, b * g - a * h, a * e - b * d].map(x => x / det);
+  const inv = [e * i - m12 * m21, m02 * m21 - b * i, b * m12 - m02 * e, m12 * m20 - m10 * i, a * i - m02 * m20, m02 * m10 - a * m12, m10 * m21 - e * m20, b * m20 - a * m21, a * e - b * m10].map(x => x / det);
 
-  return (v, direction) => {
+  return (vector, direction) => {
     // (The way a face looks goes back by the matrix laid on its side: the same thing for a move, a turn, a mirroring.)
     if (direction) {
-      return [a * v[0] + d * v[1] + g * v[2], b * v[0] + e * v[1] + h * v[2], c * v[0] + f * v[1] + i * v[2]];
+      return [a * vector[0] + m10 * vector[1] + m20 * vector[2], b * vector[0] + e * vector[1] + m21 * vector[2], m02 * vector[0] + m12 * vector[1] + i * vector[2]];
     }
-    const q = [v[0] - m[3], v[1] - m[7], v[2] - m[11]];
+    const q = [vector[0] - moved[3], vector[1] - moved[7], vector[2] - moved[11]];
 
     return [inv[0] * q[0] + inv[1] * q[1] + inv[2] * q[2], inv[3] * q[0] + inv[4] * q[1] + inv[5] * q[2], inv[6] * q[0] + inv[7] * q[1] + inv[8] * q[2]];
   };
@@ -74,8 +74,8 @@ const tags = new WeakMap<Shape3D, Tagged>();
 const edgeTags = new WeakMap<Shape3D, string[][]>();
 const oldEdgeTags = new WeakMap<Shape3D, string[][] | null>();
 
-const r4 = (v: number) => {
-  const x = Math.round(v * 1e4) / 1e4;
+const r4 = (value: number) => {
+  const x = Math.round(value * 1e4) / 1e4;
 
   return Object.is(x, -0) ? '0' : String(x);
 };
@@ -83,63 +83,63 @@ const r4 = (v: number) => {
 /** A face's surface, the same however much of it the face covers (null: no key for this kind). */
 function surfaceKey(face: Face): string | null {
   const oc = getOC();
-  const s = new oc.BRepAdaptor_Surface(face.wrapped, true);
+  const surface = new oc.BRepAdaptor_Surface(face.wrapped, true);
   try {
-    const T = oc.GeomAbs_SurfaceType;
-    const type = s.GetType();
+    const surfaceTypes = oc.GeomAbs_SurfaceType;
+    const type = surface.GetType();
     // A direction either way round (a face's orientation can flip in an edit).
-    const dir = (d: { X(): number; Y(): number; Z(): number }) => {
-      let v = [d.X(), d.Y(), d.Z()];
-      const k = v.findIndex(x => Math.abs(x) > 1e-9);
-      if (k >= 0 && v[k] < 0) {
-        v = v.map(x => -x);
+    const dir = (gpDir: { X(): number; Y(): number; Z(): number }) => {
+      let vector = [gpDir.X(), gpDir.Y(), gpDir.Z()];
+      const axis = vector.findIndex(x => Math.abs(x) > 1e-9);
+      if (axis >= 0 && vector[axis] < 0) {
+        vector = vector.map(x => -x);
       }
 
-      return v;
+      return vector;
     };
-    // The point of a line through p along d nearest the origin.
-    const foot = (p: number[], d: number[]) => {
-      const t = p[0] * d[0] + p[1] * d[1] + p[2] * d[2];
+    // The point of a line through `point` along `direction` nearest the origin.
+    const foot = (point: number[], direction: number[]) => {
+      const t = point[0] * direction[0] + point[1] * direction[1] + point[2] * direction[2];
 
-      return [p[0] - t * d[0], p[1] - t * d[1], p[2] - t * d[2]];
+      return [point[0] - t * direction[0], point[1] - t * direction[1], point[2] - t * direction[2]];
     };
-    const pt = (p: { X(): number; Y(): number; Z(): number }) => [p.X(), p.Y(), p.Z()];
-    if (type === T.GeomAbs_Plane) {
-      const pl = s.Plane();
-      const n = dir(pl.Axis().Direction());
-      const p = pt(pl.Location());
+    const pt = (gpPoint: { X(): number; Y(): number; Z(): number }) => [gpPoint.X(), gpPoint.Y(), gpPoint.Z()];
+    if (type === surfaceTypes.GeomAbs_Plane) {
+      const pl = surface.Plane();
+      const normal = dir(pl.Axis().Direction());
+      const point = pt(pl.Location());
 
-      return `P ${n.map(r4)} ${r4(n[0] * p[0] + n[1] * p[1] + n[2] * p[2])}`;
+      return `P ${normal.map(r4)} ${r4(normal[0] * point[0] + normal[1] * point[1] + normal[2] * point[2])}`;
     }
-    if (type === T.GeomAbs_Cylinder) {
-      const cy = s.Cylinder();
-      const d = dir(cy.Axis().Direction());
+    if (type === surfaceTypes.GeomAbs_Cylinder) {
+      const cy = surface.Cylinder();
+      const direction = dir(cy.Axis().Direction());
 
-      return `C ${d.map(r4)} ${foot(pt(cy.Location()), d).map(r4)} ${r4(cy.Radius())}`;
+      return `C ${direction.map(r4)} ${foot(pt(cy.Location()), direction).map(r4)} ${r4(cy.Radius())}`;
     }
-    if (type === T.GeomAbs_Sphere) {
-      const sp = s.Sphere();
+    if (type === surfaceTypes.GeomAbs_Sphere) {
+      const sp = surface.Sphere();
 
       return `S ${pt(sp.Location()).map(r4)} ${r4(sp.Radius())}`;
     }
-    if (type === T.GeomAbs_Cone) {
-      const co = s.Cone() as any;
-      const d = dir(co.Axis().Direction());
+    if (type === surfaceTypes.GeomAbs_Cone) {
+      const co = surface.Cone() as any;
+      const direction = dir(co.Axis().Direction());
 
-      return `K ${d.map(r4)} ${pt(co.Apex()).map(r4)} ${r4(Math.abs(co.SemiAngle()))}`;
+      return `K ${direction.map(r4)} ${pt(co.Apex()).map(r4)} ${r4(Math.abs(co.SemiAngle()))}`;
     }
-    if (type === T.GeomAbs_Torus) {
-      const to = s.Torus() as any;
-      const d = dir(to.Axis().Direction());
+    if (type === surfaceTypes.GeomAbs_Torus) {
+      const to = surface.Torus() as any;
+      const direction = dir(to.Axis().Direction());
 
-      return `T ${d.map(r4)} ${pt(to.Location()).map(r4)} ${r4(to.MajorRadius())} ${r4(to.MinorRadius())}`;
+      return `T ${direction.map(r4)} ${pt(to.Location()).map(r4)} ${r4(to.MajorRadius())} ${r4(to.MinorRadius())}`;
     }
 
     return null;
   } catch {
     return null;
   } finally {
-    s.delete();
+    surface.delete();
   }
 }
 
@@ -159,35 +159,35 @@ export function tagBody(shape: Shape3D, step: string, from: Shape3D[], others: S
   }
   const hashes = new Map<number, { face: Face; step: string; key: string | null; alias?: string; move?: Moved }[]>();
   const byKey = new Map<string, { step: string; alias?: string; move?: Moved }>();
-  for (const s of from) {
-    const t = tags.get(s);
-    if (!t || s === shape) {
+  for (const source of from) {
+    const t = tags.get(source);
+    if (!t || source === shape) {
       continue;
     }
     for (const list of t.byHash.values()) {
       for (const { face, i } of list) {
-        const h = face.hashCode;
-        hashes.set(h, [...(hashes.get(h) ?? []), { face, step: t.steps[i], key: t.keys[i], alias: t.alias?.[i], move: t.moves?.[i] }]);
+        const hashCode = face.hashCode;
+        hashes.set(hashCode, [...(hashes.get(hashCode) ?? []), { face, step: t.steps[i], key: t.keys[i], alias: t.alias?.[i], move: t.moves?.[i] }]);
       }
     }
-    t.keys.forEach((k, i) => k && !byKey.has(k) && byKey.set(k, { step: t.steps[i], alias: t.alias?.[i], move: t.moves?.[i] }));
+    t.keys.forEach((key, i) => key && !byKey.has(key) && byKey.set(key, { step: t.steps[i], alias: t.alias?.[i], move: t.moves?.[i] }));
   }
   const oldKey = new Map<string, string>();
-  for (const s of others) {
-    const t = tags.get(s);
-    if (!t || s === shape || from.includes(s)) {
+  for (const other of others) {
+    const t = tags.get(other);
+    if (!t || other === shape || from.includes(other)) {
       continue;
     }
-    t.keys.forEach((k, i) => k && !oldKey.has(k) && oldKey.set(k, t.alias?.[i] ?? t.steps[i]));
+    t.keys.forEach((key, i) => key && !oldKey.has(key) && oldKey.set(key, t.alias?.[i] ?? t.steps[i]));
   }
   const faces = shape.faces;
   const out: Tagged = { steps: [], keys: [], byHash: new Map() };
   const alias: (string | undefined)[] = [];
   const moves: (Moved | undefined)[] = [];
   faces.forEach((face, i) => {
-    const h = face.hashCode;
-    out.byHash.set(h, [...(out.byHash.get(h) ?? []), { face, i }]);
-    const same = hashes.get(h)?.find(x => x.face.isSame(face));
+    const hashCode = face.hashCode;
+    out.byHash.set(hashCode, [...(out.byHash.get(hashCode) ?? []), { face, i }]);
+    const same = hashes.get(hashCode)?.find(entry => entry.face.isSame(face));
     if (same) {
       out.steps.push(same.step);
       out.keys.push(same.key);
@@ -206,7 +206,7 @@ export function tagBody(shape: Shape3D, step: string, from: Shape3D[], others: S
   if (alias.some(a => a !== undefined)) {
     out.alias = alias;
   }
-  if (moves.some(m => m !== undefined)) {
+  if (moves.some(move => move !== undefined)) {
     out.moves = moves;
   }
   tags.set(shape, out);
@@ -221,7 +221,7 @@ export function tagBody(shape: Shape3D, step: string, from: Shape3D[], others: S
  * picks. What was saved then names the faces by the Move (`step`): kept
  * beside, as the old answer.
  */
-export function movedTags(from: Shape3D, moved: Shape3D, step: string, m: number[]): void {
+export function movedTags(from: Shape3D, moved: Shape3D, step: string, matrix: number[]): void {
   const t = tags.get(from);
   if (!t || tags.has(moved)) {
     return;
@@ -237,7 +237,7 @@ export function movedTags(from: Shape3D, moved: Shape3D, step: string, m: number
     keys: faces.map(surfaceKey),
     byHash,
     alias: faces.map(() => step),
-    moves: faces.map((_, i) => (t.moves?.[i] ? then(t.moves[i]!, m) : m))
+    moves: faces.map((_, i) => (t.moves?.[i] ? then(t.moves[i]!, matrix) : matrix))
   });
 }
 
@@ -258,7 +258,7 @@ export function oldEdgeSteps(shape: Shape3D): string[][] | undefined {
     return known ?? undefined;
   }
   const t = tags.get(shape);
-  const out = t?.alias ? stepsOfEdges(shape, t.steps.map((s, i) => t.alias![i] ?? s)) : null;
+  const out = t?.alias ? stepsOfEdges(shape, t.steps.map((step, i) => t.alias![i] ?? step)) : null;
   oldEdgeTags.set(shape, out);
 
   return out ?? undefined;
@@ -284,11 +284,11 @@ function stepsOfEdges(shape: Shape3D, steps: string[]): string[][] {
   const edges = shape.edges;
   const buckets = new Map<number, { i: number; s: Set<string> }[]>();
   edges.forEach((e, i) => buckets.set(e.hashCode, [...(buckets.get(e.hashCode) ?? []), { i, s: new Set<string>() }]));
-  shape.faces.forEach((f, fi) => {
-    for (const fe of f.edges) {
+  shape.faces.forEach((face, fi) => {
+    for (const fe of face.edges) {
       const list = buckets.get(fe.hashCode);
-      const m = list?.length === 1 ? list[0] : list?.find(x => edges[x.i].isSame(fe));
-      m?.s.add(steps[fi]);
+      const match = list?.length === 1 ? list[0] : list?.find(entry => edges[entry.i].isSame(fe));
+      match?.s.add(steps[fi]);
     }
   });
   const out: string[][] = new Array(edges.length).fill(null).map(() => []);
@@ -356,17 +356,17 @@ export function edgeOrigins(shape: Shape3D): (string[] | undefined)[] | undefine
   const edges = shape.edges;
   const buckets = new Map<number, { i: number; s: Set<string>; all: boolean }[]>();
   edges.forEach((e, i) => buckets.set(e.hashCode, [...(buckets.get(e.hashCode) ?? []), { i, s: new Set<string>(), all: true }]));
-  shape.faces.forEach((f, fi) => {
-    for (const fe of f.edges) {
+  shape.faces.forEach((face, fi) => {
+    for (const fe of face.edges) {
       const list = buckets.get(fe.hashCode);
-      const m = list?.length === 1 ? list[0] : list?.find(x => edges[x.i].isSame(fe));
-      if (!m) {
+      const match = list?.length === 1 ? list[0] : list?.find(entry => edges[entry.i].isSame(fe));
+      if (!match) {
         continue;
       }
       if (origins[fi] === undefined) {
-        m.all = false;
+        match.all = false;
       } else {
-        m.s.add(`${steps[fi]}|${origins[fi]}`);
+        match.s.add(`${steps[fi]}|${origins[fi]}`);
       }
     }
   });
@@ -397,11 +397,11 @@ export function seamEdges(shape: Shape3D): boolean[] {
   const edges = shape.edges;
   const buckets = new Map<number, { i: number; faces: Set<number> }[]>();
   edges.forEach((e, i) => buckets.set(e.hashCode, [...(buckets.get(e.hashCode) ?? []), { i, faces: new Set<number>() }]));
-  shape.faces.forEach((f, fi) => {
-    for (const fe of f.edges) {
+  shape.faces.forEach((face, fi) => {
+    for (const fe of face.edges) {
       const list = buckets.get(fe.hashCode);
-      const m = list?.length === 1 ? list[0] : list?.find(x => edges[x.i].isSame(fe));
-      m?.faces.add(fi);
+      const match = list?.length === 1 ? list[0] : list?.find(entry => edges[entry.i].isSame(fe));
+      match?.faces.add(fi);
     }
   });
   const out: boolean[] = new Array(edges.length).fill(false);
@@ -418,7 +418,7 @@ export function seamEdges(shape: Shape3D): boolean[] {
 /** Same steps, as stored in a reference. */
 
 export function sameSteps(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((x, i) => x === b[i]);
+  return a.length === b.length && a.every((item, i) => item === b[i]);
 }
 
 /** A copy made face for face (same order): the same tags. */

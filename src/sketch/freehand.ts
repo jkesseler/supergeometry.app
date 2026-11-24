@@ -23,23 +23,23 @@ export interface Freehand {
 
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
-/** Distance from p to the segment a-b. */
-function segDist(p: Vec2, a: Vec2, b: Vec2): number {
+/** Distance from `point` to the segment a-b. */
+function segDist(point: Vec2, a: Vec2, b: Vec2): number {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const L2 = dx * dx + dy * dy;
-  const t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+  const t = L2 ? Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / L2)) : 0;
 
-  return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
+  return Math.hypot(point[0] - a[0] - dx * t, point[1] - a[1] - dy * t);
 }
 
 function length(pts: Vec2[]): number {
-  let L = 0;
+  let total = 0;
   for (let i = 1; i < pts.length; i++) {
-    L += dist(pts[i - 1], pts[i]);
+    total += dist(pts[i - 1], pts[i]);
   }
 
-  return L;
+  return total;
 }
 
 /** Evenly spaced points along a polyline (the ends kept). */
@@ -49,13 +49,13 @@ function resample(pts: Vec2[], step: number): Vec2[] {
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1];
     const b = pts[i];
-    const d = dist(a, b);
+    const distance = dist(a, b);
     let t = step - carry;
-    while (t <= d) {
-      out.push([a[0] + ((b[0] - a[0]) * t) / d, a[1] + ((b[1] - a[1]) * t) / d]);
+    while (t <= distance) {
+      out.push([a[0] + ((b[0] - a[0]) * t) / distance, a[1] + ((b[1] - a[1]) * t) / distance]);
       t += step;
     }
-    carry = d - (t - step);
+    carry = distance - (t - step);
   }
   const last = pts[pts.length - 1];
   if (dist(out[out.length - 1], last) > step * 0.3) {
@@ -69,47 +69,47 @@ function resample(pts: Vec2[], step: number): Vec2[] {
 
 /** Light smoothing (hand jitter), the ends kept unless the stroke is a loop. */
 function smooth(pts: Vec2[], loop: boolean, passes = 2): Vec2[] {
-  let p = pts;
-  const n = p.length;
-  for (let k = 0; k < passes; k++) {
-    p = p.map((q, i) => {
-      if (!loop && (i === 0 || i === n - 1)) {
+  let points = pts;
+  const count = points.length;
+  for (let pass = 0; pass < passes; pass++) {
+    points = points.map((q, i) => {
+      if (!loop && (i === 0 || i === count - 1)) {
         return q;
       }
-      const a = p[(i - 1 + n) % n];
-      const b = p[(i + 1) % n];
+      const a = points[(i - 1 + count) % count];
+      const b = points[(i + 1) % count];
 
       return [(a[0] + 2 * q[0] + b[0]) / 4, (a[1] + 2 * q[1] + b[1]) / 4] as Vec2;
     });
   }
 
-  return p;
+  return points;
 }
 
 /** Least-squares circle (Kåsa) through points; null when they are (nearly) straight. */
 export function fitCircle(pts: Vec2[]): { c: Vec2; r: number } | null {
-  const n = pts.length;
-  if (n < 3) {
+  const count = pts.length;
+  if (count < 3) {
     return null;
   }
   let mx = 0;
   let my = 0;
-  for (const p of pts) {
-    (mx += p[0]), (my += p[1]);
+  for (const point of pts) {
+    (mx += point[0]), (my += point[1]);
   }
-  mx /= n;
-  my /= n;
+  mx /= count;
+  my /= count;
   let suu = 0, svv = 0, suv = 0, suuu = 0, svvv = 0, suvv = 0, svuu = 0;
-  for (const p of pts) {
-    const u = p[0] - mx;
-    const v = p[1] - my;
-    suu += u * u;
-    svv += v * v;
-    suv += u * v;
-    suuu += u * u * u;
-    svvv += v * v * v;
-    suvv += u * v * v;
-    svuu += v * u * u;
+  for (const point of pts) {
+    const offsetX = point[0] - mx;
+    const offsetY = point[1] - my;
+    suu += offsetX * offsetX;
+    svv += offsetY * offsetY;
+    suv += offsetX * offsetY;
+    suuu += offsetX * offsetX * offsetX;
+    svvv += offsetY * offsetY * offsetY;
+    suvv += offsetX * offsetY * offsetY;
+    svuu += offsetY * offsetX * offsetX;
   }
   const det = suu * svv - suv * suv;
   if (Math.abs(det) < 1e-18 * Math.max(1, suu * svv)) {
@@ -119,46 +119,46 @@ export function fitCircle(pts: Vec2[]): { c: Vec2; r: number } | null {
   const b2 = (svvv + svuu) / 2;
   const uc = (b1 * svv - b2 * suv) / det;
   const vc = (b2 * suu - b1 * suv) / det;
-  const r = Math.sqrt(uc * uc + vc * vc + (suu + svv) / n);
+  const radius = Math.sqrt(uc * uc + vc * vc + (suu + svv) / count);
 
-  return Number.isFinite(r) ? { c: [mx + uc, my + vc], r } : null;
+  return Number.isFinite(radius) ? { c: [mx + uc, my + vc], r: radius } : null;
 }
 
 /** Indices of the sharp corners of an evenly spaced stroke. */
-function corners(p: Vec2[], loop: boolean, k: number, minTurn: number): number[] {
-  const n = p.length;
-  const turn = new Array<number>(n).fill(0);
-  for (let i = 0; i < n; i++) {
-    if (!loop && (i < k || i > n - 1 - k)) {
+function corners(points: Vec2[], loop: boolean, reach: number, minTurn: number): number[] {
+  const count = points.length;
+  const turn = new Array<number>(count).fill(0);
+  for (let i = 0; i < count; i++) {
+    if (!loop && (i < reach || i > count - 1 - reach)) {
       continue;
     }
-    const a = p[(i - k + n) % n];
-    const b = p[(i + k) % n];
-    const q = p[i];
+    const a = points[(i - reach + count) % count];
+    const b = points[(i + reach) % count];
+    const q = points[i];
     const a1 = Math.atan2(q[1] - a[1], q[0] - a[0]);
     const a2 = Math.atan2(b[1] - q[1], b[0] - q[0]);
-    let d = Math.abs(a2 - a1);
-    if (d > Math.PI) {
-      d = 2 * Math.PI - d;
+    let turnAngle = Math.abs(a2 - a1);
+    if (turnAngle > Math.PI) {
+      turnAngle = 2 * Math.PI - turnAngle;
     }
-    turn[i] = d;
+    turn[i] = turnAngle;
   }
   const out: number[] = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < count; i++) {
     if (turn[i] < minTurn) {
       continue;
     }
     // The sharpest spot of the bend (a tie goes to the first).
     let best = true;
-    for (let j = -k; j <= k && best; j++) {
+    for (let j = -reach; j <= reach && best; j++) {
       if (!j) {
         continue;
       }
-      const m = loop ? (i + j + n) % n : i + j;
-      if (m < 0 || m >= n) {
+      const neighbour = loop ? (i + j + count) % count : i + j;
+      if (neighbour < 0 || neighbour >= count) {
         continue;
       }
-      if (turn[m] > turn[i] || (turn[m] === turn[i] && j < 0)) {
+      if (turn[neighbour] > turn[i] || (turn[neighbour] === turn[i] && j < 0)) {
         best = false;
       }
     }
@@ -178,36 +178,36 @@ function corners(p: Vec2[], loop: boolean, k: number, minTurn: number): number[]
 export function fitRun(run: Vec2[], tol: number, exact = false): FreehandPiece {
   const a = run[0];
   const b = run[run.length - 1];
-  const L = length(run);
+  const runLength = length(run);
   const chord = dist(a, b);
   // Straight enough (a freehand line wobbles a little more than the tolerance).
-  const lineTol = exact ? tol : Math.min(Math.max(tol * 1.6, L * 0.015), tol * 4);
-  if (chord > 0 && run.every(p => segDist(p, a, b) <= lineTol)) {
+  const lineTol = exact ? tol : Math.min(Math.max(tol * 1.6, runLength * 0.015), tol * 4);
+  if (chord > 0 && run.every(point => segDist(point, a, b) <= lineTol)) {
     return { kind: 'line', a, b };
   }
   // Round enough: an arc (not almost a full turn, and not a huge flat one).
-  const c = fitCircle(run);
-  if (c && c.r < chord * 20 + L) {
-    const arcTol = exact ? tol : Math.min(Math.max(tol * 1.5, c.r * 0.02), tol * 2.5);
-    if (run.every(p => Math.abs(dist(p, c.c) - c.r) <= arcTol)) {
+  const circle = fitCircle(run);
+  if (circle && circle.r < chord * 20 + runLength) {
+    const arcTol = exact ? tol : Math.min(Math.max(tol * 1.5, circle.r * 0.02), tol * 2.5);
+    if (run.every(point => Math.abs(dist(point, circle.c) - circle.r) <= arcTol)) {
       let sweep = 0;
       for (let i = 1; i < run.length; i++) {
-        const t0 = Math.atan2(run[i - 1][1] - c.c[1], run[i - 1][0] - c.c[0]);
-        const t1 = Math.atan2(run[i][1] - c.c[1], run[i][0] - c.c[0]);
-        let d = t1 - t0;
-        if (d > Math.PI) {
-          d -= 2 * Math.PI;
+        const t0 = Math.atan2(run[i - 1][1] - circle.c[1], run[i - 1][0] - circle.c[0]);
+        const t1 = Math.atan2(run[i][1] - circle.c[1], run[i][0] - circle.c[0]);
+        let sweepStep = t1 - t0;
+        if (sweepStep > Math.PI) {
+          sweepStep -= 2 * Math.PI;
         }
-        if (d < -Math.PI) {
-          d += 2 * Math.PI;
+        if (sweepStep < -Math.PI) {
+          sweepStep += 2 * Math.PI;
         }
-        sweep += d;
+        sweep += sweepStep;
       }
       if (Math.abs(sweep) < Math.PI * 1.75 && Math.abs(sweep) > 0.2) {
-        const onC = (p: Vec2): Vec2 => {
-          const d = dist(p, c.c) || 1;
+        const onC = (point: Vec2): Vec2 => {
+          const distance = dist(point, circle.c) || 1;
 
-          return [c.c[0] + ((p[0] - c.c[0]) * c.r) / d, c.c[1] + ((p[1] - c.c[1]) * c.r) / d];
+          return [circle.c[0] + ((point[0] - circle.c[0]) * circle.r) / distance, circle.c[1] + ((point[1] - circle.c[1]) * circle.r) / distance];
         };
 
         // Ends stay where they were drawn (they join the next piece); the middle on the circle.
@@ -225,62 +225,62 @@ export function fitRun(run: Vec2[], tol: number, exact = false): FreehandPiece {
  * doesn't.
  */
 export function fitSpline(run: Vec2[], loop: boolean, tol: number): Vec2[] {
-  const n = run.length;
+  const count = run.length;
   // Too few points to thin out (a tiny curve): all of them.
-  if (n <= (loop ? 4 : 3)) {
+  if (count <= (loop ? 4 : 3)) {
     return run.slice();
   }
   const PER = 12;
-  const idx: number[] = loop ? [0, 1, 2, 3].map(i => Math.floor((i * n) / 4)) : [0, Math.floor(n / 2), n - 1];
+  const idx: number[] = loop ? [0, 1, 2, 3].map(i => Math.floor((i * count) / 4)) : [0, Math.floor(count / 2), count - 1];
   // The worst stroke point (and how far): each one measured against the spans
   // around its own (the curve near it), not the whole curve - long strokes stay quick.
   const worst = (ix: number[]): [number, number] => {
     let curve = splinePoints(ix.map(i => run[i]), loop, 'fit', PER);
     // Down to its two ends: a straight span (sampled like the others).
     if (curve.length === 2) {
-      curve = Array.from({ length: PER + 1 }, (_, k) => [curve[0][0] + ((curve[1][0] - curve[0][0]) * k) / PER, curve[0][1] + ((curve[1][1] - curve[0][1]) * k) / PER] as Vec2);
+      curve = Array.from({ length: PER + 1 }, (_, step) => [curve[0][0] + ((curve[1][0] - curve[0][0]) * step) / PER, curve[0][1] + ((curve[1][1] - curve[0][1]) * step) / PER] as Vec2);
     }
     const spans = loop ? ix.length : ix.length - 1;
-    let w = -1;
+    let worstIndex = -1;
     let wd = tol;
-    let s = 0;
-    for (let i = 0; i < n; i++) {
-      while (s < ix.length - 1 && i >= ix[s + 1]) {
-        s++;
+    let span = 0;
+    for (let i = 0; i < count; i++) {
+      while (span < ix.length - 1 && i >= ix[span + 1]) {
+        span++;
       }
-      if (i === ix[s]) {
+      if (i === ix[span]) {
         continue;
       }
-      let d = Infinity;
-      for (let t = s - 1; t <= s + 1; t++) {
+      let distance = Infinity;
+      for (let t = span - 1; t <= span + 1; t++) {
         const sp = loop ? (t + spans) % spans : t;
         if (sp < 0 || sp >= spans) {
           continue;
         }
-        for (let k = sp * PER + 1; k <= (sp + 1) * PER; k++) {
-          d = Math.min(d, segDist(run[i], curve[k - 1], curve[k]));
+        for (let sample = sp * PER + 1; sample <= (sp + 1) * PER; sample++) {
+          distance = Math.min(distance, segDist(run[i], curve[sample - 1], curve[sample]));
         }
       }
-      if (d > wd) {
-        (wd = d), (w = i);
+      if (distance > wd) {
+        (wd = distance), (worstIndex = i);
       }
     }
 
-    return [w, wd];
+    return [worstIndex, wd];
   };
-  for (let guard = 0; guard < n; guard++) {
-    const [w] = worst(idx);
-    if (w < 0) {
+  for (let guard = 0; guard < count; guard++) {
+    const [worstSpan] = worst(idx);
+    if (worstSpan < 0) {
       break;
     }
-    idx.push(w);
+    idx.push(worstSpan);
     idx.sort((x, y) => x - y);
   }
   // Then drop every point the curve can do without (adding the worst point
   // first crowds them where the stroke bends).
   const keep = loop ? 3 : 2;
   for (let j = loop ? 0 : 1; j < idx.length - (loop ? 0 : 1) && idx.length > keep; ) {
-    const without = idx.filter((_, m) => m !== j);
+    const without = idx.filter((_, index) => index !== j);
     if (worst(without)[0] < 0) {
       idx.splice(j, 1);
     } else {
@@ -300,33 +300,33 @@ export function simplifyStroke(raw: Vec2[], tol: number, closeTol = tol * 6): Fr
   const none: Freehand = { pieces: [], closed: false };
   // Drop the repeats (a pointer held still reports the same spot).
   const pts: Vec2[] = [];
-  for (const p of raw) {
-    if (!pts.length || dist(p, pts[pts.length - 1]) > tol * 0.25) {
-      pts.push(p);
+  for (const point of raw) {
+    if (!pts.length || dist(point, pts[pts.length - 1]) > tol * 0.25) {
+      pts.push(point);
     }
   }
   if (pts.length < 2) {
     return none;
   }
-  const L = length(pts);
-  if (L < tol * 4) {
+  const totalLength = length(pts);
+  if (totalLength < tol * 4) {
     return none;
   }
   // Back near the start (a hand overshoots it a little: the spot nearest it,
   // in the last part of the stroke, is where the loop closes).
   let closed = false;
-  if (pts.length >= 6 && L > closeTol * 4) {
+  if (pts.length >= 6 && totalLength > closeTol * 4) {
     let j = -1;
     let jd = closeTol;
     let along = 0;
     for (let i = 1; i < pts.length; i++) {
       along += dist(pts[i - 1], pts[i]);
-      if (along < L * 0.6) {
+      if (along < totalLength * 0.6) {
         continue;
       }
-      const d = dist(pts[i], pts[0]);
-      if (d <= jd) {
-        (jd = d), (j = i);
+      const distance = dist(pts[i], pts[0]);
+      if (distance <= jd) {
+        (jd = distance), (j = i);
       }
     }
     if (j > 0) {
@@ -335,38 +335,38 @@ export function simplifyStroke(raw: Vec2[], tol: number, closeTol = tol * 6): Fr
     }
   }
   // Evenly spaced and lightly smoothed: corners and fits don't depend on how fast it was drawn.
-  const step = Math.max(tol, L / 2000);
-  let p = resample(pts, step);
+  const step = Math.max(tol, totalLength / 2000);
+  let points = resample(pts, step);
   if (closed) {
     // A loop: the gap closed, the last point (= the first) dropped.
-    p = resample([...pts, pts[0]], step);
-    p.pop();
-    if (p.length < 6) {
+    points = resample([...pts, pts[0]], step);
+    points.pop();
+    if (points.length < 6) {
       return none;
     }
   }
-  p = smooth(p, closed);
-  const k = Math.max(2, Math.round((tol * 5) / step));
-  const cut = corners(p, closed, k, (50 * Math.PI) / 180);
+  points = smooth(points, closed);
+  const reach = Math.max(2, Math.round((tol * 5) / step));
+  const cut = corners(points, closed, reach, (50 * Math.PI) / 180);
 
   if (closed && !cut.length) {
-    const c = fitCircle(p);
-    if (c && p.every(q => Math.abs(dist(q, c.c) - c.r) <= Math.max(tol * 2, c.r * 0.06))) {
-      return { pieces: [{ kind: 'circle', center: c.c, radius: c.r }], closed: true };
+    const circle = fitCircle(points);
+    if (circle && points.every(q => Math.abs(dist(q, circle.c) - circle.r) <= Math.max(tol * 2, circle.r * 0.06))) {
+      return { pieces: [{ kind: 'circle', center: circle.c, radius: circle.r }], closed: true };
     }
 
-    return { pieces: [{ kind: 'spline', points: fitSpline(p, true, tol), closed: true }], closed: true };
+    return { pieces: [{ kind: 'spline', points: fitSpline(points, true, tol), closed: true }], closed: true };
   }
 
   const runs: Vec2[][] = [];
   if (closed) {
-    const n = p.length;
+    const count = points.length;
     for (let j = 0; j < cut.length; j++) {
-      const s = cut[j];
+      const cutIndex = cut[j];
       const e = cut[(j + 1) % cut.length];
       const run: Vec2[] = [];
-      for (let i = s; ; i = (i + 1) % n) {
-        run.push(p[i]);
+      for (let i = cutIndex; ; i = (i + 1) % count) {
+        run.push(points[i]);
         if (i === e && run.length > 1) {
           break;
         }
@@ -374,12 +374,12 @@ export function simplifyStroke(raw: Vec2[], tol: number, closeTol = tol * 6): Fr
       runs.push(run);
     }
   } else {
-    const at = [0, ...cut, p.length - 1];
+    const at = [0, ...cut, points.length - 1];
     for (let j = 1; j < at.length; j++) {
-      runs.push(p.slice(at[j - 1], at[j] + 1));
+      runs.push(points.slice(at[j - 1], at[j] + 1));
     }
   }
-  const pieces = runs.filter(r => r.length >= 2 && length(r) > tol).map(r => fitRun(r, tol));
+  const pieces = runs.filter(run => run.length >= 2 && length(run) > tol).map(run => fitRun(run, tol));
   // Each piece starts where the one before it ends (exactly: they are joined).
   for (let i = 1; i < pieces.length; i++) {
     setStart(pieces[i], endOf(pieces[i - 1]));

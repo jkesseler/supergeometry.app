@@ -94,26 +94,26 @@ function iconPic(name: IconName, onLoad: () => void): HTMLImageElement | null {
 /** A flat picture in the room: a canvas on a plane `w` metres wide. Redrawn only when asked. */
 class Board {
   readonly mesh: Mesh;
-  readonly g: CanvasRenderingContext2D;
+  readonly context: CanvasRenderingContext2D;
   private tex: CanvasTexture;
   constructor(
     readonly px: number,
     readonly py: number,
     readonly w: number
   ) {
-    const c = document.createElement('canvas');
-    c.width = px;
-    c.height = py;
-    this.g = c.getContext('2d')!;
-    this.tex = new CanvasTexture(c);
+    const canvas = document.createElement('canvas');
+    canvas.width = px;
+    canvas.height = py;
+    this.context = canvas.getContext('2d')!;
+    this.tex = new CanvasTexture(canvas);
     this.tex.colorSpace = SRGBColorSpace;
     this.mesh = new Mesh(new PlaneGeometry(w, (w * py) / px), new MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, depthTest: false, side: DoubleSide }));
     this.mesh.renderOrder = 20;
   }
   clear(): CanvasRenderingContext2D {
-    this.g.clearRect(0, 0, this.px, this.py);
+    this.context.clearRect(0, 0, this.px, this.py);
 
-    return this.g;
+    return this.context;
   }
   show(): void {
     this.tex.needsUpdate = true;
@@ -137,8 +137,8 @@ class Wheel {
   }
   /** Where button i sits (canvas pixels): round the ring from the top, clockwise. */
   private at(i: number): [number, number] {
-    const n = Math.max(this.items.length, 1);
-    const a = (i / n) * Math.PI * 2;
+    const count = Math.max(this.items.length, 1);
+    const a = (i / count) * Math.PI * 2;
 
     return [384 + Math.sin(a) * 250, 384 - Math.cos(a) * 250];
   }
@@ -148,75 +148,75 @@ class Wheel {
       return -1;
     }
     const a = (Math.atan2(x, -y) + Math.PI * 2) % (Math.PI * 2);
-    const n = this.items.length;
+    const count = this.items.length;
 
-    return Math.round((a / (Math.PI * 2)) * n) % n;
+    return Math.round((a / (Math.PI * 2)) * count) % count;
   }
   /** The button under a point of the board (-1..1 across, -1..1 up), or -1. */
-  slotAtPoint(u: number, v: number): number {
-    const px = 384 + u * 384;
-    const py = 384 - v * 384;
+  slotAtPoint(across: number, up: number): number {
+    const px = 384 + across * 384;
+    const py = 384 - up * 384;
     let best = -1;
     let bd = 80;
     this.items.forEach((_, i) => {
       const [x, y] = this.at(i);
-      const d = Math.hypot(px - x, py - y);
-      if (d < bd) {
-        ((bd = d), (best = i));
+      const distance = Math.hypot(px - x, py - y);
+      if (distance < bd) {
+        ((bd = distance), (best = i));
       }
     });
 
     return best;
   }
   draw(): void {
-    const g = this.board.clear();
-    g.fillStyle = GLASS;
-    g.beginPath();
-    g.arc(384, 384, 360, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = LINE;
-    g.lineWidth = 3;
-    g.stroke();
+    const canvasContext = this.board.clear();
+    canvasContext.fillStyle = GLASS;
+    canvasContext.beginPath();
+    canvasContext.arc(384, 384, 360, 0, Math.PI * 2);
+    canvasContext.fill();
+    canvasContext.strokeStyle = LINE;
+    canvasContext.lineWidth = 3;
+    canvasContext.stroke();
     this.items.forEach((it, i) => {
       const [x, y] = this.at(i);
       const hot = i === this.hot;
-      g.fillStyle = hot ? ACCENT : 'rgba(255,255,255,0.08)';
-      g.beginPath();
-      g.arc(x, y, hot ? 74 : 66, 0, Math.PI * 2);
-      g.fill();
-      g.globalAlpha = it.disabled ? 0.35 : 1;
+      canvasContext.fillStyle = hot ? ACCENT : 'rgba(255,255,255,0.08)';
+      canvasContext.beginPath();
+      canvasContext.arc(x, y, hot ? 74 : 66, 0, Math.PI * 2);
+      canvasContext.fill();
+      canvasContext.globalAlpha = it.disabled ? 0.35 : 1;
       const pic = it.icon ? iconPic(it.icon, () => this.draw()) : null;
       if (pic) {
-        g.drawImage(pic, x - 34, y - 34, 68, 68);
+        canvasContext.drawImage(pic, x - 34, y - 34, 68, 68);
       } else {
-        g.fillStyle = '#fff';
-        g.font = `600 30px ${FONT}`;
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.fillText(it.label.slice(0, 2), x, y);
+        canvasContext.fillStyle = '#fff';
+        canvasContext.font = `600 30px ${FONT}`;
+        canvasContext.textAlign = 'center';
+        canvasContext.textBaseline = 'middle';
+        canvasContext.fillText(it.label.slice(0, 2), x, y);
       }
-      g.globalAlpha = 1;
+      canvasContext.globalAlpha = 1;
     });
     // The middle: what the chosen button does (or the wheel's name).
     const text = this.items[this.hot] ? this.items[this.hot].label : this.items.length ? this.title : 'Pick a face, edge or corner first';
-    g.fillStyle = '#fff';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = `600 ${text.length > 16 ? 30 : 38}px ${FONT}`;
-    wrap(g, text, 384, 384, 230, 42);
+    canvasContext.fillStyle = '#fff';
+    canvasContext.textAlign = 'center';
+    canvasContext.textBaseline = 'middle';
+    canvasContext.font = `600 ${text.length > 16 ? 30 : 38}px ${FONT}`;
+    wrap(canvasContext, text, 384, 384, 230, 42);
     this.board.show();
   }
 }
 
 /** Text in at most two lines, centred on (x, y). */
-function wrap(g: CanvasRenderingContext2D, text: string, x: number, y: number, max: number, lh: number): void {
+function wrap(canvasContext: CanvasRenderingContext2D, text: string, x: number, y: number, max: number, lh: number): void {
   const lines: string[] = [];
   let cur = '';
-  for (const w of text.split(' ')) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (g.measureText(next).width > max && cur) {
+  for (const word of text.split(' ')) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (canvasContext.measureText(next).width > max && cur) {
       lines.push(cur);
-      cur = w;
+      cur = word;
     } else {
       cur = next;
     }
@@ -225,7 +225,7 @@ function wrap(g: CanvasRenderingContext2D, text: string, x: number, y: number, m
     lines.push(cur);
   }
   const shown = lines.slice(0, 2);
-  shown.forEach((l, i) => g.fillText(l, x, y + (i - (shown.length - 1) / 2) * lh));
+  shown.forEach((line, i) => canvasContext.fillText(line, x, y + (i - (shown.length - 1) / 2) * lh));
 }
 
 
@@ -238,74 +238,74 @@ class Tape {
   readonly board = new Board(300, 560, 0.06);
   private key = '';
   draw(ratio: number): void {
-    const v = Math.log2(Math.max(1e-6, ratio));
-    const key = `${ratioText(ratio)}|${v.toFixed(2)}`;
+    const logRatio = Math.log2(Math.max(1e-6, ratio));
+    const key = `${ratioText(ratio)}|${logRatio.toFixed(2)}`;
     if (key === this.key) {
       return;
     }
     this.key = key;
-    const g = this.board.clear();
-    g.fillStyle = GLASS;
-    g.beginPath();
-    g.roundRect(4, 4, 292, 552, 48);
-    g.fill();
-    g.strokeStyle = LINE;
-    g.lineWidth = 3;
-    g.stroke();
+    const canvasContext = this.board.clear();
+    canvasContext.fillStyle = GLASS;
+    canvasContext.beginPath();
+    canvasContext.roundRect(4, 4, 292, 552, 48);
+    canvasContext.fill();
+    canvasContext.strokeStyle = LINE;
+    canvasContext.lineWidth = 3;
+    canvasContext.stroke();
     // The number now.
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillStyle = '#fff';
-    g.font = `600 64px ${FONT}`;
-    g.fillText(ratioText(ratio), 150, 72);
-    g.fillStyle = 'rgba(235,235,245,0.55)';
-    g.font = `500 26px ${FONT}`;
-    g.fillText(Math.abs(v) < 0.005 ? 'real size' : v > 0 ? 'bigger' : 'smaller', 150, 122);
+    canvasContext.textAlign = 'center';
+    canvasContext.textBaseline = 'middle';
+    canvasContext.fillStyle = '#fff';
+    canvasContext.font = `600 64px ${FONT}`;
+    canvasContext.fillText(ratioText(ratio), 150, 72);
+    canvasContext.fillStyle = 'rgba(235,235,245,0.55)';
+    canvasContext.font = `500 26px ${FONT}`;
+    canvasContext.fillText(Math.abs(logRatio) < 0.005 ? 'real size' : logRatio > 0 ? 'bigger' : 'smaller', 150, 122);
     // The tape: one mark a doubling, 80 px apart, the pointer in the middle of the window.
     const top = 156;
     const bottom = 540;
     const mid = (top + bottom) / 2;
     const step = 80;
-    g.save();
-    g.beginPath();
-    g.rect(0, top, 300, bottom - top);
-    g.clip();
-    for (let k = Math.floor(v) - 3; k <= Math.ceil(v) + 3; k++) {
+    canvasContext.save();
+    canvasContext.beginPath();
+    canvasContext.rect(0, top, 300, bottom - top);
+    canvasContext.clip();
+    for (let tick = Math.floor(logRatio) - 3; tick <= Math.ceil(logRatio) + 3; tick++) {
       for (const half of [0, 0.5]) {
-        const y = mid - (k + half - v) * step;
+        const y = mid - (tick + half - logRatio) * step;
         if (y < top - 20 || y > bottom + 20) {
           continue;
         }
-        const zero = k === 0 && !half;
-        g.strokeStyle = zero ? ACCENT : half ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.6)';
-        g.lineWidth = zero ? 5 : 3;
-        g.beginPath();
-        g.moveTo(40, y);
-        g.lineTo(half ? 72 : 96, y);
-        g.stroke();
+        const zero = tick === 0 && !half;
+        canvasContext.strokeStyle = zero ? ACCENT : half ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.6)';
+        canvasContext.lineWidth = zero ? 5 : 3;
+        canvasContext.beginPath();
+        canvasContext.moveTo(40, y);
+        canvasContext.lineTo(half ? 72 : 96, y);
+        canvasContext.stroke();
         if (half) {
           continue;
         }
-        g.textAlign = 'left';
-        g.fillStyle = zero ? ACCENT : 'rgba(235,235,245,0.8)';
-        g.font = `${zero ? 700 : 500} 34px ${FONT}`;
-        g.fillText(k >= 0 ? `${2 ** k}:1` : `1:${2 ** -k}`, 116, y);
+        canvasContext.textAlign = 'left';
+        canvasContext.fillStyle = zero ? ACCENT : 'rgba(235,235,245,0.8)';
+        canvasContext.font = `${zero ? 700 : 500} 34px ${FONT}`;
+        canvasContext.fillText(tick >= 0 ? `${2 ** tick}:1` : `1:${2 ** -tick}`, 116, y);
       }
     }
-    g.restore();
+    canvasContext.restore();
     // The pointer: where the model is now.
-    g.fillStyle = '#fff';
-    g.beginPath();
-    g.moveTo(12, mid - 14);
-    g.lineTo(34, mid);
-    g.lineTo(12, mid + 14);
-    g.fill();
-    g.strokeStyle = '#fff';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(34, mid);
-    g.lineTo(104, mid);
-    g.stroke();
+    canvasContext.fillStyle = '#fff';
+    canvasContext.beginPath();
+    canvasContext.moveTo(12, mid - 14);
+    canvasContext.lineTo(34, mid);
+    canvasContext.lineTo(12, mid + 14);
+    canvasContext.fill();
+    canvasContext.strokeStyle = '#fff';
+    canvasContext.lineWidth = 2;
+    canvasContext.beginPath();
+    canvasContext.moveTo(34, mid);
+    canvasContext.lineTo(104, mid);
+    canvasContext.stroke();
     this.board.show();
   }
   reset(): void {
@@ -314,10 +314,10 @@ class Tape {
 }
 
 /** A scale as people write it: 1:1, 2:1, 1:4, 1:2.5 (a tenth when it's not whole, under ten). */
-function ratioText(r: number): string {
-  const one = (n: number) => (n >= 10 || Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1));
+function ratioText(ratio: number): string {
+  const one = (value: number) => (value >= 10 || Math.abs(value - Math.round(value)) < 0.05 ? String(Math.round(value)) : value.toFixed(1));
 
-  return r >= 1 ? `${one(r)}:1` : `1:${one(1 / r)}`;
+  return ratio >= 1 ? `${one(ratio)}:1` : `1:${one(1 / ratio)}`;
 }
 
 // --------------------------------------------------------------- the mode
@@ -398,11 +398,11 @@ export class VRMode {
 
   /** Pictures of the wheel (the stick on button `hot`) and of the card saying `text`, as the headset shows them (to check their look). */
   snapshot(hot = -1, text = 'X-Ray', ratio = 1): { wheel: string; card: string; tape: string } {
-    const w = new Wheel();
-    w.items = this.items();
-    w.title = 'View';
-    w.hot = hot;
-    w.draw();
+    const wheel = new Wheel();
+    wheel.items = this.items();
+    wheel.title = 'View';
+    wheel.hot = hot;
+    wheel.draw();
     this.say(text);
     this.cardKey = '';
     this.drawCard();
@@ -411,7 +411,7 @@ export class VRMode {
     const t = new Tape();
     t.draw(ratio);
 
-    return { wheel: w.board.g.canvas.toDataURL(), card: this.card.g.canvas.toDataURL(), tape: t.board.g.canvas.toDataURL() };
+    return { wheel: wheel.board.context.canvas.toDataURL(), card: this.card.context.canvas.toDataURL(), tape: t.board.context.canvas.toDataURL() };
   }
 
   async enter(): Promise<void> {
@@ -534,8 +534,8 @@ export class VRMode {
   private putAt(at: Vector3, face: Vector3, glide = true): void {
     const yaw = Math.atan2(face.x - at.x, face.z - at.z);
     const q = new Quaternion().setFromEuler(new Euler(0, yaw, 0));
-    const s = this.holder.scale.x;
-    const to = at.clone().sub(this.base.clone().multiplyScalar(s).applyQuaternion(q));
+    const scale = this.holder.scale.x;
+    const to = at.clone().sub(this.base.clone().multiplyScalar(scale).applyQuaternion(q));
     if (glide) {
       this.glide = { from: this.holder.position.clone(), to, qFrom: this.holder.quaternion.clone(), qTo: q, t0: performance.now() };
     } else {
@@ -563,9 +563,9 @@ export class VRMode {
   }
 
   /** A new size, keeping the model's bottom middle where it is. */
-  private resize(s: number, say?: string): void {
+  private resize(scale: number, say?: string): void {
     const keep = this.baseInRoom();
-    this.holder.scale.setScalar(s);
+    this.holder.scale.setScalar(scale);
     this.holder.position.add(keep.sub(this.baseInRoom()));
     if (this.glide) {
       this.glide = null;
@@ -647,19 +647,19 @@ export class VRMode {
   /** Where a hand's ray meets a wheel: the button there, or -1. */
   private wheelUnderRay(hand: Hand, wheel: Wheel): number {
     const { o, d } = this.rayOf(hand);
-    const m = wheel.board.mesh;
-    m.updateMatrixWorld();
-    const n = new Vector3(0, 0, 1).applyQuaternion(m.getWorldQuaternion(new Quaternion()));
-    const c = new Vector3().setFromMatrixPosition(m.matrixWorld);
-    const den = n.dot(d);
+    const mesh = wheel.board.mesh;
+    mesh.updateMatrixWorld();
+    const normal = new Vector3(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new Quaternion()));
+    const center = new Vector3().setFromMatrixPosition(mesh.matrixWorld);
+    const den = normal.dot(d);
     if (Math.abs(den) < 1e-6) {
       return -1;
     }
-    const t = c.clone().sub(o).dot(n) / den;
+    const t = center.clone().sub(o).dot(normal) / den;
     if (t < 0) {
       return -1;
     }
-    const local = o.clone().addScaledVector(d, t).applyMatrix4(m.matrixWorld.clone().invert());
+    const local = o.clone().addScaledVector(d, t).applyMatrix4(mesh.matrixWorld.clone().invert());
     const half = wheel.board.w / 2;
 
     return wheel.slotAtPoint(local.x / half, local.y / half);
@@ -672,12 +672,12 @@ export class VRMode {
   }
 
   private startGrab(): void {
-    const held = this.hands.filter(h => h.squeezing);
+    const held = this.hands.filter(hand => hand.squeezing);
     this.glide = null;
     this.holder.updateMatrix();
     this.grabStart = this.holder.matrix.clone();
-    for (const h of this.hands) {
-      h.grabFrom = h.squeezing ? h.ray.matrixWorld.clone() : null;
+    for (const hand of this.hands) {
+      hand.grabFrom = hand.squeezing ? hand.ray.matrixWorld.clone() : null;
     }
     this.pinch = held.length === 2 ? { d0: held[0].ray.position.distanceTo(held[1].ray.position), s0: this.holder.scale.x, snapped: false } : null;
     if (held.length) {
@@ -687,14 +687,14 @@ export class VRMode {
 
   private rayOf(hand: Hand): { o: Vector3; d: Vector3 } {
     hand.ray.updateMatrixWorld();
-    const o = new Vector3().setFromMatrixPosition(hand.ray.matrixWorld);
-    const d = new Vector3(0, 0, -1).applyQuaternion(new Quaternion().setFromRotationMatrix(hand.ray.matrixWorld)).normalize();
+    const origin = new Vector3().setFromMatrixPosition(hand.ray.matrixWorld);
+    const direction = new Vector3(0, 0, -1).applyQuaternion(new Quaternion().setFromRotationMatrix(hand.ray.matrixWorld)).normalize();
 
-    return { o, d };
+    return { o: origin, d: direction };
   }
 
   private buzz(hand: Hand, strength: number, ms: number): void {
-    const src = [...(this.session?.inputSources ?? [])].find(s => s.handedness === hand.side);
+    const src = [...(this.session?.inputSources ?? [])].find(source => source.handedness === hand.side);
     const act = (src?.gamepad as (Gamepad & { hapticActuators?: { pulse(v: number, ms: number): void }[] }) | undefined)?.hapticActuators?.[0];
     act?.pulse(strength, ms);
   }
@@ -720,38 +720,38 @@ export class VRMode {
       }
     }
     if (this.glide) {
-      const k = Math.min(1, (performance.now() - this.glide.t0) / 260);
-      const e = 1 - Math.pow(1 - k, 3);
+      const progress = Math.min(1, (performance.now() - this.glide.t0) / 260);
+      const e = 1 - Math.pow(1 - progress, 3);
       this.holder.position.lerpVectors(this.glide.from, this.glide.to, e);
       this.holder.quaternion.slerpQuaternions(this.glide.qFrom, this.glide.qTo, e);
-      if (k >= 1) {
+      if (progress >= 1) {
         this.glide = null;
       }
     }
-    const held = this.hands.filter(h => h.squeezing);
+    const held = this.hands.filter(hand => hand.squeezing);
     if (held.length === 1 && this.grabStart && held[0].grabFrom) {
-      const m = held[0].ray.matrixWorld.clone().multiply(held[0].grabFrom.clone().invert()).multiply(this.grabStart);
-      m.decompose(this.holder.position, this.holder.quaternion, this.holder.scale);
+      const matrix = held[0].ray.matrixWorld.clone().multiply(held[0].grabFrom.clone().invert()).multiply(this.grabStart);
+      matrix.decompose(this.holder.position, this.holder.quaternion, this.holder.scale);
     } else if (held.length === 2 && this.pinch && this.pinch.d0 > 1e-3) {
-      const d = held[0].ray.position.distanceTo(held[1].ray.position);
-      let s = this.pinch.s0 * (d / this.pinch.d0);
+      const distance = held[0].ray.position.distanceTo(held[1].ray.position);
+      let scale = this.pinch.s0 * (distance / this.pinch.d0);
       // Real size holds for a moment on the way (a little click in the hands).
-      const near = Math.abs(s / REAL - 1) < 0.07;
+      const near = Math.abs(scale / REAL - 1) < 0.07;
       if (near) {
-        s = REAL;
+        scale = REAL;
       }
       if (near && !this.pinch.snapped) {
-        for (const h of held) {
-          this.buzz(h, 0.5, 30);
+        for (const hand of held) {
+          this.buzz(hand, 0.5, 30);
         }
       }
       this.pinch.snapped = near;
-      if (s !== this.holder.scale.x) {
-        this.resize(s);
+      if (scale !== this.holder.scale.x) {
+        this.resize(scale);
       }
     }
     for (const src of this.session?.inputSources ?? []) {
-      const hand = this.hands.find(h => h.side === src.handedness);
+      const hand = this.hands.find(hand => hand.side === src.handedness);
       if (!hand) {
         continue;
       }
@@ -776,14 +776,14 @@ export class VRMode {
   /** The headset's own scan of the room (tables, floor) along this hand's ray, when it offers that. */
   private askScan(hand: Hand, src: XRInputSource): void {
     hand.asked = src;
-    const s = this.session as (XRSession & { requestHitTestSource?(o: { space: XRSpace }): Promise<XRHitTestSource> | undefined }) | null;
-    s?.requestHitTestSource?.({ space: src.targetRaySpace })
-      ?.then((h) => {
+    const session = this.session as (XRSession & { requestHitTestSource?(o: { space: XRSpace }): Promise<XRHitTestSource> | undefined }) | null;
+    session?.requestHitTestSource?.({ space: src.targetRaySpace })
+      ?.then((hitSource) => {
         if (hand.asked !== src || !this.session) {
-          return void h.cancel();
+          return void hitSource.cancel();
         }
         hand.hits?.cancel();
-        hand.hits = h;
+        hand.hits = hitSource;
       })
       .catch(() => {});
   }
@@ -852,9 +852,9 @@ export class VRMode {
         this.holder.position.add(keep.sub(this.baseInRoom()));
       } else if (Math.abs(sy) > 0.2 && !this.stickHeld) {
         // Up: bigger, down: smaller; it stops at real size on the way (let go and push again to go on).
-        const s = this.holder.scale.x;
-        let next = s * Math.pow(2, -sy * dt);
-        if (!this.real && (s - REAL) * (next - REAL) <= 0) {
+        const scale = this.holder.scale.x;
+        let next = scale * Math.pow(2, -sy * dt);
+        if (!this.real && (scale - REAL) * (next - REAL) <= 0) {
           next = REAL;
           this.stickHeld = true;
           this.buzz(hand, 0.5, 30);
@@ -876,7 +876,7 @@ export class VRMode {
       ray = this.viewerRay(frame);
       hits = this.viewerHits;
     } else {
-      hand = this.hands.find(h => h.side === 'right');
+      hand = this.hands.find(hand => hand.side === 'right');
       ray = hand ? this.rayOf(hand) : null;
       hits = hand?.hits ?? null;
     }
@@ -887,8 +887,8 @@ export class VRMode {
     let at: Vector3 | null = null;
     const space = this.host.renderer.xr.getReferenceSpace();
     if (frame && hits && space) {
-      for (const r of frame.getHitTestResults(hits)) {
-        const pose = r.getPose(space);
+      for (const hitTestResult of frame.getHitTestResults(hits)) {
+        const pose = hitTestResult.getPose(space);
         if (!pose) {
           continue;
         }
@@ -897,8 +897,8 @@ export class VRMode {
         if (up.y < 0.8) {
           continue;
         }
-        const p = pose.transform.position;
-        at = new Vector3(p.x, p.y, p.z);
+        const position = pose.transform.position;
+        at = new Vector3(position.x, position.y, position.z);
         break;
       }
     }
@@ -909,7 +909,7 @@ export class VRMode {
     if (at && at.distanceTo(o) > 8) {
       at = null;
     }
-    this.reticle.visible = !!at && !this.two && !this.hands.some(h => h.wheel.open || h.squeezing);
+    this.reticle.visible = !!at && !this.two && !this.hands.some(hand => hand.wheel.open || hand.squeezing);
     if (at) {
       this.reticle.position.set(at.x, at.y + 0.002, at.z);
     }
@@ -922,18 +922,18 @@ export class VRMode {
 
   private startPhone(session: XRSession): void {
     session.addEventListener('select', this.onTap);
-    const s = session as XRSession & { requestHitTestSource?(o: { space: XRSpace }): Promise<XRHitTestSource> | undefined };
+    const hitSession = session as XRSession & { requestHitTestSource?(o: { space: XRSpace }): Promise<XRHitTestSource> | undefined };
     session
       .requestReferenceSpace('viewer')
-      .then(space => s.requestHitTestSource?.({ space }))
-      .then((h) => {
-        if (!h) {
+      .then(space => hitSession.requestHitTestSource?.({ space }))
+      .then((hitSource) => {
+        if (!hitSource) {
           return;
         }
         if (this.session !== session) {
-          h.cancel();
+          hitSource.cancel();
         } else {
-          this.viewerHits = h;
+          this.viewerHits = hitSource;
         }
       })
       .catch(() => {});
@@ -951,11 +951,11 @@ export class VRMode {
     if (!pose) {
       return null;
     }
-    const p = pose.transform.position;
-    const r = pose.transform.orientation;
-    const q = new Quaternion(r.x, r.y, r.z, r.w);
+    const position = pose.transform.position;
+    const orientation = pose.transform.orientation;
+    const q = new Quaternion(orientation.x, orientation.y, orientation.z, orientation.w);
 
-    return { o: new Vector3(p.x, p.y, p.z), d: new Vector3(0, 0, -1).applyQuaternion(q), q };
+    return { o: new Vector3(position.x, position.y, position.z), d: new Vector3(0, 0, -1).applyQuaternion(q), q };
   }
 
   /** A tap on the screen: the model goes where the ring is (not after a pinch). */
@@ -992,10 +992,10 @@ export class VRMode {
       if (!pose) {
         continue;
       }
-      const r = pose.transform.orientation;
-      const d = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(r.x, r.y, r.z, r.w)).applyQuaternion(back);
-      if (d.z < -1e-3) {
-        pts.push([d.x / -d.z, d.y / -d.z]);
+      const orientation = pose.transform.orientation;
+      const direction = new Vector3(0, 0, -1).applyQuaternion(new Quaternion(orientation.x, orientation.y, orientation.z, orientation.w)).applyQuaternion(back);
+      if (direction.z < -1e-3) {
+        pts.push([direction.x / -direction.z, direction.y / -direction.z]);
       }
     }
     if (!pts.length) {
@@ -1016,14 +1016,14 @@ export class VRMode {
 
       return;
     }
-    let s = (this.two.s0 * dist) / this.two.d0;
+    let scale = (this.two.s0 * dist) / this.two.d0;
     // Real size holds for a moment on the way.
-    if (Math.abs(s / REAL - 1) < 0.07) {
-      s = REAL;
+    if (Math.abs(scale / REAL - 1) < 0.07) {
+      scale = REAL;
     }
     let da = ang - this.two.a0;
     da = Math.atan2(Math.sin(da), Math.cos(da));
-    this.holder.scale.setScalar(s);
+    this.holder.scale.setScalar(scale);
     this.holder.quaternion.setFromAxisAngle(new Vector3(0, 1, 0), da).multiply(this.two.q0);
     this.holder.position.add(this.two.base.clone().sub(this.baseInRoom()));
   }
@@ -1042,7 +1042,7 @@ export class VRMode {
     exit.addEventListener('click', () => this.exit());
     const hint = document.createElement('div');
     hint.style.cssText = `position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom, 0px) + 24px);transform:translateX(-50%);${glass};padding:10px 18px;white-space:nowrap`;
-    const tape = this.tape.board.g.canvas;
+    const tape = this.tape.board.context.canvas;
     tape.style.cssText = 'position:absolute;left:16px;top:50%;transform:translateY(-50%);width:84px;height:auto';
     root.append(exit, hint, tape);
     document.body.append(root);
@@ -1073,19 +1073,19 @@ export class VRMode {
     if (!toast) {
       return;
     }
-    const g = this.card.clear();
-    g.fillStyle = GLASS;
-    g.beginPath();
-    g.roundRect(4, 4, 632, 192, 44);
-    g.fill();
-    g.strokeStyle = LINE;
-    g.lineWidth = 3;
-    g.stroke();
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillStyle = '#fff';
-    g.font = `600 52px ${FONT}`;
-    wrap(g, toast, 320, 100, 560, 58);
+    const canvasContext = this.card.clear();
+    canvasContext.fillStyle = GLASS;
+    canvasContext.beginPath();
+    canvasContext.roundRect(4, 4, 632, 192, 44);
+    canvasContext.fill();
+    canvasContext.strokeStyle = LINE;
+    canvasContext.lineWidth = 3;
+    canvasContext.stroke();
+    canvasContext.textAlign = 'center';
+    canvasContext.textBaseline = 'middle';
+    canvasContext.fillStyle = '#fff';
+    canvasContext.font = `600 52px ${FONT}`;
+    wrap(canvasContext, toast, 320, 100, 560, 58);
     this.card.show();
   }
 
@@ -1094,11 +1094,11 @@ export class VRMode {
     renderer.setAnimationLoop(null);
     renderer.xr.enabled = false;
     renderer.setClearColor(this.clear.color, this.clear.alpha);
-    for (const h of this.hands) {
-      h.hits?.cancel();
-      h.asked = null;
-      h.ray.removeFromParent();
-      h.line.geometry.dispose();
+    for (const hand of this.hands) {
+      hand.hits?.cancel();
+      hand.asked = null;
+      hand.ray.removeFromParent();
+      hand.line.geometry.dispose();
     }
     this.hands = [];
     this.grabStart = null;
@@ -1128,15 +1128,15 @@ export class VRMode {
 
 /** A soft round shadow (dark in the middle, gone at the edge). */
 function shadowTexture(): CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d')!;
-  const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  r.addColorStop(0, 'rgba(0,0,0,0.42)');
-  r.addColorStop(0.55, 'rgba(0,0,0,0.22)');
-  r.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = r;
-  g.fillRect(0, 0, 128, 128);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const canvasContext = canvas.getContext('2d')!;
+  const gradient = canvasContext.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gradient.addColorStop(0, 'rgba(0,0,0,0.42)');
+  gradient.addColorStop(0.55, 'rgba(0,0,0,0.22)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  canvasContext.fillStyle = gradient;
+  canvasContext.fillRect(0, 0, 128, 128);
 
-  return new CanvasTexture(c);
+  return new CanvasTexture(canvas);
 }

@@ -137,46 +137,46 @@ export function allMaterials(doc: ProjectDoc): MaterialDef[] {
 export function materialOf(doc: ProjectDoc, body: string): MaterialDef | undefined {
   const id = doc.materials?.[body];
 
-  return id ? allMaterials(doc).find(m => m.id === id) : undefined;
+  return id ? allMaterials(doc).find(allMaterial => allMaterial.id === id) : undefined;
 }
 
 /** The technical data of a material, as rows to show: [label, value with its unit]. Only what it has. */
-export function materialRows(m: MaterialDef): { group: string; rows: [string, string][] }[] {
-  const n = (v: number) => String(Math.round(v * 1000) / 1000);
-  const row = (label: string, v: number | undefined, unit: string): [string, string][] => (v === undefined ? [] : [[label, `${n(v)} ${unit}`.trim()]]);
+export function materialRows(materialDefinition: MaterialDef): { group: string; rows: [string, string][] }[] {
+  const formatNumber = (value: number) => String(Math.round(value * 1000) / 1000);
+  const row = (label: string, value: number | undefined, unit: string): [string, string][] => (value === undefined ? [] : [[label, `${formatNumber(value)} ${unit}`.trim()]]);
   const groups = [
-    { group: 'Identity', rows: [['Class', m.category], ...(m.standard ? [['Standard', m.standard]] : []), ...(m.note ? [['Note', m.note]] : [])] as [string, string][] },
+    { group: 'Identity', rows: [['Class', materialDefinition.category], ...(materialDefinition.standard ? [['Standard', materialDefinition.standard]] : []), ...(materialDefinition.note ? [['Note', materialDefinition.note]] : [])] as [string, string][] },
     {
       group: 'Physical',
       rows: [
-        ...row('Density', m.density, 'kg/m³'),
-        ...row("Young's modulus", m.youngs, 'GPa'),
-        ...row("Poisson's ratio", m.poisson, ''),
-        ...row('Yield strength', m.yield, 'MPa'),
-        ...row('Tensile strength', m.tensile, 'MPa'),
-        ...row('Compressive strength', m.compressive, 'MPa'),
-        ...row('Bending strength', m.bending, 'MPa'),
-        ...row('Elongation at break', m.elongation, '%')
+        ...row('Density', materialDefinition.density, 'kg/m³'),
+        ...row("Young's modulus", materialDefinition.youngs, 'GPa'),
+        ...row("Poisson's ratio", materialDefinition.poisson, ''),
+        ...row('Yield strength', materialDefinition.yield, 'MPa'),
+        ...row('Tensile strength', materialDefinition.tensile, 'MPa'),
+        ...row('Compressive strength', materialDefinition.compressive, 'MPa'),
+        ...row('Bending strength', materialDefinition.bending, 'MPa'),
+        ...row('Elongation at break', materialDefinition.elongation, '%')
       ]
     },
     {
       group: 'Thermal',
       rows: [
-        ...row('Thermal conductivity', m.conductivity, 'W/(m·K)'),
-        ...row('Specific heat', m.specificHeat, 'J/(kg·K)'),
-        ...row('Thermal expansion', m.expansion, 'µm/(m·K)'),
-        ...row('Melting point', m.melting, '°C'),
-        ...row('Max service temperature', m.maxTemp, '°C')
+        ...row('Thermal conductivity', materialDefinition.conductivity, 'W/(m·K)'),
+        ...row('Specific heat', materialDefinition.specificHeat, 'J/(kg·K)'),
+        ...row('Thermal expansion', materialDefinition.expansion, 'µm/(m·K)'),
+        ...row('Melting point', materialDefinition.melting, '°C'),
+        ...row('Max service temperature', materialDefinition.maxTemp, '°C')
       ]
     }
   ];
 
-  return groups.filter(g => g.rows.length);
+  return groups.filter(group => group.rows.length);
 }
 
 /** Mass in kg of `volumeMM3` cubic millimetres of it. */
-export function massOf(m: MaterialDef, volumeMM3: number): number {
-  return volumeMM3 * 1e-9 * m.density;
+export function massOf(materialDefinition: MaterialDef, volumeMM3: number): number {
+  return volumeMM3 * 1e-9 * materialDefinition.density;
 }
 
 /** A mass for people: g under a kilo, kg up to a tonne, t above. */
@@ -192,36 +192,36 @@ export function fmtMass(kg: number): string {
 }
 
 export function fmtVolume(mm3: number): string {
-  const k = UNIT_MM[units()];
+  const factor = UNIT_MM[units()];
 
-  return `${trim(mm3 / (k * k * k), 3)} ${UNIT_LABEL[units()]}³`;
+  return `${trim(mm3 / (factor * factor * factor), 3)} ${UNIT_LABEL[units()]}³`;
 }
 
 export function fmtArea(mm2: number): string {
-  const k = UNIT_MM[units()];
+  const factor = UNIT_MM[units()];
 
-  return `${trim(mm2 / (k * k), 3)} ${UNIT_LABEL[units()]}²`;
+  return `${trim(mm2 / (factor * factor), 3)} ${UNIT_LABEL[units()]}²`;
 }
 
 /** Give bodies a material (its colour, and see-through for glass, come with it); null takes it away. */
-export function assignMaterial(d: ProjectDoc, bodies: string[], m: MaterialDef | null): void {
-  const materials = { ...(d.materials ?? {}) };
-  const colors = { ...(d.colors ?? {}) };
-  const opacity = { ...(d.opacity ?? {}) };
+export function assignMaterial(doc: ProjectDoc, bodies: string[], materialDefinition: MaterialDef | null): void {
+  const materials = { ...(doc.materials ?? {}) };
+  const colors = { ...(doc.colors ?? {}) };
+  const opacity = { ...(doc.opacity ?? {}) };
   for (const b of bodies) {
-    if (!m) {
+    if (!materialDefinition) {
       delete materials[b];
       continue;
     }
-    materials[b] = m.id;
-    colors[b] = m.color;
-    if (m.opacity !== undefined) {
-      opacity[b] = m.opacity;
+    materials[b] = materialDefinition.id;
+    colors[b] = materialDefinition.color;
+    if (materialDefinition.opacity !== undefined) {
+      opacity[b] = materialDefinition.opacity;
     } else {
       delete opacity[b];
     }
   }
-  d.materials = materials;
-  d.colors = colors;
-  d.opacity = opacity;
+  doc.materials = materials;
+  doc.colors = colors;
+  doc.opacity = opacity;
 }

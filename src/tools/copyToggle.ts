@@ -44,13 +44,13 @@ export class CopyToggle {
   }
 
   private layout(): void {
-    const w = this.at();
-    const s = w && this.view.toScreen(w);
-    this.btn.hidden = !s;
-    if (s) {
-      const r = this.view.canvas.getBoundingClientRect();
+    const target = this.at();
+    const screenPoint = target && this.view.toScreen(target);
+    this.btn.hidden = !screenPoint;
+    if (screenPoint) {
+      const rect = this.view.canvas.getBoundingClientRect();
       // Up and to the right of the gimbal, clear of its arrows.
-      this.btn.style.transform = `translate(${Math.round(r.left + s[0] + 70)}px, ${Math.round(r.top + s[1] - 96)}px)`;
+      this.btn.style.transform = `translate(${Math.round(rect.left + screenPoint[0] + 70)}px, ${Math.round(rect.top + screenPoint[1] - 96)}px)`;
     }
   }
 

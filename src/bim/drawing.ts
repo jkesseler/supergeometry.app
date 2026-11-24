@@ -105,14 +105,14 @@ type Pick = { view: string; p: P2; line?: { a: P2; b: P2 }; ent?: Ent };
 const sub2 = (a: P2, b: P2): P2 => [a[0] - b[0], a[1] - b[1]];
 const len2 = (a: P2) => Math.hypot(a[0], a[1]);
 const unit2 = (a: P2): P2 => {
-  const l = len2(a) || 1;
+  const length = len2(a) || 1;
 
-  return [a[0] / l, a[1] / l];
+  return [a[0] / length, a[1] / length];
 };
-/** The point of the line through a and b nearest p. */
-const foot = (p: P2, a: P2, b: P2): P2 => {
+/** The point of the line through a and b nearest `point`. */
+const foot = (point: P2, a: P2, b: P2): P2 => {
   const ab = sub2(b, a);
-  const t = ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / (ab[0] * ab[0] + ab[1] * ab[1] || 1);
+  const t = ((point[0] - a[0]) * ab[0] + (point[1] - a[1]) * ab[1]) / (ab[0] * ab[0] + ab[1] * ab[1] || 1);
 
   return [a[0] + ab[0] * t, a[1] + ab[1] * t];
 };
@@ -132,21 +132,21 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   const store = app.store;
   const existing = drawingsOf(store.doc);
   // Bodies picked as Drawings is tapped: their drawing (the one of just them; a new one if there's none).
-  const picked = which ? [] : [...new Set(app.selection.flatMap(s => ('body' in s ? [s.body] : [])))];
+  const picked = which ? [] : [...new Set(app.selection.flatMap(highlight => ('body' in highlight ? [highlight.body] : [])))];
   const bodyName = (id: string) => store.doc.names?.[id] ?? app.view.bodyList.find(b => b.id === id)?.name ?? 'Body';
   const pickedTitle = picked.length ? picked.map(bodyName).join(', ') : '';
-  const ofPicked = picked.length ? existing.find(d => d.bodies?.length === picked.length && picked.every(id => d.bodies!.includes(id))) : undefined;
-  const want = which === 'new' ? null : picked.length ? (ofPicked ?? null) : (existing.find(d => d.id === (which ?? lastOpened)) ?? existing[0] ?? null);
+  const ofPicked = picked.length ? existing.find(drawing => drawing.bodies?.length === picked.length && picked.every(id => drawing.bodies!.includes(id))) : undefined;
+  const want = which === 'new' ? null : picked.length ? (ofPicked ?? null) : (existing.find(drawing => drawing.id === (which ?? lastOpened)) ?? existing[0] ?? null);
   /** Which drawing this is. */
   const current = want?.id ?? annId('drawing');
   // Picked bodies with no drawing of their own, beside other drawings: one made now, set out like the last one.
   if (!want && picked.length && existing.length) {
-    const like = existing.find(d => d.id === lastOpened) ?? existing[existing.length - 1];
-    store.commit(d => putDrawing(d, current, { ...sheetSettings(like), title: pickedTitle, bodies: picked }));
+    const like = existing.find(drawing => drawing.id === lastOpened) ?? existing[existing.length - 1];
+    store.commit(draft => putDrawing(draft, current, { ...sheetSettings(like), title: pickedTitle, bodies: picked }));
     app.ui.toast(`A new drawing of ${pickedTitle}`);
   }
   lastOpened = current;
-  const curDrawing = (): DrawingOptions | undefined => drawingsOf(store.doc).find(d => d.id === current);
+  const curDrawing = (): DrawingOptions | undefined => drawingsOf(store.doc).find(drawing => drawing.id === current);
 
   // A new drawing: its preferences asked first (and nothing kept if they're cancelled).
   const fresh = !curDrawing();
@@ -202,11 +202,11 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   };
   /** A screen point (px) in the paper's area. */
   const local = (e: { clientX: number; clientY: number }): [number, number] => {
-    const r = paper.getBoundingClientRect();
+    const rect = paper.getBoundingClientRect();
 
-    return [e.clientX - r.left, e.clientY - r.top];
+    return [e.clientX - rect.left, e.clientY - rect.top];
   };
-  const copyCamera = () => Object.assign(new SheetCamera(), { vw: camera.vw, vh: camera.vh, W: camera.W, H: camera.H, z: camera.z, cx: camera.cx, cy: camera.cy });
+  const copyCamera = () => Object.assign(new SheetCamera(), { vw: camera.vw, vh: camera.vh, sheetWidth: camera.sheetWidth, sheetHeight: camera.sheetHeight, z: camera.z, cx: camera.cx, cy: camera.cy });
   let glide = 0;
   /** To another zoom smoothly (a fifth of a second). */
   const glideTo = (to: { z: number; cx: number; cy: number }, fitted = false) => {
@@ -214,33 +214,33 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     const from = camera.state;
     const t0 = performance.now();
     const step = (t: number) => {
-      const k = Math.min(1, (t - t0) / 180);
-      camera.blend(from, to, 1 - Math.pow(1 - k, 3));
-      camera.fitted = fitted && k === 1;
+      const progress = Math.min(1, (t - t0) / 180);
+      camera.blend(from, to, 1 - Math.pow(1 - progress, 3));
+      camera.fitted = fitted && progress === 1;
       applyCamera();
-      if (k < 1) {
+      if (progress < 1) {
         glide = requestAnimationFrame(step);
       }
     };
     glide = requestAnimationFrame(step);
   };
   const fitAll = () => {
-    const c = copyCamera();
-    c.fit();
-    glideTo(c.state, true);
+    const camera = copyCamera();
+    camera.fit();
+    glideTo(camera.state, true);
   };
-  const zoomBy = (k: number, at: [number, number] = [camera.vw / 2, camera.vh / 2]) => {
-    const c = copyCamera();
-    c.zoomAt(at[0], at[1], k);
-    glideTo(c.state);
+  const zoomBy = (factor: number, at: [number, number] = [camera.vw / 2, camera.vh / 2]) => {
+    const camera = copyCamera();
+    camera.zoomAt(at[0], at[1], factor);
+    glideTo(camera.state);
   };
   zoomOut.addEventListener('click', () => zoomBy(1 / 1.5));
   zoomIn.addEventListener('click', () => zoomBy(1.5));
   zoomLabel.addEventListener('click', fitAll);
   /** The area's exact size (not rounded to whole pixels: the paper under the cursor would creep). */
   const sizeCamera = () => {
-    const r = paper.getBoundingClientRect();
-    camera.resize(r.width, r.height);
+    const rect = paper.getBoundingClientRect();
+    camera.resize(rect.width, rect.height);
   };
   const resized = new ResizeObserver(() => {
     sizeCamera();
@@ -280,14 +280,14 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   handle.hidden = true;
   const placeHandle = () => {
     const id = !tool && selected?.startsWith('view:') ? selected.slice(5) : null;
-    const p = id ? layout?.views.find(x => x.id === id) : undefined;
-    if (!p) {
+    const placed = id ? layout?.views.find(view => view.id === id) : undefined;
+    if (!placed) {
       handle.hidden = true;
 
       return;
     }
-    const r = extent(p);
-    const [x, y] = camera.toScreen((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2);
+    const bounds = extent(placed);
+    const [x, y] = camera.toScreen((bounds.x0 + bounds.x1) / 2, (bounds.y0 + bounds.y1) / 2);
     handle.hidden = false;
     handle.style.transform = `translate(${x}px, ${y}px)`;
   };
@@ -313,15 +313,15 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   const docNow = (): ProjectDoc => ({ ...store.doc, drawing: draft ?? curDrawing() ?? (startTitle ? { title: startTitle } : {}) });
   const opts = (): Opts => drawingOptions(docNow());
   const set = (patch: Partial<DrawingOptions>) =>
-    store.commit((d) => {
-      const now = drawingsOf(d).find(x => x.id === current) ?? (startTitle ? { title: startTitle } : {});
+    store.commit((draft) => {
+      const now = drawingsOf(draft).find(drawing => drawing.id === current) ?? (startTitle ? { title: startTitle } : {});
       const next: DrawingOptions = { ...now, ...patch };
-      for (const k of Object.keys(next) as (keyof DrawingOptions)[]) {
-        if (next[k] === undefined) {
-          delete next[k];
+      for (const key of Object.keys(next) as (keyof DrawingOptions)[]) {
+        if (next[key] === undefined) {
+          delete next[key];
         }
       }
-      putDrawing(d, current, next);
+      putDrawing(draft, current, next);
     });
 
   const shut = () => {
@@ -340,8 +340,8 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     paper.append(status);
     try {
       allParts = partsList(app, await measureBodies(app));
-      const want = opts().bodies?.filter(id => allParts.some(p => p.id === id));
-      parts = want?.length ? allParts.filter(p => want.includes(p.id)) : allParts;
+      const want = opts().bodies?.filter(id => allParts.some(allPart => allPart.id === id));
+      parts = want?.length ? allParts.filter(allPart => want.includes(allPart.id)) : allParts;
       if (!parts.length) {
         paper.innerHTML = '';
         paper.append(el('div', 'bim-sub', 'No bodies to draw: make one first (hidden bodies are left off the drawing).'));
@@ -354,14 +354,14 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       const first = wanted();
       const list = first.length ? first : VIEW_SPECS.slice(0, 1);
       const got: ProjectedView[] = [];
-      for (const [i, v] of list.entries()) {
+      for (const [i, viewSpec] of list.entries()) {
         status.textContent = `Drawing the views: ${i + 1} of ${list.length}…`;
-        got.push(...(await app.kernel.drawing(store.doc.features as never, [v], parts.map(p => p.id))));
+        got.push(...(await app.kernel.drawing(store.doc.features as never, [viewSpec], parts.map(part => part.id))));
       }
-      views = new Map(got.map(v => [v.id, v]));
+      views = new Map(got.map(projectedView => [projectedView.id, projectedView]));
       drawnAs.clear();
-      for (const v of list) {
-        drawnAs.set(v.id, JSON.stringify(v));
+      for (const viewSpec of list) {
+        drawnAs.set(viewSpec.id, JSON.stringify(viewSpec));
       }
     } catch (err) {
       paper.innerHTML = '';
@@ -380,7 +380,7 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   let fetching = false;
   const wanted = (): ViewSpec[] => sheetViewSpecs(opts());
   const fetchMissing = async () => {
-    const miss = wanted().filter(v => (!views.has(v.id) || drawnAs.get(v.id) !== JSON.stringify(v)) && !failed.has(JSON.stringify(v)));
+    const miss = wanted().filter(viewSpec => (!views.has(viewSpec.id) || drawnAs.get(viewSpec.id) !== JSON.stringify(viewSpec)) && !failed.has(JSON.stringify(viewSpec)));
     if (!miss.length || fetching) {
       return;
     }
@@ -388,19 +388,19 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     const of = views;
     name.textContent = `Drawing · ${opts().title} · drawing the views…`;
     try {
-      const got = await app.kernel.drawing(store.doc.features as never, miss, parts.map(p => p.id));
+      const got = await app.kernel.drawing(store.doc.features as never, miss, parts.map(part => part.id));
       if (of !== views) {
         return;
       }
-      for (const v of got) {
-        views.set(v.id, v);
+      for (const projectedView of got) {
+        views.set(projectedView.id, projectedView);
       }
-      for (const v of miss) {
-        drawnAs.set(v.id, JSON.stringify(v));
+      for (const viewSpec of miss) {
+        drawnAs.set(viewSpec.id, JSON.stringify(viewSpec));
       }
     } catch {
-      for (const v of miss) {
-        failed.add(JSON.stringify(v));
+      for (const viewSpec of miss) {
+        failed.add(JSON.stringify(viewSpec));
       }
     } finally {
       fetching = false;
@@ -423,18 +423,18 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     layout = made.layout;
     balloonsNow = made.balloons;
     paper.innerHTML = made.svg;
-    const s = paper.querySelector('svg');
-    if (s) {
+    const element = paper.querySelector('svg');
+    if (element) {
       // The sheet fills the area; what of it is seen is the camera's.
-      const vb = s.viewBox.baseVal;
+      const vb = element.viewBox.baseVal;
       camera.setSheet(vb.width, vb.height);
       if (camera.vw <= 1) {
         sizeCamera();
       }
-      s.setAttribute('width', '100%');
-      s.setAttribute('height', '100%');
-      s.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-      s.classList.add('bim-drawing-svg');
+      element.setAttribute('width', '100%');
+      element.setAttribute('height', '100%');
+      element.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      element.classList.add('bim-drawing-svg');
       paper.append(handle);
       applyCamera();
     }
@@ -443,10 +443,10 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     }
     // Its number or its words are what a dimension or a note is grabbed by: a see-through pad round each, a finger
     // wide on the screen (the text of a dimension is 3 mm tall on the paper - a few pixels with the sheet all in view).
-    if (s) {
+    if (element) {
       const pad = Math.max(1.2, tolerance() * 0.6);
-      for (const g of Array.from(s.querySelectorAll<SVGGElement>('[data-ann]'))) {
-        for (const tx of Array.from(g.querySelectorAll<SVGTextElement>('text'))) {
+      for (const svgGroup of Array.from(element.querySelectorAll<SVGGElement>('[data-ann]'))) {
+        for (const tx of Array.from(svgGroup.querySelectorAll<SVGTextElement>('text'))) {
           let b: DOMRect;
           try {
             b = tx.getBBox();
@@ -456,23 +456,23 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
           if (!b.width && !b.height) {
             continue;
           }
-          const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-          r.setAttribute('x', String(b.x - pad));
-          r.setAttribute('y', String(b.y - pad));
-          r.setAttribute('width', String(b.width + pad * 2));
-          r.setAttribute('height', String(b.height + pad * 2));
-          r.setAttribute('fill', 'transparent');
-          r.setAttribute('class', 'bim-ann-pad');
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', String(b.x - pad));
+          rect.setAttribute('y', String(b.y - pad));
+          rect.setAttribute('width', String(b.width + pad * 2));
+          rect.setAttribute('height', String(b.height + pad * 2));
+          rect.setAttribute('fill', 'transparent');
+          rect.setAttribute('class', 'bim-ann-pad');
           const tf = tx.getAttribute('transform');
           if (tf) {
-            r.setAttribute('transform', tf);
+            rect.setAttribute('transform', tf);
           }
-          tx.before(r);
+          tx.before(rect);
         }
       }
     }
-    if (s) {
-      s.insertAdjacentHTML('beforeend', picksSVG());
+    if (element) {
+      element.insertAdjacentHTML('beforeend', picksSVG());
     }
     hoverKey = '';
     drawHover();
@@ -485,18 +485,18 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     if (!tool || !picks.length || !layout) {
       return '';
     }
-    const at = (k: Pick) => {
-      const p = layout!.views.find(v => v.id === k.view);
+    const at = (pick: Pick) => {
+      const view = layout!.views.find(placed => placed.id === pick.view);
 
-      return p ? toPaper(p, k.p) : null;
+      return view ? toPaper(view, pick.p) : null;
     };
     const blue = 'stroke="#1a73e8" stroke-width="0.5" fill="none"';
     let out = '';
     if (tool === 'detail' && picks.length === 2) {
-      const c = at(picks[0]);
-      const p = layout.views.find(v => v.id === picks[0].view);
-      if (c && p) {
-        out += `<circle cx="${c[0]}" cy="${c[1]}" r="${picks[1].p[0] * p.s}" ${blue} stroke-dasharray="2 1"/>`;
+      const center = at(picks[0]);
+      const view = layout.views.find(placed => placed.id === picks[0].view);
+      if (center && view) {
+        out += `<circle cx="${center[0]}" cy="${center[1]}" r="${picks[1].p[0] * view.s}" ${blue} stroke-dasharray="2 1"/>`;
       }
     }
     if (tool === 'section' && picks.length === 2) {
@@ -506,19 +506,19 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
         out += `<path d="M${a[0]} ${a[1]}L${b[0]} ${b[1]}" ${blue} stroke-dasharray="4 1 1 1"/>`;
       }
     }
-    for (const k of picks) {
-      if (tool === 'detail' && k === picks[1]) {
+    for (const pick of picks) {
+      if (tool === 'detail' && pick === picks[1]) {
         continue;
       }
-      const p = layout.views.find(v => v.id === k.view);
-      if (k.line && p) {
-        const a = toPaper(p, k.line.a);
-        const b = toPaper(p, k.line.b);
+      const view = layout.views.find(placed => placed.id === pick.view);
+      if (pick.line && view) {
+        const a = toPaper(view, pick.line.a);
+        const b = toPaper(view, pick.line.b);
         out += `<path d="M${a[0]} ${a[1]}L${b[0]} ${b[1]}" stroke="#1a73e8" stroke-width="0.8"/>`;
       } else {
-        const c = at(k);
-        if (c) {
-          out += `<circle cx="${c[0]}" cy="${c[1]}" r="1" fill="#1a73e8"/>`;
+        const center = at(pick);
+        if (center) {
+          out += `<circle cx="${center[0]}" cy="${center[1]}" r="1" fill="#1a73e8"/>`;
         }
       }
     }
@@ -533,24 +533,24 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
 
   // ---- Where the pointer is on the paper (mm)
   const sheetPoint = (e: { clientX: number; clientY: number }): [number, number] | null => {
-    const s = paper.querySelector('svg');
-    const m = s?.getScreenCTM();
-    if (!s || !m) {
+    const element = paper.querySelector('svg');
+    const screenMatrix = element?.getScreenCTM();
+    if (!element || !screenMatrix) {
       return null;
     }
-    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    const point = new DOMPoint(e.clientX, e.clientY).matrixTransform(screenMatrix.inverse());
 
-    return [p.x, p.y];
+    return [point.x, point.y];
   };
   /** A point on the paper, on the screen. */
   const clientOf = (q: P2): P2 => {
-    const m = paper.querySelector('svg')?.getScreenCTM();
-    if (!m) {
+    const screenMatrix = paper.querySelector('svg')?.getScreenCTM();
+    if (!screenMatrix) {
       return [0, 0];
     }
-    const p = new DOMPoint(q[0], q[1]).matrixTransform(m);
+    const point = new DOMPoint(q[0], q[1]).matrixTransform(screenMatrix);
 
-    return [p.x, p.y];
+    return [point.x, point.y];
   };
   /** 12 screen pixels, in mm on the paper. */
   const tolerance = () => 12 / camera.z;
@@ -618,8 +618,8 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
         return;
       }
       // Off the paper (the grey round it): nothing to pick, no note out there.
-      const [W, H] = sheetSize(opts());
-      if (q[0] < 0 || q[1] < 0 || q[0] > W || q[1] > H) {
+      const [sheetWidth, sheetHeight] = sheetSize(opts());
+      if (q[0] < 0 || q[1] < 0 || q[0] > sheetWidth || q[1] > sheetHeight) {
         return;
       }
 
@@ -671,13 +671,13 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     }
     if (pinch && fingers.size >= 2) {
       const [a, b] = pair();
-      const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const distance = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
       camera.panBy(mid[0] - pinch.mid[0], mid[1] - pinch.mid[1]);
-      if (pinch.d > 0 && d > 0) {
-        camera.zoomAt(mid[0], mid[1], d / pinch.d);
+      if (pinch.d > 0 && distance > 0) {
+        camera.zoomAt(mid[0], mid[1], distance / pinch.d);
       }
-      pinch = { d, mid };
+      pinch = { d: distance, mid };
       applyCamera();
 
       return;
@@ -709,9 +709,9 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     // (A dimension, a note or a picture stays on the paper: dragged past its edge it stops there - one pulled off
     // the sheet was out of the print, and with a tool on could not be got back.)
     if (!drag.target.startsWith('view:')) {
-      const [W, H] = sheetSize(opts());
-      q[0] = Math.min(W - 2, Math.max(2, q[0]));
-      q[1] = Math.min(H - 2, Math.max(2, q[1]));
+      const [sheetWidth, sheetHeight] = sheetSize(opts());
+      q[0] = Math.min(sheetWidth - 2, Math.max(2, q[0]));
+      q[1] = Math.min(sheetHeight - 2, Math.max(2, q[1]));
     }
     const dx = q[0] - drag.x;
     const dy = q[1] - drag.y;
@@ -723,60 +723,60 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     }
     drag.moved = true;
     const next: DrawingOptions = structuredClone(drag.start);
-    const o = drawingOptions({ ...store.doc, drawing: drag.start });
+    const options = drawingOptions({ ...store.doc, drawing: drag.start });
     if (drag.target.startsWith('view:')) {
-      const v = drag.target.slice(5);
-      const sec = o.sections.find(x => x.id === v);
-      const det = o.details.find(x => x.id === v);
-      const ex = o.extra.find(x => x.id === v);
-      const placed = layout.views.find(x => x.id === v);
+      const viewId = drag.target.slice(5);
+      const sec = options.sections.find(section => section.id === viewId);
+      const det = options.details.find(detail => detail.id === viewId);
+      const ex = options.extra.find(drawingView => drawingView.id === viewId);
+      const placed = layout.views.find(view => view.id === viewId);
       if (ex && (ex.orient || isIsoView(ex))) {
         // A base view or an isometric projection: anywhere.
         const at: P2 = ex.at ?? (placed ? [placed.x + ((placed.box[1][0] - placed.box[0][0]) * placed.s) / 2, placed.y + ((placed.box[1][1] - placed.box[0][1]) * placed.s) / 2] : [0, 0]);
-        next.extra = o.extra.map(x => (x === ex ? { ...x, at: [at[0] + dx, at[1] + dy] } : x));
+        next.extra = options.extra.map(drawingView => (drawingView === ex ? { ...drawingView, at: [at[0] + dx, at[1] + dy] } : drawingView));
       } else if (ex && ex.dir && placed) {
         // A projection square on: along its line from its view only (it stays lined up).
         const vert = Math.abs(ex.dir[1]) >= Math.abs(ex.dir[0]);
         const along = vert ? dy * Math.sign(ex.dir[1]) : dx * Math.sign(ex.dir[0]);
         const half = (vert ? placed.box[1][1] - placed.box[0][1] : placed.box[1][0] - placed.box[0][0]) * placed.s * 0.5 + 8;
-        next.extra = o.extra.map(x => (x === ex ? { ...x, gap: Math.max(half, ex.gap ?? 0) + along } : x));
+        next.extra = options.extra.map(drawingView => (drawingView === ex ? { ...drawingView, gap: Math.max(half, ex.gap ?? 0) + along } : drawingView));
       } else if (sec) {
         // A section slides along its line from its view only (it stays lined up).
-        const pl = placeDir(sec, o);
+        const pl = placeDir(sec, options);
         const along = Math.abs(pl[1]) >= Math.abs(pl[0]) ? dy * Math.sign(pl[1]) : dx * Math.sign(pl[0]);
-        const placed = layout.views.find(x => x.id === sec.id);
+        const placed = layout.views.find(view => view.id === sec.id);
         const half = placed ? (Math.abs(pl[1]) >= Math.abs(pl[0]) ? placed.box[1][1] - placed.box[0][1] : placed.box[1][0] - placed.box[0][0]) * placed.s * 0.5 + 16 : 0;
-        next.sections = o.sections.map(x => (x === sec ? { ...x, gap: Math.max(half, sec.gap) + along } : x));
+        next.sections = options.sections.map(section => (section === sec ? { ...section, gap: Math.max(half, sec.gap) + along } : section));
       } else if (det) {
-        next.details = o.details.map(x => (x === det ? { ...x, at: [det.at[0] + dx, det.at[1] + dy] } : x));
+        next.details = options.details.map(detail => (detail === det ? { ...detail, at: [det.at[0] + dx, det.at[1] + dy] } : detail));
       } else {
-        const k = moveKey(v);
-        const [mx, my] = o.moved[k] ?? [0, 0];
-        next.moved = { ...o.moved, [k]: [mx + dx, my + dy] };
+        const key = moveKey(viewId);
+        const [mx, my] = options.moved[key] ?? [0, 0];
+        next.moved = { ...options.moved, [key]: [mx + dx, my + dy] };
       }
     } else {
       const id = drag.target;
       if (id.startsWith('balloon:')) {
         // An item number: its circle goes where it is dragged (its line still runs to its part).
         if (!drag.moved || !balloonFrom) {
-          const b = balloonsNow.find(x => x.id === id);
+          const b = balloonsNow.find(balloon => balloon.id === id);
           balloonFrom = b ? [b.x, b.y] : [drag.x, drag.y];
         }
-        next.balloonAt = { ...o.balloonAt, [id.slice(8)]: [balloonFrom[0] + dx, balloonFrom[1] + dy] };
+        next.balloonAt = { ...options.balloonAt, [id.slice(8)]: [balloonFrom[0] + dx, balloonFrom[1] + dy] };
       }
-      const dim = dimsOf(o).find(d => d.id === id);
-      const note = o.notes.find(n => n.id === id);
-      const img = o.images.find(m => m.id === id);
+      const dim = dimsOf(options).find(dimension => dimension.id === id);
+      const note = options.notes.find(note => note.id === id);
+      const img = options.images.find(image => image.id === id);
       if (note) {
-        next.notes = o.notes.map(n => (n === note ? { ...n, x: note.x + dx, y: note.y + dy } : n));
+        next.notes = options.notes.map(drawingNote => (drawingNote === note ? { ...drawingNote, x: note.x + dx, y: note.y + dy } : drawingNote));
       }
       if (img) {
-        next.images = o.images.map(m => (m === img ? { ...m, x: img.x + dx, y: img.y + dy } : m));
+        next.images = options.images.map(image => (image === img ? { ...image, x: img.x + dx, y: img.y + dy } : image));
       }
       if (dim) {
-        const p = layout.views.find(v => v.id === dim.view);
-        if (p) {
-          Object.assign(next, withDim(o, movedDim(dim, p, q, [dx, dy], dimsOf(o))));
+        const view = layout.views.find(placed => placed.id === dim.view);
+        if (view) {
+          Object.assign(next, withDim(options, movedDim(dim, view, q, [dx, dy], dimsOf(options))));
         }
       }
     }
@@ -802,10 +802,10 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       return;
     }
     if (pan && e.pointerId === pan.id) {
-      const p = pan;
+      const panStart = pan;
       pan = null;
       paper.classList.remove('panning');
-      if (!p.moved && p.deselect && selected) {
+      if (!panStart.moved && panStart.deselect && selected) {
         (selected = null), render();
       }
 
@@ -817,10 +817,10 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     const moved = drag.moved;
     const tap = drag.tap;
     drag = null;
-    const d = draft;
+    const drawingOptions = draft;
     draft = null;
-    if (moved && d) {
-      store.commit(doc => putDrawing(doc, current, d));
+    if (moved && drawingOptions) {
+      store.commit(doc => putDrawing(doc, current, drawingOptions));
     } else if (tap && tool) {
       useTool(tap.q, tap.e);
     } else {
@@ -835,13 +835,13 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       return;
     }
     const id = (e.target as Element).closest('[data-ann]')?.getAttribute('data-ann');
-    const n = opts().notes.find(x => x.id === id);
-    if (n) {
-      return noteInput([n.x, n.y], e.clientX, e.clientY, n);
+    const note = opts().notes.find(note => note.id === id);
+    if (note) {
+      return noteInput([note.x, note.y], e.clientX, e.clientY, note);
     }
-    const d = dimsOf(opts()).find(x => x.id === id);
-    if (d) {
-      return void editDim(d);
+    const dimension = dimsOf(opts()).find(dimension => dimension.id === id);
+    if (dimension) {
+      return void editDim(dimension);
     }
     if ((e.target as Element).closest('[data-ann],[data-view],.bim-dhandle')) {
       return;
@@ -859,35 +859,35 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
    * along (back in the middle when near it); an angle's arc through q; a
    * circle's leader towards q.
    */
-  const movedDim = (d: DrawingDim, p: Layout['views'][number], q: [number, number], by: [number, number], others: DrawingDim[] = []): DrawingDim => {
-    if (d.kind === 'angle' && d.c) {
-      const c = toPaper(p, d.c);
+  const movedDim = (drawingDimension: DrawingDim, placed: Layout['views'][number], q: [number, number], by: [number, number], others: DrawingDim[] = []): DrawingDim => {
+    if (drawingDimension.kind === 'angle' && drawingDimension.c) {
+      const paperPoint = toPaper(placed, drawingDimension.c);
 
-      return { ...d, offset: Math.max(3, Math.hypot(q[0] - c[0], q[1] - c[1])) };
+      return { ...drawingDimension, offset: Math.max(3, Math.hypot(q[0] - paperPoint[0], q[1] - paperPoint[1])) };
     }
-    if (d.c && d.r !== undefined) {
-      const c = toPaper(p, d.c);
+    if (drawingDimension.c && drawingDimension.r !== undefined) {
+      const paperPoint = toPaper(placed, drawingDimension.c);
 
-      return { ...d, angle: Math.atan2(q[1] - c[1], q[0] - c[0]), offset: Math.max(2, Math.hypot(q[0] - c[0], q[1] - c[1]) - d.r * p.s) };
+      return { ...drawingDimension, angle: Math.atan2(q[1] - paperPoint[1], q[0] - paperPoint[0]), offset: Math.max(2, Math.hypot(q[0] - paperPoint[0], q[1] - paperPoint[1]) - drawingDimension.r * placed.s) };
     }
-    if (!d.b) {
-      return d;
+    if (!drawingDimension.b) {
+      return drawingDimension;
     }
-    const A = toPaper(p, d.a);
-    const B = toPaper(p, d.b);
-    const L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1;
-    const u = [(B[0] - A[0]) / L, (B[1] - A[1]) / L];
-    const n = [u[1], -u[0]];
-    const offset = d.offset + by[0] * n[0] + by[1] * n[1];
-    let slide = (d.slide ?? 0) + by[0] * u[0] + by[1] * u[1];
+    const paperPointA = toPaper(placed, drawingDimension.a);
+    const paperPointB = toPaper(placed, drawingDimension.b);
+    const length = Math.hypot(paperPointB[0] - paperPointA[0], paperPointB[1] - paperPointA[1]) || 1;
+    const along = [(paperPointB[0] - paperPointA[0]) / length, (paperPointB[1] - paperPointA[1]) / length];
+    const normal = [along[1], -along[0]];
+    const offset = drawingDimension.offset + by[0] * normal[0] + by[1] * normal[1];
+    let slide = (drawingDimension.slide ?? 0) + by[0] * along[0] + by[1] * along[1];
     if (Math.abs(slide) < 2) {
       slide = 0;
     }
     // Never across what it measures (it flips side instead of sitting on it).
-    const moved = { ...d, offset: Math.abs(offset) < 2 ? 2 * (Math.sign(offset) || Math.sign(d.offset) || 1) : offset, slide: slide || undefined };
+    const moved = { ...drawingDimension, offset: Math.abs(offset) < 2 ? 2 * (Math.sign(offset) || Math.sign(drawingDimension.offset) || 1) : offset, slide: slide || undefined };
 
     // In line with a parallel dimension, or evenly spaced from it.
-    return { ...moved, offset: spacedOffset(moved, others, p) };
+    return { ...moved, offset: spacedOffset(moved, others, placed) };
   };
 
   // ---- The dimension and note tools
@@ -908,17 +908,17 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     done.addEventListener('click', () => startTool(null));
     hint.append(el('span', '', msg), done);
   };
-  const addDim = (d: DrawingDim) => {
+  const addDim = (drawingDimension: DrawingDim) => {
     // The same edge (or circle) dimensioned again: the one it has is picked instead.
-    const straight = (k: string) => k === 'length' || k === 'distance';
-    const near = (p?: [number, number], q?: [number, number]) => (!p && !q) || (!!p && !!q && Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-3);
+    const straight = (kind: string) => kind === 'length' || kind === 'distance';
+    const near = (point?: [number, number], q?: [number, number]) => (!point && !q) || (!!point && !!q && Math.hypot(point[0] - q[0], point[1] - q[1]) < 1e-3);
     const same = opts().dims.find(
-      x =>
-        x.view === d.view
-        && (x.kind === d.kind || (straight(x.kind) && straight(d.kind)))
-        && (d.kind === 'radius' || d.kind === 'diameter'
-          ? near(x.c, d.c) && Math.abs((x.r ?? 0) - (d.r ?? 0)) < 1e-3
-          : near(x.c, d.c) && ((near(x.a, d.a) && near(x.b, d.b)) || (near(x.a, d.b) && near(x.b, d.a))))
+      dimension =>
+        dimension.view === drawingDimension.view
+        && (dimension.kind === drawingDimension.kind || (straight(dimension.kind) && straight(drawingDimension.kind)))
+        && (drawingDimension.kind === 'radius' || drawingDimension.kind === 'diameter'
+          ? near(dimension.c, drawingDimension.c) && Math.abs((dimension.r ?? 0) - (drawingDimension.r ?? 0)) < 1e-3
+          : near(dimension.c, drawingDimension.c) && ((near(dimension.a, drawingDimension.a) && near(dimension.b, drawingDimension.b)) || (near(dimension.a, drawingDimension.b) && near(dimension.b, drawingDimension.a))))
     );
     if (same) {
       selected = same.id;
@@ -926,9 +926,9 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
 
       return app.ui.toast('That one is dimensioned already');
     }
-    set({ dims: [...opts().dims, d] });
+    set({ dims: [...opts().dims, drawingDimension] });
   };
-  const placedOf = (id: string) => layout!.views.find(v => v.id === id)!;
+  const placedOf = (id: string) => layout!.views.find(view => view.id === id)!;
   /** A point picked: a corner, a middle or a centre near the tap (in `view` if given). */
   const pointPick = (q: P2, view?: string): Pick | null => pointAt(views, layout!, q, tolerance() * 1.5, view);
   /** A point picked, or where the tap is on the view under it (not the isometric one, not a detail). */
@@ -937,13 +937,13 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     if (hit && !placedOf(hit.view).clip) {
       return hit;
     }
-    for (const p of layout!.views) {
-      if (p.iso || p.clip || (view && p.id !== view)) {
+    for (const placed of layout!.views) {
+      if (placed.iso || placed.clip || (view && placed.id !== view)) {
         continue;
       }
-      const r = extent(p);
-      if (q[0] > r.x0 - 3 && q[0] < r.x1 + 3 && q[1] > r.y0 - 3 && q[1] < r.y1 + 3) {
-        return { view: p.id, p: fromPaper(p, q) };
+      const bounds = extent(placed);
+      if (q[0] > bounds.x0 - 3 && q[0] < bounds.x1 + 3 && q[1] > bounds.y0 - 3 && q[1] < bounds.y1 + 3) {
+        return { view: placed.id, p: fromPaper(placed, q) };
       }
     }
 
@@ -969,40 +969,40 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     }
     const view = picks[0]?.view;
     const px = 1 / camera.z;
-    const f = (v: number) => Math.round(v * 1000) / 1000;
-    const polyline = (pts: P2[]) => `<path d="${pts.map((P, i) => `${i ? 'L' : 'M'}${f(P[0])} ${f(P[1])}`).join('')}" stroke="${HOVER}" stroke-width="${f(3.5 * px)}" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.85"/>`;
-    const lineOf = (v: string, a: P2, b: P2) => {
-      const p = placedOf(v);
+    const round3 = (value: number) => Math.round(value * 1000) / 1000;
+    const polyline = (pts: P2[]) => `<path d="${pts.map((point, i) => `${i ? 'L' : 'M'}${round3(point[0])} ${round3(point[1])}`).join('')}" stroke="${HOVER}" stroke-width="${round3(3.5 * px)}" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.85"/>`;
+    const lineOf = (kind: string, a: P2, b: P2) => {
+      const placed = placedOf(kind);
 
-      return polyline([toPaper(p, a), toPaper(p, b)]);
+      return polyline([toPaper(placed, a), toPaper(placed, b)]);
     };
-    const dot = (v: string, pt: P2) => {
-      const P = toPaper(placedOf(v), pt);
+    const dot = (kind: string, pt: P2) => {
+      const paperPoint = toPaper(placedOf(kind), pt);
 
-      return `<circle cx="${f(P[0])}" cy="${f(P[1])}" r="${f(5 * px)}" fill="${HOVER}" stroke="#fff" stroke-width="${f(1.5 * px)}"/>`;
+      return `<circle cx="${round3(paperPoint[0])}" cy="${round3(paperPoint[1])}" r="${round3(5 * px)}" fill="${HOVER}" stroke="#fff" stroke-width="${round3(1.5 * px)}"/>`;
     };
     /** A circle, or an arc from a through m to b, in the view's own units. */
-    const arc = (h: EdgeHit) => {
-      const c = h.c!;
-      const ang = (x: P2) => Math.atan2(x[1] - c[1], x[0] - c[0]);
+    const arc = (edgeHit: EdgeHit) => {
+      const center = edgeHit.c!;
+      const ang = (x: P2) => Math.atan2(x[1] - center[1], x[0] - center[0]);
       const TAU = Math.PI * 2;
       const turn = (t: number) => ((t % TAU) + TAU) % TAU;
-      const whole = len2(sub2(h.a, h.b)) < 1e-12;
-      const a0 = ang(h.a);
-      const tm = h.m ? turn(ang(h.m) - a0) : 0;
-      const tb = whole ? TAU : turn(ang(h.b) - a0);
+      const whole = len2(sub2(edgeHit.a, edgeHit.b)) < 1e-12;
+      const a0 = ang(edgeHit.a);
+      const tm = edgeHit.m ? turn(ang(edgeHit.m) - a0) : 0;
+      const tb = whole ? TAU : turn(ang(edgeHit.b) - a0);
       const sweep = whole || tm <= tb ? tb : tb - TAU;
-      const n = Math.max(12, Math.ceil((Math.abs(sweep) / TAU) * 72));
-      const p = placedOf(h.view);
+      const segmentCount = Math.max(12, Math.ceil((Math.abs(sweep) / TAU) * 72));
+      const placed = placedOf(edgeHit.view);
       const pts: P2[] = [];
-      for (let i = 0; i <= n; i++) {
-        const t = a0 + (sweep * i) / n;
-        pts.push(toPaper(p, [c[0] + h.r! * Math.cos(t), c[1] + h.r! * Math.sin(t)]));
+      for (let i = 0; i <= segmentCount; i++) {
+        const t = a0 + (sweep * i) / segmentCount;
+        pts.push(toPaper(placed, [center[0] + edgeHit.r! * Math.cos(t), center[1] + edgeHit.r! * Math.sin(t)]));
       }
 
       return polyline(pts);
     };
-    const edge = (h: EdgeHit | null) => (!h ? '' : h.kind === 'circle' && h.c && h.r !== undefined ? arc(h) : lineOf(h.view, h.a, h.b));
+    const edge = (edgeHit: EdgeHit | null) => (!edgeHit ? '' : edgeHit.kind === 'circle' && edgeHit.c && edgeHit.r !== undefined ? arc(edgeHit) : lineOf(edgeHit.view, edgeHit.a, edgeHit.b));
     const tol = tolerance();
     switch (tool) {
       case 'length':
@@ -1011,26 +1011,26 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       case 'angle':
       case 'clineLines':
       case 'cross': {
-        const h = linePick(q, view);
+        const lineHit = linePick(q, view);
 
-        return h ? lineOf(h.view, h.a, h.b) : '';
+        return lineHit ? lineOf(lineHit.view, lineHit.a, lineHit.b) : '';
       }
       case 'distance':
       case 'cline':
       case 'angle3': {
-        const h = pointPick(q, view);
+        const pointHit = pointPick(q, view);
 
-        return h ? dot(h.view, h.p) : '';
+        return pointHit ? dot(pointHit.view, pointHit.p) : '';
       }
       case 'pointLine': {
         if (!picks.length) {
-          const h = pointPick(q);
+          const pointHit = pointPick(q);
 
-          return h ? dot(h.view, h.p) : '';
+          return pointHit ? dot(pointHit.view, pointHit.p) : '';
         }
-        const h = linePick(q, view);
+        const lineHit = linePick(q, view);
 
-        return h ? lineOf(h.view, h.a, h.b) : '';
+        return lineHit ? lineOf(lineHit.view, lineHit.a, lineHit.b) : '';
       }
       case 'arcAngle':
       case 'radius':
@@ -1050,25 +1050,25 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
         if (picks.length >= 2) {
           return '';
         }
-        const h = pointPick(q, view);
+        const pointHit = pointPick(q, view);
 
-        return h && !placedOf(h.view).clip ? dot(h.view, h.p) : '';
+        return pointHit && !placedOf(pointHit.view).clip ? dot(pointHit.view, pointHit.p) : '';
       }
       case 'projection': {
         if (picks.length) {
           return '';
         }
-        const p = layout.views.find((v) => {
-          const r = extent(v);
+        const view = layout.views.find((placed) => {
+          const bounds = extent(placed);
 
-          return q[0] >= r.x0 - 2 && q[0] <= r.x1 + 2 && q[1] >= r.y0 - 2 && q[1] <= r.y1 + 2;
+          return q[0] >= bounds.x0 - 2 && q[0] <= bounds.x1 + 2 && q[1] >= bounds.y0 - 2 && q[1] <= bounds.y1 + 2;
         });
-        if (!p || !specOf(p.id, opts())) {
+        if (!view || !specOf(view.id, opts())) {
           return '';
         }
-        const r = extent(p);
+        const viewBounds = extent(view);
 
-        return `<rect x="${f(r.x0 - 2)}" y="${f(r.y0 - 2)}" width="${f(r.x1 - r.x0 + 4)}" height="${f(r.y1 - r.y0 + 4)}" fill="${HOVER}" fill-opacity="0.08" stroke="${HOVER}" stroke-width="${f(2 * px)}"/>`;
+        return `<rect x="${round3(viewBounds.x0 - 2)}" y="${round3(viewBounds.y0 - 2)}" width="${round3(viewBounds.x1 - viewBounds.x0 + 4)}" height="${round3(viewBounds.y1 - viewBounds.y0 + 4)}" fill="${HOVER}" fill-opacity="0.08" stroke="${HOVER}" stroke-width="${round3(2 * px)}"/>`;
       }
       default:
         return '';
@@ -1076,44 +1076,44 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   };
   /** Light up what's under the pointer now (nothing when it has left, or no tool is on). */
   const drawHover = () => {
-    const s = paper.querySelector('svg');
-    if (!s) {
+    const element = paper.querySelector('svg');
+    if (!element) {
       return;
     }
     const q = tool && hoverClient ? sheetPoint(hoverClient) : null;
     const svg = q ? hoverSVG(q) : '';
-    let g = s.querySelector<SVGGElement>('#d-hover');
-    if (svg === hoverKey && (g || !svg)) {
+    let svgGroup = element.querySelector<SVGGElement>('#d-hover');
+    if (svg === hoverKey && (svgGroup || !svg)) {
       return;
     }
     hoverKey = svg;
-    if (!g) {
-      g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      g.id = 'd-hover';
-      g.setAttribute('pointer-events', 'none');
-      s.append(g);
+    if (!svgGroup) {
+      svgGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      svgGroup.id = 'd-hover';
+      svgGroup.setAttribute('pointer-events', 'none');
+      element.append(svgGroup);
     }
-    g.innerHTML = svg;
+    svgGroup.innerHTML = svg;
     paper.classList.toggle('can-pick', !!svg);
   };
   paper.addEventListener('pointerleave', () => {
     hoverClient = null;
     drawHover();
   });
-  const addMark = (m: DrawingMark) => {
-    const near = (p?: P2, q?: P2) => (!p && !q) || (!!p && !!q && len2(sub2(p, q)) < 1e-3);
-    const o = opts();
-    const same = o.marks.find(x => x.view === m.view && x.kind === m.kind && near(x.c, m.c) && ((near(x.a, m.a) && near(x.b, m.b)) || (near(x.a, m.b) && near(x.b, m.a))));
+  const addMark = (drawingMark: DrawingMark) => {
+    const near = (point?: P2, q?: P2) => (!point && !q) || (!!point && !!q && len2(sub2(point, q)) < 1e-3);
+    const options = opts();
+    const same = options.marks.find(mark => mark.view === drawingMark.view && mark.kind === drawingMark.kind && near(mark.c, drawingMark.c) && ((near(mark.a, drawingMark.a) && near(mark.b, drawingMark.b)) || (near(mark.a, drawingMark.b) && near(mark.b, drawingMark.a))));
     if (same) {
       selected = same.id;
       render();
 
       return app.ui.toast('That one is there already');
     }
-    set({ marks: [...o.marks, m] });
+    set({ marks: [...options.marks, drawingMark] });
   };
   /** A dimension's arc for an angle: half the shorter ray, on the paper, 8 to 30 mm. */
-  const arcFor = (view: string, c: P2, a: P2, b: P2) => Math.min(30, Math.max(8, 0.5 * Math.min(len2(sub2(a, c)), len2(sub2(b, c))) * placedOf(view).s));
+  const arcFor = (view: string, center: P2, a: P2, b: P2) => Math.min(30, Math.max(8, 0.5 * Math.min(len2(sub2(a, center)), len2(sub2(b, center))) * placedOf(view).s));
 
   const useTool = (q: [number, number], e: PointerEvent) => {
     if (!layout) {
@@ -1127,8 +1127,8 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       if (!hit) {
         return app.ui.toast('Tap right on a straight edge of a view');
       }
-      const p = layout.views.find(v => v.id === hit.view)!;
-      addDim({ id: annId('dim'), view: hit.view, kind: 'length', a: hit.a, b: hit.b, offset: outward(p, hit.a, hit.b) });
+      const view = layout.views.find(placed => placed.id === hit.view)!;
+      addDim({ id: annId('dim'), view: hit.view, kind: 'length', a: hit.a, b: hit.b, offset: outward(view, hit.a, hit.b) });
     } else if (tool === 'distance' || tool === 'cline') {
       const hit = pointPick(q, view);
       if (!hit) {
@@ -1188,9 +1188,9 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
           return (app.ui.toast("Those edges are parallel: they don't meet"), step(TOOL_HINT.cross));
         }
         const t = cross2(sub2(hit.a, l1.a), u2) / cross2(u1, u2);
-        const c: P2 = [l1.a[0] + u1[0] * t, l1.a[1] + u1[1] * t];
-        const nearer = (l: { a: P2; b: P2 }): P2 => (len2(sub2(l.a, c)) < len2(sub2(l.b, c)) ? l.a : l.b);
-        addMark({ id: annId('mark'), view: hit.view, kind: 'cross', c, a: nearer(l1), b: nearer(hit) });
+        const corner: P2 = [l1.a[0] + u1[0] * t, l1.a[1] + u1[1] * t];
+        const nearer = (line: { a: P2; b: P2 }): P2 => (len2(sub2(line.a, corner)) < len2(sub2(line.b, corner)) ? line.a : line.b);
+        addMark({ id: annId('mark'), view: hit.view, kind: 'cross', c: corner, a: nearer(l1), b: nearer(hit) });
 
         return showHint(TOOL_HINT.cross);
       }
@@ -1199,20 +1199,20 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
           return (app.ui.toast('Those edges are parallel: they make no angle'), step(TOOL_HINT.angle));
         }
         // Where they meet, and a point on each the side tapped.
-        const d = sub2(hit.a, l1.a);
-        const t = cross2(d, u2) / cross2(u1, u2);
-        const c: P2 = [l1.a[0] + u1[0] * t, l1.a[1] + u1[1] * t];
-        const far = (l: { a: P2; b: P2 }, tap: P2): P2 => {
-          const f = foot(tap, l.a, l.b);
-          if (len2(sub2(f, c)) > 1e-6) {
-            return f;
+        const offset = sub2(hit.a, l1.a);
+        const t = cross2(offset, u2) / cross2(u1, u2);
+        const corner: P2 = [l1.a[0] + u1[0] * t, l1.a[1] + u1[1] * t];
+        const far = (line: { a: P2; b: P2 }, tap: P2): P2 => {
+          const footPoint = foot(tap, line.a, line.b);
+          if (len2(sub2(footPoint, corner)) > 1e-6) {
+            return footPoint;
           }
 
-          return len2(sub2(l.a, c)) > len2(sub2(l.b, c)) ? l.a : l.b;
+          return len2(sub2(line.a, corner)) > len2(sub2(line.b, corner)) ? line.a : line.b;
         };
         const a = far(l1, first.p);
         const b = far(hit.line, foot(fromPaper(placedOf(hit.view), q), hit.a, hit.b));
-        addDim({ id: annId('dim'), view: hit.view, kind: 'angle', c, a, b, offset: arcFor(hit.view, c, a, b) });
+        addDim({ id: annId('dim'), view: hit.view, kind: 'angle', c: corner, a, b, offset: arcFor(hit.view, corner, a, b) });
       } else {
         if (!parallel) {
           return (app.ui.toast(tool === 'lineLine' ? "Those edges aren't parallel: use Line-to-Line Angle" : "Those edges aren't parallel"), step(TOOL_HINT[tool]));
@@ -1226,11 +1226,11 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
           addDim({ id: annId('dim'), view: hit.view, kind: 'distance', a, b, offset: outward(placedOf(hit.view), a, b) });
         } else {
           // Midway between them, from the first end to the last of the two.
-          const n: P2 = [-u1[1], u1[0]];
-          const dot = (p: P2, v: P2) => p[0] * v[0] + p[1] * v[1];
-          const dm = (dot(l1.a, n) + dot(hit.a, n)) / 2;
-          const ts = [l1.a, l1.b, hit.a, hit.b].map(p => dot(p, u1));
-          const at = (t: number): P2 => [u1[0] * t + n[0] * dm, u1[1] * t + n[1] * dm];
+          const normal: P2 = [-u1[1], u1[0]];
+          const dot = (point: P2, vector: P2) => point[0] * vector[0] + point[1] * vector[1];
+          const dm = (dot(l1.a, normal) + dot(hit.a, normal)) / 2;
+          const ts = [l1.a, l1.b, hit.a, hit.b].map(point => dot(point, u1));
+          const at = (t: number): P2 => [u1[0] * t + normal[0] * dm, u1[1] * t + normal[1] * dm];
           addMark({ id: annId('mark'), view: hit.view, kind: 'line', a: at(Math.min(...ts)), b: at(Math.max(...ts)) });
         }
       }
@@ -1240,7 +1240,7 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       if (!hit) {
         return again('Tap a corner, the middle of an edge or a centre');
       }
-      if (picks.some(k => len2(sub2(k.p, hit.p)) < 1e-6)) {
+      if (picks.some(pick => len2(sub2(pick.p, hit.p)) < 1e-6)) {
         return;
       }
       picks.push(hit);
@@ -1250,12 +1250,12 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       if (picks.length === 2) {
         return step('Now tap the third point');
       }
-      const [a, c, b] = picks.map(k => k.p);
+      const [a, vertex, b] = picks.map(pick => pick.p);
       picks = [];
-      if (Math.abs(cross2(unit2(sub2(a, c)), unit2(sub2(b, c)))) < 1e-9) {
+      if (Math.abs(cross2(unit2(sub2(a, vertex)), unit2(sub2(b, vertex)))) < 1e-9) {
         return (app.ui.toast('Those points are on one line'), step(TOOL_HINT.angle3));
       }
-      addDim({ id: annId('dim'), view: hit.view, kind: 'angle', c, a, b, offset: arcFor(hit.view, c, a, b) });
+      addDim({ id: annId('dim'), view: hit.view, kind: 'angle', c: vertex, a, b, offset: arcFor(hit.view, vertex, a, b) });
       showHint(TOOL_HINT.angle3);
     } else if (tool === 'arcAngle') {
       const hit = edgeAt(views, layout, q, tol, 'circle');
@@ -1295,40 +1295,40 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       addDim({ id: annId('dim'), view: ent.view, kind: 'distance', a, b, minmax: mm, ...(max ? { max } : {}), offset: outward(placedOf(ent.view), a, b) });
       showHint(TOOL_HINT.minmax);
     } else if (tool === 'base') {
-      const o = opts();
+      const options = opts();
       const id = annId('view');
-      set({ extra: [...o.extra, { id, orient: pendingBase.orient, at: q, ...(pendingBase.scale ? { scale: pendingBase.scale } : {}) }] });
+      set({ extra: [...options.extra, { id, orient: pendingBase.orient, at: q, ...(pendingBase.scale ? { scale: pendingBase.scale } : {}) }] });
       startTool(null);
       selected = `view:${id}`;
       render();
     } else if (tool === 'projection') {
       if (!picks.length) {
-        const p = layout.views.find((v) => {
-          const r = extent(v);
+        const view = layout.views.find((placed) => {
+          const bounds = extent(placed);
 
-          return q[0] >= r.x0 - 2 && q[0] <= r.x1 + 2 && q[1] >= r.y0 - 2 && q[1] <= r.y1 + 2;
+          return q[0] >= bounds.x0 - 2 && q[0] <= bounds.x1 + 2 && q[1] >= bounds.y0 - 2 && q[1] <= bounds.y1 + 2;
         });
-        if (!p) {
+        if (!view) {
           return app.ui.toast('Tap on a view');
         }
-        if (!specOf(p.id, opts())) {
+        if (!specOf(view.id, opts())) {
           return app.ui.toast('Views are projected from the front, top and side views, added ones and sections (not an isometric one or a detail)');
         }
 
-        return (picks.push({ view: p.id, p: [0, 0] }), step('Tap beside it (left, right, above, below) for a view square on, or past a corner for an isometric one'));
+        return (picks.push({ view: view.id, p: [0, 0] }), step('Tap beside it (left, right, above, below) for a view square on, or past a corner for an isometric one'));
       }
-      const p = placedOf(picks[0].view);
-      const r = extent(p);
-      const dir: P2 = [q[0] > r.x1 ? 1 : q[0] < r.x0 ? -1 : 0, q[1] > r.y1 ? 1 : q[1] < r.y0 ? -1 : 0];
+      const placedView = placedOf(picks[0].view);
+      const viewBounds = extent(placedView);
+      const dir: P2 = [q[0] > viewBounds.x1 ? 1 : q[0] < viewBounds.x0 ? -1 : 0, q[1] > viewBounds.y1 ? 1 : q[1] < viewBounds.y0 ? -1 : 0];
       if (!dir[0] && !dir[1]) {
         return app.ui.toast('Tap outside the view: beside it, or past a corner');
       }
-      const o = opts();
+      const options = opts();
       const id = annId('view');
       const corner = dir[0] && dir[1];
-      const gap = dir[1] ? (dir[1] > 0 ? q[1] - r.y1 : r.y0 - q[1]) : dir[0] > 0 ? q[0] - r.x1 : r.x0 - q[0];
+      const gap = dir[1] ? (dir[1] > 0 ? q[1] - viewBounds.y1 : viewBounds.y0 - q[1]) : dir[0] > 0 ? q[0] - viewBounds.x1 : viewBounds.x0 - q[0];
       picks = [];
-      set({ extra: [...o.extra, corner ? { id, view: p.id, dir, at: q } : { id, view: p.id, dir, gap: Math.max(0, gap) }] });
+      set({ extra: [...options.extra, corner ? { id, view: placedView.id, dir, at: q } : { id, view: placedView.id, dir, gap: Math.max(0, gap) }] });
       startTool(null);
       selected = `view:${id}`;
       render();
@@ -1337,12 +1337,12 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       if (!hit || !hit.c || hit.r === undefined) {
         return app.ui.toast('Tap right on a circle or an arc of a view (seen face on)');
       }
-      const p = layout.views.find(v => v.id === hit.view)!;
-      const c = toPaper(p, hit.c);
+      const view = layout.views.find(placed => placed.id === hit.view)!;
+      const paperPoint = toPaper(view, hit.c);
       if (tool === 'center') {
         addMark({ id: annId('mark'), view: hit.view, kind: 'center', c: hit.c, r: hit.r });
       } else {
-        addDim({ id: annId('dim'), view: hit.view, kind: tool, a: hit.a, c: hit.c, r: hit.r, offset: 6, angle: Math.atan2(q[1] - c[1], q[0] - c[0]) || -Math.PI / 4 });
+        addDim({ id: annId('dim'), view: hit.view, kind: tool, a: hit.a, c: hit.c, r: hit.r, offset: 6, angle: Math.atan2(q[1] - paperPoint[1], q[0] - paperPoint[0]) || -Math.PI / 4 });
       }
     } else if (tool === 'section') {
       if (picks.length < 2) {
@@ -1372,20 +1372,20 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
         return step('Tap the side of the line the section view goes on');
       }
       const [a, b] = [picks[0].p, picks[1].p];
-      const p = placedOf(picks[0].view);
-      const A = toPaper(p, a);
-      const u = unit2(sub2(toPaper(p, b), A));
-      const n: P2 = [-u[1], u[0]];
-      const sg = Math.sign((q[0] - A[0]) * n[0] + (q[1] - A[1]) * n[1]) || 1;
-      const place: P2 = [n[0] * sg, n[1] * sg];
-      const o = opts();
-      const look: P2 = o.angle === 'first' ? place : [-place[0], -place[1]];
-      const r = extent(p);
+      const placed = placedOf(picks[0].view);
+      const paperPointA = toPaper(placed, a);
+      const along = unit2(sub2(toPaper(placed, b), paperPointA));
+      const normal: P2 = [-along[1], along[0]];
+      const sg = Math.sign((q[0] - paperPointA[0]) * normal[0] + (q[1] - paperPointA[1]) * normal[1]) || 1;
+      const place: P2 = [normal[0] * sg, normal[1] * sg];
+      const options = opts();
+      const look: P2 = options.angle === 'first' ? place : [-place[0], -place[1]];
+      const bounds = extent(placed);
       const vertical = Math.abs(place[1]) >= Math.abs(place[0]);
-      const gap = vertical ? (place[1] > 0 ? q[1] - r.y1 : r.y0 - q[1]) : place[0] > 0 ? q[0] - r.x1 : r.x0 - q[0];
+      const gap = vertical ? (place[1] > 0 ? q[1] - bounds.y1 : bounds.y0 - q[1]) : place[0] > 0 ? q[0] - bounds.x1 : bounds.x0 - q[0];
       const id = annId('sec');
       picks = [];
-      set({ sections: [...o.sections, { id, letter: nextLetter(o), view: p.id, a, b, look, gap: Math.max(0, gap) }] });
+      set({ sections: [...options.sections, { id, letter: nextLetter(options), view: placed.id, a, b, look, gap: Math.max(0, gap) }] });
       startTool(null);
       selected = `view:${id}`;
       render();
@@ -1398,20 +1398,20 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
 
         return (picks.push(hit), step('Now tap how far round it goes'));
       }
-      const p = placedOf(picks[0].view);
+      const placed = placedOf(picks[0].view);
       if (picks.length === 1) {
-        const R = len2(sub2(q, toPaper(p, picks[0].p)));
-        if (R < 2) {
+        const radius = len2(sub2(q, toPaper(placed, picks[0].p)));
+        if (radius < 2) {
           return app.ui.toast('Make the circle bigger');
         }
 
-        return (picks.push({ view: p.id, p: [R / p.s, 0] }), step('Tap where the detail view goes'));
+        return (picks.push({ view: placed.id, p: [radius / placed.s, 0] }), step('Tap where the detail view goes'));
       }
-      const o = opts();
+      const options = opts();
       const id = annId('det');
-      const det = { id, letter: nextLetter(o), view: p.id, c: picks[0].p, r: picks[1].p[0], at: q };
+      const det = { id, letter: nextLetter(options), view: placed.id, c: picks[0].p, r: picks[1].p[0], at: q };
       picks = [];
-      set({ details: [...o.details, det] });
+      set({ details: [...options.details, det] });
       startTool(null);
       selected = `view:${id}`;
       render();
@@ -1421,21 +1421,21 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       if (!hit) {
         return noteInput(q, e.clientX, e.clientY);
       }
-      const p = placedOf(hit.view);
-      const v = fromPaper(p, q);
+      const placed = placedOf(hit.view);
+      const local = fromPaper(placed, q);
       let at: P2;
       if (hit.kind === 'circle' && hit.c && hit.r !== undefined) {
-        const d = unit2(sub2(v, hit.c));
-        at = [hit.c[0] + d[0] * hit.r, hit.c[1] + d[1] * hit.r];
+        const direction = unit2(sub2(local, hit.c));
+        at = [hit.c[0] + direction[0] * hit.r, hit.c[1] + direction[1] * hit.r];
       } else {
         const ab = sub2(hit.b, hit.a);
-        const t = Math.max(0, Math.min(1, ((v[0] - hit.a[0]) * ab[0] + (v[1] - hit.a[1]) * ab[1]) / (ab[0] * ab[0] + ab[1] * ab[1] || 1)));
+        const t = Math.max(0, Math.min(1, ((local[0] - hit.a[0]) * ab[0] + (local[1] - hit.a[1]) * ab[1]) / (ab[0] * ab[0] + ab[1] * ab[1] || 1)));
         at = [hit.a[0] + ab[0] * t, hit.a[1] + ab[1] * t];
       }
-      const P = toPaper(p, at);
-      const c = [p.x + ((p.box[1][0] - p.box[0][0]) * p.s) / 2, p.y + ((p.box[1][1] - p.box[0][1]) * p.s) / 2];
-      const out = P[0] >= c[0] ? 1 : -1;
-      const spot: P2 = [P[0] + out * 12 - (out < 0 ? 20 : 0), P[1] - 10];
+      const paperPoint = toPaper(placed, at);
+      const center = [placed.x + ((placed.box[1][0] - placed.box[0][0]) * placed.s) / 2, placed.y + ((placed.box[1][1] - placed.box[0][1]) * placed.s) / 2];
+      const out = paperPoint[0] >= center[0] ? 1 : -1;
+      const spot: P2 = [paperPoint[0] + out * 12 - (out < 0 ? 20 : 0), paperPoint[1] - 10];
       const [cx, cy] = clientOf(spot);
       noteInput(spot, cx, cy, undefined, { view: hit.view, p: at });
     }
@@ -1448,11 +1448,11 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     const input = typingBox('bim-note-input');
     input.placeholder = 'Note';
     input.value = edit?.text ?? '';
-    const r = stage.getBoundingClientRect();
+    const rect = stage.getBoundingClientRect();
     stage.append(input);
     // On the screen whole (a phone is narrow): moved in from the right edge when it would run off.
-    input.style.left = `${Math.max(4, Math.min(cx - r.left, r.width - input.offsetWidth - 4))}px`;
-    input.style.top = `${Math.max(4, Math.min(cy - r.top - 14, r.height - input.offsetHeight - 4))}px`;
+    input.style.left = `${Math.max(4, Math.min(cx - rect.left, rect.width - input.offsetWidth - 4))}px`;
+    input.style.top = `${Math.max(4, Math.min(cy - rect.top - 14, rect.height - input.offsetHeight - 4))}px`;
     setTimeout(() => input.focus(), 0);
     let done = false;
     const finish = (keep: boolean) => {
@@ -1464,11 +1464,11 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       const t = input.value.trim();
       input.remove();
       if (keep) {
-        const o = opts();
+        const options = opts();
         if (edit) {
-          set({ notes: t ? o.notes.map(n => (n.id === edit.id ? { ...n, text: t } : n)) : o.notes.filter(n => n.id !== edit.id) });
+          set({ notes: t ? options.notes.map(note => (note.id === edit.id ? { ...note, text: t } : note)) : options.notes.filter(note => note.id !== edit.id) });
         } else if (t) {
-          set({ notes: [...o.notes, { id: annId('note'), x: q[0], y: q[1], text: t, ...(to ? { to } : {}) }] });
+          set({ notes: [...options.notes, { id: annId('note'), x: q[0], y: q[1], text: t, ...(to ? { to } : {}) }] });
         }
       }
       if (tool === 'note') {
@@ -1494,50 +1494,50 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       return;
     }
     selected = null;
-    const o = opts();
+    const options = opts();
     if (id.startsWith('balloon:')) {
       // (An item number is the parts list's: it is not taken off here - Balloons, in Properties, does that for all
       // of them. One moved by hand goes back to where the sheet puts it.)
-      const { [id.slice(8)]: _gone, ...rest } = o.balloonAt;
+      const { [id.slice(8)]: _gone, ...rest } = options.balloonAt;
 
       return void set({ balloonAt: Object.keys(rest).length ? rest : undefined });
     }
     if (id.startsWith('view:')) {
-      const v = id.slice(5);
+      const viewId = id.slice(5);
       // A section, a detail or an added view: gone with what was put on it, and the views made from it.
       // A standard view taken off: the same for what was made from it (its switch in Views brings it back).
-      const gone = new Set([v]);
+      const gone = new Set([viewId]);
       for (let grew = true; grew; ) {
         grew = false;
-        for (const x of [...o.sections, ...o.details, ...o.extra]) {
+        for (const x of [...options.sections, ...options.details, ...options.extra]) {
           if (!gone.has(x.id) && x.view && gone.has(x.view)) {
             (gone.add(x.id), (grew = true));
           }
         }
       }
-      const keep = <T extends { id: string; view?: string }>(list: T[]) => list.filter(x => !gone.has(x.id) && !(x.view && gone.has(x.view)));
-      const madeOf = gone.size > 1 || o.sections.some(x => x.id === v) || o.details.some(x => x.id === v) || o.extra.some(x => x.id === v);
+      const keep = <T extends { id: string; view?: string }>(list: T[]) => list.filter(item => !gone.has(item.id) && !(item.view && gone.has(item.view)));
+      const madeOf = gone.size > 1 || options.sections.some(section => section.id === viewId) || options.details.some(detail => detail.id === viewId) || options.extra.some(drawingView => drawingView.id === viewId);
       if (madeOf) {
         set({
-          ...(VIEW_SPECS.some(x => x.id === v) ? { views: { ...o.views, [v === 'left' || v === 'right' ? 'side' : v]: false } } : {}),
-          sections: keep(o.sections),
-          details: keep(o.details),
-          extra: keep(o.extra),
-          dims: keep(o.dims),
-          marks: keep(o.marks),
-          notes: o.notes.map(n => (n.to && gone.has(n.to.view) ? { id: n.id, x: n.x, y: n.y, text: n.text, ...(n.size ? { size: n.size } : {}) } : n))
+          ...(VIEW_SPECS.some(viewSpec => viewSpec.id === viewId) ? { views: { ...options.views, [viewId === 'left' || viewId === 'right' ? 'side' : viewId]: false } } : {}),
+          sections: keep(options.sections),
+          details: keep(options.details),
+          extra: keep(options.extra),
+          dims: keep(options.dims),
+          marks: keep(options.marks),
+          notes: options.notes.map(note => (note.to && gone.has(note.to.view) ? { id: note.id, x: note.x, y: note.y, text: note.text, ...(note.size ? { size: note.size } : {}) } : note))
         });
 
         return;
       }
       // A view taken off: back with its switch in Views.
-      const key = v === 'left' || v === 'right' ? 'side' : (v as 'front' | 'top' | 'iso');
-      set({ views: { ...o.views, [key]: false } });
+      const key = viewId === 'left' || viewId === 'right' ? 'side' : (viewId as 'front' | 'top' | 'iso');
+      set({ views: { ...options.views, [key]: false } });
     } else if (isOverall(id)) {
-      set({ overallDims: { ...o.overallDims, [id]: { ...o.overallDims[id], hidden: true } } });
+      set({ overallDims: { ...options.overallDims, [id]: { ...options.overallDims[id], hidden: true } } });
       app.ui.toast('Overall size taken off: Overall sizes, off and on again, brings it back');
     } else {
-      set({ dims: o.dims.filter(d => d.id !== id), notes: o.notes.filter(n => n.id !== id), marks: o.marks.filter(m => m.id !== id), images: o.images.filter(m => m.id !== id) });
+      set({ dims: options.dims.filter(dimension => dimension.id !== id), notes: options.notes.filter(note => note.id !== id), marks: options.marks.filter(mark => mark.id !== id), images: options.images.filter(image => image.id !== id) });
     }
   };
   /** Every dimension on the sheet laid out by the book: rows out from the views, shorter inside longer, values clear. */
@@ -1545,36 +1545,36 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     if (!layout) {
       return;
     }
-    const o = opts();
-    const all = dimsOf(o);
+    const options = opts();
+    const all = dimsOf(options);
     if (!all.length) {
       return app.ui.toast('No dimensions to arrange');
     }
-    let cur = o;
+    let cur = options;
     let patch: Partial<DrawingOptions> = {};
-    for (const d of arrangeDims(all, layout, o)) {
-      const p = withDim(cur, d);
-      patch = { ...patch, ...p };
-      cur = { ...cur, ...p } as typeof o;
+    for (const arrangeDimension of arrangeDims(all, layout, options)) {
+      const changes = withDim(cur, arrangeDimension);
+      patch = { ...patch, ...changes };
+      cur = { ...cur, ...changes } as typeof options;
     }
     set(patch);
     app.ui.toast(`${all.length} dimension${all.length === 1 ? '' : 's'} arranged`);
   };
   /** Every dimension on the sheet: the overall sizes, then those put on by hand. */
-  const dimsOf = (o: ReturnType<typeof opts>): DrawingDim[] => [...(layout ? overallDims(o, layout) : []), ...o.dims];
+  const dimsOf = (options: ReturnType<typeof opts>): DrawingDim[] => [...(layout ? overallDims(options, layout) : []), ...options.dims];
   /** A dimension changed: one put on by hand in its list; an overall size, as what was changed on it. */
-  const withDim = (o: ReturnType<typeof opts>, d: DrawingDim): Partial<DrawingOptions> => {
-    if (!isOverall(d.id)) {
-      return { dims: o.dims.map(x => (x.id === d.id ? d : x)) };
+  const withDim = (options: ReturnType<typeof opts>, drawingDimension: DrawingDim): Partial<DrawingOptions> => {
+    if (!isOverall(drawingDimension.id)) {
+      return { dims: options.dims.map(dimension => (dimension.id === drawingDimension.id ? drawingDimension : dimension)) };
     }
-    const edit: NonNullable<DrawingOptions['overallDims']>[string] = { offset: d.offset, slide: d.slide, prefix: d.prefix, suffix: d.suffix, tol: d.tol };
-    for (const k of Object.keys(edit) as (keyof typeof edit)[]) {
-      if (edit[k] === undefined) {
-        delete edit[k];
+    const edit: NonNullable<DrawingOptions['overallDims']>[string] = { offset: drawingDimension.offset, slide: drawingDimension.slide, prefix: drawingDimension.prefix, suffix: drawingDimension.suffix, tol: drawingDimension.tol };
+    for (const key of Object.keys(edit) as (keyof typeof edit)[]) {
+      if (edit[key] === undefined) {
+        delete edit[key];
       }
     }
 
-    return { overallDims: { ...o.overallDims, [d.id]: edit } };
+    return { overallDims: { ...options.overallDims, [drawingDimension.id]: edit } };
   };
 
   /** With something picked and no tool on: what it is, and what can be done to it. */
@@ -1592,7 +1592,7 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       return;
     }
     const id = selected;
-    const o = opts();
+    const options = opts();
     const button = (label: string, run: () => void, on = false) => {
       const b = el('button', `text-btn${on ? ' on' : ''}`, label);
       b.addEventListener('click', run);
@@ -1600,64 +1600,64 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     };
     /** A view's scale, picked from the standard ones: on the chip under its handle. */
     const scaleSelect = (now: number, change: (s: number) => void) => {
-      const s = chip;
-      s.innerHTML = '';
+      const select = chip;
+      select.innerHTML = '';
       for (const sc of SCALES) {
         const op = el('option', '', scaleLabel(sc));
         op.value = String(sc);
         op.selected = Math.abs(sc - now) < 1e-9;
-        s.append(op);
+        select.append(op);
       }
-      if (![...s.options].some(x => x.selected)) {
+      if (![...select.options].some(option => option.selected)) {
         const op = el('option', '', scaleLabel(now));
         op.value = String(now);
         op.selected = true;
-        s.prepend(op);
+        select.prepend(op);
       }
-      s.onchange = () => change(Number(s.value));
-      s.hidden = false;
+      select.onchange = () => change(Number(select.value));
+      select.hidden = false;
     };
     if (id.startsWith('view:')) {
-      const v = id.slice(5);
-      const sec = o.sections.find(x => x.id === v);
-      const det = o.details.find(x => x.id === v);
-      const ex = o.extra.find(x => x.id === v);
-      const now = layout?.views.find(x => x.id === v)?.s ?? 1;
+      const viewId = id.slice(5);
+      const sec = options.sections.find(section => section.id === viewId);
+      const det = options.details.find(detail => detail.id === viewId);
+      const ex = options.extra.find(drawingView => drawingView.id === viewId);
+      const now = layout?.views.find(view => view.id === viewId)?.s ?? 1;
       if (ex) {
-        hint.append(el('span', '', extraName(ex, o)));
+        hint.append(el('span', '', extraName(ex, options)));
         // A view lined up with another is at its scale (the lines run on from one to the other).
         if (ex.orient || isIsoView(ex)) {
-          scaleSelect(now, s => set({ extra: o.extra.map(x => (x === ex ? { ...x, scale: s } : x)) }));
+          scaleSelect(now, scale => set({ extra: options.extra.map(drawingView => (drawingView === ex ? { ...drawingView, scale: scale } : drawingView)) }));
         } else {
           hint.append(el('span', 'bim-sub', "Scale: its view's"));
         }
-      } else if (v === 'iso') {
+      } else if (viewId === 'iso') {
         hint.append(el('span', '', 'Isometric view'));
-        scaleSelect(now, s => set({ isoScale: s }));
-      } else if (VIEW_SPECS.some(x => x.id === v)) {
+        scaleSelect(now, scale => set({ isoScale: scale }));
+      } else if (VIEW_SPECS.some(viewSpec => viewSpec.id === viewId)) {
         // The front, top and side views share one scale: they line up.
-        hint.append(el('span', '', VIEW_NAMES[v] ?? 'View'));
-        scaleSelect(now, s => set({ scale: s }));
+        hint.append(el('span', '', VIEW_NAMES[viewId] ?? 'View'));
+        scaleSelect(now, scale => set({ scale: scale }));
       } else if (sec) {
         hint.append(el('span', '', `Section ${sec.letter}-${sec.letter}`));
-        button('Flip', () => set({ sections: o.sections.map(x => (x === sec ? { ...x, look: [-x.look[0], -x.look[1]] as P2 } : x)) }));
+        button('Flip', () => set({ sections: options.sections.map(section => (section === sec ? { ...section, look: [-section.look[0], -section.look[1]] as P2 } : section)) }));
       } else if (det) {
         hint.append(el('span', '', `Detail ${det.letter}`));
-        scaleSelect(now, s => set({ details: o.details.map(x => (x === det ? { ...x, scale: s } : x)) }));
+        scaleSelect(now, scale => set({ details: options.details.map(detail => (detail === det ? { ...detail, scale: scale } : detail)) }));
       } else {
-        hint.append(el('span', '', VIEW_NAMES[v] ?? 'View'));
+        hint.append(el('span', '', VIEW_NAMES[viewId] ?? 'View'));
       }
     } else {
-      const d = dimsOf(o).find(x => x.id === id);
-      const n = o.notes.find(x => x.id === id);
-      const img = o.images.find(x => x.id === id);
+      const dimension = dimsOf(options).find(dimension => dimension.id === id);
+      const note = options.notes.find(note => note.id === id);
+      const img = options.images.find(image => image.id === id);
       if (id.startsWith('balloon:')) {
         hint.append(el('span', '', 'Item number'));
         hint.append(el('span', 'bim-sub', 'Drag it where it reads well'));
         // (Put by hand: back to where the sheet puts it.)
-        if (o.balloonAt[id.slice(8)]) {
+        if (options.balloonAt[id.slice(8)]) {
           button('Put back', () => {
-            const { [id.slice(8)]: _gone, ...rest } = o.balloonAt;
+            const { [id.slice(8)]: _gone, ...rest } = options.balloonAt;
             selected = null;
             set({ balloonAt: Object.keys(rest).length ? rest : undefined });
           });
@@ -1669,51 +1669,51 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       if (img) {
         hint.append(el('span', '', 'Picture'));
         // Bigger or smaller about its middle.
-        const resize = (k: number) => set({ images: o.images.map(x => (x === img ? { ...x, x: img.x - (img.w * (k - 1)) / 2, y: img.y - (img.h * (k - 1)) / 2, w: img.w * k, h: img.h * k } : x)) });
+        const resize = (factor: number) => set({ images: options.images.map(image => (image === img ? { ...image, x: img.x - (img.w * (factor - 1)) / 2, y: img.y - (img.h * (factor - 1)) / 2, w: img.w * factor, h: img.h * factor } : image)) });
         button('Smaller', () => resize(1 / 1.25));
         button('Bigger', () => resize(1.25));
-      } else if (d) {
-        hint.append(el('span', '', d.minmax ? 'Min-Max Distance' : isOverall(d.id) ? 'Overall size' : 'Dimension'));
-        const mm = d.minmax;
+      } else if (dimension) {
+        hint.append(el('span', '', dimension.minmax ? 'Min-Max Distance' : isOverall(dimension.id) ? 'Overall size' : 'Dimension'));
+        const mm = dimension.minmax;
         if (mm) {
-          const pv = layout?.views.find(x => x.id === d.view);
+          const pv = layout?.views.find(view => view.id === dimension.view);
           const flip = (max: boolean) => {
             const [a, b] = max ? mm.max : mm.min;
             if (len2(sub2(a, b)) < 1e-6) {
               return app.ui.toast('They meet: the nearest is no distance');
             }
-            set({ dims: o.dims.map(x => (x === d ? { ...x, a, b, max: max || undefined, offset: pv ? outward(pv, a, b) : x.offset } : x)) });
+            set({ dims: options.dims.map(drawingDimension => (drawingDimension === dimension ? { ...drawingDimension, a, b, max: max || undefined, offset: pv ? outward(pv, a, b) : drawingDimension.offset } : drawingDimension)) });
           };
-          button('Min', () => flip(false), !d.max);
-          button('Max', () => flip(true), !!d.max);
+          button('Min', () => flip(false), !dimension.max);
+          button('Max', () => flip(true), !!dimension.max);
         }
         // How far out from what it measures, typed (mm on the paper).
         const far = typingBox('bim-input bim-dim-far');
         far.inputMode = 'decimal';
-        far.value = String(Math.round(Math.abs(d.offset) * 10) / 10);
+        far.value = String(Math.round(Math.abs(dimension.offset) * 10) / 10);
         far.title = 'How far out from what it measures (mm on the paper)';
         far.addEventListener('change', () => {
-          const v = Number(far.value);
-          if (!(v > 0)) {
+          const value = Number(far.value);
+          if (!(value > 0)) {
             return;
           }
-          set(withDim(o, { ...d, offset: (d.kind === 'length' || d.kind === 'distance' ? Math.sign(d.offset) || 1 : 1) * v }));
+          set(withDim(options, { ...dimension, offset: (dimension.kind === 'length' || dimension.kind === 'distance' ? Math.sign(dimension.offset) || 1 : 1) * value }));
         });
         far.addEventListener('keydown', e => e.stopPropagation());
         const lab = el('label', 'bim-dim-farlabel', 'Distance');
         lab.append(far);
         hint.append(lab);
-        if (d.slide) {
-          button('Centre text', () => set(withDim(o, { ...d, slide: undefined })));
+        if (dimension.slide) {
+          button('Centre text', () => set(withDim(options, { ...dimension, slide: undefined })));
         }
-        button('Text and tolerance', () => void editDim(d));
-      } else if (n) {
+        button('Text and tolerance', () => void editDim(dimension));
+      } else if (note) {
         hint.append(el('span', '', 'Note'));
         // How tall its letters are: a step smaller or bigger (2.5 to 14 mm on the paper).
         const SIZES = [2.5, 3.5, 5, 7, 10, 14];
-        const now = n.size ?? 3.5;
-        const at = SIZES.reduce((best, s, i) => (Math.abs(s - now) < Math.abs(SIZES[best] - now) ? i : best), 0);
-        const resize = (to: number) => set({ notes: o.notes.map(x => (x === n ? { ...x, size: SIZES[to] === 3.5 ? undefined : SIZES[to] } : x)) });
+        const now = note.size ?? 3.5;
+        const at = SIZES.reduce((best, size, i) => (Math.abs(size - now) < Math.abs(SIZES[best] - now) ? i : best), 0);
+        const resize = (to: number) => set({ notes: options.notes.map(drawingNote => (drawingNote === note ? { ...drawingNote, size: SIZES[to] === 3.5 ? undefined : SIZES[to] } : drawingNote)) });
         const smaller = el('button', 'text-btn', 'A−');
         smaller.title = 'Smaller text';
         (smaller as HTMLButtonElement).disabled = at === 0;
@@ -1724,8 +1724,8 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
         bigger.addEventListener('click', () => resize(at + 1));
         hint.append(smaller, el('span', 'bim-sub', `${now} mm`), bigger);
         button('Edit', () => {
-          const [cx, cy] = clientOf([n.x, n.y]);
-          noteInput([n.x, n.y], cx, cy, n);
+          const [cx, cy] = clientOf([note.x, note.y]);
+          noteInput([note.x, note.y], cx, cy, note);
         });
       } else {
         hint.append(el('span', '', 'Centreline'));
@@ -1738,8 +1738,8 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   // ---- Base views: which way, at what scale, then where.
   let pendingBase: { orient: ViewOrient; scale?: number } = { orient: 'front' };
   const chooseBase = async () => {
-    const orient = select(pendingBase.orient, Object.entries(ORIENTS).map(([k, r]) => [k, r.name]));
-    const scale = select(String(pendingBase.scale ?? ''), [['', `The sheet's (${scaleLabel(layout?.scale ?? 1)})`], ...SCALES.map((s): [string, string] => [String(s), scaleLabel(s)])]);
+    const orient = select(pendingBase.orient, Object.entries(ORIENTS).map(([key, orient]) => [key, orient.name]));
+    const scale = select(String(pendingBase.scale ?? ''), [['', `The sheet's (${scaleLabel(layout?.scale ?? 1)})`], ...SCALES.map((scale): [string, string] => [String(scale), scaleLabel(scale)])]);
     if (!(await form('Base View', [['View from', orient], ['Scale', scale]]))) {
       return;
     }
@@ -1761,10 +1761,10 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     }
     try {
       const url = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result));
-        r.onerror = () => reject(r.error);
-        r.readAsDataURL(file);
+        const fileReader = new FileReader();
+        fileReader.onload = () => resolve(String(fileReader.result));
+        fileReader.onerror = () => reject(fileReader.error);
+        fileReader.readAsDataURL(file);
       });
       const img = new Image();
       await new Promise<void>((resolve, reject) => {
@@ -1773,20 +1773,20 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
         img.src = url;
       });
       // At most 1200 pixels across: plenty on paper, and the project stays small.
-      const k = Math.min(1, 1200 / Math.max(img.naturalWidth, img.naturalHeight));
+      const scale = Math.min(1, 1200 / Math.max(img.naturalWidth, img.naturalHeight));
       let src = url;
-      if (k < 1 || file.size > 400_000) {
-        const c = document.createElement('canvas');
-        c.width = Math.max(1, Math.round(img.naturalWidth * k));
-        c.height = Math.max(1, Math.round(img.naturalHeight * k));
-        c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-        src = file.type === 'image/png' || file.type === 'image/svg+xml' ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+      if (scale < 1 || file.size > 400_000) {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        src = file.type === 'image/png' || file.type === 'image/svg+xml' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
       }
-      const [W, H] = sheetSize(opts());
-      const w = Math.min(60, W / 4);
-      const h = (w * img.naturalHeight) / Math.max(1, img.naturalWidth);
+      const [sheetWidth, sheetHeight] = sheetSize(opts());
+      const width = Math.min(60, sheetWidth / 4);
+      const height = (width * img.naturalHeight) / Math.max(1, img.naturalWidth);
       const id = annId('img');
-      set({ images: [...opts().images, { id, x: (W - w) / 2, y: (H - h) / 2, w, h, src }] });
+      set({ images: [...opts().images, { id, x: (sheetWidth - width) / 2, y: (sheetHeight - height) / 2, w: width, h: height, src }] });
       startTool(null);
       selected = id;
       render();
@@ -1806,9 +1806,9 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       }
       const list = el('div', 'dialog-list');
       for (const [label, control] of rows) {
-        const l = el('label', 'dialog-field');
-        l.append(el('span', 'field-label', label), control);
-        list.append(l);
+        const fieldLabel = el('label', 'dialog-field');
+        fieldLabel.append(el('span', 'field-label', label), control);
+        list.append(fieldLabel);
       }
       box.append(list);
       const done = (ok: boolean) => {
@@ -1837,15 +1837,15 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       (list.querySelector('input, select, .text-field') as HTMLElement | null)?.focus();
     });
   const select = (value: string, options: [string, string][]) => {
-    const s = el('select', 'bim-select');
-    for (const [v, t] of options) {
+    const select = el('select', 'bim-select');
+    for (const [optionValue, t] of options) {
       const op = el('option', '', t);
-      op.value = v;
-      op.selected = v === value;
-      s.append(op);
+      op.value = optionValue;
+      op.selected = optionValue === value;
+      select.append(op);
     }
 
-    return s;
+    return select;
   };
   const input = (value: string, placeholder = '') => {
     const i = typingBox();
@@ -1856,35 +1856,35 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   };
 
   /** A dimension's text before and after its value, and its tolerance. */
-  const editDim = async (d: DrawingDim) => {
-    const o = opts();
-    const angle = d.kind === 'angle';
+  const editDim = async (drawingDimension: DrawingDim) => {
+    const options = opts();
+    const angle = drawingDimension.kind === 'angle';
     // Tolerances are typed in the drawing's units (degrees for an angle), kept in mm (radians).
-    const k = angle ? Math.PI / 180 : UNIT_MM[o.units];
-    const shown = (v?: number) => (v === undefined ? '' : String(Math.round((v / k) * 1e6) / 1e6));
-    const pre = input(d.prefix ?? '', 'e.g. 4×');
-    const post = input(d.suffix ?? '', 'e.g. THRU');
-    const kind = select(d.tol?.kind ?? 'none', [
+    const factor = angle ? Math.PI / 180 : UNIT_MM[options.units];
+    const shown = (value?: number) => (value === undefined ? '' : String(Math.round((value / factor) * 1e6) / 1e6));
+    const pre = input(drawingDimension.prefix ?? '', 'e.g. 4×');
+    const post = input(drawingDimension.suffix ?? '', 'e.g. THRU');
+    const kind = select(drawingDimension.tol?.kind ?? 'none', [
       ['none', 'None'],
       ['sym', 'Symmetrical (±)'],
       ['dev', 'Deviation (+ / -)'],
       ['limits', 'Limits (largest / smallest)'],
       ['basic', 'Basic (boxed)']
     ]);
-    const up = input(shown(d.tol?.up), '0');
-    const down = input(shown(d.tol?.down), 'same as upper');
+    const up = input(shown(drawingDimension.tol?.up), '0');
+    const down = input(shown(drawingDimension.tol?.down), 'same as upper');
     up.inputMode = down.inputMode = 'decimal';
-    const unit = angle ? '°' : o.units;
+    const unit = angle ? '°' : options.units;
     if (!(await form('Dimension text', [['Before the value', pre], ['After the value', post], ['Tolerance', kind], [`Upper (${unit})`, up], [`Lower (${unit})`, down]]))) {
       return;
     }
-    const num = (s: string) => {
-      const v = Number(s.trim().replace(',', '.'));
+    const num = (text: string) => {
+      const value = Number(text.trim().replace(',', '.'));
 
-      return s.trim() && Number.isFinite(v) ? Math.abs(v) * k : undefined;
+      return text.trim() && Number.isFinite(value) ? Math.abs(value) * factor : undefined;
     };
     const t = kind.value as NonNullable<DimText['tol']>['kind'] | 'none';
-    const next: DrawingDim = { ...d, prefix: pre.value || undefined, suffix: post.value || undefined, tol: t === 'none' ? undefined : { kind: t, up: num(up.value), down: num(down.value) } };
+    const next: DrawingDim = { ...drawingDimension, prefix: pre.value || undefined, suffix: post.value || undefined, tol: t === 'none' ? undefined : { kind: t, up: num(up.value), down: num(down.value) } };
     for (const key of ['prefix', 'suffix', 'tol'] as const) {
       if (next[key] === undefined) {
         delete next[key];
@@ -1895,14 +1895,14 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
 
   /** The first drawing: title, sheet, scale, views - then the sheet. */
   const preferences = async (): Promise<boolean> => {
-    const o = opts();
-    const title = input(o.title);
-    const orient = select(o.portrait ? 'portrait' : 'landscape', [
+    const options = opts();
+    const title = input(options.title);
+    const orient = select(options.portrait ? 'portrait' : 'landscape', [
       ['landscape', 'Landscape'],
       ['portrait', 'Portrait']
     ]);
-    const size = select(o.size, (Object.keys(SHEETS) as SheetSize[]).map(s => [s, `${s.startsWith('ANSI') ? s : `ISO ${s}`} (${SHEETS[s][0]} × ${SHEETS[s][1]} mm)`]));
-    const scale = select('auto', [['auto', 'Largest that fits'], ...SCALES.map(s => [String(s), scaleLabel(s)] as [string, string])]);
+    const size = select(options.size, (Object.keys(SHEETS) as SheetSize[]).map(size => [size, `${size.startsWith('ANSI') ? size : `ISO ${size}`} (${SHEETS[size][0]} × ${SHEETS[size][1]} mm)`]));
+    const scale = select('auto', [['auto', 'Largest that fits'], ...SCALES.map(scale => [String(scale), scaleLabel(scale)] as [string, string])]);
     const four = el('input', '');
     four.type = 'checkbox';
     four.checked = true;
@@ -1921,7 +1921,7 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       return false;
     }
     set({
-      title: title.value.trim() && (title.value.trim() !== o.title || startTitle) ? title.value.trim() : undefined,
+      title: title.value.trim() && (title.value.trim() !== options.title || startTitle) ? title.value.trim() : undefined,
       portrait: orient.value === 'portrait' || undefined,
       size: size.value as SheetSize,
       scale: scale.value === 'auto' ? undefined : Number(scale.value),
@@ -1957,22 +1957,22 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       const step = e.shiftKey ? 5 : 0.5;
       const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
       const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-      const o = opts();
+      const options = opts();
       const id = selected;
-      const note = o.notes.find(n => n.id === id);
-      const img = o.images.find(m => m.id === id);
-      const dim = dimsOf(o).find(d => d.id === id);
+      const note = options.notes.find(note => note.id === id);
+      const img = options.images.find(image => image.id === id);
+      const dim = dimsOf(options).find(dimension => dimension.id === id);
       const ball = id.startsWith('balloon:') ? balloonsNow.find(b => b.id === id) : undefined;
       if (ball) {
-        set({ balloonAt: { ...o.balloonAt, [id.slice(8)]: [ball.x + dx, ball.y + dy] } });
+        set({ balloonAt: { ...options.balloonAt, [id.slice(8)]: [ball.x + dx, ball.y + dy] } });
       } else if (note) {
-        set({ notes: o.notes.map(n => (n === note ? { ...n, x: note.x + dx, y: note.y + dy } : n)) });
+        set({ notes: options.notes.map(drawingNote => (drawingNote === note ? { ...drawingNote, x: note.x + dx, y: note.y + dy } : drawingNote)) });
       } else if (img) {
-        set({ images: o.images.map(m => (m === img ? { ...m, x: img.x + dx, y: img.y + dy } : m)) });
+        set({ images: options.images.map(image => (image === img ? { ...image, x: img.x + dx, y: img.y + dy } : image)) });
       } else if (dim) {
         const out = dx - dy;
         const far = Math.max(1, Math.abs(dim.offset) + out);
-        set(withDim(o, { ...dim, offset: (Math.sign(dim.offset) || 1) * far }));
+        set(withDim(options, { ...dim, offset: (Math.sign(dim.offset) || 1) * far }));
       }
     } else if (!e.ctrlKey && !e.metaKey && !e.altKey && ['+', '=', '-', '_', 'f', 'F', '0'].includes(e.key)) {
       // Zoom in / out, all of the sheet.
@@ -1999,7 +1999,7 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     const sheets = el('div', 'bim-dsheets');
     tools.append(main, sheets);
     let into: HTMLElement = main;
-    const o = opts();
+    const options = opts();
     const button = (label: string, icon: IconName, run: () => void, opt: { on?: boolean; disabled?: boolean; sub?: boolean } = {}) => {
       const b = el('button', `bim-dtool${opt.on ? ' on' : ''}${opt.sub ? ' sub' : ''}`);
       b.innerHTML = icons[icon];
@@ -2021,18 +2021,18 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       }, { on: tool === t, sub: true });
     button('Views', 'views', () => ((open = open === 'views' ? null : 'views'), renderTools()), { on: open === 'views' || tool === 'section' || tool === 'detail' || tool === 'base' || tool === 'projection' });
     if (open === 'views') {
-      const toggle = (k: 'front' | 'top' | 'side' | 'iso', label: string) =>
-        button(label, o.views[k] ? 'eye' : 'eyeOff', () => set({ views: { ...o.views, [k]: !o.views[k] } }), { on: o.views[k], sub: true });
+      const toggle = (key: 'front' | 'top' | 'side' | 'iso', label: string) =>
+        button(label, options.views[key] ? 'eye' : 'eyeOff', () => set({ views: { ...options.views, [key]: !options.views[key] } }), { on: options.views[key], sub: true });
       toggle('front', 'Front');
       toggle('top', 'Top');
-      toggle('side', o.angle === 'first' ? 'Side (from the left)' : 'Side (from the right)');
+      toggle('side', options.angle === 'first' ? 'Side (from the left)' : 'Side (from the right)');
       toggle('iso', 'Isometric');
       button('Base View', 'views', () => (tool === 'base' ? startTool(null) : void chooseBase()), { on: tool === 'base', sub: true });
       pick('projection', 'Projected View', 'project');
       pick('section', 'Section View', 'section');
       pick('detail', 'Detail View', 'isolate');
-      button('Hidden lines', o.hidden ? 'eye' : 'eyeOff', () => set({ hidden: !o.hidden }), { on: o.hidden, sub: true });
-      button('Put views back', 'undo', () => set({ moved: undefined }), { sub: true, disabled: !Object.keys(o.moved).length });
+      button('Hidden lines', options.hidden ? 'eye' : 'eyeOff', () => set({ hidden: !options.hidden }), { on: options.hidden, sub: true });
+      button('Put views back', 'undo', () => set({ moved: undefined }), { sub: true, disabled: !Object.keys(options.moved).length });
     }
     const dimTools: ToolId[] = ['length', 'distance', 'pointLine', 'lineLine', 'minmax', 'angle', 'angle3', 'arcAngle', 'radius', 'diameter'];
     button('Dimensions', 'ruler', () => ((open = open === 'dims' ? null : 'dims'), renderTools()), { on: open === 'dims' || (!!tool && dimTools.includes(tool)) });
@@ -2048,8 +2048,8 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       pick('radius', 'Radius', 'arc');
       pick('diameter', 'Diameter', 'circle');
       // Switched on again, the overall sizes taken off one by one come back (where they were moved to).
-      const back = () => Object.fromEntries(Object.entries(o.overallDims).map(([k, { hidden: _h, ...v }]) => [k, v]));
-      button('Overall sizes', o.overall ? 'eye' : 'eyeOff', () => set(o.overall ? { overall: false } : { overall: true, overallDims: back() }), { on: o.overall, sub: true });
+      const back = () => Object.fromEntries(Object.entries(options.overallDims).map(([key, { hidden: _h, ...rest }]) => [key, rest]));
+      button('Overall sizes', options.overall ? 'eye' : 'eyeOff', () => set(options.overall ? { overall: false } : { overall: true, overallDims: back() }), { on: options.overall, sub: true });
       button('Arrange', 'align', arrange, { sub: true });
     }
     const markTools: ToolId[] = ['center', 'cline', 'clineLines', 'cross'];
@@ -2066,7 +2066,7 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
 
     // ---- The project's drawings: tap one to open it; a new one, a copy of this one, this one deleted.
     const all = drawingsOf(store.doc);
-    const listed = all.some(d => d.id === current) ? all : [...all, { id: current }];
+    const listed = all.some(drawing => drawing.id === current) ? all : [...all, { id: current }];
     sheets.append(el('div', 'bim-dtools-head', `Sheets (${listed.length})`));
     // What's done with the sheets: small buttons in a row (their names as tips).
     const acts = el('div', 'bim-dsheets-acts');
@@ -2102,11 +2102,11 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     into = list;
     const rows: [HTMLElement, string][] = [];
     let mine: HTMLElement | null = null;
-    for (const d of listed) {
-      const title = d.id === current ? o.title : drawingOptions({ ...store.doc, drawing: d }).title;
-      button(title, 'drawing', () => d.id !== current && switchTo(d.id), { on: d.id === current });
+    for (const drawing of listed) {
+      const title = drawing.id === current ? options.title : drawingOptions({ ...store.doc, drawing: drawing }).title;
+      button(title, 'drawing', () => drawing.id !== current && switchTo(drawing.id), { on: drawing.id === current });
       const row = list.lastElementChild as HTMLElement;
-      if (d.id === current) {
+      if (drawing.id === current) {
         mine = row;
       }
       rows.push([row, title.toLowerCase()]);
@@ -2139,24 +2139,24 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   const renderProps = () => {
     const keep = props.scrollTop;
     props.innerHTML = '';
-    const o = opts();
+    const sheetOptions = opts();
     const section = (title: string) => props.append(el('div', 'bim-props-h', title));
     const row = (label: string, control: HTMLElement) => {
-      const r = el('label', 'bim-props-row');
-      r.append(el('span', '', label), control);
-      props.append(r);
+      const rowLabel = el('label', 'bim-props-row');
+      rowLabel.append(el('span', '', label), control);
+      props.append(rowLabel);
     };
     const choose = <T extends string | number>(value: T, options: [T, string][], change: (v: T) => void) => {
-      const s = el('select', 'bim-select');
-      for (const [v, t] of options) {
+      const select = el('select', 'bim-select');
+      for (const [optionValue, t] of options) {
         const op = el('option', '', t);
-        op.value = String(v);
-        op.selected = v === value;
-        s.append(op);
+        op.value = String(optionValue);
+        op.selected = optionValue === value;
+        select.append(op);
       }
-      s.addEventListener('change', () => change(options.find(([v]) => String(v) === s.value)![0]));
+      select.addEventListener('change', () => change(options.find(([optionValue]) => String(optionValue) === select.value)![0]));
 
-      return s;
+      return select;
     };
     const textField = (value: string, change: (v: string) => void) => {
       const i = typingBox('bim-input');
@@ -2168,7 +2168,7 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     };
 
     section('Drawing');
-    row('Title', textField(o.title, v => set({ title: v || undefined })));
+    row('Title', textField(sheetOptions.title, value => set({ title: value || undefined })));
     const bodies = el('div', 'bim-props-bodies');
     bodies.append(el('span', '', `${parts.length} of ${allParts.length} ${allParts.length === 1 ? 'body' : 'bodies'}`));
     if (parts.length < allParts.length) {
@@ -2181,47 +2181,47 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
 
     section('Sheet');
     const orient = el('div', 'bim-seg');
-    for (const [v, t] of [
+    for (const [value, t] of [
       [true, 'Portrait'],
       [false, 'Landscape']
     ] as [boolean, string][]) {
-      const b = el('button', o.portrait === v ? 'on' : '', t);
-      b.addEventListener('click', () => set({ portrait: v || undefined }));
+      const b = el('button', sheetOptions.portrait === value ? 'on' : '', t);
+      b.addEventListener('click', () => set({ portrait: value || undefined }));
       orient.append(b);
     }
     row('Orientation', orient);
     row(
       'Sheet size',
       choose(
-        o.size,
-        (Object.keys(SHEETS) as SheetSize[]).map(s => [s, `${s.startsWith('ANSI') ? s : `ISO ${s}`} (${SHEETS[s][0]} × ${SHEETS[s][1]} mm)`]),
-        v => set({ size: v })
+        sheetOptions.size,
+        (Object.keys(SHEETS) as SheetSize[]).map(size => [size, `${size.startsWith('ANSI') ? size : `ISO ${size}`} (${SHEETS[size][0]} × ${SHEETS[size][1]} mm)`]),
+        size => set({ size: size })
       )
     );
     row(
       'View scale',
-      choose(String(o.scale ?? 'auto'), [['auto', `Auto (${scaleLabel(layout?.scale ?? 1)})`], ...SCALES.map(s => [String(s), scaleLabel(s)] as [string, string])], v =>
-        set({ scale: v === 'auto' ? undefined : Number(v) })
+      choose(String(sheetOptions.scale ?? 'auto'), [['auto', `Auto (${scaleLabel(layout?.scale ?? 1)})`], ...SCALES.map(scale => [String(scale), scaleLabel(scale)] as [string, string])], value =>
+        set({ scale: value === 'auto' ? undefined : Number(value) })
       )
     );
     if (layout && !layout.fits) {
-      props.append(el('div', 'bim-sub bim-props-note', o.scale ? "The views don't fit the sheet at this scale: they're cut at the frame. Pick a smaller scale or a bigger sheet." : "A view is moved off the drawing area: it's cut at the frame."));
+      props.append(el('div', 'bim-sub bim-props-note', sheetOptions.scale ? "The views don't fit the sheet at this scale: they're cut at the frame. Pick a smaller scale or a bigger sheet." : "A view is moved off the drawing area: it's cut at the frame."));
     }
     row(
       'Projection',
       choose(
-        o.angle,
+        sheetOptions.angle,
         [
           ['first', 'First angle'],
           ['third', 'Third angle']
         ],
-        v => set({ angle: v as 'first' | 'third' })
+        value => set({ angle: value as 'first' | 'third' })
       )
     );
     row(
       'Title block',
       choose(
-        o.titleBlock,
+        sheetOptions.titleBlock,
         [
           ['none', 'Empty sheet'],
           ['border', 'Border only'],
@@ -2231,61 +2231,61 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
           ['horizontal', 'Horizontal'],
           ['vertical', 'Vertical with revisions']
         ],
-        v => set({ titleBlock: v as Opts['titleBlock'] })
+        value => set({ titleBlock: value as Opts['titleBlock'] })
       )
     );
     row(
       'Date format',
       choose(
-        o.dateFormat,
+        sheetOptions.dateFormat,
         [
           ['iso', 'YYYY-MM-DD'],
           ['dmy', 'DD/MM/YY'],
           ['mdy', 'MM/DD/YY']
         ],
-        v => set({ dateFormat: v as Opts['dateFormat'] })
+        value => set({ dateFormat: value as Opts['dateFormat'] })
       )
     );
     const balloons = el('input', '');
     balloons.type = 'checkbox';
-    balloons.checked = o.balloons;
+    balloons.checked = sheetOptions.balloons;
     balloons.addEventListener('change', () => set({ balloons: balloons.checked ? undefined : false }));
     row('Balloons (item numbers)', balloons);
 
     section('Title block');
     const info = (key: keyof ProjectInfo, label: string) =>
-      row(label, textField(store.doc.info?.[key] ?? '', v => store.commit(d => (d.info = { ...(d.info ?? {}), [key]: v || undefined }))));
+      row(label, textField(store.doc.info?.[key] ?? '', value => store.commit(draft => (draft.info = { ...(draft.info ?? {}), [key]: value || undefined }))));
     info('number', 'Drawing number');
     info('revision', 'Revision');
     info('author', 'Created by');
     info('company', 'Owner');
     // The revision table (Block and Vertical title blocks).
-    if (o.titleBlock === 'block' || o.titleBlock === 'vertical') {
+    if (sheetOptions.titleBlock === 'block' || sheetOptions.titleBlock === 'vertical') {
       const revs = el('div', 'bim-props-revs');
-      o.revisions.forEach((r, i) => {
+      sheetOptions.revisions.forEach((revision, i) => {
         const line = el('div', 'bim-props-rev');
-        line.append(el('span', '', [r.rev, r.note, r.date, r.by].filter(Boolean).join(' · ')));
+        line.append(el('span', '', [revision.rev, revision.note, revision.date, revision.by].filter(Boolean).join(' · ')));
         const x = el('button', 'text-btn', 'Remove');
-        x.addEventListener('click', () => set({ revisions: o.revisions.filter((_, j) => j !== i) }));
+        x.addEventListener('click', () => set({ revisions: sheetOptions.revisions.filter((_, j) => j !== i) }));
         line.append(x);
         revs.append(line);
       });
       const add = el('button', 'text-btn', 'Add revision');
       add.addEventListener('click', async () => {
-        const next = String.fromCharCode(65 + Math.min(25, o.revisions.length));
-        const v = await app.ui.dialog('Add a revision', [
+        const next = String.fromCharCode(65 + Math.min(25, sheetOptions.revisions.length));
+        const answers = await app.ui.dialog('Add a revision', [
           { key: 'rev', label: 'Revision', value: next },
           { key: 'note', label: 'Description', value: '', placeholder: 'What changed' },
-          { key: 'date', label: 'Date', value: dateText(new Date(), o.dateFormat) },
+          { key: 'date', label: 'Date', value: dateText(new Date(), sheetOptions.dateFormat) },
           { key: 'by', label: 'By', value: store.doc.info?.author ?? '' }
         ]);
-        if (!v || !v.rev.trim()) {
+        if (!answers || !answers.rev.trim()) {
           return;
         }
-        const r = { rev: v.rev.trim(), note: v.note.trim() || undefined, date: v.date.trim() || undefined, by: v.by.trim() || undefined };
-        set({ revisions: [...o.revisions, r] });
+        const revision = { rev: answers.rev.trim(), note: answers.note.trim() || undefined, date: answers.date.trim() || undefined, by: answers.by.trim() || undefined };
+        set({ revisions: [...sheetOptions.revisions, revision] });
         // The title block's revision is the latest one.
-        store.commit(d => (d.info = { ...(d.info ?? {}), revision: r.rev }));
+        store.commit(draft => (draft.info = { ...(draft.info ?? {}), revision: revision.rev }));
       });
       revs.append(add);
       row('Revisions', revs);
@@ -2295,52 +2295,52 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     row(
       'Units',
       choose(
-        o.units,
+        sheetOptions.units,
         [
           ['mm', 'Millimetre'],
           ['cm', 'Centimetre'],
           ['m', 'Metre'],
           ['in', 'Inch']
         ],
-        v => set({ units: v as Opts['units'] })
+        value => set({ units: value as Opts['units'] })
       )
     );
     row(
       'Length precision',
       choose(
-        o.precision,
-        [0, 1, 2, 3].map(n => [n, n ? `0${o.comma ? ',' : '.'}${'123'.slice(0, n)}` : '0'] as [number, string]),
-        v => set({ precision: v })
+        sheetOptions.precision,
+        [0, 1, 2, 3].map(digits => [digits, digits ? `0${sheetOptions.comma ? ',' : '.'}${'123'.slice(0, digits)}` : '0'] as [number, string]),
+        precision => set({ precision: precision })
       )
     );
     row(
       'Angle precision',
       choose(
-        o.anglePrecision,
-        [0, 1, 2].map(n => [n, n ? `0${o.comma ? ',' : '.'}${'12'.slice(0, n)}°` : '0°'] as [number, string]),
-        v => set({ anglePrecision: v })
+        sheetOptions.anglePrecision,
+        [0, 1, 2].map(digits => [digits, digits ? `0${sheetOptions.comma ? ',' : '.'}${'12'.slice(0, digits)}°` : '0°'] as [number, string]),
+        anglePrecision => set({ anglePrecision: anglePrecision })
       )
     );
     row(
       'Decimal separator',
       choose(
-        o.comma ? 'comma' : 'point',
+        sheetOptions.comma ? 'comma' : 'point',
         [
           ['point', 'Point'],
           ['comma', 'Comma']
         ],
-        v => set({ comma: v === 'comma' || undefined })
+        value => set({ comma: value === 'comma' || undefined })
       )
     );
 
     section('Line widths');
-    const width = (k: 'visible' | 'hidden' | 'dims' | 'center' | 'section', label: string, list: number[]) =>
+    const width = (key: 'visible' | 'hidden' | 'dims' | 'center' | 'section', label: string, list: number[]) =>
       row(
         label,
         choose(
-          o.lines[k],
-          list.map(w => [w, `${w.toFixed(2)} mm`] as [number, string]),
-          v => set({ lines: { ...(curDrawing()?.lines ?? {}), [k]: v } })
+          sheetOptions.lines[key],
+          list.map(width => [width, `${width.toFixed(2)} mm`] as [number, string]),
+          width => set({ lines: { ...(curDrawing()?.lines ?? {}), [key]: width } })
         )
       );
     width('visible', 'Visible outlines', [0.25, 0.35, 0.4, 0.5, 0.7]);
@@ -2353,9 +2353,9 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
 
   // ---- Out: print / PDF at the paper's size, or an SVG file.
   print.addEventListener('click', () => {
-    const [W, H] = sheetSize(opts());
+    const [sheetWidth, sheetHeight] = sheetSize(opts());
     const page = document.createElement('style');
-    page.textContent = `@page { size: ${W}mm ${H}mm; margin: 0; } body.printing-drawing .bim-drawing-print svg { width: ${W}mm; height: ${H}mm; display: block; }`;
+    page.textContent = `@page { size: ${sheetWidth}mm ${sheetHeight}mm; margin: 0; } body.printing-drawing .bim-drawing-print svg { width: ${sheetWidth}mm; height: ${sheetHeight}mm; display: block; }`;
     document.head.append(page);
     const holder = el('div', 'bim-drawing-print');
     holder.innerHTML = sheetOut();
@@ -2384,24 +2384,24 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
       if (!allParts.length) {
         allParts = partsList(app, await measureBodies(app));
       }
-      for (const [i, d] of list.entries()) {
-        const doc = { ...store.doc, drawing: d };
-        const o = drawingOptions(doc);
-        name.textContent = `${what}: drawing ${i + 1} of ${list.length} · ${o.title}…`;
-        const want = o.bodies?.filter(id => allParts.some(p => p.id === id));
-        const ps = want?.length ? allParts.filter(p => want.includes(p.id)) : allParts;
+      for (const [i, drawing] of list.entries()) {
+        const doc = { ...store.doc, drawing: drawing };
+        const options = drawingOptions(doc);
+        name.textContent = `${what}: drawing ${i + 1} of ${list.length} · ${options.title}…`;
+        const want = options.bodies?.filter(id => allParts.some(allPart => allPart.id === id));
+        const ps = want?.length ? allParts.filter(allPart => want.includes(allPart.id)) : allParts;
         if (!ps.length) {
           continue;
         }
-        const specs = sheetViewSpecs(o);
+        const specs = sheetViewSpecs(options);
         let vs: Map<string, ProjectedView>;
-        if (d.id === current && specs.every(v => views.has(v.id) && drawnAs.get(v.id) === JSON.stringify(v))) {
+        if (drawing.id === current && specs.every(spec => views.has(spec.id) && drawnAs.get(spec.id) === JSON.stringify(spec))) {
           vs = views;
         } else {
-          vs = new Map((specs.length ? await app.kernel.drawing(store.doc.features as never, specs, ps.map(p => p.id)) : []).map(v => [v.id, v]));
+          vs = new Map((specs.length ? await app.kernel.drawing(store.doc.features as never, specs, ps.map(partRow => partRow.id)) : []).map(projectedView => [projectedView.id, projectedView]));
         }
-        const [W, H] = sheetSize(o);
-        out.push({ title: o.title, svg: drawingSVG({ doc, views: vs, parts: ps, date }).svg, W, H });
+        const [sheetWidth, sheetHeight] = sheetSize(options);
+        out.push({ title: options.title, svg: drawingSVG({ doc, views: vs, parts: ps, date }).svg, W: sheetWidth, H: sheetHeight });
       }
 
       return out;
@@ -2418,16 +2418,16 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
   /** Sheets printed together, each on its own page of its own size (saved as one PDF from the print window). */
   const printSheets = (sheets: { svg: string; W: number; H: number }[]) => {
     const page = document.createElement('style');
-    const sizes = [...new Set(sheets.map(s => `${s.W}x${s.H}`))];
+    const sizes = [...new Set(sheets.map(sheet => `${sheet.W}x${sheet.H}`))];
     page.textContent
-      = sizes.map((k, i) => `@page sheet${i} { size: ${k.split('x')[0]}mm ${k.split('x')[1]}mm; margin: 0; }`).join('\n')
+      = sizes.map((size, i) => `@page sheet${i} { size: ${size.split('x')[0]}mm ${size.split('x')[1]}mm; margin: 0; }`).join('\n')
       + '\n@page { margin: 0; } body.printing-drawing .bim-drawing-print > div { break-after: page; } body.printing-drawing .bim-drawing-print > div:last-child { break-after: auto; }'
-      + sheets.map((s, i) => `\nbody.printing-drawing .bim-drawing-print > div:nth-child(${i + 1}) { page: sheet${sizes.indexOf(`${s.W}x${s.H}`)}; } body.printing-drawing .bim-drawing-print > div:nth-child(${i + 1}) svg { width: ${s.W}mm; height: ${s.H}mm; display: block; }`).join('');
+      + sheets.map((sheet, i) => `\nbody.printing-drawing .bim-drawing-print > div:nth-child(${i + 1}) { page: sheet${sizes.indexOf(`${sheet.W}x${sheet.H}`)}; } body.printing-drawing .bim-drawing-print > div:nth-child(${i + 1}) svg { width: ${sheet.W}mm; height: ${sheet.H}mm; display: block; }`).join('');
     document.head.append(page);
     const holder = el('div', 'bim-drawing-print');
-    for (const s of sheets) {
+    for (const sheet of sheets) {
       const one = el('div', '');
-      one.innerHTML = s.svg;
+      one.innerHTML = sheet.svg;
       holder.append(one);
     }
     document.body.append(holder);
@@ -2454,12 +2454,12 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     }
     const used = new Map<string, number>();
     const enc = new TextEncoder();
-    const files = sheets.map((s) => {
-      const base = fileName(s.title);
-      const k = (used.get(base.toLowerCase()) ?? 0) + 1;
-      used.set(base.toLowerCase(), k);
+    const files = sheets.map((sheet) => {
+      const base = fileName(sheet.title);
+      const count = (used.get(base.toLowerCase()) ?? 0) + 1;
+      used.set(base.toLowerCase(), count);
 
-      return { name: `${k > 1 ? `${base} (${k})` : base}.dxf`, data: enc.encode(sheetToDXF(s.svg)) };
+      return { name: `${count > 1 ? `${base} (${count})` : base}.dxf`, data: enc.encode(sheetToDXF(sheet.svg)) };
     });
     download(await zip(files), `${fileName(store.doc.name || 'Project')} - drawings.zip`);
     app.ui.toast(`${files.length} drawing${files.length === 1 ? '' : 's'} saved as DXF (in one .zip)`);
@@ -2478,15 +2478,15 @@ export async function openDrawing(app: AppContext, which?: string): Promise<void
     }
     const id = annId('drawing');
     const title = `${opts().title} (copy)`;
-    store.commit(d => putDrawing(d, id, { ...structuredClone(me), title }));
+    store.commit(draft => putDrawing(draft, id, { ...structuredClone(me), title }));
     switchTo(id);
   };
   const deleteDrawing = async () => {
     if (!(await form('Delete drawing', [], `“${opts().title}” goes from the project (Undo brings it back).`))) {
       return;
     }
-    const rest = drawingsOf(store.doc).filter(d => d.id !== current);
-    store.commit(d => putDrawing(d, current, null));
+    const rest = drawingsOf(store.doc).filter(drawing => drawing.id !== current);
+    store.commit(draft => putDrawing(draft, current, null));
     app.ui.toast('Drawing deleted');
     if (rest.length) {
       switchTo(rest[0].id);

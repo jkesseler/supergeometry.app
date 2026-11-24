@@ -133,17 +133,17 @@ export class App implements AppContext {
       stopWaiting: () => this.selectTool.stopWaiting(),
       anchor: () => this.pickAnchor(),
       retap: () => {
-        const p = this.lastTapAt;
-        if (p) {
-          this.tool.tap?.({ x: p.x, y: p.y, type: p.type, shift: false, tol: pickTolerance(p.type) }, 1);
+        const lastTapAt = this.lastTapAt;
+        if (lastTapAt) {
+          this.tool.tap?.({ x: lastTapAt.x, y: lastTapAt.y, type: lastTapAt.type, shift: false, tol: pickTolerance(lastTapAt.type) }, 1);
         }
       }
     });
     canvas.addEventListener(
       'pointerup',
       (e) => {
-        const r = canvas.getBoundingClientRect();
-        this.lastTapAt = { x: e.clientX - r.left, y: e.clientY - r.top, type: (e.pointerType || 'mouse') as 'mouse' | 'pen' | 'touch' };
+        const rect = canvas.getBoundingClientRect();
+        this.lastTapAt = { x: e.clientX - rect.left, y: e.clientY - rect.top, type: (e.pointerType || 'mouse') as 'mouse' | 'pen' | 'touch' };
       },
       true
     );
@@ -195,11 +195,11 @@ export class App implements AppContext {
     // Screenshots name the isolated bodies and surfaces (when isolating).
     const isolatedNames = () =>
       (this.isolated ?? []).flatMap((id) => {
-        const b = this.view.bodyList.find(x => x.id === id);
+        const b = this.view.bodyList.find(bodyMesh => bodyMesh.id === id);
 
         return b ? [this.store.doc.names?.[id] ?? b.name ?? 'Body'] : [];
       });
-    setupRightColumn(this.ui, this.view, this.store, u => this.setUnits(u), isolatedNames);
+    setupRightColumn(this.ui, this.view, this.store, units => this.setUnits(units), isolatedNames);
     // VR only in a headset's own browser (never on a computer, headset connected or not). A viewer: the model as a real thing in your room.
     // On a phone or tablet it's AR: the model in the room through the camera.
     const handheld = isTouchDevice && !isHeadset;
@@ -257,7 +257,7 @@ export class App implements AppContext {
       variables: () => this.store.doc.variables,
       check: (name, expr, kind) => {
         const list = this.store.doc.variables;
-        setVariables(list.map(v => (v.name === name ? { name, expr } : v)));
+        setVariables(list.map(variable => (variable.name === name ? { name, expr } : variable)));
         try {
           return evaluate(expr, 'number') === null ? null : evaluate(name, kind);
         } finally {
@@ -266,15 +266,15 @@ export class App implements AppContext {
       },
       setVariable: (name, expr) => {
         const list = this.store.doc.variables;
-        const next = list.map(v => (v.name === name ? { name, expr } : v));
+        const next = list.map(variable => (variable.name === name ? { name, expr } : variable));
         setVariables(next);
-        const bad = next.some(v => evaluate(v.expr) === null);
+        const bad = next.some(variable => evaluate(variable.expr) === null);
         setVariables(list);
         if (bad) {
           return false;
         }
-        if (list.find(v => v.name === name)?.expr !== expr) {
-          this.store.commit(d => (d.variables = next));
+        if (list.find(variable => variable.name === name)?.expr !== expr) {
+          this.store.commit(draft => (draft.variables = next));
         }
 
         return true;
@@ -282,8 +282,8 @@ export class App implements AppContext {
     });
     // ƒx buttons on number fields create named variables.
     this.ui.variableFactory = current => createVariable(this, current);
-    this.ui.variableNames = () => this.store.doc.variables.map(v => v.name);
-    numpadVariables({ names: () => this.store.doc.variables.map(v => v.name), create: value => createVariable(this, value) });
+    this.ui.variableNames = () => this.store.doc.variables.map(variable => variable.name);
+    numpadVariables({ names: () => this.store.doc.variables.map(variable => variable.name), create: value => createVariable(this, value) });
     settings.onChange(() => this.showPins());
     this.items = new ItemsPanel(this.store, {
       // A phone: like taps in the view, each body tapped in Items joins the
@@ -311,13 +311,13 @@ export class App implements AppContext {
       deleteFeature: id => this.store.remove(id),
       selectImage: id => this.togglePick({ kind: 'image', id }),
       rename: async (id, current, isBody) => {
-        const v = await this.ui.dialog('Rename', [{ key: 'name', label: 'Name', value: current }]);
-        const name = v?.name.trim();
+        const answers = await this.ui.dialog('Rename', [{ key: 'name', label: 'Name', value: current }]);
+        const name = answers?.name.trim();
         if (!name) {
           return;
         }
         if (isBody) {
-          this.store.commit(d => (d.names = { ...(d.names ?? {}), [id]: name }));
+          this.store.commit(draft => (draft.names = { ...(draft.names ?? {}), [id]: name }));
         } else {
           this.store.update(id, { name });
         }
@@ -334,8 +334,8 @@ export class App implements AppContext {
     this.store.onChange(() => this.docChanged());
     window.addEventListener('keydown', e => this.onKey(e));
     this.view.canvas.addEventListener('pointermove', (e) => {
-      const r = this.view.canvas.getBoundingClientRect();
-      this.pointerAt = [e.clientX - r.left, e.clientY - r.top];
+      const rect = this.view.canvas.getBoundingClientRect();
+      this.pointerAt = [e.clientX - rect.left, e.clientY - rect.top];
     });
     this.view.canvas.addEventListener('pointerleave', () => (this.pointerAt = null));
     // A phone may drop the page once it's in the background: save now, undo steps included.
@@ -394,17 +394,17 @@ export class App implements AppContext {
     this.showPose();
     this.refreshHighlights();
     // Selected bodies, planes, axes and images light up in Items too.
-    this.items?.markSelected(sel.flatMap(s => (s.kind === 'body' ? [s.body] : s.kind === 'plane' || s.kind === 'axis' || s.kind === 'image' ? [s.id] : [])));
+    this.items?.markSelected(sel.flatMap(highlight => (highlight.kind === 'body' ? [highlight.body] : highlight.kind === 'plane' || highlight.kind === 'axis' || highlight.kind === 'image' ? [highlight.id] : [])));
     if (this.tool === this.selectTool) {
       this.selectTool.refresh();
     }
   }
 
-  setHover(h: Sel | null): void {
-    if (h === this.hover || (h && this.hover && sameSel(h, this.hover))) {
+  setHover(highlight: Sel | null): void {
+    if (highlight === this.hover || (highlight && this.hover && sameSel(highlight, this.hover))) {
       return;
     }
-    this.hover = h;
+    this.hover = highlight;
     this.refreshHighlights();
   }
 
@@ -439,11 +439,11 @@ export class App implements AppContext {
       const b = document.createElement('button');
       b.className = 'text-btn print-file';
       b.type = 'button';
-      const l = document.createElement('b');
-      l.textContent = label;
-      const n = document.createElement('span');
-      n.textContent = note;
-      b.append(l, n);
+      const element = document.createElement('b');
+      element.textContent = label;
+      const span = document.createElement('span');
+      span.textContent = note;
+      b.append(element, span);
       b.addEventListener('click', () => (close(), run()));
       row.append(b);
     };
@@ -462,33 +462,33 @@ export class App implements AppContext {
         return;
       }
       const hidden = new Set(this.store.doc.hidden ?? []);
-      const bodies = health.filter(h => !hidden.has(h.id));
-      const bad = bodies.filter(h => !h.healthy);
+      const bodies = health.filter(bodyHealth => !hidden.has(bodyHealth.id));
+      const bad = bodies.filter(body => !body.healthy);
       check.replaceChildren();
       const line = (text: string, ok: boolean) => {
-        const d = document.createElement('div');
-        d.className = ok ? 'print-ok' : 'print-warn';
-        d.textContent = text;
-        check.append(d);
+        const element = document.createElement('div');
+        element.className = ok ? 'print-ok' : 'print-warn';
+        element.textContent = text;
+        check.append(element);
       };
       if (!bodies.length) {
         line('Nothing to print yet: there is no solid body.', false);
       } else if (!bad.length) {
         line(bodies.length === 1 ? 'Ready to print: the body is closed and solid.' : `Ready to print: all ${bodies.length} bodies are closed and solid.`, true);
       }
-      for (const h of bad) {
-        const why = [h.openEdges ? 'it is not closed (open edges)' : '', h.thin ? 'it has hair-thin faces' : '', h.pinched ? 'parts of it only touch along an edge' : '', h.solids > 1 ? `it is ${h.solids} separate pieces` : '', !h.valid ? 'its shape has a fault' : ''].filter(Boolean);
-        line(`${h.name}: ${why.join(', ') || 'it may not print as it is'}. Modify, Fix, Repair Body may mend it.`, false);
+      for (const bodyHealth of bad) {
+        const why = [bodyHealth.openEdges ? 'it is not closed (open edges)' : '', bodyHealth.thin ? 'it has hair-thin faces' : '', bodyHealth.pinched ? 'parts of it only touch along an edge' : '', bodyHealth.solids > 1 ? `it is ${bodyHealth.solids} separate pieces` : '', !bodyHealth.valid ? 'its shape has a fault' : ''].filter(Boolean);
+        line(`${bodyHealth.name}: ${why.join(', ') || 'it may not print as it is'}. Modify, Fix, Repair Body may mend it.`, false);
       }
       if (bodies.length) {
         const lo = [Infinity, Infinity, Infinity];
         const hi = [-Infinity, -Infinity, -Infinity];
-        for (const h of bodies) {
-          for (let k = 0; k < 3; k++) {
-            ((lo[k] = Math.min(lo[k], h.box[0][k])), (hi[k] = Math.max(hi[k], h.box[1][k])));
+        for (const body of bodies) {
+          for (let axis = 0; axis < 3; axis++) {
+            ((lo[axis] = Math.min(lo[axis], body.box[0][axis])), (hi[axis] = Math.max(hi[axis], body.box[1][axis])));
           }
         }
-        line(`Size: ${[0, 1, 2].map(k => fmtLen(hi[k] - lo[k], 1)).join(' x ')}`, true);
+        line(`Size: ${[0, 1, 2].map(axis => fmtLen(hi[axis] - lo[axis], 1)).join(' x ')}`, true);
       }
     } catch {
       if (back.isConnected) {
@@ -500,33 +500,33 @@ export class App implements AppContext {
   /** Where the last thing picked is on the model (the sentence bar's thread runs to it). */
   private pickAnchor(): Vec3 | null {
     const sel = this.selection;
-    const s = sel[sel.length - 1];
-    if (!s) {
+    const highlight = sel[sel.length - 1];
+    if (!highlight) {
       return null;
     }
     const view = this.view;
-    if (s.kind === 'face') {
-      return view.body(s.body)?.faces[s.face]?.center ?? null;
+    if (highlight.kind === 'face') {
+      return view.body(highlight.body)?.faces[highlight.face]?.center ?? null;
     }
-    if (s.kind === 'edge') {
-      return view.body(s.body)?.edges[s.edge]?.mid ?? null;
+    if (highlight.kind === 'edge') {
+      return view.body(highlight.body)?.edges[highlight.edge]?.mid ?? null;
     }
-    if (s.kind === 'vertex') {
-      return view.vertexOf(s.body, s.vertex) ?? null;
+    if (highlight.kind === 'vertex') {
+      return view.vertexOf(highlight.body, highlight.vertex) ?? null;
     }
-    if (s.kind === 'body') {
+    if (highlight.kind === 'body') {
       return bodyCenter(this, bodiesOf(sel));
     }
-    if (s.kind === 'profile') {
-      const src = sourcesOf(this, [s])[0];
+    if (highlight.kind === 'profile') {
+      const src = sourcesOf(this, [highlight])[0];
 
       return src ? sourceFrame(this, src).base : null;
     }
-    if (s.kind === 'plane') {
-      return view.planeShownAt(s.id) ?? view.planeOf(s.id)?.origin ?? null;
+    if (highlight.kind === 'plane') {
+      return view.planeShownAt(highlight.id) ?? view.planeOf(highlight.id)?.origin ?? null;
     }
-    if (s.kind === 'axis') {
-      return view.axisOf(s.id)?.plane.origin ?? null;
+    if (highlight.kind === 'axis') {
+      return view.axisOf(highlight.id)?.plane.origin ?? null;
     }
 
     return null;
@@ -608,8 +608,8 @@ export class App implements AppContext {
 
       return;
     }
-    const s = this.selection[0];
-    const face = s?.kind === 'face' ? this.view.body(s.body)?.faces[s.face] : undefined;
+    const highlight = this.selection[0];
+    const face = highlight?.kind === 'face' ? this.view.body(highlight.body)?.faces[highlight.face] : undefined;
     if (face?.plane) {
       // Cut a hair inside the face so the face itself shows the cut.
       const inset = -this.view.cam.worldPerPixel(this.view.height);
@@ -631,68 +631,68 @@ export class App implements AppContext {
 
   /** Thread the selected round face (a shank or a hole). */
   startThread(): void {
-    let s = this.selection[0];
+    let highlight = this.selection[0];
     // A round edge (a hole's rim): the round face of the same radius it bounds.
-    if (s?.kind === 'edge') {
-      const body = this.view.body(s.body);
-      const e = body?.edges[s.edge];
+    if (highlight?.kind === 'edge') {
+      const body = this.view.body(highlight.body);
+      const e = body?.edges[highlight.edge];
       if (body && e?.type === 'CIRCLE') {
-        const c = scale(add(e.start, e.mid), 0.5);
-        const r = dist(e.start, e.mid) / 2;
+        const center = scale(add(e.start, e.mid), 0.5);
+        const radius = dist(e.start, e.mid) / 2;
         let best = -1;
         let bestD = Infinity;
-        body.faces.forEach((f, i) => {
-          if (!f.round || Math.abs(f.round.r - r) > r * 1e-4) {
+        body.faces.forEach((face, i) => {
+          if (!face.round || Math.abs(face.round.r - radius) > radius * 1e-4) {
             return;
           }
-          const d = dist(f.center, c);
-          if (d < bestD) {
-            (bestD = d), (best = i);
+          const distance = dist(face.center, center);
+          if (distance < bestD) {
+            (bestD = distance), (best = i);
           }
         });
         if (best >= 0) {
-          s = { kind: 'face', body: s.body, face: best };
+          highlight = { kind: 'face', body: highlight.body, face: best };
         }
       }
     }
     // Any other edge (a revolved shank's seam runs right along its top): the
     // round face under the finger.
     const at = this.selectTool.tapPoint;
-    if (s?.kind === 'edge' && at) {
-      const body = s.body;
-      const under = this.view.facesAt(at.x, at.y).find(f => f.kind === 'face' && f.body === body && this.view.body(body)?.faces[f.face]?.round);
+    if (highlight?.kind === 'edge' && at) {
+      const body = highlight.body;
+      const under = this.view.facesAt(at.x, at.y).find(face => face.kind === 'face' && face.body === body && this.view.body(body)?.faces[face.face]?.round);
       if (under?.kind === 'face') {
-        s = { kind: 'face', body, face: under.face };
+        highlight = { kind: 'face', body, face: under.face };
       }
     }
-    if (s?.kind !== 'face') {
+    if (highlight?.kind !== 'face') {
       return void this.ui.toast('Threads go on round faces: tap a shank or a hole');
     }
-    const info = this.view.body(s.body)?.faces[s.face];
-    const ref = faceRefOf(this, s);
+    const info = this.view.body(highlight.body)?.faces[highlight.face];
+    const ref = faceRefOf(this, highlight);
     if (!info?.round || !ref) {
       return void this.ui.toast('Threads go on round faces: tap a shank or a hole');
     }
-    this.setSelection([s]);
+    this.setSelection([highlight]);
     this.setTool(new ThreadOp(this, ref, info.round));
   }
 
-  setSection(s: SectionState | null): void {
-    this.section = s;
+  setSection(sectionState: SectionState | null): void {
+    this.section = sectionState;
     // A section on screen is the one to remember (a deleted one is forgotten).
-    if (s) {
+    if (sectionState) {
       this.lastSection = null;
     }
-    this.view.setSection(s ? sectionPlane(s) : null);
-    this.view.setSectionStyle(s?.flat ? 'flat' : s?.only ? 'only' : 'normal');
+    this.view.setSection(sectionState ? sectionPlane(sectionState) : null);
+    this.view.setSectionStyle(sectionState?.flat ? 'flat' : sectionState?.only ? 'only' : 'normal');
   }
 
   get pins(): PinDef[] {
     return this.store.doc.pins;
   }
 
-  setPins(p: PinDef[]): void {
-    this.store.commit(d => (d.pins = p));
+  setPins(pins: PinDef[]): void {
+    this.store.commit(draft => (draft.pins = pins));
   }
 
   addPin(pin: PinDef): void {
@@ -712,18 +712,18 @@ export class App implements AppContext {
   }
 
   /** A pick from the Items list: it joins what's picked (picked already: it leaves), as taps in the view do. */
-  private togglePick(s: Sel): void {
+  private togglePick(highlight: Sel): void {
     // (Another tool's highlights aren't picks.)
     const had = this.tool === this.selectTool ? this.selection : [];
     this.setTool(null);
-    const i = had.findIndex(x => sameSel(x, s));
-    this.setSelection(i >= 0 ? had.filter((_, k) => k !== i) : [...had, s]);
+    const i = had.findIndex(picked => sameSel(picked, highlight));
+    this.setSelection(i >= 0 ? had.filter((_, index) => index !== i) : [...had, highlight]);
   }
 
   isolate(bodies: string[] | null): void {
     this.isolated = bodies?.length ? [...bodies] : null;
     // What exists now; anything made from here on joins the isolated set.
-    this.known = new Set([...(this.result?.bodies ?? []).map(b => b.id), ...this.store.doc.features.map(f => f.id)]);
+    this.known = new Set([...(this.result?.bodies ?? []).map(b => b.id), ...this.store.doc.features.map(feature => feature.id)]);
     this.applyVisibility();
     // Isolated bodies are all there is: sketches, planes, axes and images step out too.
     this.refreshConstruction();
@@ -744,7 +744,7 @@ export class App implements AppContext {
       return null;
     }
     const iso = new Set(this.isolated);
-    const onIsolated = this.store.doc.features.filter(f => f.type === 'sketch' && !!f.attachedTo && iso.has(f.attachedTo.body) && !iso.has(f.id)).map(f => f.id);
+    const onIsolated = this.store.doc.features.filter(feature => feature.type === 'sketch' && !!feature.attachedTo && iso.has(feature.attachedTo.body) && !iso.has(feature.id)).map(feature => feature.id);
 
     return onIsolated.length ? [...this.isolated, ...onIsolated] : this.isolated;
   }
@@ -791,12 +791,12 @@ export class App implements AppContext {
   }
 
   async preview(features: Feature[]): Promise<RegenResult | null> {
-    const r = await this.kernel.regenerate(features);
-    if (r) {
-      this.apply(r, features);
+    const result = await this.kernel.regenerate(features);
+    if (result) {
+      this.apply(result, features);
     }
 
-    return r;
+    return result;
   }
 
   private docChanged(): void {
@@ -862,12 +862,12 @@ export class App implements AppContext {
     this.refreshTools();
   }
 
-  private setUnits(u: Units): void {
+  private setUnits(units: Units): void {
     let kept = { changed: 0, lost: 0 };
-    this.store.commit((d) => {
+    this.store.commit((draft) => {
       // Every formula keeps the size it had: its plain lengths now say the unit they were typed in.
-      kept = keepSizes(d, d.units ?? 'mm', u);
-      d.units = u;
+      kept = keepSizes(draft, draft.units ?? 'mm', units);
+      draft.units = units;
     });
     if (kept.lost) {
       this.ui.toast(`${kept.lost} formula${kept.lost === 1 ? '' : 's'} could not be kept as ${kept.lost === 1 ? 'it was' : 'they were'}: check the sizes that use ${kept.lost === 1 ? 'it' : 'them'}`, 'error');
@@ -879,14 +879,14 @@ export class App implements AppContext {
   private async regenerate(): Promise<void> {
     const features = this.store.doc.features;
     this.regenerating++;
-    let r: RegenResult | null = null;
+    let result: RegenResult | null = null;
     try {
-      r = await this.kernel.regenerate(features, true);
+      result = await this.kernel.regenerate(features, true);
     } finally {
       this.regenerating--;
     }
-    if (r) {
-      ((this.made = r), this.apply(r, features));
+    if (result) {
+      ((this.made = result), this.apply(result, features));
     }
     // (Not made - stopped, or overtaken: the next change asks again, whatever it is.)
     else {
@@ -897,22 +897,22 @@ export class App implements AppContext {
   /** Sketches the engine moved the curves of (they follow a body): those curves, by the sketch as it was sent. */
   private solved = new WeakMap<Feature, SketchEntity[]>();
 
-  private apply(r: RegenResult, features: readonly Feature[]): void {
-    this.result = r;
+  private apply(result: RegenResult, features: readonly Feature[]): void {
+    this.result = result;
     this.solved = new WeakMap();
-    if (r.sketchEntities) {
-      const moved = r.sketchEntities;
-      for (const f of features) {
-        if (moved[f.id]) {
-          this.solved.set(f, moved[f.id]);
+    if (result.sketchEntities) {
+      const moved = result.sketchEntities;
+      for (const feature of features) {
+        if (moved[feature.id]) {
+          this.solved.set(feature, moved[feature.id]);
         }
       }
       // The project as it is (not a preview of a change): they are the sketch's curves from now on.
       if (features === this.store.doc.features) {
-        this.store.adopt((d) => {
-          for (const f of d.features) {
-            if (f.type === 'sketch' && moved[f.id]) {
-              f.entities = moved[f.id];
+        this.store.adopt((draft) => {
+          for (const feature of draft.features) {
+            if (feature.type === 'sketch' && moved[feature.id]) {
+              feature.entities = moved[feature.id];
             }
           }
         });
@@ -920,18 +920,18 @@ export class App implements AppContext {
       }
     }
     // Which patterns a step used whole, as it was made: kept with it (they stay whole when a count changes).
-    if (r.whole && features === this.store.doc.features) {
-      const whole = r.whole;
-      this.store.adopt((d) => {
-        for (const f of d.features) {
-          if ((f.type === 'boolean' || f.type === 'delete') && whole[f.id] && !f.whole) {
-            f.whole = whole[f.id];
+    if (result.whole && features === this.store.doc.features) {
+      const whole = result.whole;
+      this.store.adopt((draft) => {
+        for (const feature of draft.features) {
+          if ((feature.type === 'boolean' || feature.type === 'delete') && whole[feature.id] && !feature.whole) {
+            feature.whole = whole[feature.id];
           }
         }
       });
       features = this.store.doc.features;
     }
-    const now = new Set([...r.bodies.map(b => b.id), ...features.map(f => f.id)]);
+    const now = new Set([...result.bodies.map(b => b.id), ...features.map(feature => feature.id)]);
     if (this.isolated) {
       // Made while isolating (a copy, a new sketch or plane): it belongs with what's shown.
       if (this.known) {
@@ -942,41 +942,41 @@ export class App implements AppContext {
         }
       }
       this.isolated = this.isolated.filter(id => now.has(id));
-      if (!this.isolated.some(id => r.bodies.some(b => b.id === id))) {
+      if (!this.isolated.some(id => result.bodies.some(b => b.id === id))) {
         this.isolated = null;
       }
     }
     this.known = now;
-    this.view.setBodies(r.bodies);
+    this.view.setBodies(result.bodies);
     this.applyVisibility();
     this.refreshConstruction(features);
     this.refreshSketches(features);
     // Drop selections that point at geometry that no longer exists.
-    this.selection = this.selection.filter((s) => {
-      if (s.kind === 'profile' || s.kind === 'curve' || s.kind === 'point') {
-        return !!this.store.find(s.sketch) || features.some(f => f.id === s.sketch);
+    this.selection = this.selection.filter((highlight) => {
+      if (highlight.kind === 'profile' || highlight.kind === 'curve' || highlight.kind === 'point') {
+        return !!this.store.find(highlight.sketch) || features.some(feature => feature.id === highlight.sketch);
       }
-      if (s.kind === 'plane' || s.kind === 'axis') {
-        return !!this.view.planeOf(s.id) || !!this.view.axisOf(s.id);
+      if (highlight.kind === 'plane' || highlight.kind === 'axis') {
+        return !!this.view.planeOf(highlight.id) || !!this.view.axisOf(highlight.id);
       }
-      if (s.kind === 'image') {
-        return features.some(f => f.id === s.id);
+      if (highlight.kind === 'image') {
+        return features.some(feature => feature.id === highlight.id);
       }
-      if (s.kind === 'origin') {
+      if (highlight.kind === 'origin') {
         return true;
       }
-      const b = this.view.body(s.body);
+      const b = this.view.body(highlight.body);
       if (!b) {
         return false;
       }
-      if (s.kind === 'face') {
-        return s.face < b.faces.length;
+      if (highlight.kind === 'face') {
+        return highlight.face < b.faces.length;
       }
-      if (s.kind === 'edge') {
-        return s.edge < b.edges.length;
+      if (highlight.kind === 'edge') {
+        return highlight.edge < b.edges.length;
       }
-      if (s.kind === 'vertex') {
-        return !!this.view.vertexOf(s.body, s.vertex);
+      if (highlight.kind === 'vertex') {
+        return !!this.view.vertexOf(highlight.body, highlight.vertex);
       }
 
       return true;
@@ -986,20 +986,20 @@ export class App implements AppContext {
     this.tool.refresh?.();
     this.showPose();
     this.renderHistory();
-    this.items.render(r);
+    this.items.render(result);
     this.showVariableTags();
-    const open = this.openBodies(r);
+    const open = this.openBodies(result);
     this.ui.setWarning(
       open.length
-        ? `⚠ ${open.length === 1 ? (this.store.doc.names?.[open[0].id] ?? open[0].name) : `${open.length} bodies`} not closed - ${open.reduce((s, b) => s + b.openEdges.length, 0)} open edge(s) shown in orange`
+        ? `⚠ ${open.length === 1 ? (this.store.doc.names?.[open[0].id] ?? open[0].name) : `${open.length} bodies`} not closed - ${open.reduce((total, b) => total + b.openEdges.length, 0)} open edge(s) shown in orange`
         : this.store.problems[0]
           ? `⚠ ${this.store.problems[0]}`
           : null
     );
     // (Steps of the project only: one being tried - a Delete Face its
     // neighbours can't close - isn't in History, and says why itself.)
-    const ids = new Set(this.store.features.map(f => f.id));
-    const failed = r.errors.filter(e => ids.has(e.featureId));
+    const ids = new Set(this.store.features.map(feature => feature.id));
+    const failed = result.errors.filter(e => ids.has(e.featureId));
     const errs = failed.map(e => e.featureId + e.message).join();
     if (errs && errs !== this.shownErrors && this.tool === this.selectTool) {
       this.ui.toast(`${failed.length} step${failed.length > 1 ? 's' : ''} failed to rebuild - see History`, 'error');
@@ -1008,34 +1008,34 @@ export class App implements AppContext {
   }
 
   private refreshConstruction(features: readonly Feature[] = this.store.doc.features): void {
-    const r = this.result;
-    if (!r) {
+    const result = this.result;
+    if (!result) {
       return;
     }
     const hidden = new Set(this.store.doc.hidden);
     // Isolating: only what's isolated (or was made since) shows.
     const shown = (id: string) => !hidden.has(id) && (!this.isolated || this.isolated.includes(id));
-    this.view.setConstruction(r.planes.filter(p => shown(p.id)), r.axes.filter(a => shown(a.id)));
-    this.view.setImages(features.filter((f): f is ImageFeature => f.type === 'image' && !f.suppressed && !f.rolledBack && shown(f.id)));
+    this.view.setConstruction(result.planes.filter(plane => shown(plane.id)), result.axes.filter(a => shown(a.id)));
+    this.view.setImages(features.filter((feature): feature is ImageFeature => feature.type === 'image' && !feature.suppressed && !feature.rolledBack && shown(feature.id)));
   }
 
   /** The sketch being edited: which curves its constraints hold completely (worked out once per change). */
   private definedCache: { entities: unknown; constraints: unknown; defined: Set<string> | undefined; all: boolean } | null = null;
 
-  private definedOf(s: SketchFeature): Set<string> | undefined {
-    const c = this.definedCache;
-    if (c && c.entities === s.entities && c.constraints === s.constraints) {
-      return c.defined;
+  private definedOf(sketch: SketchFeature): Set<string> | undefined {
+    const definedCache = this.definedCache;
+    if (definedCache && definedCache.entities === sketch.entities && definedCache.constraints === sketch.constraints) {
+      return definedCache.defined;
     }
-    const r = definedCurves(s.entities, s.constraints ?? []);
-    const all = !!r?.all && s.entities.some(e => !e.construction);
+    const defined = definedCurves(sketch.entities, sketch.constraints ?? []);
+    const all = !!defined?.all && sketch.entities.some(e => !e.construction);
     // Just became fully defined: say so (the curves have turned green).
-    if (all && c && !c.all) {
+    if (all && definedCache && !definedCache.all) {
       this.ui.toast('Sketch fully defined');
     }
-    this.definedCache = { entities: s.entities, constraints: s.constraints, defined: r?.defined, all };
+    this.definedCache = { entities: sketch.entities, constraints: sketch.constraints, defined: defined?.defined, all };
 
-    return r?.defined;
+    return defined?.defined;
   }
 
   /** Sketches hidden (after use) that were shown again: meant to be used again, so tappable through bodies. */
@@ -1055,15 +1055,15 @@ export class App implements AppContext {
     this.wasHidden = hidden;
     const iso = this.isolatedWithSketches();
     const sketches = features
-      .filter((f): f is SketchFeature => f.type === 'sketch' && !f.suppressed && !f.rolledBack && ((!hidden.has(f.id) && (!iso || iso.includes(f.id))) || f.id === this.tool.activeSketch))
-      .map(s => ({ ...s, entities: this.solved.get(s) ?? s.entities, plane: this.result?.sketchPlanes[s.id] ?? s.plane, boundary: this.result?.sketchBoundaries[s.id] }))
-      .map(s => (s.id === this.tool.activeSketch ? { ...s, defined: this.definedOf(s) } : s));
+      .filter((feature): feature is SketchFeature => feature.type === 'sketch' && !feature.suppressed && !feature.rolledBack && ((!hidden.has(feature.id) && (!iso || iso.includes(feature.id))) || feature.id === this.tool.activeSketch))
+      .map(feature => ({ ...feature, entities: this.solved.get(feature) ?? feature.entities, plane: this.result?.sketchPlanes[feature.id] ?? feature.plane, boundary: this.result?.sketchBoundaries[feature.id] }))
+      .map(sketch => (sketch.id === this.tool.activeSketch ? { ...sketch, defined: this.definedOf(sketch) } : sketch));
     // Drawn but not made into anything yet: shown through bodies, and a tap on it finds it there
     // (a pocket sketched on a plane through the middle of a body is inside it). The same
     // for one used, hidden, and shown again in Items: the pocket's sketch shown to fill
     // the pocket with a core couldn't be tapped through the frame round it.
-    const used = new Set(features.filter(f => !f.suppressed && !f.rolledBack).flatMap(sketchesUsed));
-    this.view.setSketches(sketches, this.tool.activeSketch, new Set(sketches.filter(s => !used.has(s.id) || this.revealed.has(s.id)).map(s => s.id)));
+    const used = new Set(features.filter(feature => !feature.suppressed && !feature.rolledBack).flatMap(sketchesUsed));
+    this.view.setSketches(sketches, this.tool.activeSketch, new Set(sketches.filter(sketch => !used.has(sketch.id) || this.revealed.has(sketch.id)).map(sketch => sketch.id)));
   }
 
   private refreshHighlights(): void {
@@ -1076,14 +1076,14 @@ export class App implements AppContext {
    * Bodies with open edges - except freeform surfaces that are meant to be
    * open sheets (not thickened): those aren't a problem.
    */
-  private openBodies(r: RegenResult | null) {
-    return (r?.bodies ?? []).filter((b) => {
+  private openBodies(result: RegenResult | null) {
+    return (result?.bodies ?? []).filter((b) => {
       if (!b.openEdges?.length) {
         return false;
       }
       // A surface on purpose (or a copy of one) isn't meant to be closed.
-      const f = this.store.find(b.id);
-      const ff = f?.type === 'freeform' ? editedStep<typeof f>(this.store.features, f.id) : freeformBodies(this.store.features).get(b.id)?.feature;
+      const feature = this.store.find(b.id);
+      const ff = feature?.type === 'freeform' ? editedStep<typeof feature>(this.store.features, feature.id) : freeformBodies(this.store.features).get(b.id)?.feature;
 
       return !(ff?.surface && !ff.thickness);
     });
@@ -1097,14 +1097,14 @@ export class App implements AppContext {
     for (const b of this.openBodies(this.result)) {
       warnings.set(b.id.split(':')[0], `${b.name}: not closed - ${b.openEdges.length} open edge(s)`);
     }
-    for (const n of this.result?.notes ?? []) {
-      warnings.set(n.featureId, warnings.has(n.featureId) ? `${warnings.get(n.featureId)} ${n.message}` : n.message);
+    for (const featureError of this.result?.notes ?? []) {
+      warnings.set(featureError.featureId, warnings.has(featureError.featureId) ? `${warnings.get(featureError.featureId)} ${featureError.message}` : featureError.message);
     }
     // The same rows as are there: left as they are (every step of a drag's
     // preview rebuilt the whole list - 5 ms for 200 steps, far more on a phone).
     const doc = this.store.doc;
     const shown = JSON.stringify([
-      doc.features.map(f => [f.id, f.name, f.type, f.suppressed ? 1 : 0, f.rolledBack ? 1 : 0, f.type === 'sketch' ? (f.log ?? 0) : 0]),
+      doc.features.map(feature => [feature.id, feature.name, feature.type, feature.suppressed ? 1 : 0, feature.rolledBack ? 1 : 0, feature.type === 'sketch' ? (feature.log ?? 0) : 0]),
       this.result?.errors ?? [],
       this.tool.editingId ?? this.tool.activeSketch ?? null,
       [...warnings],
@@ -1121,13 +1121,13 @@ export class App implements AppContext {
       edit: (id, pick) => this.editFeature(id, pick),
       hover: id => this.view.setStepHover(id ? this.stepTargets(id) : null),
       toggle: (id) => {
-        const f = this.store.find(id);
-        if (f) {
-          this.store.update(id, { suppressed: !f.suppressed });
+        const feature = this.store.find(id);
+        if (feature) {
+          this.store.update(id, { suppressed: !feature.suppressed });
         }
       },
       isHidden: id => this.store.doc.hidden.includes(id),
-      toggleHidden: id => this.store.commit(d => (d.hidden = d.hidden.includes(id) ? d.hidden.filter(x => x !== id) : [...d.hidden, id])),
+      toggleHidden: id => this.store.commit(draft => (draft.hidden = draft.hidden.includes(id) ? draft.hidden.filter(hiddenId => hiddenId !== id) : [...draft.hidden, id])),
       remove: (id) => {
         if (this.tool !== this.selectTool) {
           this.setTool(null);
@@ -1135,12 +1135,12 @@ export class App implements AppContext {
         this.store.remove(id);
       },
       groups: this.store.doc.historyGroups ?? [],
-      setGroups: next => this.store.commit(d => (d.historyGroups = next.length ? next : undefined)),
+      setGroups: next => this.store.commit(draft => (draft.historyGroups = next.length ? next : undefined)),
       suppress: (ids, off) =>
-        this.store.commit((d) => {
-          for (const f of d.features) {
-            if (ids.includes(f.id)) {
-              f.suppressed = off || undefined;
+        this.store.commit((draft) => {
+          for (const feature of draft.features) {
+            if (ids.includes(feature.id)) {
+              feature.suppressed = off || undefined;
             }
           }
         }),
@@ -1158,17 +1158,17 @@ export class App implements AppContext {
     if (this.tool !== this.selectTool) {
       this.setTool(null);
     }
-    const at = id ? this.store.features.findIndex(f => f.id === id) : Infinity;
+    const at = id ? this.store.features.findIndex(feature => feature.id === id) : Infinity;
     const later = id ? this.store.features.length - 1 - at : 0;
     if (id && !later) {
       return void this.ui.toast("It's the last step - there's nothing after it to roll back");
     }
-    this.store.commit((d) => {
-      d.features.forEach((f, i) => {
+    this.store.commit((draft) => {
+      draft.features.forEach((feature, i) => {
         if (i > at) {
-          f.rolledBack = true;
+          feature.rolledBack = true;
         } else {
-          delete f.rolledBack;
+          delete feature.rolledBack;
         }
       });
     });
@@ -1185,8 +1185,8 @@ export class App implements AppContext {
     if (!bodies.length) {
       return void this.ui.toast('There are no bodies yet - nothing to merge into');
     }
-    const off = this.store.features.filter(f => f.rolledBack || f.suppressed).length;
-    const v = await this.ui.dialog(
+    const off = this.store.features.filter(feature => feature.rolledBack || feature.suppressed).length;
+    const answers = await this.ui.dialog(
       'Merge history',
       [
         { key: 'sketches', label: 'Keep the sketches', value: '1', check: true },
@@ -1194,13 +1194,13 @@ export class App implements AppContext {
       ],
       `Every step becomes the bodies as they are now: they can't be edited by their steps any more.${off ? ` The ${off} step${off === 1 ? '' : 's'} switched off or after the breakpoint go too.` : ''} Undo takes it back.`
     );
-    if (!v) {
+    if (!answers) {
       return;
     }
     if (this.tool !== this.selectTool) {
       this.setTool(null);
     }
-    const features = this.store.doc.features.filter(f => !f.rolledBack);
+    const features = this.store.doc.features.filter(feature => !feature.rolledBack);
     const made: Feature[] = [];
     const renamed = new Map<string, string>();
     for (const b of bodies) {
@@ -1211,95 +1211,95 @@ export class App implements AppContext {
         bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       }
       // The body keeps its id where it can be a step's (names, colours, folders stay with it).
-      const id = /^[\w-]+$/.test(b.id) && !made.some(m => m.id === b.id) ? b.id : this.store.newIdentity('import').id;
+      const id = /^[\w-]+$/.test(b.id) && !made.some(feature => feature.id === b.id) ? b.id : this.store.newIdentity('import').id;
       if (id !== b.id) {
         renamed.set(b.id, id);
       }
       const name = this.store.doc.names[b.id] ?? b.name;
       made.push({ id, name, type: 'import', format: 'step', fileName: `${name}.step`, data: btoa(bin) });
     }
-    const keepSketches = !!v.sketches;
-    const keepVars = !!v.variables;
-    this.store.commit((d) => {
+    const keepSketches = !!answers.sketches;
+    const keepVars = !!answers.variables;
+    this.store.commit((draft) => {
       const sketches = keepSketches
-        ? d.features.flatMap((f): Feature[] => {
-          if (f.type !== 'sketch' || f.rolledBack) {
+        ? draft.features.flatMap((feature): Feature[] => {
+          if (feature.type !== 'sketch' || feature.rolledBack) {
             return [];
           }
           // Nothing left to follow: a merged body has no steps to point at.
-          const s: SketchFeature = { ...f, attachedTo: undefined, outlineOffsets: undefined, links: undefined };
-          s.constraints = s.constraints?.filter(c => !/"(ref|lnk)-/.test(JSON.stringify(c)));
+          const sketch: SketchFeature = { ...feature, attachedTo: undefined, outlineOffsets: undefined, links: undefined };
+          sketch.constraints = sketch.constraints?.filter(constraint => !/"(ref|lnk)-/.test(JSON.stringify(constraint)));
           if (!keepVars) {
-            delete s.exprs;
+            delete sketch.exprs;
           }
 
-          return [s];
+          return [sketch];
         })
         : [];
-      d.features = [...made, ...sketches];
+      draft.features = [...made, ...sketches];
       if (!keepVars) {
-        d.variables = [];
+        draft.variables = [];
       }
-      d.historyGroups = undefined;
+      draft.historyGroups = undefined;
       const re = (id: string) => renamed.get(id) ?? id;
-      const reKeys = <T>(r: Record<string, T> | undefined) => (r ? Object.fromEntries(Object.entries(r).map(([k, x]) => [re(k), x])) : r);
-      d.names = reKeys(d.names)!;
-      d.colors = reKeys(d.colors);
-      d.opacity = reKeys(d.opacity);
-      d.materials = reKeys(d.materials);
-      d.hidden = d.hidden.map(re);
-      d.folders = d.folders?.map(f => ({ ...f, items: f.items.map(re) }));
+      const reKeys = <T>(record: Record<string, T> | undefined) => (record ? Object.fromEntries(Object.entries(record).map(([key, x]) => [re(key), x])) : record);
+      draft.names = reKeys(draft.names)!;
+      draft.colors = reKeys(draft.colors);
+      draft.opacity = reKeys(draft.opacity);
+      draft.materials = reKeys(draft.materials);
+      draft.hidden = draft.hidden.map(re);
+      draft.folders = draft.folders?.map(folder => ({ ...folder, items: folder.items.map(re) }));
     });
     this.ui.toast(`History merged: ${made.length} bod${made.length === 1 ? 'y' : 'ies'}${keepSketches ? ', the sketches kept' : ''}`);
   }
 
   /** What a History step works on: its bodies (made or changed), sketches, and the edges it names. */
   private stepTargets(id: string): { bodies: string[]; lines: Vec3[][] } {
-    const f = this.store.find(id);
+    const feature = this.store.find(id);
     const bodies = new Set<string>();
     const sketches = new Set<string>();
     const edges: [Vec3, Vec3][] = [];
-    if (!f) {
+    if (!feature) {
       return { bodies: [], lines: [] };
     }
-    if (f.type === 'sketch') {
-      sketches.add(f.id);
+    if (feature.type === 'sketch') {
+      sketches.add(feature.id);
     }
     // Bodies this step made (its own id, or copies "id:…").
     for (const b of this.result?.bodies ?? []) {
-      if (b.id === f.id || b.id.startsWith(`${f.id}:`)) {
+      if (b.id === feature.id || b.id.startsWith(`${feature.id}:`)) {
         bodies.add(b.id);
       }
     }
-    const walk = (v: unknown, key = ''): void => {
-      if (Array.isArray(v)) {
-        return v.forEach(x => walk(x, key));
+    const walk = (value: unknown, key = ''): void => {
+      if (Array.isArray(value)) {
+        return value.forEach(item => walk(item, key));
       }
-      if (!v || typeof v !== 'object') {
-        if (typeof v === 'string' && (key === 'body' || key === 'bodies' || key === 'target')) {
-          bodies.add(v);
+      if (!value || typeof value !== 'object') {
+        if (typeof value === 'string' && (key === 'body' || key === 'bodies' || key === 'target')) {
+          bodies.add(value);
         }
-        if (typeof v === 'string' && key === 'sketch') {
-          sketches.add(v);
+        if (typeof value === 'string' && key === 'sketch') {
+          sketches.add(value);
         }
 
         return;
       }
-      const o = v as Record<string, unknown>;
+      const record = value as Record<string, unknown>;
       // An edge reference: draw the edge itself.
-      if (Array.isArray(o.mid) && Array.isArray(o.dir) && typeof o.length === 'number') {
-        const m = o.mid as Vec3;
-        const d = o.dir as Vec3;
-        const h = (o.length as number) / 2;
-        edges.push([[m[0] - d[0] * h, m[1] - d[1] * h, m[2] - d[2] * h], [m[0] + d[0] * h, m[1] + d[1] * h, m[2] + d[2] * h]]);
+      if (Array.isArray(record.mid) && Array.isArray(record.dir) && typeof record.length === 'number') {
+        const mid = record.mid as Vec3;
+        const dir = record.dir as Vec3;
+        const halfLength = (record.length as number) / 2;
+        edges.push([[mid[0] - dir[0] * halfLength, mid[1] - dir[1] * halfLength, mid[2] - dir[2] * halfLength], [mid[0] + dir[0] * halfLength, mid[1] + dir[1] * halfLength, mid[2] + dir[2] * halfLength]]);
       }
-      for (const [k, x] of Object.entries(o)) {
-        if (k !== 'exprs') {
-          walk(x, k);
+      for (const [key, x] of Object.entries(record)) {
+        if (key !== 'exprs') {
+          walk(x, key);
         }
       }
     };
-    walk(f);
+    walk(feature);
     // Only what's still there.
     const have = new Set((this.result?.bodies ?? []).map(b => b.id));
     // Sketch curves in 3D.
@@ -1323,27 +1323,27 @@ export class App implements AppContext {
   }
 
   private editFeature(id: string, pick?: string[]): void {
-    const f = this.store.find(id);
-    if (!f) {
+    const existing = this.store.find(id);
+    if (!existing) {
       return;
     }
     this.setSelection([]);
     // What the step works on can be off screen (or under History): once its
     // tool shows its picks, bring them into view. A sketch frames itself.
-    if (f.type !== 'sketch') {
+    if (existing.type !== 'sketch') {
       const before = this.tool;
       setTimeout(() => this.tool !== before && this.view.keepInView(), 400);
     }
-    switch (f.type) {
+    switch (existing.type) {
       case 'boolean':
         // Subtract / Intersect open their tool (picks, Keep options); Union has nothing to set.
-        if (f.op !== 'union') {
-          return this.setTool(new BooleanOp(this, f.op, f.target, f.tools, f));
+        if (existing.op !== 'union') {
+          return this.setTool(new BooleanOp(this, existing.op, existing.target, existing.tools, existing));
         }
         break;
       case 'sketch': {
         // (From one of its steps in History: open with what that step made picked, ready to change.)
-        const tool = new SketchTool(this, { sketchId: f.id });
+        const tool = new SketchTool(this, { sketchId: existing.id });
         this.setTool(tool);
         if (pick?.length) {
           tool.stopDrawing();
@@ -1353,59 +1353,59 @@ export class App implements AppContext {
         return;
       }
       case 'extrude':
-        return this.setTool(new ExtrudeOp(this, f.source, f as ExtrudeFeature));
+        return this.setTool(new ExtrudeOp(this, existing.source, existing as ExtrudeFeature));
       case 'fillet':
       case 'chamfer':
-        return this.setTool(new EdgeOp(this, f.type, f.edges, f as EdgeFeature));
+        return this.setTool(new EdgeOp(this, existing.type, existing.edges, existing as EdgeFeature));
       case 'revolve':
-        return this.setTool(new RevolveOp(this, f.source, f as RevolveFeature));
+        return this.setTool(new RevolveOp(this, existing.source, existing as RevolveFeature));
       case 'sweep':
-        return this.setTool(new SweepOp(this, f.source, f as SweepFeature));
+        return this.setTool(new SweepOp(this, existing.source, existing as SweepFeature));
       case 'loft':
-        return this.setTool(new LoftOp(this, f.sections, [], f as LoftFeature));
+        return this.setTool(new LoftOp(this, existing.sections, [], existing as LoftFeature));
       case 'shell':
-        return this.setTool(new ShellOp(this, f.body, f.faces, f as ShellFeature));
+        return this.setTool(new ShellOp(this, existing.body, existing.faces, existing as ShellFeature));
       case 'split':
-        return this.setTool(new SplitOp(this, f.body, f as SplitFeature));
+        return this.setTool(new SplitOp(this, existing.body, existing as SplitFeature));
       case 'fillToPlane':
-        return this.setTool(new FillToPlaneOp(this, f.body, f as FillToPlaneFeature));
+        return this.setTool(new FillToPlaneOp(this, existing.body, existing as FillToPlaneFeature));
       case 'fill':
-        return this.setTool(new FillOp(this, f.boundary, f));
+        return this.setTool(new FillOp(this, existing.boundary, existing));
       case 'imprint':
-        return this.setTool(new ImprintOp(this, f.source ? { source: f.source } : { edges: f.edges ?? [] }, f));
+        return this.setTool(new ImprintOp(this, existing.source ? { source: existing.source } : { edges: existing.edges ?? [] }, existing));
       case 'wrap':
-        return this.setTool(new WrapOp(this, f.source, f));
+        return this.setTool(new WrapOp(this, existing.source, existing));
       case 'thread':
-        return this.setTool(new ThreadOp(this, f.face, f.round ?? { r: 5, hole: false }, f));
+        return this.setTool(new ThreadOp(this, existing.face, existing.round ?? { r: 5, hole: false }, existing));
       case 'plane':
-        return this.setTool(new PlaneOp(this, f.plane, f.face, f as PlaneFeature));
+        return this.setTool(new PlaneOp(this, existing.plane, existing.face, existing as PlaneFeature));
       case 'transform': {
-        if (f.op.kind === 'scale' && f.op.ref) {
-          return this.setTool(new ScaleRefOp(this, f.bodies, f as TransformFeature));
+        if (existing.op.kind === 'scale' && existing.op.ref) {
+          return this.setTool(new ScaleRefOp(this, existing.bodies, existing as TransformFeature));
         }
-        if (f.op.kind === 'scale' || f.op.kind === 'scaleXYZ') {
-          return this.setTool(new ScaleOp(this, f.op.kind === 'scaleXYZ', f.bodies, f as TransformFeature));
+        if (existing.op.kind === 'scale' || existing.op.kind === 'scaleXYZ') {
+          return this.setTool(new ScaleOp(this, existing.op.kind === 'scaleXYZ', existing.bodies, existing as TransformFeature));
         }
 
-        return this.setTool(new TransformOp(this, f.op.kind, f.bodies, f as TransformFeature));
+        return this.setTool(new TransformOp(this, existing.op.kind, existing.bodies, existing as TransformFeature));
       }
       case 'scaleFace':
-        return this.setTool(new ScaleFaceOp(this, f.face, { origin: f.face.center, normal: f.face.normal, xDir: f.u }, f));
+        return this.setTool(new ScaleFaceOp(this, existing.face, { origin: existing.face.center, normal: existing.face.normal, xDir: existing.u }, existing));
       case 'replaceFace':
-        return this.setTool(new ReplaceFaceOp(this, f.face, f));
+        return this.setTool(new ReplaceFaceOp(this, existing.face, existing));
       case 'image':
-        return this.setTool(new ImageOp(this, f as ImageFeature));
+        return this.setTool(new ImageOp(this, existing as ImageFeature));
       // (Opened from History: that step itself is edited.)
       case 'freeform':
-        return this.setTool(new FreeformTool(this, { feature: f, keep: { inPlace: true } }));
+        return this.setTool(new FreeformTool(this, { feature: existing, keep: { inPlace: true } }));
       case 'freeformEdit': {
         // The shape as this edit left it; Done keeps the change in this step.
-        const t = editedStep(this.store.features, f.target, f.id);
+        const t = editedStep(this.store.features, existing.target, existing.id);
         if (t?.type === 'freeform') {
-          return this.setTool(new FreeformTool(this, { feature: t, keep: { edit: f.id } }));
+          return this.setTool(new FreeformTool(this, { feature: t, keep: { edit: existing.id } }));
         }
         if (t?.type === 'faceFreeform') {
-          const tool = faceFreeformTool(this, null, t, { edit: f.id });
+          const tool = faceFreeformTool(this, null, t, { edit: existing.id });
 
           return tool ? this.setTool(tool) : undefined;
         }
@@ -1413,18 +1413,18 @@ export class App implements AppContext {
         return this.ui.toast('The freeform this edits is gone');
       }
       case 'connect':
-        return this.setTool(new ConnectOp(this, [], f));
+        return this.setTool(new ConnectOp(this, [], existing));
       case 'faceFreeform':
-        return this.setTool(faceFreeformTool(this, null, f, { inPlace: true }));
+        return this.setTool(faceFreeformTool(this, null, existing, { inPlace: true }));
       case 'moveFace': {
-        const target = f.face ? { face: f.face, plane: { origin: f.face.center, normal: f.face.normal, xDir: xDirFor(f.face.normal) } } : f.edge ? { edge: f.edge } : f.vertex ? { vertex: f.vertex } : null;
+        const target = existing.face ? { face: existing.face, plane: { origin: existing.face.center, normal: existing.face.normal, xDir: xDirFor(existing.face.normal) } } : existing.edge ? { edge: existing.edge } : existing.vertex ? { vertex: existing.vertex } : null;
         if (target) {
-          return this.setTool(new MoveFaceOp(this, target, f));
+          return this.setTool(new MoveFaceOp(this, target, existing));
         }
         break;
       }
       default:
-        this.ui.toast(`${f.name} has no values to edit. You can suppress or delete it.`);
+        this.ui.toast(`${existing.name} has no values to edit. You can suppress or delete it.`);
     }
   }
 
@@ -1434,19 +1434,19 @@ export class App implements AppContext {
   /** The edges picked for a fillet or chamfer: each edge, and every edge round each face. */
   private pickedEdges(): EdgeRef[] {
     const out: EdgeRef[] = [];
-    const have = (r: EdgeRef) => out.some(e => e.body === r.body && Math.hypot(e.mid[0] - r.mid[0], e.mid[1] - r.mid[1], e.mid[2] - r.mid[2]) < 1e-6);
+    const have = (edgeRef: EdgeRef) => out.some(e => e.body === edgeRef.body && Math.hypot(e.mid[0] - edgeRef.mid[0], e.mid[1] - edgeRef.mid[1], e.mid[2] - edgeRef.mid[2]) < 1e-6);
     // (A round face's seam - the same face either side - is nothing to round:
     // picked, the step broke with "an edge it was built on is gone".)
-    const seam = (body: string, k: number) => !!this.view.body(body)?.edges[k]?.seam;
+    const seam = (body: string, edgeIndex: number) => !!this.view.body(body)?.edges[edgeIndex]?.seam;
     let seams = 0;
-    for (const s of this.selection) {
-      if (s.kind === 'edge' && seam(s.body, s.edge)) {
+    for (const highlight of this.selection) {
+      if (highlight.kind === 'edge' && seam(highlight.body, highlight.edge)) {
         seams++;
       }
-      const refs = s.kind === 'edge' ? (seam(s.body, s.edge) ? [] : [edgeRefOf(this, s)]) : s.kind === 'face' ? edgesOfFace(this, s.body, s.face).filter(k => !seam(s.body, k)).map(k => edgeRefOf(this, { body: s.body, edge: k })) : [];
-      for (const r of refs) {
-        if (r && !have(r)) {
-          out.push(r);
+      const refs = highlight.kind === 'edge' ? (seam(highlight.body, highlight.edge) ? [] : [edgeRefOf(this, highlight)]) : highlight.kind === 'face' ? edgesOfFace(this, highlight.body, highlight.face).filter(edgeIndex => !seam(highlight.body, edgeIndex)).map(edgeIndex => edgeRefOf(this, { body: highlight.body, edge: edgeIndex })) : [];
+      for (const ref of refs) {
+        if (ref && !have(ref)) {
+          out.push(ref);
         }
       }
     }
@@ -1489,7 +1489,7 @@ export class App implements AppContext {
           { id: 'extrude', label: 'Extrude', icon: 'extrude', pulse: this.firstShape(), run: wait('Extrude', ['profile', 'face'], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
           { id: 'revolve', label: 'Revolve', icon: 'revolve', run: wait('Revolve', ['profile', 'face'], () => src() && this.setTool(new RevolveOp(this, src()!))) },
           { id: 'sweep', label: 'Sweep', icon: 'sweep', run: wait('Sweep', ['profile', 'face'], () => src() && this.setTool(new SweepOp(this, src()!))) },
-          { id: 'loft', label: 'Loft', icon: 'loft', run: wait('Loft', ['profile', 'face'], () => this.setTool(new LoftOp(this, sourcesOf(this, this.selection).flatMap((s): ExtrudeSource[] => (s.kind === 'profile' ? s.regions.map(r => ({ ...s, regions: [r] })) : [s])), this.selection))) }
+          { id: 'loft', label: 'Loft', icon: 'loft', run: wait('Loft', ['profile', 'face'], () => this.setTool(new LoftOp(this, sourcesOf(this, this.selection).flatMap((source): ExtrudeSource[] => (source.kind === 'profile' ? source.regions.map(region => ({ ...source, regions: [region] })) : [source])), this.selection))) }
         ]
       },
       {
@@ -1501,14 +1501,14 @@ export class App implements AppContext {
           { id: 'fillet', label: 'Fillet', icon: 'fillet', run: wait('Fillet', ['edge', 'face'], () => this.setTool(new EdgeOp(this, 'fillet', this.pickedEdges()))) },
           { id: 'chamfer', label: 'Chamfer', icon: 'chamfer', run: wait('Chamfer', ['edge', 'face'], () => this.setTool(new EdgeOp(this, 'chamfer', this.pickedEdges()))) },
           { id: 'shell', label: 'Shell', icon: 'shell', run: wait('Shell', ['face', 'body'], () => {
-            const s = this.selection[0];
-            const faces = this.selection.flatMap(x => (x.kind === 'face' ? [faceRefOf(this, x)!] : []));
-            this.setTool(new ShellOp(this, bodiesOf([s])[0], faces));
+            const highlight = this.selection[0];
+            const faces = this.selection.flatMap(highlight => (highlight.kind === 'face' ? [faceRefOf(this, highlight)!] : []));
+            this.setTool(new ShellOp(this, bodiesOf([highlight])[0], faces));
           }) },
           { id: 'offsetFace', label: 'Offset Face', icon: 'offsetFace', run: wait('Offset Face', ['face'], () => src() && this.setTool(new ExtrudeOp(this, src()!))) },
           { id: 'offsetEdge', label: 'Offset Edge', icon: 'offsetEdge', run: () => {
-            const s = this.selection.find(x => x.kind === 'edge');
-            this.setTool(new OffsetEdgeOp(this, s?.kind === 'edge' ? s : undefined));
+            const edgePick = this.selection.find(highlight => highlight.kind === 'edge');
+            this.setTool(new OffsetEdgeOp(this, edgePick?.kind === 'edge' ? edgePick : undefined));
           } },
           { id: 'thread', label: 'Thread', icon: 'thread', run: wait('Thread (tap a round face or its rim)', ['face', 'edge'], () => this.startThread()) },
           { id: 'wrap', label: 'Wrap & Emboss', icon: 'wrap', beta: true, run: wait("Wrap & Emboss (tap a sketch's shape)", ['profile'], () => src() && this.setTool(new WrapOp(this, src()!))) },
@@ -1536,8 +1536,8 @@ export class App implements AppContext {
             ]
           },
           { id: 'replace', label: 'Replace Face', icon: 'replaceFace', run: wait('Replace Face', ['face'], () => {
-            const s = this.selection[0];
-            const ref = s?.kind === 'face' ? faceRefOf(this, s) : null;
+            const highlight = this.selection[0];
+            const ref = highlight?.kind === 'face' ? faceRefOf(this, highlight) : null;
             if (ref) {
               this.setTool(new ReplaceFaceOp(this, ref));
             }
@@ -1597,18 +1597,18 @@ export class App implements AppContext {
             icon: 'plane',
             startsDefault: 'offset',
             run: wait('Offset Plane', ['face', 'plane'], () => {
-              const s = this.selection[0];
-              if (s?.kind === 'face') {
-                const f = this.view.body(s.body)?.faces[s.face];
-                if (f?.plane) {
-                  this.setTool(new PlaneOp(this, f.plane, faceRefOf(this, s)!));
+              const highlight = this.selection[0];
+              if (highlight?.kind === 'face') {
+                const face = this.view.body(highlight.body)?.faces[highlight.face];
+                if (face?.plane) {
+                  this.setTool(new PlaneOp(this, face.plane, faceRefOf(this, highlight)!));
                 } else {
                   this.ui.toast('An Offset Plane starts from a flat face or a plane', 'error');
                 }
-              } else if (s?.kind === 'plane') {
-                const p = this.view.planeOf(s.id);
-                if (p) {
-                  this.setTool(new PlaneOp(this, p, undefined));
+              } else if (highlight?.kind === 'plane') {
+                const plane = this.view.planeOf(highlight.id);
+                if (plane) {
+                  this.setTool(new PlaneOp(this, plane, undefined));
                 }
               }
             }),
@@ -1629,15 +1629,15 @@ export class App implements AppContext {
             // (Along X, Y or Z: the origin's own axes, tapped in the view.)
             children: [
               { id: 'axisFace', label: 'Square to Face', short: 'Face', icon: 'axisFace' as const, run: wait('Axis Square to Face', ['face'], () => {
-                const s = this.selection[0];
-                const f = s?.kind === 'face' ? this.view.body(s.body)?.faces[s.face] : undefined;
-                if (f) {
-                  this.setTool(new AxisOp(this, f.center, f.plane?.normal ?? f.normal, undefined, 'face'));
+                const highlight = this.selection[0];
+                const faceInfo = highlight?.kind === 'face' ? this.view.body(highlight.body)?.faces[highlight.face] : undefined;
+                if (faceInfo) {
+                  this.setTool(new AxisOp(this, faceInfo.center, faceInfo.plane?.normal ?? faceInfo.normal, undefined, 'face'));
                 }
               }) },
               { id: 'axisEdge', label: 'Along Edge', short: 'Edge', icon: 'axisEdge' as const, run: wait('Axis Along Edge', ['edge'], () => {
-                const s = this.selection[0];
-                const e = s?.kind === 'edge' ? this.view.body(s.body)?.edges[s.edge] : undefined;
+                const highlight = this.selection[0];
+                const e = highlight?.kind === 'edge' ? this.view.body(highlight.body)?.edges[highlight.edge] : undefined;
                 // A round edge: through its centre, square to it.
                 const ax = e && (e.type === 'CIRCLE' ? circleAxis(e.start, e.mid, e.end, e.dir) : { origin: e.start, dir: e.dir });
                 if (ax) {
@@ -1645,8 +1645,8 @@ export class App implements AppContext {
                 }
               }) },
               { id: 'axisRound', label: 'Cylinder / Cone', icon: 'axisRound' as const, run: wait('Axis of Cylinder / Cone', ['face'], () => {
-                const s = this.selection[0];
-                const ax = s?.kind === 'face' ? surfaceAxis(this, s.body, s.face) : null;
+                const highlight = this.selection[0];
+                const ax = highlight?.kind === 'face' ? surfaceAxis(this, highlight.body, highlight.face) : null;
                 if (ax) {
                   this.setTool(new AxisOp(this, ax.origin, ax.dir, undefined, 'round'));
                 } else {
@@ -1665,11 +1665,11 @@ export class App implements AppContext {
         label: 'Freeform',
         icon: 'freeform',
         children: [
-          ...(['box', 'sphere', 'cylinder', 'torus', 'plane'] as const).map(k => ({
-            id: `ff-${k}`,
-            label: { box: 'Box', sphere: 'Sphere', cylinder: 'Cylinder', torus: 'Torus', plane: 'Surface' }[k],
-            icon: ({ box: 'ffBox', sphere: 'ffSphere', cylinder: 'ffCylinder', torus: 'ffTorus', plane: 'ffSurface' } as const)[k],
-            run: () => this.setTool(new FreeformTool(this, { primitive: k }))
+          ...(['box', 'sphere', 'cylinder', 'torus', 'plane'] as const).map(primitive => ({
+            id: `ff-${primitive}`,
+            label: { box: 'Box', sphere: 'Sphere', cylinder: 'Cylinder', torus: 'Torus', plane: 'Surface' }[primitive],
+            icon: ({ box: 'ffBox', sphere: 'ffSphere', cylinder: 'ffCylinder', torus: 'ffTorus', plane: 'ffSurface' } as const)[primitive],
+            run: () => this.setTool(new FreeformTool(this, { primitive: primitive }))
           })),
           // A flat face of a body made smooth (its edges stay put).
           {
@@ -1679,18 +1679,18 @@ export class App implements AppContext {
             icon: 'faceFreeform' as const,
             sub: 'a face of a body',
             run: wait('Freeform Face (tap a flat face)', ['face'], () => {
-              const s = this.selection[0];
-              if (s?.kind !== 'face' || !this.view.body(s.body)?.faces[s.face]?.plane) {
+              const highlight = this.selection[0];
+              if (highlight?.kind !== 'face' || !this.view.body(highlight.body)?.faces[highlight.face]?.plane) {
                 return void this.ui.toast('Freeform Face works on flat faces for now');
               }
-              const t = faceFreeformTool(this, s);
+              const t = faceFreeformTool(this, highlight);
               if (t) {
                 this.setTool(t);
               }
             })
           },
           // A smooth bridge between two faces.
-          { id: 'connect', label: 'Connect', icon: 'connect' as const, sub: 'two faces', beta: true, run: () => this.setTool(new ConnectOp(this, this.selection.filter(s => s.kind === 'face').slice(0, 2))) }
+          { id: 'connect', label: 'Connect', icon: 'connect' as const, sub: 'two faces', beta: true, run: () => this.setTool(new ConnectOp(this, this.selection.filter(highlight => highlight.kind === 'face').slice(0, 2))) }
         ]
       },
       {
@@ -1704,7 +1704,7 @@ export class App implements AppContext {
             label: 'Insert',
             icon: 'insert',
             children: [
-              { id: 'image', label: 'Image on plane', icon: 'image', run: () => void insertImage(this).then(f => f && this.setTool(new ImageOp(this, f))) },
+              { id: 'image', label: 'Image on plane', icon: 'image', run: () => void insertImage(this).then(image => image && this.setTool(new ImageOp(this, image))) },
               { id: 'file', label: 'File', icon: 'file', sub: 'STEP, STL, OBJ, 3MF, DXF, SVG', run: () => void insertFile(this) },
               { id: 'project', label: 'Project', icon: 'file', sub: '.super', run: () => void insertFile(this) },
               { id: 'refImage', label: 'Reference Image', icon: 'refImage', sub: 'a picture in its own window, over the model', run: () => void this.refImages.open() },
@@ -1770,8 +1770,8 @@ export class App implements AppContext {
       return;
     }
     const mod = e.ctrlKey || e.metaKey;
-    const k = e.key.toLowerCase();
-    if (mod && k === 'z') {
+    const key = e.key.toLowerCase();
+    if (mod && key === 'z') {
       e.preventDefault();
       if (e.shiftKey) {
         this.redo();
@@ -1781,35 +1781,35 @@ export class App implements AppContext {
 
       return;
     }
-    if (mod && k === 'y') {
+    if (mod && key === 'y') {
       e.preventDefault();
       this.redo();
 
       return;
     }
     // Select Through: pick what's behind the faces in front.
-    if (mod && e.shiftKey && k === 's') {
+    if (mod && e.shiftKey && key === 's') {
       e.preventDefault();
       this.view.setSelectThrough(!this.view.selectThrough);
       this.ui.toast(this.view.selectThrough ? 'Select Through on: edges and sketches behind the faces can be picked' : 'Select Through off');
 
       return;
     }
-    if (mod && k === 's') {
+    if (mod && key === 's') {
       e.preventDefault();
       this.save();
 
       return;
     }
     // Everything: Ctrl+A (the bodies, or with none the sketches' shapes; in a sketch, its curves).
-    if (mod && !e.shiftKey && k === 'a') {
+    if (mod && !e.shiftKey && key === 'a') {
       e.preventDefault();
       this.tool.selectAll?.();
 
       return;
     }
     // Search commands: Ctrl+F anywhere (X too, outside a sketch - see below).
-    if (mod && k === 'f') {
+    if (mod && key === 'f') {
       e.preventDefault();
       this.searchCommands();
 
@@ -1828,7 +1828,7 @@ export class App implements AppContext {
       return;
     }
     // Space over a face: zoom to it.
-    if (k === ' ' && !mod && this.pointerAt) {
+    if (key === ' ' && !mod && this.pointerAt) {
       const hit = this.view.pick(this.pointerAt[0], this.pointerAt[1], { edges: false, planes: false, profiles: false });
       if (hit?.kind === 'face' && this.view.zoomToFace(hit.body, hit.face)) {
         e.preventDefault();
@@ -1840,8 +1840,8 @@ export class App implements AppContext {
       return;
     }
     // The booleans: Ctrl+U / B / I.
-    if (mod && !e.shiftKey && (k === 'u' || k === 'b' || k === 'i')) {
-      if (this.runCommand([{ u: 'Union', b: 'Subtract', i: 'Intersect' }[k]])) {
+    if (mod && !e.shiftKey && (key === 'u' || key === 'b' || key === 'i')) {
+      if (this.runCommand([{ u: 'Union', b: 'Subtract', i: 'Intersect' }[key]])) {
         e.preventDefault();
       }
 
@@ -1850,23 +1850,23 @@ export class App implements AppContext {
     if (mod || e.altKey) {
       return;
     }
-    if (k === 'x') {
+    if (key === 'x') {
       return void (e.preventDefault(), this.searchCommands());
     }
     if (e.key === '?') {
       return void showShortcuts();
     }
     const none = !this.selection.length;
-    if (k === 's' && none) {
+    if (key === 's' && none) {
       return void this.setTool(new SketchTool(this));
     }
-    if (k === 'f' && none) {
+    if (key === 'f' && none) {
       return void this.fit();
     }
     // A drawing tool's letter with nothing picked: a sketch, with that tool (once its plane is picked).
     const draw: Record<string, 'line' | 'arc' | 'circle' | 'rect' | 'polygon' | 'spline' | 'offset' | 'trim'> = { l: 'line', a: 'arc', c: 'circle', r: 'rect', g: 'polygon', i: 'spline', o: 'offset', t: 'trim' };
-    if (draw[k] && none && !e.shiftKey) {
-      return void this.setTool(new SketchTool(this, { kind: draw[k] }));
+    if (draw[key] && none && !e.shiftKey) {
+      return void this.setTool(new SketchTool(this, { kind: draw[key] }));
     }
     // A modeling tool's letter: that tool, for what's picked (or waiting for it).
     const tools: Record<string, string[]> = {
@@ -1881,7 +1881,7 @@ export class App implements AppContext {
       w: ['Sweep'],
       o: ['Offset Edge']
     };
-    if (tools[k] && !e.shiftKey && this.runCommand(tools[k])) {
+    if (tools[key] && !e.shiftKey && this.runCommand(tools[key])) {
       e.preventDefault();
     }
   }
@@ -1892,22 +1892,22 @@ export class App implements AppContext {
   /** The picked sketch curves and edges, as paths (one per sketch, one per body): what Fill starts with. */
   private pickedCurves(): PathRef[] {
     const out: PathRef[] = [];
-    for (const s of this.selection) {
-      if (s.kind === 'curve') {
-        const p = out.find((x): x is Extract<PathRef, { kind: 'sketch' }> => x.kind === 'sketch' && x.sketch === s.sketch);
-        if (p) {
-          p.entities.push(s.entity);
+    for (const highlight of this.selection) {
+      if (highlight.kind === 'curve') {
+        const sketchPath = out.find((pathRef): pathRef is Extract<PathRef, { kind: 'sketch' }> => pathRef.kind === 'sketch' && pathRef.sketch === highlight.sketch);
+        if (sketchPath) {
+          sketchPath.entities.push(highlight.entity);
         } else {
-          out.push({ kind: 'sketch', sketch: s.sketch, entities: [s.entity] });
+          out.push({ kind: 'sketch', sketch: highlight.sketch, entities: [highlight.entity] });
         }
-      } else if (s.kind === 'edge') {
-        const ref = edgeRefOf(this, s);
+      } else if (highlight.kind === 'edge') {
+        const ref = edgeRefOf(this, highlight);
         if (!ref) {
           continue;
         }
-        const p = out.find((x): x is Extract<PathRef, { kind: 'edges' }> => x.kind === 'edges' && x.edges[0]?.body === ref.body);
-        if (p) {
-          p.edges.push(ref);
+        const edgePath = out.find((pathRef): pathRef is Extract<PathRef, { kind: 'edges' }> => pathRef.kind === 'edges' && pathRef.edges[0]?.body === ref.body);
+        if (edgePath) {
+          edgePath.edges.push(ref);
         } else {
           out.push({ kind: 'edges', edges: [ref] });
         }
@@ -1936,9 +1936,9 @@ export class App implements AppContext {
   }
 
   /** 1 the default view; 2-7 front, back, top, bottom, right, left. */
-  private viewByNumber(n: number): void {
+  private viewByNumber(viewNumber: number): void {
     const cam = this.view.cam;
-    if (n === 1) {
+    if (viewNumber === 1) {
       cam.iso();
       this.view.fitAll();
 
@@ -1952,7 +1952,7 @@ export class App implements AppContext {
       [[1, 0, 0], [0, 1, 0]],
       [[-1, 0, 0], [0, -1, 0]]
     ];
-    const [normal, xDir] = views[n - 2];
+    const [normal, xDir] = views[viewNumber - 2];
     cam.lookAlong(normal, xDir);
   }
 
@@ -2049,7 +2049,7 @@ export class App implements AppContext {
     // Offline mode: the app kept on this device, so it works with no connection.
     const offlineState = document.getElementById('m-offline-state')!;
     // (Its switch; beside it only how far the download is while it runs.)
-    const offline = new Offline((t, k) => this.ui.toast(t, k), state => ((offlineState.textContent = state === 'On' || state === 'Off' ? '' : state), switchOf('m-offline', settings.value.offline)));
+    const offline = new Offline((t, kind) => this.ui.toast(t, kind), state => ((offlineState.textContent = state === 'On' || state === 'Off' ? '' : state), switchOf('m-offline', settings.value.offline)));
     this.updates.offline = { get on() {
       return settings.value.offline; 
     }, download: fresh => offline.download(fresh) };
@@ -2060,9 +2060,9 @@ export class App implements AppContext {
       selection: () => this.selection,
       setSelection: sel => this.setSelection(sel),
       features: () => this.store.features,
-      toScreen: p => this.view.toScreen(new Vector3(p[0], p[1], p[2])),
+      toScreen: point => this.view.toScreen(new Vector3(point[0], point[1], point[2])),
       canvas: () => this.view.canvas,
-      faces: body => (this.view.body(body)?.faces ?? []).map(f => ({ center: f.center, normal: f.normal, type: f.type })),
+      faces: body => (this.view.body(body)?.faces ?? []).map(faceInfo => ({ center: faceInfo.center, normal: faceInfo.normal, type: faceInfo.type })),
       bodies: () => this.view.bodyList.map(b => b.id),
       eye: () => this.view.cam.camera.position,
       newProject: () => this.newProject(),
@@ -2086,12 +2086,12 @@ export class App implements AppContext {
         if (t.id !== 'chamfer' || !t.feature || !body) {
           return;
         }
-        const flat = (p: Vec3) => Math.abs(p[2] - z) < 1e-6;
+        const flat = (point: Vec3) => Math.abs(point[2] - z) < 1e-6;
         // (Once: with them chamfered, the body as it is shown has new edges at that height - the cuts' own.)
         if (t.feature.edges.some(e => flat(e.mid))) {
           return;
         }
-        const have = (m: Vec3) => t.feature!.edges.some(e => e.body === body && Math.hypot(e.mid[0] - m[0], e.mid[1] - m[1], e.mid[2] - m[2]) < 1e-6);
+        const have = (midpoint: Vec3) => t.feature!.edges.some(e => e.body === body && Math.hypot(e.mid[0] - midpoint[0], e.mid[1] - midpoint[1], e.mid[2] - midpoint[2]) < 1e-6);
         let added = false;
         (this.view.body(body)?.edges ?? []).forEach((e, i) => {
           if (e.type !== 'LINE' || !flat(e.start) || !flat(e.end) || have(e.mid)) {
@@ -2181,9 +2181,9 @@ export class App implements AppContext {
     item('m-glb', () => void this.exportGLB());
     item('m-each', () => {
       // Which format each body is saved in: a menu where the File menu was.
-      const r = document.getElementById('file-btn')!.getBoundingClientRect();
-      const row = (f: 'stl' | 'step' | '3mf' | 'glb', label: string) => ({ label, run: () => void this.exportEach(f) });
-      this.ui.menu(r.left, r.bottom + 4, [row('stl', 'Each body as STL'), row('step', 'Each body as STEP'), row('3mf', 'Each body as 3MF'), row('glb', 'Each body as GLB')]);
+      const rect = document.getElementById('file-btn')!.getBoundingClientRect();
+      const row = (format: 'stl' | 'step' | '3mf' | 'glb', label: string) => ({ label, run: () => void this.exportEach(format) });
+      this.ui.menu(rect.left, rect.bottom + 4, [row('stl', 'Each body as STL'), row('step', 'Each body as STEP'), row('3mf', 'Each body as 3MF'), row('glb', 'Each body as GLB')]);
     });
     item('m-dxf', () => this.exportDXF());
     item('m-svg', () => this.exportDXF('download', 'svg'));
@@ -2242,9 +2242,9 @@ export class App implements AppContext {
       document.title = this.store.doc.name === 'Untitled' ? PAGE_TITLE : `${this.store.doc.name} – superGeometry.app`;
     };
     const rename = () => {
-      const v = typed();
-      if (v && v !== this.store.doc.name) {
-        this.store.commit(d => (d.name = v));
+      const value = typed();
+      if (value && value !== this.store.doc.name) {
+        this.store.commit(draft => (draft.name = value));
       }
       name.textContent = this.store.doc.name;
       name.scrollLeft = 0;
@@ -2300,10 +2300,10 @@ export class App implements AppContext {
         if (document.activeElement !== name) {
           return;
         }
-        const r = document.createRange();
-        r.selectNodeContents(name);
+        const range = document.createRange();
+        range.selectNodeContents(name);
         getSelection()?.removeAllRanges();
-        getSelection()?.addRange(r);
+        getSelection()?.addRange(range);
       });
     });
     this.store.onChange(show);
@@ -2382,7 +2382,7 @@ export class App implements AppContext {
     if (choice === 'save') {
       this.save();
       // Give the download a moment to start before the page reloads.
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
     await this.updates.reset();
   }
@@ -2508,7 +2508,7 @@ export class App implements AppContext {
         }
         // The open one through its document (the top bar and its autosave follow).
         if (id === this.projectId) {
-          this.store.commit(d => (d.name = name));
+          this.store.commit(draft => (draft.name = name));
         } else {
           await renameProject(id, name);
         }
@@ -2582,7 +2582,7 @@ export class App implements AppContext {
 
   private async downloadKept(id: string): Promise<void> {
     const text = await projectText(id);
-    const e = (await libraryEntries()).find(x => x.id === id);
+    const e = (await libraryEntries()).find(libraryEntry => libraryEntry.id === id);
     if (text && e) {
       download(new Blob([text], { type: 'application/json' }), `${e.name}.super`);
     }
@@ -2670,7 +2670,7 @@ export class App implements AppContext {
    * curves or regions are selected. Without one, say how to pick it.
    */
   private exportDXF(how: Delivery = 'download', as: 'dxf' | 'svg' = 'dxf'): void {
-    const fromSel = this.selection.flatMap(s => (s.kind === 'curve' || s.kind === 'point' || s.kind === 'profile' ? [s.sketch] : []))[0];
+    const fromSel = this.selection.flatMap(highlight => (highlight.kind === 'curve' || highlight.kind === 'point' || highlight.kind === 'profile' ? [highlight.sketch] : []))[0];
     const id = this.tool.activeSketch ?? fromSel;
     const sk = id ? this.store.find<SketchFeature>(id) : undefined;
     if (!sk || sk.type !== 'sketch') {
@@ -2696,13 +2696,13 @@ export class App implements AppContext {
     const names = this.store.doc.names ?? {};
 
     return ids.flatMap((id) => {
-      const b = this.result?.bodies.find(x => x.id === id);
-      const m = fine.find(x => x.id === id);
+      const b = this.result?.bodies.find(body => body.id === id);
+      const fineMesh = fine.find(bodyMesh => bodyMesh.id === id);
       if (!b) {
         return [];
       }
 
-      return [{ name: names[id] ?? b.name, positions: m ? new Float32Array(m.positions) : b.positions, indices: m ? new Uint32Array(m.indices) : b.indices, color: this.store.doc.colors?.[id], opacity: this.store.doc.opacity?.[id] }];
+      return [{ name: names[id] ?? b.name, positions: fineMesh ? new Float32Array(fineMesh.positions) : b.positions, indices: fineMesh ? new Uint32Array(fineMesh.indices) : b.indices, color: this.store.doc.colors?.[id], opacity: this.store.doc.opacity?.[id] }];
     });
   }
 
@@ -2735,13 +2735,13 @@ export class App implements AppContext {
     const used = new Set<string>();
     const fileName = (id: string, fallback: string) => {
       const base = (names[id] ?? fallback).replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Body';
-      let n = base;
-      for (let k = 2; used.has(n.toLowerCase()); k++) {
-        n = `${base} ${k}`;
+      let name = base;
+      for (let suffix = 2; used.has(name.toLowerCase()); suffix++) {
+        name = `${base} ${suffix}`;
       }
-      used.add(n.toLowerCase());
+      used.add(name.toLowerCase());
 
-      return `${n}.${format}`;
+      return `${name}.${format}`;
     };
     try {
       const files: { name: string; data: Uint8Array }[] = [];
@@ -2751,8 +2751,8 @@ export class App implements AppContext {
         if (format === 'glb') {
           blob = new Blob([glb(await this.fineMeshes([b.id]), names[b.id] ?? b.name) as BlobPart]);
         } else if (format === '3mf') {
-          const [m] = await this.fineMeshes([b.id]);
-          blob = await exportThreeMF([m], m.name, await this.kernel.export(this.store.doc.features, 'step', [b.id]));
+          const [fineMesh] = await this.fineMeshes([b.id]);
+          blob = await exportThreeMF([fineMesh], fineMesh.name, await this.kernel.export(this.store.doc.features, 'step', [b.id]));
         } else {
           blob = await this.kernel.export(this.store.doc.features, format, [b.id]);
         }
@@ -2783,9 +2783,9 @@ export class App implements AppContext {
       const names = this.store.doc.names ?? {};
       const blob = await exportThreeMF(
         bodies.map((b) => {
-          const m = fine.find(x => x.id === b.id);
+          const fineMesh = fine.find(mesh => mesh.id === b.id);
 
-          return { name: names[b.id] ?? b.name, positions: m ? new Float32Array(m.positions) : b.positions, indices: m ? new Uint32Array(m.indices) : b.indices, color: this.store.doc.colors?.[b.id] };
+          return { name: names[b.id] ?? b.name, positions: fineMesh ? new Float32Array(fineMesh.positions) : b.positions, indices: fineMesh ? new Uint32Array(fineMesh.indices) : b.indices, color: this.store.doc.colors?.[b.id] };
         }),
         this.store.doc.name,
         step

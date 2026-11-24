@@ -94,7 +94,7 @@ export class QuickActions {
         }
         // (A tool that starts by itself is one button, its kinds a tap further inside it; a bare group is its tools.)
         if (it.run) {
-          if (!row.includes(it) && !rest.some(r => r.label === it.label) && !row.some(r => r.label === it.label)) {
+          if (!row.includes(it) && !rest.some(toolItem => toolItem.label === it.label) && !row.some(toolItem => toolItem.label === it.label)) {
             rest.push(it);
           }
         } else if (it.children?.length) {
@@ -179,16 +179,16 @@ export class QuickActions {
 
   /** Below the point, clear of the handle on it (moved on with the view: only when the view is drawn again). */
   private layout(): void {
-    const s = this.view.toScreen(this.at);
-    let shown = !!s;
-    if (s && this.facing && this.place.hideBack !== false) {
-      const v = this.view.cam.viewDir();
-      if (v.x * this.facing[0] + v.y * this.facing[1] + v.z * this.facing[2] > 0.05) {
+    const screenPoint = this.view.toScreen(this.at);
+    let shown = !!screenPoint;
+    if (screenPoint && this.facing && this.place.hideBack !== false) {
+      const viewDir = this.view.cam.viewDir();
+      if (viewDir.x * this.facing[0] + viewDir.y * this.facing[1] + viewDir.z * this.facing[2] > 0.05) {
         shown = false;
       }
     }
     this.box.hidden = !shown;
-    if (!s || !shown) {
+    if (!screenPoint || !shown) {
       return;
     }
     const hw = this.box.offsetWidth / 2;
@@ -196,27 +196,27 @@ export class QuickActions {
     // (A face's arrow points out along its normal: they go the other way on the screen, not under it.)
     const first: [number, number][] = [];
     if (this.facing) {
-      const k = this.view.cam.worldPerPixel(this.view.height) * 60;
-      const tip = this.view.toScreen([this.at[0] + this.facing[0] * k, this.at[1] + this.facing[1] * k, this.at[2] + this.facing[2] * k]);
-      const dx = tip ? s[0] - tip[0] : 0;
-      const dy = tip ? s[1] - tip[1] : 0;
-      const l = Math.hypot(dx, dy);
-      if (l > 8) {
-        const d = Math.abs((dx / l) * hw) + Math.abs((dy / l) * hh) + (this.place.gap ?? 34);
-        first.push([s[0] + (dx / l) * d, s[1] + (dy / l) * d]);
+      const offset = this.view.cam.worldPerPixel(this.view.height) * 60;
+      const tip = this.view.toScreen([this.at[0] + this.facing[0] * offset, this.at[1] + this.facing[1] * offset, this.at[2] + this.facing[2] * offset]);
+      const dx = tip ? screenPoint[0] - tip[0] : 0;
+      const dy = tip ? screenPoint[1] - tip[1] : 0;
+      const length = Math.hypot(dx, dy);
+      if (length > 8) {
+        const distance = Math.abs((dx / length) * hw) + Math.abs((dy / length) * hh) + (this.place.gap ?? 34);
+        first.push([screenPoint[0] + (dx / length) * distance, screenPoint[1] + (dy / length) * distance]);
       }
     }
-    const g = this.place.gap ?? 46;
+    const gap = this.place.gap ?? 46;
     const spots: [number, number][] = [
       ...first,
-      [s[0], s[1] + g + hh],
-      [s[0], s[1] - g - hh],
-      [s[0] - g - hw, s[1]],
-      [s[0] + g + hw, s[1]]
-    ].map(p => clampToFree(p as [number, number], hw, hh));
+      [screenPoint[0], screenPoint[1] + gap + hh],
+      [screenPoint[0], screenPoint[1] - gap - hh],
+      [screenPoint[0] - gap - hw, screenPoint[1]],
+      [screenPoint[0] + gap + hw, screenPoint[1]]
+    ].map(point => clampToFree(point as [number, number], hw, hh));
     // (Nor under a value box on the model - an extrude's distance, beside its arrow.)
-    const boxes = [...document.querySelectorAll<HTMLElement>('.dim-widget')].map(b => b.getBoundingClientRect()).filter(r => r.width > 0);
-    const clear = ([x, y]: [number, number]) => !boxes.some(r => x + hw + 6 > r.left && x - hw - 6 < r.right && y + hh + 6 > r.top && y - hh - 6 < r.bottom);
+    const boxes = [...document.querySelectorAll<HTMLElement>('.dim-widget')].map(b => b.getBoundingClientRect()).filter(rect => rect.width > 0);
+    const clear = ([x, y]: [number, number]) => !boxes.some(box => x + hw + 6 > box.left && x - hw - 6 < box.right && y + hh + 6 > box.top && y - hh - 6 < box.bottom);
     const [x, y] = spots.find(clear) ?? spots[0];
     this.box.style.transform = `translate(${Math.round(x - hw)}px, ${Math.round(y - hh)}px)`;
   }
@@ -229,7 +229,7 @@ export class QuickActions {
 
 /** A short name under the icon ("Move/Rotate Edge" → "Move"). */
 function shortName(label: string): string {
-  const s = label.replace(/…$/, '').split(/[/ –]/)[0];
+  const word = label.replace(/…$/, '').split(/[/ –]/)[0];
 
-  return s.length > 12 ? s.slice(0, 11) + '…' : s;
+  return word.length > 12 ? word.slice(0, 11) + '…' : word;
 }

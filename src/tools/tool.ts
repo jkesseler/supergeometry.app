@@ -81,14 +81,14 @@ export interface AppContext {
 export function faceIndexOf(app: AppContext, ref: FaceRef): number | null {
   const faces = app.view.body(ref.body)?.faces ?? [];
   let best: { i: number; d: number } | null = null;
-  faces.forEach((f, i) => {
-    const align = f.normal[0] * ref.normal[0] + f.normal[1] * ref.normal[1] + f.normal[2] * ref.normal[2];
+  faces.forEach((face, i) => {
+    const align = face.normal[0] * ref.normal[0] + face.normal[1] * ref.normal[1] + face.normal[2] * ref.normal[2];
     if (align < 0.99) {
       return;
     }
-    const d = Math.hypot(f.center[0] - ref.center[0], f.center[1] - ref.center[1], f.center[2] - ref.center[2]);
-    if (!best || d < best.d) {
-      best = { i, d };
+    const distance = Math.hypot(face.center[0] - ref.center[0], face.center[1] - ref.center[1], face.center[2] - ref.center[2]);
+    if (!best || distance < best.d) {
+      best = { i, d: distance };
     }
   });
 
@@ -101,20 +101,20 @@ export function faceIndexOf(app: AppContext, ref: FaceRef): number | null {
  */
 export function oppositeFace(app: AppContext, body: string, face: number): { distance: number; point: Vec3 } | null {
   const b = app.view.body(body);
-  const f = b?.faces[face];
-  if (!b || !f?.plane) {
+  const faceInfo = b?.faces[face];
+  if (!b || !faceInfo?.plane) {
     return null;
   }
   let best: number | null = null;
-  for (const g of b.faces) {
-    if (!g.plane) {
+  for (const face of b.faces) {
+    if (!face.plane) {
       continue;
     }
-    const d = f.normal[0] * g.normal[0] + f.normal[1] * g.normal[1] + f.normal[2] * g.normal[2];
-    if (d > -0.999) {
+    const cosine = faceInfo.normal[0] * face.normal[0] + faceInfo.normal[1] * face.normal[1] + faceInfo.normal[2] * face.normal[2];
+    if (cosine > -0.999) {
       continue;
     }
-    const t = f.normal[0] * (f.center[0] - g.center[0]) + f.normal[1] * (f.center[1] - g.center[1]) + f.normal[2] * (f.center[2] - g.center[2]);
+    const t = faceInfo.normal[0] * (faceInfo.center[0] - face.center[0]) + faceInfo.normal[1] * (faceInfo.center[1] - face.center[1]) + faceInfo.normal[2] * (faceInfo.center[2] - face.center[2]);
     if (t > 1e-9 && (best === null || t < best)) {
       best = t;
     }
@@ -123,28 +123,28 @@ export function oppositeFace(app: AppContext, body: string, face: number): { dis
     return null;
   }
 
-  return { distance: best, point: [f.center[0] - f.normal[0] * best, f.center[1] - f.normal[1] * best, f.center[2] - f.normal[2] * best] };
+  return { distance: best, point: [faceInfo.center[0] - faceInfo.normal[0] * best, faceInfo.center[1] - faceInfo.normal[1] * best, faceInfo.center[2] - faceInfo.normal[2] * best] };
 }
 
 export function sameSel(a: Sel, b: Sel): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function hitToSel(h: PickHit | null): Sel | null {
-  if (!h) {
+export function hitToSel(hit: PickHit | null): Sel | null {
+  if (!hit) {
     return null;
   }
-  const { point: _p, ...rest } = h;
+  const { point: _p, ...rest } = hit;
 
   return rest as Sel;
 }
 
 // -------------------------------------------------- selection → references
 
-export function faceRefOf(app: AppContext, s: { body: string; face: number }): FaceRef | null {
-  const info = app.view.body(s.body)?.faces[s.face];
+export function faceRefOf(app: AppContext, facePick: { body: string; face: number }): FaceRef | null {
+  const info = app.view.body(facePick.body)?.faces[facePick.face];
 
-  return info ? { body: s.body, center: info.center, normal: info.normal, area: info.area, ...(info.step ? { step: info.step } : {}), ...(info.curve ? { curve: info.curve } : {}) } : null;
+  return info ? { body: facePick.body, center: info.center, normal: info.normal, area: info.area, ...(info.step ? { step: info.step } : {}), ...(info.curve ? { curve: info.curve } : {}) } : null;
 }
 
 /**
@@ -159,18 +159,18 @@ export function goneRefs<R extends FaceRef | EdgeRef>(app: AppContext, refs: R[]
     return [];
   }
 
-  return refs.filter((r) => {
+  return refs.filter((ref) => {
 
-    const b = app.view.body(r.body);
+    const b = app.view.body(ref.body);
     if (!b) {
       return true;
     }
     // (Or the step it was put down to when the pick was saved: a Move the body went through.)
-    if ('step' in r && r.step) {
-      return !b.faces.some(f => f.step === r.step || f.was === r.step);
+    if ('step' in ref && ref.step) {
+      return !b.faces.some(face => face.step === ref.step || face.was === ref.step);
     }
-    if ('steps' in r && r.steps) {
-      return !b.edges.some(e => e.steps?.join() === r.steps!.join() || e.was?.join() === r.steps!.join());
+    if ('steps' in ref && ref.steps) {
+      return !b.edges.some(e => e.steps?.join() === ref.steps!.join() || e.was?.join() === ref.steps!.join());
     }
 
     return false;
@@ -178,10 +178,10 @@ export function goneRefs<R extends FaceRef | EdgeRef>(app: AppContext, refs: R[]
 }
 
 export function edgeRefOf(
-  app: AppContext, s: { body: string; edge: number }): EdgeRef | null {
-  const info = app.view.body(s.body)?.edges[s.edge];
+  app: AppContext, edgePick: { body: string; edge: number }): EdgeRef | null {
+  const info = app.view.body(edgePick.body)?.edges[edgePick.edge];
 
-  return info ? { body: s.body, mid: info.mid, dir: info.dir, length: info.length, ...(info.steps ? { steps: info.steps } : {}), ...(info.curves ? { curves: info.curves } : {}) } : null;
+  return info ? { body: edgePick.body, mid: info.mid, dir: info.dir, length: info.length, ...(info.steps ? { steps: info.steps } : {}), ...(info.curves ? { curves: info.curves } : {}) } : null;
 
 }
 
@@ -191,24 +191,24 @@ export function edgeRefOf(
  * edges' lines are cut from one tessellation, so they share their points).
  */
 export function edgesOfFace(app: AppContext, body: string, face: number): number[] {
-  const m = app.view.body(body);
-  const g = m?.faceGroups.find(x => x.face === face);
-  if (!m || !g) {
+  const bodyMesh = app.view.body(body);
+  const faceGroup = bodyMesh?.faceGroups.find(faceGroup => faceGroup.face === face);
+  if (!bodyMesh || !faceGroup) {
     return [];
   }
   const key = (a: ArrayLike<number>, i: number) => `${Math.round(a[3 * i] * 1e4)},${Math.round(a[3 * i + 1] * 1e4)},${Math.round(a[3 * i + 2] * 1e4)}`;
   const corners = new Set<string>();
-  for (let k = g.start; k < g.start + g.count; k++) {
-    corners.add(key(m.positions, m.indices[k]));
+  for (let start = faceGroup.start; start < faceGroup.start + faceGroup.count; start++) {
+    corners.add(key(bodyMesh.positions, bodyMesh.indices[start]));
   }
 
-  return m.edgeGroups
+  return bodyMesh.edgeGroups
     .filter((eg) => {
       if (!eg.count) {
         return false;
       }
       for (let j = eg.start; j < eg.start + eg.count; j++) {
-        if (!corners.has(key(m.edgePositions, j))) {
+        if (!corners.has(key(bodyMesh.edgePositions, j))) {
           return false;
         }
       }
@@ -222,14 +222,14 @@ export function edgesOfFace(app: AppContext, body: string, face: number): number
 export function sourcesOf(app: AppContext, sel: Sel[]): ExtrudeSource[] {
   const out: ExtrudeSource[] = [];
   const bySketch = new Map<string, number[]>();
-  for (const s of sel) {
-    if (s.kind === 'profile') {
-      bySketch.set(s.sketch, [...(bySketch.get(s.sketch) ?? []), s.region]);
+  for (const highlight of sel) {
+    if (highlight.kind === 'profile') {
+      bySketch.set(highlight.sketch, [...(bySketch.get(highlight.sketch) ?? []), highlight.region]);
     }
-    if (s.kind === 'face') {
-      const f = faceRefOf(app, s);
-      if (f) {
-        out.push({ kind: 'face', face: f });
+    if (highlight.kind === 'face') {
+      const faceRef = faceRefOf(app, highlight);
+      if (faceRef) {
+        out.push({ kind: 'face', face: faceRef });
       }
     }
   }
@@ -257,7 +257,7 @@ function wholeShapes(all: Region[], tapped: Region[], drawnEntities: SketchEntit
   if (!outline.length || !tapped.length) {
     return tapped;
   }
-  const inside = (m: Region, q: [number, number]) => pointInPoly(q, m.outer.poly) && !m.holes.some(h => pointInPoly(q, h.poly));
+  const inside = (region: Region, q: [number, number]) => pointInPoly(q, region.outer.poly) && !region.holes.some(hole => pointInPoly(q, hole.poly));
   let onFace: Region[];
   let drawn: Region[];
   try {
@@ -267,11 +267,11 @@ function wholeShapes(all: Region[], tapped: Region[], drawnEntities: SketchEntit
     return tapped;
   }
   const out = new Set<Region>();
-  for (const r of tapped) {
-    const q = pointInRegion(r);
-    const shape = onFace.some(m => inside(m, q)) ? null : drawn.find(m => inside(m, q));
+  for (const region of tapped) {
+    const q = pointInRegion(region);
+    const shape = onFace.some(candidate => inside(candidate, q)) ? null : drawn.find(candidate => inside(candidate, q));
     if (!shape) {
-      out.add(r);
+      out.add(region);
       continue;
     }
     for (const a of all) {
@@ -290,9 +290,9 @@ function wholeShapes(all: Region[], tapped: Region[], drawnEntities: SketchEntit
  */
 export function faceAnchor(app: AppContext, body: string, face: number): { base: Vec3; normal: Vec3 } | null {
   const b = app.view.body(body);
-  const g = b?.faceGroups.find(x => x.face === face);
+  const faceGroup = b?.faceGroups.find(faceGroup => faceGroup.face === face);
   const info = b?.faces[face];
-  if (!b || !g || !info) {
+  if (!b || !faceGroup || !info) {
     return null;
   }
   const view = app.view.cam.viewDir().toArray() as Vec3;
@@ -300,27 +300,27 @@ export function faceAnchor(app: AppContext, body: string, face: number): { base:
   // The way out of the material, from each triangle's winding (the stored
   // vertex normals point the wrong way on faces OpenCascade keeps reversed,
   // e.g. a hole's wall - the arrow then pointed into the material).
-  const P = (i: number): Vec3 => {
-    const v = b.indices[i] * 3;
+  const vertexAt = (i: number): Vec3 => {
+    const offset = b.indices[i] * 3;
 
-    return [b.positions[v], b.positions[v + 1], b.positions[v + 2]];
+    return [b.positions[offset], b.positions[offset + 1], b.positions[offset + 2]];
   };
-  for (let i = g.start; i + 2 < g.start + g.count; i += 3) {
-    const [a, c, e] = [P(i), P(i + 1), P(i + 2)];
-    const u: Vec3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    const w: Vec3 = [e[0] - a[0], e[1] - a[1], e[2] - a[2]];
-    const cr: Vec3 = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
-    const L = Math.hypot(...cr);
-    if (L < 1e-12) {
+  for (let i = faceGroup.start; i + 2 < faceGroup.start + faceGroup.count; i += 3) {
+    const [a, vertexB, e] = [vertexAt(i), vertexAt(i + 1), vertexAt(i + 2)];
+    const edgeU: Vec3 = [vertexB[0] - a[0], vertexB[1] - a[1], vertexB[2] - a[2]];
+    const edgeV: Vec3 = [e[0] - a[0], e[1] - a[1], e[2] - a[2]];
+    const cr: Vec3 = [edgeU[1] * edgeV[2] - edgeU[2] * edgeV[1], edgeU[2] * edgeV[0] - edgeU[0] * edgeV[2], edgeU[0] * edgeV[1] - edgeU[1] * edgeV[0]];
+    const length = Math.hypot(...cr);
+    if (length < 1e-12) {
       continue;
     }
-    const n: Vec3 = [cr[0] / L, cr[1] / L, cr[2] / L];
-    const p: Vec3 = [(a[0] + c[0] + e[0]) / 3, (a[1] + c[1] + e[1]) / 3, (a[2] + c[2] + e[2]) / 3];
-    const facing = n[0] * view[0] + n[1] * view[1] + n[2] * view[2];
-    const d = Math.hypot(p[0] - info.center[0], p[1] - info.center[1], p[2] - info.center[2]);
-    const score = d + (facing > 0 ? 1e6 : 0);
+    const normal: Vec3 = [cr[0] / length, cr[1] / length, cr[2] / length];
+    const centroid: Vec3 = [(a[0] + vertexB[0] + e[0]) / 3, (a[1] + vertexB[1] + e[1]) / 3, (a[2] + vertexB[2] + e[2]) / 3];
+    const facing = normal[0] * view[0] + normal[1] * view[1] + normal[2] * view[2];
+    const distance = Math.hypot(centroid[0] - info.center[0], centroid[1] - info.center[1], centroid[2] - info.center[2]);
+    const score = distance + (facing > 0 ? 1e6 : 0);
     if (!best || score < best.score) {
-      best = { base: p, normal: n, score };
+      best = { base: centroid, normal: normal, score };
     }
   }
 
@@ -330,10 +330,10 @@ export function faceAnchor(app: AppContext, body: string, face: number): { base:
 /** Point + normal of a source, for placing handles. */
 export function sourceFrame(app: AppContext, src: ExtrudeSource): { base: Vec3; normal: Vec3 } {
   if (src.kind === 'face') {
-    const k = faceIndexOf(app, src.face);
-    const info = k !== null ? app.view.body(src.face.body)?.faces[k] : undefined;
-    if (k !== null && info && !info.plane) {
-      return faceAnchor(app, src.face.body, k) ?? { base: src.face.center, normal: src.face.normal };
+    const faceIndex = faceIndexOf(app, src.face);
+    const info = faceIndex !== null ? app.view.body(src.face.body)?.faces[faceIndex] : undefined;
+    if (faceIndex !== null && info && !info.plane) {
+      return faceAnchor(app, src.face.body, faceIndex) ?? { base: src.face.center, normal: src.face.normal };
     }
 
     return { base: src.face.center, normal: src.face.normal };
@@ -342,7 +342,7 @@ export function sourceFrame(app: AppContext, src: ExtrudeSource): { base: Vec3; 
   if (!plane) {
     return { base: [0, 0, 0], normal: [0, 0, 1] };
   }
-  const c = src.regions[0]?.c ?? [0, 0];
+  const center = src.regions[0]?.c ?? [0, 0];
   const y: Vec3 = [
     plane.normal[1] * plane.xDir[2] - plane.normal[2] * plane.xDir[1],
     plane.normal[2] * plane.xDir[0] - plane.normal[0] * plane.xDir[2],
@@ -350,7 +350,7 @@ export function sourceFrame(app: AppContext, src: ExtrudeSource): { base: Vec3; 
   ];
 
   return {
-    base: [plane.origin[0] + plane.xDir[0] * c[0] + y[0] * c[1], plane.origin[1] + plane.xDir[1] * c[0] + y[1] * c[1], plane.origin[2] + plane.xDir[2] * c[0] + y[2] * c[1]],
+    base: [plane.origin[0] + plane.xDir[0] * center[0] + y[0] * center[1], plane.origin[1] + plane.xDir[1] * center[0] + y[1] * center[1], plane.origin[2] + plane.xDir[2] * center[0] + y[2] * center[1]],
     normal: plane.normal
   };
 }
@@ -367,16 +367,16 @@ export function targetOf(app: AppContext, src: ExtrudeSource): string | undefine
   // Drawn on its own, but a body was made from the same region of it (a cookie
   // cutter's wall, 2 high with its flange, then taken on up to 15): that body.
   // Auto otherwise cut the region out of it, and what went past wasn't added.
-  const key = (r: { c: number[]; k?: string[] }) => (r.k?.length ? [...r.k].sort().join('|') : r.c.map(v => v.toFixed(3)).join(','));
+  const key = (region: { c: number[]; k?: string[] }) => (region.k?.length ? [...region.k].sort().join('|') : region.c.map(value => value.toFixed(3)).join(','));
   const mine = new Set(src.regions.map(key));
-  for (const f of app.store.features) {
-    if ((f.type !== 'extrude' && f.type !== 'revolve' && f.type !== 'sweep') || f.source.kind !== 'profile' || f.source.sketch !== src.sketch || f.mode === 'cut' || f.mode === 'intersect') {
+  for (const feature of app.store.features) {
+    if ((feature.type !== 'extrude' && feature.type !== 'revolve' && feature.type !== 'sweep') || feature.source.kind !== 'profile' || feature.source.sketch !== src.sketch || feature.mode === 'cut' || feature.mode === 'intersect') {
       continue;
     }
-    if (!f.source.regions.some(r => mine.has(key(r)))) {
+    if (!feature.source.regions.some(region => mine.has(key(region)))) {
       continue;
     }
-    const body = f.target ?? f.id;
+    const body = feature.target ?? feature.id;
     if (app.view.body(body)) {
       return body;
     }
@@ -387,7 +387,7 @@ export function targetOf(app: AppContext, src: ExtrudeSource): string | undefine
 
 /** Bodies referenced by the selection (faces/edges/vertices count for their body). */
 export function bodiesOf(sel: Sel[]): string[] {
-  const ids = sel.flatMap(s => (s.kind === 'body' || s.kind === 'face' || s.kind === 'edge' || s.kind === 'vertex' ? [s.body] : []));
+  const ids = sel.flatMap(highlight => (highlight.kind === 'body' || highlight.kind === 'face' || highlight.kind === 'edge' || highlight.kind === 'vertex' ? [highlight.body] : []));
 
   return [...new Set(ids)];
 }
@@ -398,10 +398,10 @@ export function bodiesOf(sel: Sel[]): string[] {
  * on/off view switches. (x, y): the pointer, in the canvas's pixels.
  */
 export function viewMenu(app: AppContext, x: number, y: number, head: (MenuRow | '-')[]): void {
-  const r = app.view.canvas.getBoundingClientRect();
-  const s = settings.value;
-  const flip = (k: 'showGrid' | 'showAxes' | 'showEdges' | 'showHiddenEdges', label: string): MenuRow => ({ label, checked: s[k], run: () => settings.set(k, !settings.value[k]) });
-  app.ui.menu(r.left + x, r.top + y, [
+  const rect = app.view.canvas.getBoundingClientRect();
+  const value = settings.value;
+  const flip = (key: 'showGrid' | 'showAxes' | 'showEdges' | 'showHiddenEdges', label: string): MenuRow => ({ label, checked: value[key], run: () => settings.set(key, !settings.value[key]) });
+  app.ui.menu(rect.left + x, rect.top + y, [
     ...head,
     ...(head.length ? (['-'] as const) : []),
     { label: 'Zoom to Fit', shortcut: 'F', run: () => app.view.fitAll() },

@@ -53,7 +53,7 @@ function flatten(items: ToolItem[], path: string[] = []): Listed[] {
     ...flatten(it.children ?? [], [...path, it.label])
   ]);
 }
-const plain = (l: Listed[]) => l.map(({ item: _, ...rest }) => rest);
+const plain = (listed: Listed[]) => listed.map(({ item: _, ...rest }) => rest);
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 export function installDebug(app: App): void {
@@ -61,7 +61,7 @@ export function installDebug(app: App): void {
   const ui = app.ui as unknown as UIInsides;
   const features = () => app.store.doc.features;
   /** A step or body by id or name. */
-  const featureOf = (key: string): Feature | undefined => features().find(f => f.id === key) ?? features().find(f => same(f.name, key));
+  const featureOf = (key: string): Feature | undefined => features().find(feature => feature.id === key) ?? features().find(feature => same(feature.name, key));
   const bodyId = (key: string): string => {
     const list = app.view.bodyList;
     const names = app.store.doc.names ?? {};
@@ -74,7 +74,7 @@ export function installDebug(app: App): void {
     if (!spec) {
       return [];
     }
-    const fields: PanelItem[] = (spec.fields ?? []).map(f => ({ type: 'number', label: f.label, value: f.value, onInput: f.onInput }));
+    const fields: PanelItem[] = (spec.fields ?? []).map(field => ({ type: 'number', label: field.label, value: field.value, onInput: field.onInput }));
 
     return [...fields, ...(spec.items ?? [])];
   };
@@ -86,8 +86,8 @@ export function installDebug(app: App): void {
 
     /** What's there now, in one look. */
     state() {
-      const r = app.result;
-      const byId = new Map(features().map(f => [f.id, f.name]));
+      const result = app.result;
+      const byId = new Map(features().map(feature => [feature.id, feature.name]));
 
       return {
         project: app.store.doc.name,
@@ -97,8 +97,8 @@ export function installDebug(app: App): void {
         panel: ui.panelSpec?.title ?? null,
         selection: app.selection,
         steps: features().length,
-        errors: (r?.errors ?? []).map(e => `${byId.get(e.featureId) ?? e.featureId}: ${e.message}`),
-        notes: (r?.notes ?? []).map(e => `${byId.get(e.featureId) ?? e.featureId}: ${e.message}`),
+        errors: (result?.errors ?? []).map(e => `${byId.get(e.featureId) ?? e.featureId}: ${e.message}`),
+        notes: (result?.notes ?? []).map(e => `${byId.get(e.featureId) ?? e.featureId}: ${e.message}`),
         toasts: ui.recentToasts?.slice(-5) ?? [],
         bodies: sg.bodies()
       };
@@ -108,7 +108,7 @@ export function installDebug(app: App): void {
     steps() {
       const errs = new Map((app.result?.errors ?? []).map(e => [e.featureId, e.message]));
 
-      return features().map((f, i) => ({ i: i + 1, id: f.id, name: f.name, type: f.type, ...(f.suppressed ? { off: true } : {}), ...(errs.has(f.id) ? { error: errs.get(f.id) } : {}) }));
+      return features().map((feature, i) => ({ i: i + 1, id: feature.id, name: feature.name, type: feature.type, ...(feature.suppressed ? { off: true } : {}), ...(errs.has(feature.id) ? { error: errs.get(feature.id) } : {}) }));
     },
 
     /** A step as stored (by id or name). */
@@ -134,7 +134,7 @@ export function installDebug(app: App): void {
     /** Run a tool or action by id or label (what's offered now first, then the main tools). */
     run(key: string): string {
       const all = [...flatten(shown()), ...flatten(app.mainTools())];
-      const hit = all.find(x => x.id === key) ?? all.find(x => same(x.label, key)) ?? all.find(x => same(x.path, key));
+      const hit = all.find(listed => listed.id === key) ?? all.find(listed => same(listed.label, key)) ?? all.find(listed => same(listed.path, key));
       if (!hit) {
         return `No "${key}" here. sg.actions() / sg.tools() list what there is.`;
       }
@@ -142,7 +142,7 @@ export function installDebug(app: App): void {
         return `"${hit.label}" is off: ${hit.why ?? '(no reason given)'}`;
       }
       if (!hit.item.run) {
-        return `"${hit.label}" opens a menu: ${(hit.item.children ?? []).map(c => c.label).join(', ')}`;
+        return `"${hit.label}" opens a menu: ${(hit.item.children ?? []).map(toolItem => toolItem.label).join(', ')}`;
       }
       hit.item.run();
 
@@ -163,7 +163,7 @@ export function installDebug(app: App): void {
      * `options` false: the tools are only started and looked at (much quicker).
      */
     async sweep(only?: string[], options = true): Promise<{ started: number; nothing: string[]; errors: string[]; options: string[]; audit: { pick: string; tool: string; handle: boolean; box: boolean; lit: boolean; numbers: number }[] }> {
-      const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+      const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
       const errors: string[] = [];
       const onError = (e: ErrorEvent) => errors.push(`${e.message}`);
       const onReject = (e: PromiseRejectionEvent) => errors.push(String((e.reason as Error)?.message ?? e.reason));
@@ -177,8 +177,8 @@ export function installDebug(app: App): void {
         await Promise.race([sg.idle(), wait(4000)]);
       };
       const reset = async () => {
-        for (const d of Array.from(document.querySelectorAll<HTMLElement>('.dialog-back .dialog, .bim-sheet')).reverse()) {
-          const b = Array.from(d.querySelectorAll('button')).find(x => /^(Cancel|Close)/i.test(x.textContent?.trim() ?? '') || /close/i.test(x.className) || /close/i.test(x.title));
+        for (const element of Array.from(document.querySelectorAll<HTMLElement>('.dialog-back .dialog, .bim-sheet')).reverse()) {
+          const b = Array.from(element.querySelectorAll('button')).find(button => /^(Cancel|Close)/i.test(button.textContent?.trim() ?? '') || /close/i.test(button.className) || /close/i.test(button.title));
           b?.click();
           await wait(120);
         }
@@ -187,11 +187,11 @@ export function installDebug(app: App): void {
           await wait(150);
         }
         for (let i = 0; i < 3; i++) {
-          const s = state();
-          if (!s?.about.startsWith('tool:')) {
+          const sweepState = state();
+          if (!sweepState?.about.startsWith('tool:')) {
             break;
           }
-          (s.cancel ?? s.done)?.();
+          (sweepState.cancel ?? sweepState.done)?.();
           await wait(200);
         }
         if (inside.tool.id !== 'select') {
@@ -210,16 +210,16 @@ export function installDebug(app: App): void {
       const leaves = () => {
         const out: { path: string; key: string }[] = [];
         const walk = (ws: SweepWord[], path: string[]) => {
-          for (const w of ws) {
-            if (w.kids?.length) {
-              walk(w.kids, [...path, w.label]);
-            } else if (w.run || w.value) {
-              out.push({ path: [...path, w.label].join(' > '), key: w.key });
+          for (const sweepWord of ws) {
+            if (sweepWord.kids?.length) {
+              walk(sweepWord.kids, [...path, sweepWord.label]);
+            } else if (sweepWord.run || sweepWord.value) {
+              out.push({ path: [...path, sweepWord.label].join(' > '), key: sweepWord.key });
             }
           }
         };
-        for (const g of state()?.groups ?? []) {
-          walk(g.words, [g.cap]);
+        for (const group of state()?.groups ?? []) {
+          walk(group.words, [group.cap]);
         }
 
         return out;
@@ -227,17 +227,17 @@ export function installDebug(app: App): void {
       const find = (key: string): SweepWord | null => {
         let hit: SweepWord | null = null;
         const walk = (ws: SweepWord[]) => {
-          for (const w of ws) {
-            if (w.key === key) {
-              hit = w;
+          for (const sweepWord of ws) {
+            if (sweepWord.key === key) {
+              hit = sweepWord;
             }
-            if (w.kids) {
-              walk(w.kids);
+            if (sweepWord.kids) {
+              walk(sweepWord.kids);
             }
           }
         };
-        for (const g of state()?.groups ?? []) {
-          walk(g.words);
+        for (const group of state()?.groups ?? []) {
+          walk(group.words);
         }
 
         return hit;
@@ -247,7 +247,7 @@ export function installDebug(app: App): void {
       const picks: [string, Sel[]][] = [['nothing', []]];
       const b0 = bodies[0];
       if (b0) {
-        const flat = b0.faces.findIndex(f => f.type === 'PLANE');
+        const flat = b0.faces.findIndex(face => face.type === 'PLANE');
         const straight = b0.edges.findIndex(e => e.type === 'LINE');
         if (flat >= 0) {
           picks.push(['face', [{ kind: 'face', body: b0.id, face: flat }]]);
@@ -261,16 +261,16 @@ export function installDebug(app: App): void {
         }
       }
       for (const b of bodies) {
-        const round = b.faces.findIndex(f => f.type !== 'PLANE');
+        const round = b.faces.findIndex(face => face.type !== 'PLANE');
         const rim = b.edges.findIndex(e => e.type === 'CIRCLE');
-        if (round >= 0 && !picks.some(p => p[0] === 'round face')) {
+        if (round >= 0 && !picks.some(pick => pick[0] === 'round face')) {
           picks.push(['round face', [{ kind: 'face', body: b.id, face: round }]]);
         }
-        if (rim >= 0 && !picks.some(p => p[0] === 'round edge')) {
+        if (rim >= 0 && !picks.some(pick => pick[0] === 'round edge')) {
           picks.push(['round edge', [{ kind: 'edge', body: b.id, edge: rim }]]);
         }
       }
-      const loose = features().find(f => f.type === 'sketch' && !features().some(g => JSON.stringify(g).includes(`"sketch":"${f.id}"`) && g.id !== f.id));
+      const loose = features().find(feature => feature.type === 'sketch' && !features().some(otherFeature => JSON.stringify(otherFeature).includes(`"sketch":"${feature.id}"`) && otherFeature.id !== feature.id));
       if (loose) {
         picks.push(['sketch shape', [{ kind: 'profile', sketch: loose.id, region: 0 }]]);
       }
@@ -292,18 +292,18 @@ export function installDebug(app: App): void {
           await reset();
           app.setSelection(sel);
           await settle();
-          const w = find(leaf.key);
-          if (!w) {
+          const sweepWord = find(leaf.key);
+          if (!sweepWord) {
             out.nothing.push(`${name}: ${leaf.path} (not offered a second time)`);
             continue;
           }
           const before = snap();
           const e0 = errors.length;
           try {
-            if (w.value) {
-              w.value.put(w.value.now + (w.value.max !== undefined && w.value.now >= w.value.max ? -1 : 1));
+            if (sweepWord.value) {
+              sweepWord.value.put(sweepWord.value.now + (sweepWord.value.max !== undefined && sweepWord.value.now >= sweepWord.value.max ? -1 : 1));
             } else {
-              w.run?.();
+              sweepWord.run?.();
             }
           } catch (err) {
             out.errors.push(`${name}: ${leaf.path}: ${(err as Error).message}`);
@@ -318,19 +318,19 @@ export function installDebug(app: App): void {
             continue;
           }
           out.started++;
-          const s = state();
-          if (!s?.about.startsWith('tool:')) {
+          const sweepState = state();
+          if (!sweepState?.about.startsWith('tool:')) {
             continue;
           }
           // What a tool that takes a size should have: a handle on the model, a box for the value, its picks lit.
-          const numbers = s.words.filter(x => x.value && (x.value.kind === 'length' || x.value.kind === 'angle')).length;
-          out.audit.push({ pick: name, tool: leaf.path.split(' > ').pop()!, handle: Array.from(app.view.helpers).some(h => /Handle|Gimbal/.test(h.constructor.name)), box: Array.from(document.querySelectorAll<HTMLElement>('.dim-widget')).some(d => d.getBoundingClientRect().width > 0), lit: app.selection.length > 0 || ((app.view as unknown as { highlightGroup?: { children: unknown[] } }).highlightGroup?.children.length ?? 0) > 0, numbers });
+          const numbers = sweepState.words.filter(word => word.value && (word.value.kind === 'length' || word.value.kind === 'angle')).length;
+          out.audit.push({ pick: name, tool: leaf.path.split(' > ').pop()!, handle: Array.from(app.view.helpers).some(helper => /Handle|Gimbal/.test(helper.constructor.name)), box: Array.from(document.querySelectorAll<HTMLElement>('.dim-widget')).some(element => element.getBoundingClientRect().width > 0), lit: app.selection.length > 0 || ((app.view as unknown as { highlightGroup?: { children: unknown[] } }).highlightGroup?.children.length ?? 0) > 0, numbers });
           if (!options) {
             continue;
           }
           // Every option of it.
-          for (const key of s.words.map(x => x.key)) {
-            const at = () => state()?.words.find(x => x.key === key);
+          for (const key of sweepState.words.map(word => word.key)) {
+            const at = () => state()?.words.find(word => word.key === key);
             const it = at();
             if (!it) {
               continue;
@@ -339,23 +339,23 @@ export function installDebug(app: App): void {
             const e1 = errors.length;
             try {
               if (it.kind === 'choice' && it.kids) {
-                const first = it.kids.find(k => k.on)?.key;
-                for (const kid of it.kids.map(k => k.key)) {
-                  const k = at()?.kids?.find(x => x.key === kid);
-                  if (!k || k.on) {
+                const first = it.kids.find(child => child.on)?.key;
+                for (const kid of it.kids.map(child => child.key)) {
+                  const child = at()?.kids?.find(child => child.key === kid);
+                  if (!child || child.on) {
                     continue;
                   }
-                  k.run?.();
+                  child.run?.();
                   await settle();
                   if (inside.tool.id === 'select') {
                     break;
                   }
-                  const now = at()?.kids?.find(x => x.key === kid);
-                  if (k.kind === 'verb' && now && !now.on) {
-                    out.options.push(`${what} > ${k.label}: not set`);
+                  const now = at()?.kids?.find(child => child.key === kid);
+                  if (child.kind === 'verb' && now && !now.on) {
+                    out.options.push(`${what} > ${child.label}: not set`);
                   }
                 }
-                const back = at()?.kids?.find(x => x.key === first);
+                const back = at()?.kids?.find(child => child.key === first);
                 if (back && !back.on) {
                   (back.run?.(), await settle());
                 }
@@ -370,11 +370,11 @@ export function installDebug(app: App): void {
                 now?.run?.();
                 await settle();
               } else if (it.kind === 'value' && it.value) {
-                const v = it.value;
-                v.put(v.kind === 'int' ? v.now + 1 : v.kind === 'angle' ? v.now + 5 : v.now === 0 ? 3 : v.now * 1.25);
+                const value = it.value;
+                value.put(value.kind === 'int' ? value.now + 1 : value.kind === 'angle' ? value.now + 5 : value.now === 0 ? 3 : value.now * 1.25);
                 await settle();
                 const now = at();
-                if (now?.value && now.value.now === v.now && (v.max === undefined || v.now < v.max)) {
+                if (now?.value && now.value.now === value.now && (value.max === undefined || value.now < value.max)) {
                   out.options.push(`${what}: value did not change`);
                 }
               } else if (it.kind === 'slot') {
@@ -428,7 +428,7 @@ export function installDebug(app: App): void {
 
     /** A body's faces: index, type, centre, normal, area (to find the one to pick). */
     faces(body: string) {
-      return (app.view.body(bodyId(body))?.faces ?? []).map((f, i) => ({ i, type: f.type, center: f.center, normal: f.normal, area: +f.area.toFixed(3), ...(f.round ? { round: f.round } : {}) }));
+      return (app.view.body(bodyId(body))?.faces ?? []).map((faceInfo, i) => ({ i, type: faceInfo.type, center: faceInfo.center, normal: faceInfo.normal, area: +faceInfo.area.toFixed(3), ...(faceInfo.round ? { round: faceInfo.round } : {}) }));
     },
 
     /** A body's edges: index, type, ends. */
@@ -454,11 +454,11 @@ export function installDebug(app: App): void {
             case 'slot':
               return { type: it.type, label: it.label, value: it.value, ...(it.active ? { waiting: true } : {}), filled: it.filled };
             case 'choice':
-              return { type: it.type, label: it.label ?? '', value: it.value, options: it.options.map(o => o.label) };
+              return { type: it.type, label: it.label ?? '', value: it.value, options: it.options.map(option => option.label) };
             case 'button':
               return { type: it.type, label: it.label };
             case 'chips':
-              return { type: it.type, label: it.label ?? '', chips: it.chips.map(c => c.label + (c.on ? ' (on)' : '')) };
+              return { type: it.type, label: it.label ?? '', chips: it.chips.map(chip => chip.label + (chip.on ? ' (on)' : '')) };
             default:
               return { type: (it as { type: string }).type };
           }
@@ -486,13 +486,13 @@ export function installDebug(app: App): void {
 
             return `${row.label} ${value === undefined ? !row.value : !!value ? 'on' : 'off'}`;
           case 'choice': {
-            const o = row.options.find(x => x.id === value || same(x.label, String(value)));
-            if (!o) {
-              return `${row.label}: no "${value}" (${row.options.map(x => x.label).join(', ')})`;
+            const option = row.options.find(option => option.id === value || same(option.label, String(value)));
+            if (!option) {
+              return `${row.label}: no "${value}" (${row.options.map(option => option.label).join(', ')})`;
             }
-            row.onChange(o.id);
+            row.onChange(option.id);
 
-            return `${row.label} = ${o.label}`;
+            return `${row.label} = ${option.label}`;
           }
           case 'slot':
             row.onClick();
@@ -507,19 +507,19 @@ export function installDebug(app: App): void {
       // An option of a choice with no label (the X / Y / Z, XY / XZ / YZ by a slot), or a chip.
       for (const it of items) {
         if (it.type === 'choice') {
-          const o = it.options.find(x => same(x.label, label));
-          if (o) {
-            it.onChange(o.id);
+          const option = it.options.find(option => same(option.label, label));
+          if (option) {
+            it.onChange(option.id);
 
-            return `chose ${o.label}`;
+            return `chose ${option.label}`;
           }
         }
         if (it.type === 'chips') {
-          const c = it.chips.find(x => same(x.label, label));
-          if (c) {
-            c.onClick();
+          const chip = it.chips.find(chip => same(chip.label, label));
+          if (chip) {
+            chip.onClick();
 
-            return `tapped ${c.label}`;
+            return `tapped ${chip.label}`;
           }
         }
       }
@@ -582,12 +582,12 @@ export function installDebug(app: App): void {
 
     /** Wait until the geometry engine has nothing left to do (and the page has drawn it). */
     async idle(timeoutMs = 30000): Promise<boolean> {
-      const k = app.kernel as unknown as { pending: Map<number, unknown>; regenRunning: boolean };
+      const kernel = app.kernel as unknown as { pending: Map<number, unknown>; regenRunning: boolean };
       const t0 = performance.now();
       let quiet = 0;
       while (performance.now() - t0 < timeoutMs) {
-        await new Promise(r => setTimeout(r, 50));
-        quiet = k.pending.size || k.regenRunning ? 0 : quiet + 1;
+        await new Promise(resolve => setTimeout(resolve, 50));
+        quiet = kernel.pending.size || kernel.regenRunning ? 0 : quiet + 1;
         if (quiet >= 3) {
           return true;
         }
@@ -618,8 +618,8 @@ export function installDebug(app: App): void {
     /** What there is, with one line each. */
     help(): number {
       const lines: string[] = Object.entries(sg as Record<string, unknown>)
-        .filter(([k]) => k !== 'app')
-        .map(([k, v]) => (typeof v === 'function' ? `sg.${k}(${((v as () => void).toString().match(/^[^(]*\(([^)]*)\)/)?.[1] ?? '').replace(/\s+/g, ' ')})` : `sg.${k}`));
+        .filter(([key]) => key !== 'app')
+        .map(([key, value]) => (typeof value === 'function' ? `sg.${key}(${((value as () => void).toString().match(/^[^(]*\(([^)]*)\)/)?.[1] ?? '').replace(/\s+/g, ' ')})` : `sg.${key}`));
       console.log(lines.join('\n'));
 
       return lines.length;

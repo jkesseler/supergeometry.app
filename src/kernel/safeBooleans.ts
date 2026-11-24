@@ -100,14 +100,14 @@ export function useSafeBooleans(): void {
     return;
   }
   done = true;
-  const p = _3DShape.prototype as unknown as Record<string, unknown>;
-  p.fuse = function (this: { wrapped: unknown }, other: { wrapped: unknown }, opts?: Opts) {
+  const prototype = _3DShape.prototype as unknown as Record<string, unknown>;
+  prototype.fuse = function (this: { wrapped: unknown }, other: { wrapped: unknown }, opts?: Opts) {
     return run('fuse', this, other, opts);
   };
-  p.cut = function (this: { wrapped: unknown }, tool: { wrapped: unknown }, opts?: Opts) {
+  prototype.cut = function (this: { wrapped: unknown }, tool: { wrapped: unknown }, opts?: Opts) {
     return run('cut', this, tool, opts);
   };
-  p.intersect = function (this: { wrapped: unknown }, tool: { wrapped: unknown }, opts?: Opts) {
+  prototype.intersect = function (this: { wrapped: unknown }, tool: { wrapped: unknown }, opts?: Opts) {
     return run('common', this, tool, opts);
   };
   // A shape's edges and faces, each once, in the order found: replicad checks
@@ -140,16 +140,16 @@ function unique<T>(shape: unknown, kind: unknown, wrap: (item: unknown) => T): T
   try {
     for (; ex.More(); ex.Next()) {
       const item = ex.Current();
-      const h = oc.ReplicadShapeHasher.HashCode(item, HASH_CODE_MAX);
-      const b = buckets.get(h);
-      if (b?.some(x => x.IsSame(item))) {
+      const hashCode = oc.ReplicadShapeHasher.HashCode(item, HASH_CODE_MAX);
+      const b = buckets.get(hashCode);
+      if (b?.some(shape => shape.IsSame(item))) {
         item.delete();
         continue;
       }
       if (b) {
         b.push(item);
       } else {
-        buckets.set(h, [item]);
+        buckets.set(hashCode, [item]);
       }
       found.push(item);
     }

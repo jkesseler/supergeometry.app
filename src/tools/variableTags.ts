@@ -138,9 +138,9 @@ export class VariableTags {
   set(tags: VarTag[]): void {
     this.tags = tags;
     const live = new Set(tags.filter(t => t.at).map(t => t.name));
-    for (const [n, chip] of this.chips) {
-      if (!live.has(n)) {
-        (chip.remove(), this.chips.delete(n));
+    for (const [name, chip] of this.chips) {
+      if (!live.has(name)) {
+        (chip.remove(), this.chips.delete(name));
       }
     }
     for (const t of tags) {
@@ -172,7 +172,7 @@ export class VariableTags {
   }
 
   private exprOf(name: string): string {
-    return this.app.variables().find(v => v.name === name)?.expr ?? '';
+    return this.app.variables().find(variable => variable.name === name)?.expr ?? '';
   }
 
   private kindOf(name: string): VarKind {
@@ -222,15 +222,15 @@ export class VariableTags {
     const name = this.openName;
     const tag = name ? this.tags.find(t => t.name === name) : undefined;
     const near = new Set([...(tag?.from ?? []), ...(tag?.to ?? [])]);
-    for (const [n, c] of this.chips) {
-      c.classList.toggle('sel', n === name);
-      c.classList.toggle('rel', !!tag && near.has(n));
-      c.classList.toggle('faded', !!tag && n !== name && !near.has(n));
+    for (const [chipName, chip] of this.chips) {
+      chip.classList.toggle('sel', chipName === name);
+      chip.classList.toggle('rel', !!tag && near.has(chipName));
+      chip.classList.toggle('faded', !!tag && chipName !== name && !near.has(chipName));
     }
-    const lines = (tag?.to ?? []).map(n => `${n} = ${bareExpr(this.exprOf(n))}`);
+    const lines = (tag?.to ?? []).map(name => `${name} = ${bareExpr(this.exprOf(name))}`);
     this.rel.textContent = '';
-    for (const l of lines.slice(0, 3)) {
-      this.rel.append(el('div', '', `\u2192 ${l}`));
+    for (const line of lines.slice(0, 3)) {
+      this.rel.append(el('div', '', `\u2192 ${line}`));
     }
     if (lines.length > 3) {
       this.rel.append(el('div', '', `+${lines.length - 3} more`));
@@ -245,10 +245,10 @@ export class VariableTags {
       return;
     }
     const kind = this.kindOf(name);
-    const v = this.app.check(name, text, kind);
+    const checked = this.app.check(name, text, kind);
     const formula = /[a-z_]/i.test(text.replace(/(\d)\s*(mm|cm|m|in|ft)\b/gi, '$1'));
     // A length in the unit in use, without it (like the value itself).
-    this.boxValue.textContent = v === null || !formula ? '' : `= ${kind === 'length' ? trim(toDisplay(v), 3) : kind === 'angle' ? `${trim(v, 2)}°` : trim(v, 3)}`;
+    this.boxValue.textContent = checked === null || !formula ? '' : `= ${kind === 'length' ? trim(toDisplay(checked), 3) : kind === 'angle' ? `${trim(checked, 2)}°` : trim(checked, 3)}`;
   }
 
   /** Typed or dragged: checked, shown - not applied yet. */
@@ -292,12 +292,12 @@ export class VariableTags {
       if (!chip || !t.at) {
         continue;
       }
-      const s = this.view.toScreen(t.at);
-      chip.hidden = !s;
-      if (!s) {
+      const screenPoint = this.view.toScreen(t.at);
+      chip.hidden = !screenPoint;
+      if (!screenPoint) {
         continue;
       }
-      let [x, y] = s;
+      let [x, y] = screenPoint;
       while (taken.some(([a, b]) => Math.abs(a - x) < 30 && Math.abs(b - y) < 18)) {
         y += 20;
       }
@@ -315,17 +315,17 @@ export class VariableTags {
       return;
     }
     // The box beside its tag, kept on screen.
-    const w = this.box.offsetWidth;
-    const h = this.box.offsetHeight;
-    const x = Math.max(6, Math.min(window.innerWidth - w - 6, open[0] + 18));
-    const y = Math.max(56, Math.min(window.innerHeight - h - 6, open[1] - h / 2));
+    const offsetWidth = this.box.offsetWidth;
+    const offsetHeight = this.box.offsetHeight;
+    const x = Math.max(6, Math.min(window.innerWidth - offsetWidth - 6, open[0] + 18));
+    const y = Math.max(56, Math.min(window.innerHeight - offsetHeight - 6, open[1] - offsetHeight / 2));
     this.box.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     // What's made from it, under the box (above it at the bottom of the screen).
     if (!this.rel.hidden) {
       const rh = this.rel.offsetHeight;
-      const below = y + h + 4 + rh < window.innerHeight - 6;
+      const below = y + offsetHeight + 4 + rh < window.innerHeight - 6;
       const rx = Math.max(6, Math.min(window.innerWidth - this.rel.offsetWidth - 6, x));
-      this.rel.style.transform = `translate(${Math.round(rx)}px, ${Math.round(below ? y + h + 4 : y - rh - 4)}px)`;
+      this.rel.style.transform = `translate(${Math.round(rx)}px, ${Math.round(below ? y + offsetHeight + 4 : y - rh - 4)}px)`;
     }
   }
 
@@ -341,44 +341,44 @@ export class VariableTags {
     }
     const tag = this.tags.find(t => t.name === name)!;
     const add = (tagName: string, attrs: Record<string, string>) => {
-      const n = document.createElementNS(SVG_NS, tagName);
-      for (const [k, v] of Object.entries(attrs)) {
-        n.setAttribute(k, v);
+      const element = document.createElementNS(SVG_NS, tagName);
+      for (const [key, attr] of Object.entries(attrs)) {
+        element.setAttribute(key, attr);
       }
-      n.setAttribute('class', 'mark');
-      this.lines.append(n);
+      element.setAttribute('class', 'mark');
+      this.lines.append(element);
     };
-    const f = (x: number) => x.toFixed(1);
-    for (const m of tag.marks) {
-      const pts = m.map(p => this.view.toScreen(p as Vec3));
-      if (pts.some(p => !p)) {
+    const round1 = (x: number) => x.toFixed(1);
+    for (const mark of tag.marks) {
+      const pts = mark.map(point => this.view.toScreen(point as Vec3));
+      if (pts.some(point => !point)) {
         continue;
       }
-      add('polyline', { points: pts.map(p => `${f(p![0])},${f(p![1])}`).join(' ') });
+      add('polyline', { points: pts.map(point => `${round1(point![0])},${round1(point![1])}`).join(' ') });
     }
-    const first = tag.marks[0]?.map(p => this.view.toScreen(p as Vec3));
-    if (!first || first.some(p => !p)) {
+    const first = tag.marks[0]?.map(point => this.view.toScreen(point as Vec3));
+    if (!first || first.some(screenPoint => !screenPoint)) {
       return;
     }
     if (tag.kind === 'angle') {
       // The pivot.
-      add('circle', { cx: f(first[0]![0]), cy: f(first[0]![1]), r: '3' });
+      add('circle', { cx: round1(first[0]![0]), cy: round1(first[0]![1]), r: '3' });
 
       return;
     }
     // Where it's measured from and to: a tick across each end.
-    for (const m of tag.marks) {
-      if (m.length !== 2) {
+    for (const mark of tag.marks) {
+      if (mark.length !== 2) {
         continue;
       }
-      const [p, q] = m.map(x => this.view.toScreen(x as Vec3));
-      if (!p || !q) {
+      const [start, q] = mark.map(point => this.view.toScreen(point as Vec3));
+      if (!start || !q) {
         continue;
       }
-      const len = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
-      const [nx, ny] = [(-(q[1] - p[1]) / len) * 7, ((q[0] - p[0]) / len) * 7];
-      for (const e of [p, q]) {
-        add('line', { x1: f(e[0] - nx), y1: f(e[1] - ny), x2: f(e[0] + nx), y2: f(e[1] + ny), 'stroke-dasharray': 'none' });
+      const len = Math.hypot(q[0] - start[0], q[1] - start[1]) || 1;
+      const [nx, ny] = [(-(q[1] - start[1]) / len) * 7, ((q[0] - start[0]) / len) * 7];
+      for (const e of [start, q]) {
+        add('line', { x1: round1(e[0] - nx), y1: round1(e[1] - ny), x2: round1(e[0] + nx), y2: round1(e[1] + ny), 'stroke-dasharray': 'none' });
       }
     }
   }

@@ -8,12 +8,12 @@ import { block, cylinder, done, extrude, poly, sketch, XY } from './kit';
 import { build, near, say } from './grid';
 import type { Feature } from '../src/doc/types';
 
-const A = block('A', 40, 30, 20); // 0..40, 0..30, 0..20
+const featuresA = block('A', 40, 30, 20); // 0..40, 0..30, 0..20
 const VA = 40 * 30 * 20;
-const prism = (id: string, pts: [number, number][], z: number, h: number): Feature[] => {
-  const s = sketch(`${id}-s`, XY(z), [poly(`${id}-p`, pts)]);
+const prism = (id: string, pts: [number, number][], z: number, height: number): Feature[] => {
+  const feature = sketch(`${id}-s`, XY(z), [poly(`${id}-p`, pts)]);
 
-  return [s, extrude(id, s, h)];
+  return [feature, extrude(id, feature, height)];
 };
 // name, the tool's steps, V(A n B) where it is known exactly (null: taken from the engine's own Intersect), pieces Subtract leaves
 const tools: [string, Feature[], number | null, number?][] = [
@@ -44,8 +44,8 @@ const tools: [string, Feature[], number | null, number?][] = [
   ['a triangle prism, a corner edge on a wall', prism('B', [[0, 15], [20, 5], [20, 25]], 5, 30), 200 * 15]
 ];
 
-for (const [name, B, known, left = 1] of tools) {
-  const base = [...A, ...B];
+for (const [name, featuresB, known, left = 1] of tools) {
+  const base = [...featuresA, ...featuresB];
   const VB = (await build(base)).vol.B;
   const run = (op: string, pieces = 1) => build([...base, { id: 'op', name: 'op', type: 'boolean', op, target: 'A', tools: ['B'] } as Feature], { A: pieces });
   const inter = await run('intersect');

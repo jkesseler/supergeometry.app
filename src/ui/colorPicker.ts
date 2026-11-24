@@ -9,28 +9,28 @@ import { textField } from './textField';
 type HSV = [number, number, number];
 
 function hexToHsv(hex: string): HSV {
-  const n = parseInt(hex.replace('#', ''), 16);
-  const r = ((n >> 16) & 255) / 255;
-  const g = ((n >> 8) & 255) / 255;
-  const b = (n & 255) / 255;
-  const max = Math.max(r, g, b);
-  const d = max - Math.min(r, g, b);
-  let h = 0;
-  if (d > 0) {
-    h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  const rgb = parseInt(hex.replace('#', ''), 16);
+  const red = ((rgb >> 16) & 255) / 255;
+  const green = ((rgb >> 8) & 255) / 255;
+  const b = (rgb & 255) / 255;
+  const max = Math.max(red, green, b);
+  const chroma = max - Math.min(red, green, b);
+  let hue = 0;
+  if (chroma > 0) {
+    hue = max === red ? ((green - b) / chroma + 6) % 6 : max === green ? (b - red) / chroma + 2 : (red - green) / chroma + 4;
   }
 
-  return [h * 60, max ? d / max : 0, max];
+  return [hue * 60, max ? chroma / max : 0, max];
 }
 
-function hsvToHex([h, s, v]: HSV): string {
-  const f = (k: number) => {
-    const x = (k + h / 60) % 6;
+function hsvToHex([hue, saturation, brightness]: HSV): string {
+  const channel = (channelOffset: number) => {
+    const x = (channelOffset + hue / 60) % 6;
 
-    return Math.round((v - v * s * Math.max(0, Math.min(x, 4 - x, 1))) * 255);
+    return Math.round((brightness - brightness * saturation * Math.max(0, Math.min(x, 4 - x, 1))) * 255);
   };
 
-  return '#' + [f(5), f(3), f(1)].map(c => c.toString(16).padStart(2, '0')).join('');
+  return '#' + [channel(5), channel(3), channel(1)].map(channelValue => channelValue.toString(16).padStart(2, '0')).join('');
 }
 
 const HEX = /^#?[0-9a-f]{6}$/i;
@@ -51,18 +51,18 @@ export function pickColor(title: string, start: string, live: (hex: string) => v
     box.append(grip, el('div', 'panel-title', title));
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      const r = box.getBoundingClientRect();
-      const dx = e.clientX - r.left;
-      const dy = e.clientY - r.top;
+      const rect = box.getBoundingClientRect();
+      const dx = e.clientX - rect.left;
+      const dy = e.clientY - rect.top;
       try {
         grip.setPointerCapture(e.pointerId);
       } catch {
         // (no live pointer to hold)
       }
-      const move = (m: PointerEvent) => {
+      const move = (event: PointerEvent) => {
         // Kept whole on screen.
-        const x = Math.min(window.innerWidth - r.width, Math.max(0, m.clientX - dx));
-        const y = Math.min(window.innerHeight - r.height, Math.max(0, m.clientY - dy));
+        const x = Math.min(window.innerWidth - rect.width, Math.max(0, event.clientX - dx));
+        const y = Math.min(window.innerHeight - rect.height, Math.max(0, event.clientY - dy));
         box.style.position = 'fixed';
         box.style.left = `${x}px`;
         box.style.top = `${y}px`;
@@ -108,8 +108,8 @@ export function pickColor(title: string, start: string, live: (hex: string) => v
     // Drag on the square or the strip (a finger or a mouse).
     const drag = (target: HTMLElement, at: (fx: number, fy: number) => void) => {
       const move = (e: PointerEvent) => {
-        const r = target.getBoundingClientRect();
-        at(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)));
+        const rect = target.getBoundingClientRect();
+        at(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)), Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)));
         show();
       };
       target.addEventListener('pointerdown', (e) => {
@@ -133,19 +133,19 @@ export function pickColor(title: string, start: string, live: (hex: string) => v
     drag(sv, (fx, fy) => (hsv = [hsv[0], fx, 1 - fy]));
     drag(hue, fx => (hsv = [Math.min(359.9, fx * 360), hsv[1], hsv[2]]));
     input.addEventListener('input', () => {
-      const v = input.value.trim();
-      if (!HEX.test(v)) {
+      const value = input.value.trim();
+      if (!HEX.test(value)) {
         return;
       }
-      hsv = hexToHsv(v.startsWith('#') ? v : `#${v}`);
+      hsv = hexToHsv(value.startsWith('#') ? value : `#${value}`);
       show(true);
     });
 
     const buttons = el('div', 'panel-buttons');
-    const close = (v: string | null) => {
+    const close = (value: string | null) => {
       back.remove();
       window.removeEventListener('keydown', onKey, true);
-      resolve(v);
+      resolve(value);
     };
     const done = textButton('Done', 'Enter', () => close(hsvToHex(hsv)), true);
     buttons.append(textButton('Cancel', 'Esc', () => close(null)), done);

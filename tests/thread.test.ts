@@ -23,12 +23,12 @@ const head = [{ id: 'h', kind: 'polygon', center: [0, 0], radius: R6, sides: 6, 
 const screw: any[] = [
   { id: 's1', name: 'Sketch', type: 'sketch', plane: XY, entities: head },
   { id: 'b', name: 'Head', type: 'extrude', source: { kind: 'profile', sketch: 's1', regions: regs(head) }, distance: 6.4, mode: 'new' },
-  { id: 'shank', name: 'Shank', type: 'extrude', source: { kind: 'profile', sketch: 's1', regions: regs(head).filter((r: any) => r.a < 100) }, distance: -30, mode: 'join', target: 'b' }
+  { id: 'shank', name: 'Shank', type: 'extrude', source: { kind: 'profile', sketch: 's1', regions: regs(head).filter((region: any) => region.a < 100) }, distance: -30, mode: 'join', target: 'b' }
 ];
 const r0: any = await regenerate(screw);
 const s0 = debugBodies().get('b')!;
 const v0 = Math.abs(measureVolume(s0));
-const shankFace = r0.bodies[0].faces.find((f: any) => f.type === 'CYLINDRE');
+const shankFace = r0.bodies[0].faces.find((face: any) => face.type === 'CYLINDRE');
 check('a plain M10 screw blank', !r0.errors.length && !!shankFace, r0.errors.map((e: any) => e.message).join());
 const thr = { id: 't', name: 'Thread', type: 'thread', face: { body: 'b', center: shankFace.center, normal: shankFace.normal, area: shankFace.area }, pitch: 1.5 };
 let t = Date.now();
@@ -46,10 +46,10 @@ check('…label says M10 × 1.5', threadLabel(10, false, 1.5) === 'M10 × 1.5' &
 const nutS = [{ id: 'n', kind: 'polygon', center: [0, 0], radius: R6, sides: 6, angle: 0 }, { id: 'h', kind: 'circle', center: [0, 0], radius: 4.25 }];
 const nut: any[] = [
   { id: 's2', name: 'Nut sketch', type: 'sketch', plane: XY, entities: nutS },
-  { id: 'nut', name: 'Nut', type: 'extrude', source: { kind: 'profile', sketch: 's2', regions: regs(nutS).filter((r: any) => r.a > 100) }, distance: 8, mode: 'new' }
+  { id: 'nut', name: 'Nut', type: 'extrude', source: { kind: 'profile', sketch: 's2', regions: regs(nutS).filter((region: any) => region.a > 100) }, distance: 8, mode: 'new' }
 ];
 const rn: any = await regenerate(nut);
-const hole = rn.bodies[0].faces.find((f: any) => f.type === 'CYLINDRE');
+const hole = rn.bodies[0].faces.find((face: any) => face.type === 'CYLINDRE');
 const vn0 = Math.abs(measureVolume(debugBodies().get('nut')!));
 check('hole picks M10 × 1.5 from its tap-drill size', defaultPitch(8.5, true) === 1.5 && threadLabel(8.5, true, 1.5) === 'M10 × 1.5', `${defaultPitch(8.5, true)} ${threadLabel(8.5, true, 1.5)}`);
 t = Date.now();
@@ -61,7 +61,7 @@ const rl: any = await regenerate([...screw, { ...thr, left: true }]);
 check('left-handed thread too', !rl.errors.length && isHealthy(healthOf(debugBodies().get('b')!)), rl.errors.map((e: any) => e.message).join());
 const rc: any = await regenerate([...screw, { ...thr, pitch: 9 }]);
 check('a pitch too coarse for the diameter: a clear message', rc.errors.some((e: any) => /too coarse|shorter/.test(e.message)), rc.errors.map((e: any) => e.message).join());
-const flat = r0.bodies[0].faces.find((f: any) => f.type === 'PLANE');
+const flat = r0.bodies[0].faces.find((face: any) => face.type === 'PLANE');
 const rf: any = await regenerate([...screw, { ...thr, face: { body: 'b', center: flat.center, normal: flat.normal, area: flat.area } }]);
 check('a flat face: refused with a message', rf.errors.some((e: any) => /round faces/.test(e.message)), rf.errors.map((e: any) => e.message).join());
 // Every common size, outside on a rod and inside a nut, right and left hand:
@@ -71,47 +71,47 @@ import { threadFace } from '../src/kernel/engine';
 import { defaultPitch as dp } from '../src/kernel/threads';
 const bad: string[] = [];
 const stray: string[] = [];
-let n = 0;
+let count = 0;
 t = Date.now();
-for (const D of [3, 4, 5, 6, 8, 10, 12, 16, 20, 24]) {
-  const P = dp(D, false);
+for (const diameter of [3, 4, 5, 6, 8, 10, 12, 16, 20, 24]) {
+  const pitch = dp(diameter, false);
   for (const left of [false, true]) {
-    n += 2;
+    count += 2;
     try {
-      const rod = makeCylinder(D / 2, 3 * D, [0, 0, 0]) as any;
-      const out = threadFace(rod, rod.faces.find((f: any) => f.geomType === 'CYLINDRE'), P, left);
+      const rod = makeCylinder(diameter / 2, 3 * diameter, [0, 0, 0]) as any;
+      const out = threadFace(rod, rod.faces.find((face: any) => face.geomType === 'CYLINDRE'), pitch, left);
       if (!isHealthy(healthOf(out))) {
-        bad.push(`M${D} rod${left ? ' left' : ''}: not clean`);
+        bad.push(`M${diameter} rod${left ? ' left' : ''}: not clean`);
       }
       // Clean ends: no flat bits left of the groove's stopped ends, nor where its pieces met - just the two end faces.
-      const flats = out.faces.filter((f: any) => f.geomType === 'PLANE').length;
+      const flats = out.faces.filter((face: any) => face.geomType === 'PLANE').length;
       if (flats !== 2) {
-        stray.push(`M${D} rod${left ? ' left' : ''}: ${flats} flat faces`);
+        stray.push(`M${diameter} rod${left ? ' left' : ''}: ${flats} flat faces`);
       }
     } catch (e) {
-      bad.push(`M${D} rod${left ? ' left' : ''}: ${(e as Error).message}`);
+      bad.push(`M${diameter} rod${left ? ' left' : ''}: ${(e as Error).message}`);
     }
     try {
-      const nutB = (makeBaseBox(D * 2, D * 2, D) as any).cut(makeCylinder((D - P) / 2, D * 3, [0, 0, -D]));
-      const hole = nutB.faces.find((f: any) => f.geomType === 'CYLINDRE');
-      const out = threadFace(nutB, hole, P, left);
+      const nutB = (makeBaseBox(diameter * 2, diameter * 2, diameter) as any).cut(makeCylinder((diameter - pitch) / 2, diameter * 3, [0, 0, -diameter]));
+      const hole = nutB.faces.find((face: any) => face.geomType === 'CYLINDRE');
+      const out = threadFace(nutB, hole, pitch, left);
       if (!isHealthy(healthOf(out))) {
-        bad.push(`M${D} nut${left ? ' left' : ''}: not clean`);
+        bad.push(`M${diameter} nut${left ? ' left' : ''}: not clean`);
       }
-      const flats = out.faces.filter((f: any) => f.geomType === 'PLANE').length;
+      const flats = out.faces.filter((face: any) => face.geomType === 'PLANE').length;
       if (flats !== 6) {
-        stray.push(`M${D} nut${left ? ' left' : ''}: ${flats} flat faces`);
+        stray.push(`M${diameter} nut${left ? ' left' : ''}: ${flats} flat faces`);
       }
     } catch (e) {
-      bad.push(`M${D} nut${left ? ' left' : ''}: ${(e as Error).message}`);
+      bad.push(`M${diameter} nut${left ? ' left' : ''}: ${(e as Error).message}`);
     }
   }
 }
-check(`M3–M24, rods and nuts, both hands: all ${n} threaded`, !bad.length, `${bad.join('; ')} (${Date.now() - t} ms)`);
+check(`M3–M24, rods and nuts, both hands: all ${count} threaded`, !bad.length, `${bad.join('; ')} (${Date.now() - t} ms)`);
 // The groove stops just short of each end; at a free end a 45° chamfer to the root takes away what that left
 // (a thin ring of the face and the groove's flat stub: stray little faces along the end's edge).
 check('…their ends clean: only the end faces flat (chamfered at the free ends)', !stray.length, stray.join('; '));
 // Under the screw's head the thread stops short, unchamfered: the head is as it was (checked above), and the free end is chamfered.
-const cones = s1.faces.filter(f => f.geomType === 'CONE').map(f => f.center.z);
+const cones = s1.faces.filter(face => face.geomType === 'CONE').map(face => face.center.z);
 check('…the screw: its free end chamfered, nothing at the head', cones.length > 0 && cones.every(z => z < -25), cones.map(z => z.toFixed(2)).join(' '));
 process.exit(failed ? 1 : 0);

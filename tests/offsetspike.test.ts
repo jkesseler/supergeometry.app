@@ -7,9 +7,9 @@ import { closestOnPrim, entityPrims } from '../src/sketch/curves';
 import { patternSpacing, roundSig } from '../src/geom';
 import type { SketchEntity, Vec2 } from '../src/doc/types';
 
-const L = (id: string, a: Vec2, b: Vec2): SketchEntity => ({ id, kind: 'line', a, b });
+const line = (id: string, a: Vec2, b: Vec2): SketchEntity => ({ id, kind: 'line', a, b });
 // Sketch 11's outline (closed, clockwise as drawn).
-const P: Vec2[] = [
+const OUTLINE: Vec2[] = [
   [4099.992124946016, -1000.0940924028508],
   [3200.0088891664545, -3300.0067232037127],
   [5400, -8800],
@@ -20,52 +20,52 @@ const P: Vec2[] = [
   [7402.335373455015, -5299.7272120100615],
   [6897.664625653082, -1000.0940924028508]
 ];
-const loop = (pts: Vec2[]) => pts.map((p, i) => L(`e${i}`, p, pts[(i + 1) % pts.length]));
+const loop = (pts: Vec2[]) => pts.map((point, i) => line(`e${i}`, point, pts[(i + 1) % pts.length]));
 
-function segsCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
-  const o = (p: Vec2, q: Vec2, r: Vec2) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
-  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d);
+function segsCross(a: Vec2, b: Vec2, pointC: Vec2, pointD: Vec2): boolean {
+  const orientation = (first: Vec2, q: Vec2, third: Vec2) => (q[0] - first[0]) * (third[1] - first[1]) - (q[1] - first[1]) * (third[0] - first[0]);
+  const d1 = orientation(pointC, pointD, a), d2 = orientation(pointC, pointD, b), d3 = orientation(a, b, pointC), d4 = orientation(a, b, pointD);
 
   return d1 * d2 < 0 && d3 * d4 < 0;
 }
 
-/** Offset pieces: none crosses the original, each point stays about |d| from it (never nearer). */
-function checkOffset(orig: SketchEntity[], d: number, label: string) {
-  const out = offsetChain(orig, orig[0].id, d);
+/** Offset pieces: none crosses the original, each point stays about |`distance`| from it (never nearer). */
+function checkOffset(orig: SketchEntity[], distance: number, label: string) {
+  const out = offsetChain(orig, orig[0].id, distance);
   if (!out) {
     return;
   } // nothing left at this distance is fine
   const made = out.slice(orig.length) as Extract<SketchEntity, { kind: 'line' }>[];
   assert.ok(made.length >= 3, `${label}: a closed outline`);
-  for (const m of made) {
-    for (const o of orig as Extract<SketchEntity, { kind: 'line' }>[]) {
-      assert.ok(!segsCross(m.a, m.b, o.a, o.b), `${label}: offset ${JSON.stringify([m.a, m.b])} crosses the original`);
+  for (const madeLine of made) {
+    for (const originalLine of orig as Extract<SketchEntity, { kind: 'line' }>[]) {
+      assert.ok(!segsCross(madeLine.a, madeLine.b, originalLine.a, originalLine.b), `${label}: offset ${JSON.stringify([madeLine.a, madeLine.b])} crosses the original`);
     }
   }
-  const dist = (q: Vec2) => Math.min(...orig.map(o => closestOnPrim(entityPrims(o)[0], q).d));
-  for (const m of made) {
+  const dist = (q: Vec2) => Math.min(...orig.map(sketchEntity => closestOnPrim(entityPrims(sketchEntity)[0], q).d));
+  for (const madeLine of made) {
     for (let t = 0; t <= 1; t += 0.05) {
-      const q: Vec2 = [m.a[0] + (m.b[0] - m.a[0]) * t, m.a[1] + (m.b[1] - m.a[1]) * t];
-      assert.ok(dist(q) > Math.abs(d) * 0.98, `${label}: a point of the offset is only ${dist(q).toFixed(1)} from the original (d ${d})`);
+      const q: Vec2 = [madeLine.a[0] + (madeLine.b[0] - madeLine.a[0]) * t, madeLine.a[1] + (madeLine.b[1] - madeLine.a[1]) * t];
+      assert.ok(dist(q) > Math.abs(distance) * 0.98, `${label}: a point of the offset is only ${dist(q).toFixed(1)} from the original (d ${distance})`);
     }
   }
 }
 
 const checks: [string, () => void][] = [
   ['default offset is a tenth of the curve, rounded', () => {
-    assert.equal(defaultOffset(L('a', [0, 0], [100, 0])), 10);
-    assert.equal(defaultOffset(L('a', [0, 0], [2174, 0])), 220);
+    assert.equal(defaultOffset(line('a', [0, 0], [100, 0])), 10);
+    assert.equal(defaultOffset(line('a', [0, 0], [2174, 0])), 220);
     assert.equal(defaultOffset({ id: 'c', kind: 'circle', center: [0, 0], radius: 5 }), 1);
     assert.equal(defaultOffset({ id: 'r', kind: 'rect', center: [0, 0], w: 3000, h: 400, rotation: 0 }), 40);
     // Sketch 11's first side (2470 long): 250, not 2.
-    assert.equal(defaultOffset(L('s', P[0], P[1])), 250);
+    assert.equal(defaultOffset(line('s', OUTLINE[0], OUTLINE[1])), 250);
   }],
   ['inward past the notch: the lower lobe keeps its own outline (joined where the offsets meet)', () => {
-    const orig = loop(P);
+    const orig = loop(OUTLINE);
     const out = offsetChain(orig, orig[0].id, -800)!;
     const made = out.slice(orig.length) as Extract<SketchEntity, { kind: 'line' }>[];
     // Some offset runs through the lobe (around x 2200..3000, y -7500..-9100).
-    assert.ok(made.some(m => [m.a, m.b].some(q => q[0] < 3000 && q[1] < -7400 && q[1] > -9200)), 'lobe offset missing');
+    assert.ok(made.some(madeLine => [madeLine.a, madeLine.b].some(q => q[0] < 3000 && q[1] < -7400 && q[1] > -9200)), 'lobe offset missing');
     checkOffset(orig, -800, 'lobe');
   }],
   ['pattern spacing starts just clear of the shape', () => {
@@ -76,39 +76,39 @@ const checks: [string, () => void][] = [
     assert.ok(patternSpacing(37) > 37);
     assert.equal(roundSig(0.0347), 0.035);
   }],
-  ["Sketch 11 outline offset inward 840 doesn't cross it", () => checkOffset(loop(P), -840, 'in 840')],
+  ["Sketch 11 outline offset inward 840 doesn't cross it", () => checkOffset(loop(OUTLINE), -840, 'in 840')],
   ['Sketch 11 outline at many distances, both ways', () => {
-    for (const d of [50, 200, 400, 600, 840, 1000, 1300]) {
-      checkOffset(loop(P), d, `out ${d}`);
-      checkOffset(loop(P), -d, `in ${d}`);
+    for (const distance of [50, 200, 400, 600, 840, 1000, 1300]) {
+      checkOffset(loop(OUTLINE), distance, `out ${distance}`);
+      checkOffset(loop(OUTLINE), -distance, `in ${distance}`);
     }
   }],
   ['random star-ish outlines with sharp corners', () => {
     let seed = 3;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     for (let t = 0; t < 120; t++) {
-      const n = 5 + Math.floor(rnd() * 6);
+      const sides = 5 + Math.floor(rnd() * 6);
       const pts: Vec2[] = [];
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * 2 * Math.PI;
-        const r = i % 2 ? 30 + rnd() * 40 : 100 + rnd() * 60;
-        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+      for (let i = 0; i < sides; i++) {
+        const a = (i / sides) * 2 * Math.PI;
+        const radius = i % 2 ? 30 + rnd() * 40 : 100 + rnd() * 60;
+        pts.push([Math.cos(a) * radius, Math.sin(a) * radius]);
       }
       if (rnd() < 0.5) {
         pts.reverse();
       }
-      for (const d of [3, 8, 15]) {
-        checkOffset(loop(pts), d, `case ${t} out ${d}`);
-        checkOffset(loop(pts), -d, `case ${t} in ${d}`);
+      for (const distance of [3, 8, 15]) {
+        checkOffset(loop(pts), distance, `case ${t} out ${distance}`);
+        checkOffset(loop(pts), -distance, `case ${t} in ${distance}`);
       }
     }
   }]
 ];
 
 let failed = 0;
-for (const [name, f] of checks) {
+for (const [name, run] of checks) {
   try {
-    f();
+    run();
     console.log(`ok   ${name}`);
   } catch (e) {
     failed++;

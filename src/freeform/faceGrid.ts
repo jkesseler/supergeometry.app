@@ -12,7 +12,7 @@ type P2 = [number, number];
 
 /** The outer outline of a set of triangles, in order (anticlockwise about `normal`), in the plane's 2D. */
 function outline(tris: [Vec3, Vec3, Vec3][], uv: (p: Vec3) => P2): P2[] {
-  const key = (p: P2) => `${Math.round(p[0] * 1e5)},${Math.round(p[1] * 1e5)}`;
+  const key = (point: P2) => `${Math.round(point[0] * 1e5)},${Math.round(point[1] * 1e5)}`;
   const at = new Map<string, P2>();
   const uses = new Map<string, number>();
   const dir = new Map<string, string>();
@@ -23,14 +23,14 @@ function outline(tris: [Vec3, Vec3, Vec3][], uv: (p: Vec3) => P2): P2[] {
     if (Math.abs(area) < 1e-14) {
       continue;
     }
-    const r = area > 0 ? q : [q[0], q[2], q[1]];
-    for (let k = 0; k < 3; k++) {
-      const a = key(r[k]);
-      const b = key(r[(k + 1) % 3]);
+    const ordered = area > 0 ? q : [q[0], q[2], q[1]];
+    for (let corner = 0; corner < 3; corner++) {
+      const a = key(ordered[corner]);
+      const b = key(ordered[(corner + 1) % 3]);
       if (a === b) {
         continue;
       }
-      at.set(a, r[k]);
+      at.set(a, ordered[corner]);
       const e = a < b ? `${a}|${b}` : `${b}|${a}`;
       uses.set(e, (uses.get(e) ?? 0) + 1);
       dir.set(`${a}>${b}`, b);
@@ -38,8 +38,8 @@ function outline(tris: [Vec3, Vec3, Vec3][], uv: (p: Vec3) => P2): P2[] {
   }
   // Border edges (used once), followed head to tail.
   const next = new Map<string, string>();
-  for (const [k, b] of dir) {
-    const a = k.slice(0, k.indexOf('>'));
+  for (const [key, b] of dir) {
+    const a = key.slice(0, key.indexOf('>'));
     const e = a < b ? `${a}|${b}` : `${b}|${a}`;
     if (uses.get(e) === 1) {
       next.set(a, b);
@@ -52,17 +52,17 @@ function outline(tris: [Vec3, Vec3, Vec3][], uv: (p: Vec3) => P2): P2[] {
       continue;
     }
     const loop: P2[] = [];
-    let k: string | undefined = start;
-    while (k && !seen.has(k)) {
-      seen.add(k);
-      loop.push(at.get(k)!);
-      k = next.get(k);
+    let key: string | undefined = start;
+    while (key && !seen.has(key)) {
+      seen.add(key);
+      loop.push(at.get(key)!);
+      key = next.get(key);
     }
     if (loop.length >= 3) {
       loops.push(loop);
     }
   }
-  const signed = (l: P2[]) => l.reduce((s, p, i) => s + p[0] * l[(i + 1) % l.length][1] - l[(i + 1) % l.length][0] * p[1], 0) / 2;
+  const signed = (loop: P2[]) => loop.reduce((total, point, i) => total + point[0] * loop[(i + 1) % loop.length][1] - loop[(i + 1) % loop.length][0] * point[1], 0) / 2;
   // The outer one: the biggest (anticlockwise).
   loops.sort((a, b) => Math.abs(signed(b)) - Math.abs(signed(a)));
   const outer = loops[0] ?? [];
@@ -76,8 +76,8 @@ function outline(tris: [Vec3, Vec3, Vec3][], uv: (p: Vec3) => P2): P2[] {
  * goes through the face's corners (an L's inward one too), so the smooth
  * surface laid on the grid can have its border on the face's edges.
  */
-function resample(pts: P2[], n: number): P2[] {
-  const out = evenly(pts, n);
+function resample(pts: P2[], count: number): P2[] {
+  const out = evenly(pts, count);
   const acc = [0];
   for (let i = 1; i < pts.length; i++) {
     acc.push(acc[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
@@ -92,19 +92,19 @@ function resample(pts: P2[], n: number): P2[] {
       continue;
     }
     // (The sample whose place along the side is nearest: the order of the points stays.)
-    const k = Math.round((acc[i] / total) * n);
-    if (k < 1 || k > n - 1 || used.has(k)) {
+    const slot = Math.round((acc[i] / total) * count);
+    if (slot < 1 || slot > count - 1 || used.has(slot)) {
       continue;
     }
-    used.add(k);
-    out[k] = [pts[i][0], pts[i][1]];
+    used.add(slot);
+    out[slot] = [pts[i][0], pts[i][1]];
   }
 
   return out;
 }
 
-/** `n` + 1 points evenly along a polyline (by length), both ends included. */
-function evenly(pts: P2[], n: number): P2[] {
+/** `count` + 1 points evenly along a polyline (by length), both ends included. */
+function evenly(pts: P2[], count: number): P2[] {
   const acc = [0];
   for (let i = 1; i < pts.length; i++) {
     acc.push(acc[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
@@ -112,13 +112,13 @@ function evenly(pts: P2[], n: number): P2[] {
   const total = acc[acc.length - 1];
   const out: P2[] = [];
   let i = 1;
-  for (let k = 0; k <= n; k++) {
-    const want = (total * k) / n;
+  for (let index = 0; index <= count; index++) {
+    const want = (total * index) / count;
     while (i < pts.length - 1 && acc[i] < want) {
       i++;
     }
-    const f = acc[i] > acc[i - 1] ? (want - acc[i - 1]) / (acc[i] - acc[i - 1]) : 0;
-    const t = Math.max(0, Math.min(1, f));
+    const fraction = acc[i] > acc[i - 1] ? (want - acc[i - 1]) / (acc[i] - acc[i - 1]) : 0;
+    const t = Math.max(0, Math.min(1, fraction));
     out.push([pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t]);
   }
 
@@ -132,12 +132,12 @@ function evenly(pts: P2[], n: number): P2[] {
  * spread evenly (a round face).
  */
 function fourCorners(loop: P2[], acc: number[], total: number): number[][] {
-  const N = loop.length;
-  const turn = loop.map((p, i) => {
-    const a = loop[(i + N - 1) % N];
-    const b = loop[(i + 1) % N];
-    const d1 = [p[0] - a[0], p[1] - a[1]];
-    const d2 = [b[0] - p[0], b[1] - p[1]];
+  const count = loop.length;
+  const turn = loop.map((point, i) => {
+    const a = loop[(i + count - 1) % count];
+    const b = loop[(i + 1) % count];
+    const d1 = [point[0] - a[0], point[1] - a[1]];
+    const d2 = [b[0] - point[0], b[1] - point[1]];
 
     // (Signed: turning in, at a corner going into the face like an L's, is negative.)
     return Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]);
@@ -150,10 +150,10 @@ function fourCorners(loop: P2[], acc: number[], total: number): number[][] {
   const cand = [...corners];
   // Too few corners: points evenly round it to choose from too.
   if (corners.length < 4) {
-    for (let k = 0; k < 32; k++) {
-      const want = (total * k) / 32;
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const want = (total * attempt) / 32;
       let i = 0;
-      while (i < N - 1 && acc[i + 1] <= want) {
+      while (i < count - 1 && acc[i + 1] <= want) {
         i++;
       }
       if (!cand.includes(i)) {
@@ -165,14 +165,14 @@ function fourCorners(loop: P2[], acc: number[], total: number): number[][] {
   const isCorner = new Set(corners);
   const gap = (i: number, j: number) => (acc[j] - acc[i] + total) % total;
   const all: { q: number[]; score: number }[] = [];
-  const C = cand.length;
-  for (let a = 0; a < C; a++) {
-    for (let b = a + 1; b < C; b++) {
-      for (let c = b + 1; c < C; c++) {
-        for (let d = c + 1; d < C; d++) {
-          const q = [cand[a], cand[b], cand[c], cand[d]];
-          const m = Math.min(gap(q[0], q[1]), gap(q[1], q[2]), gap(q[2], q[3]), gap(q[3], q[0]));
-          const score = m / total + 0.2 * q.filter(i => isCorner.has(i)).length;
+  const countC = cand.length;
+  for (let a = 0; a < countC; a++) {
+    for (let b = a + 1; b < countC; b++) {
+      for (let cornerC = b + 1; cornerC < countC; cornerC++) {
+        for (let cornerD = cornerC + 1; cornerD < countC; cornerD++) {
+          const q = [cand[a], cand[b], cand[cornerC], cand[cornerD]];
+          const shortest = Math.min(gap(q[0], q[1]), gap(q[1], q[2]), gap(q[2], q[3]), gap(q[3], q[0]));
+          const score = shortest / total + 0.2 * q.filter(i => isCorner.has(i)).length;
           all.push({ q, score });
         }
       }
@@ -180,44 +180,44 @@ function fourCorners(loop: P2[], acc: number[], total: number): number[][] {
   }
 
   // Best first (the next ones are tried when a grid on the best won't fit the face).
-  return all.sort((a, b) => b.score - a.score).slice(0, 12).map(x => x.q);
+  return all.sort((a, b) => b.score - a.score).slice(0, 12).map(scored => scored.q);
 }
 
 /**
  * A cage over the flat face made of `tris` (points relative to `center`):
- * `n` cells across its longer way.
+ * `divisions` cells across its longer way.
  */
-export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3, n = 5): Cage | null {
+export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3, divisions = 5): Cage | null {
   const nn = norm(normal);
-  const u = xDirFor(nn);
-  const v = norm(cross(nn, u));
-  const uv = (p: Vec3): P2 => [dot(sub(p, center), u), dot(sub(p, center), v)];
+  const xDir = xDirFor(nn);
+  const vAxis = norm(cross(nn, xDir));
+  const uv = (point: Vec3): P2 => [dot(sub(point, center), xDir), dot(sub(point, center), vAxis)];
   const drawn = outline(tris, uv);
   if (drawn.length < 3) {
     return null;
   }
   // Points along its straight edges too (a triangle's outline is three points:
   // nowhere for a fourth corner of the grid to go but a point along an edge).
-  const around = drawn.reduce((t, p, i) => t + Math.hypot(drawn[(i + 1) % drawn.length][0] - p[0], drawn[(i + 1) % drawn.length][1] - p[1]), 0);
+  const around = drawn.reduce((t, point, i) => t + Math.hypot(drawn[(i + 1) % drawn.length][0] - point[0], drawn[(i + 1) % drawn.length][1] - point[1]), 0);
   const loop: P2[] = [];
-  drawn.forEach((p, i) => {
+  drawn.forEach((point, i) => {
     const q = drawn[(i + 1) % drawn.length];
-    const pieces = Math.max(1, Math.ceil((Math.hypot(q[0] - p[0], q[1] - p[1]) / around) * 32));
-    for (let k = 0; k < pieces; k++) {
-      loop.push([p[0] + ((q[0] - p[0]) * k) / pieces, p[1] + ((q[1] - p[1]) * k) / pieces]);
+    const pieces = Math.max(1, Math.ceil((Math.hypot(q[0] - point[0], q[1] - point[1]) / around) * 32));
+    for (let piece = 0; piece < pieces; piece++) {
+      loop.push([point[0] + ((q[0] - point[0]) * piece) / pieces, point[1] + ((q[1] - point[1]) * piece) / pieces]);
     }
   });
-  const N = loop.length;
+  const count = loop.length;
   const acc = [0];
-  for (let i = 1; i <= N; i++) {
-    acc.push(acc[i - 1] + Math.hypot(loop[i % N][0] - loop[i - 1][0], loop[i % N][1] - loop[i - 1][1]));
+  for (let i = 1; i <= count; i++) {
+    acc.push(acc[i - 1] + Math.hypot(loop[i % count][0] - loop[i - 1][0], loop[i % count][1] - loop[i - 1][1]));
   }
-  const total = acc[N];
+  const total = acc[count];
   for (const cs of fourCorners(loop, acc, total)) {
     // The four sides, each from one corner to the next.
     const side = (a: number, b: number): P2[] => {
       const out: P2[] = [];
-      for (let i = a; ; i = (i + 1) % N) {
+      for (let i = a; ; i = (i + 1) % count) {
         out.push(loop[i]);
         if (i === b) {
           break;
@@ -226,13 +226,13 @@ export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3,
 
       return out;
     };
-    const sides = [0, 1, 2, 3].map(k => side(cs[k], cs[(k + 1) % 4]));
-    const length = (s: P2[]) => s.reduce((t, p, i) => (i ? t + Math.hypot(p[0] - s[i - 1][0], p[1] - s[i - 1][1]) : 0), 0);
+    const sides = [0, 1, 2, 3].map(corner => side(cs[corner], cs[(corner + 1) % 4]));
+    const length = (side: P2[]) => side.reduce((t, point, i) => (i ? t + Math.hypot(point[0] - side[i - 1][0], point[1] - side[i - 1][1]) : 0), 0);
     const Lu = (length(sides[0]) + length(sides[2])) / 2;
     const Lv = (length(sides[1]) + length(sides[3])) / 2;
     const big = Math.max(Lu, Lv);
-    const nu = Math.max(2, Math.round((n * Lu) / big));
-    const nv = Math.max(2, Math.round((n * Lv) / big));
+    const nu = Math.max(2, Math.round((divisions * Lu) / big));
+    const nv = Math.max(2, Math.round((divisions * Lv) / big));
     const bottom = resample(sides[0], nu);
     const right = resample(sides[1], nv);
     const top = resample(sides[2], nu).reverse();
@@ -242,7 +242,7 @@ export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3,
     const at: P2[] = [];
     for (let j = 0; j <= nv; j++) {
       for (let i = 0; i <= nu; i++) {
-        const s = i / nu;
+        const fraction = i / nu;
         const t = j / nv;
         if (j === 0) {
           at.push(bottom[i]);
@@ -253,10 +253,10 @@ export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3,
         } else if (i === nu) {
           at.push(right[j]);
         } else {
-          const c = (k: 0 | 1) =>
-            (1 - t) * bottom[i][k] + t * top[i][k] + (1 - s) * left[j][k] + s * right[j][k]
-            - ((1 - s) * (1 - t) * bottom[0][k] + s * (1 - t) * bottom[nu][k] + (1 - s) * t * top[0][k] + s * t * top[nu][k]);
-          at.push([c(0), c(1)]);
+          const coordinate = (axis: 0 | 1) =>
+            (1 - t) * bottom[i][axis] + t * top[i][axis] + (1 - fraction) * left[j][axis] + fraction * right[j][axis]
+            - ((1 - fraction) * (1 - t) * bottom[0][axis] + fraction * (1 - t) * bottom[nu][axis] + (1 - fraction) * t * top[0][axis] + fraction * t * top[nu][axis]);
+          at.push([coordinate(0), coordinate(1)]);
         }
       }
     }
@@ -264,18 +264,18 @@ export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3,
     // Evened out (each inside point to the middle of its four neighbours) a
     // step at a time, till they're all on the face (evened out all the way they
     // can end up outside again); never: null (a coarser grid may do).
-    const inside = (p: P2) => {
-      let w = false;
-      for (let a = 0, b = N - 1; a < N; b = a++) {
+    const inside = (point: P2) => {
+      let isInside = false;
+      for (let a = 0, b = count - 1; a < count; b = a++) {
         const [pa, pb] = [loop[a], loop[b]];
-        if (pa[1] > p[1] !== pb[1] > p[1] && p[0] < ((pb[0] - pa[0]) * (p[1] - pa[1])) / (pb[1] - pa[1]) + pa[0]) {
-          w = !w;
+        if (pa[1] > point[1] !== pb[1] > point[1] && point[0] < ((pb[0] - pa[0]) * (point[1] - pa[1])) / (pb[1] - pa[1]) + pa[0]) {
+          isInside = !isInside;
         }
       }
 
-      return w;
+      return isInside;
     };
-    const allIn = () => at.every((p, k) => k % (nu + 1) === 0 || k % (nu + 1) === nu || k <= nu || k >= nv * (nu + 1) || inside(p));
+    const allIn = () => at.every((point, index) => index % (nu + 1) === 0 || index % (nu + 1) === nu || index <= nu || index >= nv * (nu + 1) || inside(point));
     for (let round = 0; round < 400 && !allIn(); round++) {
       for (let j = 1; j < nv; j++) {
         for (let i = 1; i < nu; i++) {
@@ -287,7 +287,7 @@ export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3,
     if (!allIn()) {
       continue;
     }
-    const verts: Vec3[] = at.map(p => [u[0] * p[0] + v[0] * p[1], u[1] * p[0] + v[1] * p[1], u[2] * p[0] + v[2] * p[1]]);
+    const verts: Vec3[] = at.map(point => [xDir[0] * point[0] + vAxis[0] * point[1], xDir[1] * point[0] + vAxis[1] * point[1], xDir[2] * point[0] + vAxis[2] * point[1]]);
     const faces: [number, number, number, number][] = [];
     for (let j = 0; j < nv; j++) {
       for (let i = 0; i < nu; i++) {
@@ -307,36 +307,36 @@ export function faceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3,
  * over all of them, seen along it.
  */
 export function facesNormal(normals: Vec3[]): Vec3 {
-  const s = normals.reduce((a, n) => {
-    const m = norm(n);
+  const sum = normals.reduce((a, normal) => {
+    const unit = norm(normal);
 
-    return [a[0] + m[0], a[1] + m[1], a[2] + m[2]] as Vec3;
+    return [a[0] + unit[0], a[1] + unit[1], a[2] + unit[2]] as Vec3;
   }, [0, 0, 0] as Vec3);
 
-  return norm(s);
+  return norm(sum);
 }
 
 /**
- * How far along `normal` from `p` the faces made of `tris` are (the nearest
+ * How far along `normal` from `point` the faces made of `tris` are (the nearest
  * way; null when no triangle is under or over it).
  */
-export function toFaces(p: Vec3, normal: Vec3, tris: [Vec3, Vec3, Vec3][]): number | null {
+export function toFaces(point: Vec3, normal: Vec3, tris: [Vec3, Vec3, Vec3][]): number | null {
   let best: number | null = null;
-  for (const [a, b, c] of tris) {
-    // Where the line p + t·normal meets the triangle's plane, and whether that is inside it.
+  for (const [a, b, vertexC] of tris) {
+    // Where the line point + t·normal meets the triangle's plane, and whether that is inside it.
     const e1 = sub(b, a);
-    const e2 = sub(c, a);
-    const h = cross(normal, e2);
-    const det = dot(e1, h);
+    const e2 = sub(vertexC, a);
+    const normalCross = cross(normal, e2);
+    const det = dot(e1, normalCross);
     if (Math.abs(det) < 1e-12) {
       continue;
     }
-    const s = sub(p, a);
-    const u = dot(s, h) / det;
-    const q = cross(s, e1);
-    const v = dot(normal, q) / det;
+    const offset = sub(point, a);
+    const baryU = dot(offset, normalCross) / det;
+    const q = cross(offset, e1);
+    const baryV = dot(normal, q) / det;
     const eps = 1e-6;
-    if (u < -eps || v < -eps || u + v > 1 + eps) {
+    if (baryU < -eps || baryV < -eps || baryU + baryV > 1 + eps) {
       continue;
     }
     const t = dot(e2, q) / det;
@@ -350,14 +350,14 @@ export function toFaces(p: Vec3, normal: Vec3, tris: [Vec3, Vec3, Vec3][]): numb
 
 /** A grid laid flat (points relative to `center`) put down onto the faces it was laid over, each point straight along `normal`. */
 export function liftOnto(cage: Cage, center: Vec3, normal: Vec3, tris: [Vec3, Vec3, Vec3][]): Cage {
-  const n = norm(normal);
+  const unitNormal = norm(normal);
 
   return {
     faces: cage.faces,
-    verts: cage.verts.map((v) => {
-      const t = toFaces([center[0] + v[0], center[1] + v[1], center[2] + v[2]], n, tris);
+    verts: cage.verts.map((vertex) => {
+      const t = toFaces([center[0] + vertex[0], center[1] + vertex[1], center[2] + vertex[2]], unitNormal, tris);
 
-      return t === null || Math.abs(t) < 1e-9 ? v : ([v[0] + n[0] * t, v[1] + n[1] * t, v[2] + n[2] * t] as Vec3);
+      return t === null || Math.abs(t) < 1e-9 ? vertex : ([vertex[0] + unitNormal[0] * t, vertex[1] + unitNormal[1] * t, vertex[2] + unitNormal[2] * t] as Vec3);
     })
   };
 }
@@ -370,24 +370,24 @@ export function liftOnto(cage: Cage, center: Vec3, normal: Vec3, tris: [Vec3, Ve
  * relative to `center`.)
  */
 export function onCorners(cage: Cage, center: Vec3, tris: [Vec3, Vec3, Vec3][]): Cage {
-  const key = (p: Vec3) => p.map(x => Math.round(x * 1e4)).join(',');
+  const key = (point: Vec3) => point.map(x => Math.round(x * 1e4)).join(',');
   const at = new Map<string, Vec3>();
   const uses = new Map<string, number>();
   for (const t of tris) {
-    for (let k = 0; k < 3; k++) {
-      const a = key(t[k]);
-      const b = key(t[(k + 1) % 3]);
+    for (let corner = 0; corner < 3; corner++) {
+      const a = key(t[corner]);
+      const b = key(t[(corner + 1) % 3]);
       if (a === b) {
         continue;
       }
-      at.set(a, t[k]);
+      at.set(a, t[corner]);
       const e = a < b ? `${a}|${b}` : `${b}|${a}`;
       uses.set(e, (uses.get(e) ?? 0) + 1);
     }
   }
   const nb = new Map<string, string[]>();
-  for (const [e, c] of uses) {
-    if (c !== 1) {
+  for (const [e, use] of uses) {
+    if (use !== 1) {
       continue;
     }
     const [a, b] = e.split('|');
@@ -395,44 +395,44 @@ export function onCorners(cage: Cage, center: Vec3, tris: [Vec3, Vec3, Vec3][]):
     nb.set(b, [...(nb.get(b) ?? []), a]);
   }
   const corners: Vec3[] = [];
-  for (const [k, ns] of nb) {
+  for (const [key, ns] of nb) {
     if (ns.length !== 2) {
       continue;
     }
-    const p = at.get(k)!;
-    const d1 = norm(sub(p, at.get(ns[0])!));
-    const d2 = norm(sub(at.get(ns[1])!, p));
+    const point = at.get(key)!;
+    const d1 = norm(sub(point, at.get(ns[0])!));
+    const d2 = norm(sub(at.get(ns[1])!, point));
     if (dot(d1, d2) < Math.cos((25 * Math.PI) / 180)) {
-      corners.push(p);
+      corners.push(point);
     }
   }
   const border = new Set<number>();
   const count = new Map<string, number>();
-  for (const f of cage.faces) {
-    for (let k = 0; k < 4; k++) {
-      const a = f[k];
-      const b = f[(k + 1) % 4];
+  for (const face of cage.faces) {
+    for (let corner = 0; corner < 4; corner++) {
+      const a = face[corner];
+      const b = face[(corner + 1) % 4];
       const e = a < b ? `${a}|${b}` : `${b}|${a}`;
       count.set(e, (count.get(e) ?? 0) + 1);
     }
   }
-  for (const [e, c] of count) {
-    if (c === 1) {
-      for (const v of e.split('|')) {
-        border.add(Number(v));
+  for (const [e, uses] of count) {
+    if (uses === 1) {
+      for (const vertexKey of e.split('|')) {
+        border.add(Number(vertexKey));
       }
     }
   }
-  const verts = cage.verts.map(v => [...v] as Vec3);
+  const verts = cage.verts.map(vertex => [...vertex] as Vec3);
   const taken = new Set<number>();
-  for (const c of corners) {
-    const rel = sub(c, center);
+  for (const corner of corners) {
+    const rel = sub(corner, center);
     let best = -1;
     let bd = Infinity;
     for (const i of border) {
-      const d = Math.hypot(verts[i][0] - rel[0], verts[i][1] - rel[1], verts[i][2] - rel[2]);
-      if (d < bd) {
-        ((bd = d), (best = i));
+      const distance = Math.hypot(verts[i][0] - rel[0], verts[i][1] - rel[1], verts[i][2] - rel[2]);
+      if (distance < bd) {
+        ((bd = distance), (best = i));
       }
     }
     if (best < 0 || taken.has(best)) {

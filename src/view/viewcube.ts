@@ -71,26 +71,26 @@ export class ViewCube {
 
     const cube = new Group();
     const aniso = this.renderer.capabilities.getMaxAnisotropy();
-    for (const f of FACES) {
-      const map = labelTexture(f.label);
+    for (const faceDefinition of FACES) {
+      const map = labelTexture(faceDefinition.label);
       map.anisotropy = aniso;
       const mesh = new Mesh(new PlaneGeometry(1, 1), new MeshLambertMaterial({ map }));
       mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(basis(f.u, f.up, f.n).setPosition(new Vector3(...f.n).multiplyScalar(0.5)));
+      mesh.matrix.copy(basis(faceDefinition.u, faceDefinition.up, faceDefinition.n).setPosition(new Vector3(...faceDefinition.n).multiplyScalar(0.5)));
       cube.add(mesh);
       this.faces.push(mesh);
     }
     // Small world axes at the cube's corner.
-    for (const [d, c] of [[[1, 0, 0], 0xe0584f], [[0, 1, 0], 0x5fbf5a], [[0, 0, 1], 0x4f8ce0]] as [Vec3, number][]) {
-      const g = new BoxGeometry(d[0] ? 0.55 : 0.025, d[1] ? 0.55 : 0.025, d[2] ? 0.55 : 0.025);
-      const m = new Mesh(g, new MeshBasicMaterial({ color: c }));
-      m.position.set(-0.5 + d[0] * 0.275, -0.5 + d[1] * 0.275, -0.5 + d[2] * 0.275);
-      cube.add(m);
+    for (const [direction, color] of [[[1, 0, 0], 0xe0584f], [[0, 1, 0], 0x5fbf5a], [[0, 0, 1], 0x4f8ce0]] as [Vec3, number][]) {
+      const boxGeometry = new BoxGeometry(direction[0] ? 0.55 : 0.025, direction[1] ? 0.55 : 0.025, direction[2] ? 0.55 : 0.025);
+      const mesh = new Mesh(boxGeometry, new MeshBasicMaterial({ color: color }));
+      mesh.position.set(-0.5 + direction[0] * 0.275, -0.5 + direction[1] * 0.275, -0.5 + direction[2] * 0.275);
+      cube.add(mesh);
     }
-    for (const h of this.hovers) {
-      h.visible = false;
-      h.matrixAutoUpdate = false;
-      h.renderOrder = 5;
+    for (const hover of this.hovers) {
+      hover.visible = false;
+      hover.matrixAutoUpdate = false;
+      hover.renderOrder = 5;
     }
     // Soft light: the sides a little darker than the face turned to you, like the panels' greys.
     this.scene.add(cube, ...this.hovers, new AmbientLight(0xffffff, 2.1));
@@ -158,57 +158,57 @@ export class ViewCube {
       if (!zone) {
         return;
       }
-      const face = FACES.find(f => f.n.every((v, i) => v === zone[i]));
-      const n = new Vector3(...zone).normalize().toArray() as Vec3;
+      const face = FACES.find(faceDefinition => faceDefinition.n.every((value, i) => value === zone[i]));
+      const normal = new Vector3(...zone).normalize().toArray() as Vec3;
       // Faces get an upright view; edges/corners keep the current spin.
       // (In perspective: this view without it, until the view is turned by hand.)
       this.view.cam.flatUntilTurned();
-      this.view.cam.lookAlong(n, face?.u);
+      this.view.cam.lookAlong(normal, face?.u);
       this.view.requestRender();
     });
   }
 
   /** Zone under the pointer as a vector of -1/0/1 per axis (face, edge or corner). */
   private zoneAt(e: PointerEvent): Vec3 | null {
-    const r = this.canvas.getBoundingClientRect();
-    const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
     const hit = this.raycaster.intersectObjects(this.faces, false)[0];
     if (!hit) {
       return null;
     }
-    const p = hit.point;
+    const point = hit.point;
     // Matches the texture: outer 0.2 of each face is an edge/corner band.
-    const z = (v: number) => (v > 0.3 ? 1 : v < -0.3 ? -1 : 0);
+    const z = (value: number) => (value > 0.3 ? 1 : value < -0.3 ? -1 : 0);
 
-    return [z(p.x), z(p.y), z(p.z)];
+    return [z(point.x), z(point.y), z(point.z)];
   }
 
   private hoverKey = '';
   private setHover(zone: Vec3 | null): void {
-    const k = zone ? zone.join() : '';
-    if (k === this.hoverKey) {
+    const hoverKey = zone ? zone.join() : '';
+    if (hoverKey === this.hoverKey) {
       return;
     }
-    this.hoverKey = k;
+    this.hoverKey = hoverKey;
     this.canvas.style.cursor = zone ? 'pointer' : 'grab';
     // A tile on each face the zone touches: a face's middle, both halves of an
     // edge, all three squares of a corner - they're one button, so they light together.
-    const on = zone ? [0, 1, 2].filter(k => zone[k] !== 0) : [];
-    this.hovers.forEach((h, j) => {
-      const k = on[j];
-      h.visible = k !== undefined;
-      if (k === undefined || !zone) {
+    const on = zone ? [0, 1, 2].filter(axis => zone[axis] !== 0) : [];
+    this.hovers.forEach((hover, j) => {
+      const axis = on[j];
+      hover.visible = axis !== undefined;
+      if (axis === undefined || !zone) {
         return;
       }
-      const f = FACES.find(x => x.n[k] === zone[k])!;
+      const faceDefinition = FACES.find(faceDefinition => faceDefinition.n[axis] === zone[axis])!;
       // Matches zoneAt(): the middle 0.6 of each axis is "face", the outer 0.2 "edge".
       const size = new Vector3(...[0, 1, 2].map(i => (zone[i] === 0 ? 0.6 : 0.2)));
       const center = new Vector3(...zone).multiplyScalar(0.4);
-      center.setComponent(k, zone[k] * 0.502);
-      const su = Math.abs(new Vector3(...f.u).dot(size));
-      const sv = Math.abs(new Vector3(...f.up).dot(size));
-      h.matrix.copy(basis(f.u, f.up, f.n).multiply(new Matrix4().makeScale(su, sv, 1)).setPosition(center));
+      center.setComponent(axis, zone[axis] * 0.502);
+      const su = Math.abs(new Vector3(...faceDefinition.u).dot(size));
+      const sv = Math.abs(new Vector3(...faceDefinition.up).dot(size));
+      hover.matrix.copy(basis(faceDefinition.u, faceDefinition.up, faceDefinition.n).multiply(new Matrix4().makeScale(su, sv, 1)).setPosition(center));
     });
     // Draw now: the cube only redraws with the view otherwise, so a hover would wait.
     this.lastKey = '';
@@ -217,7 +217,7 @@ export class ViewCube {
 
   private render(): void {
     const main = this.view.camera;
-    const key = main.quaternion.toArray().map(x => x.toFixed(4)).join() + this.hovers.map(h => (h.visible ? h.matrix.elements.slice(12, 15).join() : '-')).join();
+    const key = main.quaternion.toArray().map(x => x.toFixed(4)).join() + this.hovers.map(hover => (hover.visible ? hover.matrix.elements.slice(12, 15).join() : '-')).join();
     if (key === this.lastKey) {
       return;
     }
@@ -229,50 +229,50 @@ export class ViewCube {
   }
 }
 
-function basis(u: Vec3, up: Vec3, n: Vec3): Matrix4 {
-  return new Matrix4().makeBasis(new Vector3(...u), new Vector3(...up), new Vector3(...n));
+function basis(uAxis: Vec3, up: Vec3, normal: Vec3): Matrix4 {
+  return new Matrix4().makeBasis(new Vector3(...uAxis), new Vector3(...up), new Vector3(...normal));
 }
 
 /** A face of the cube in the app's greys and lettering, drawn large (sharp when scaled down). */
 function labelTexture(text: string): CanvasTexture {
-  const S = 512;
-  const c = document.createElement('canvas');
-  c.width = c.height = S;
-  const g = c.getContext('2d')!;
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext('2d')!;
   // The face: the panels' grey, a slightly lighter rim where the faces meet.
-  g.fillStyle = '#3a3e46';
-  g.fillRect(0, 0, S, S);
-  g.fillStyle = '#454a54';
-  const rim = S * 0.035;
-  g.beginPath();
+  context.fillStyle = '#3a3e46';
+  context.fillRect(0, 0, size, size);
+  context.fillStyle = '#454a54';
+  const rim = size * 0.035;
+  context.beginPath();
   // (Older browsers have no roundRect: a square one then.)
-  if (g.roundRect) {
-    g.roundRect(rim, rim, S - 2 * rim, S - 2 * rim, S * 0.06);
+  if (context.roundRect) {
+    context.roundRect(rim, rim, size - 2 * rim, size - 2 * rim, size * 0.06);
   } else {
-    g.rect(rim, rim, S - 2 * rim, S - 2 * rim);
+    context.rect(rim, rim, size - 2 * rim, size - 2 * rim);
   }
-  g.fill();
+  context.fill();
   // Zone borders (faint): the middle is the face view, the bands edges (45°), the corners iso views.
-  g.strokeStyle = 'rgba(255, 255, 255, 0.07)';
-  g.lineWidth = S * 0.008;
-  for (const v of [0.2 * S, 0.8 * S]) {
-    g.beginPath();
-    g.moveTo(v, rim);
-    g.lineTo(v, S - rim);
-    g.moveTo(rim, v);
-    g.lineTo(S - rim, v);
-    g.stroke();
+  context.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+  context.lineWidth = size * 0.008;
+  for (const position of [0.2 * size, 0.8 * size]) {
+    context.beginPath();
+    context.moveTo(position, rim);
+    context.lineTo(position, size - rim);
+    context.moveTo(rim, position);
+    context.lineTo(size - rim, position);
+    context.stroke();
   }
   // The outline where the faces meet: the line colour of the panels.
-  g.strokeStyle = 'rgba(255, 255, 255, 0.16)';
-  g.lineWidth = S * 0.012;
-  g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, S - g.lineWidth, S - g.lineWidth);
-  g.fillStyle = '#e8e9ec';
-  g.font = `650 ${Math.round(S * (text.length > 5 ? 0.15 : 0.17))}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(text, S / 2, S * 0.515);
-  const t = new CanvasTexture(c);
+  context.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+  context.lineWidth = size * 0.012;
+  context.strokeRect(context.lineWidth / 2, context.lineWidth / 2, size - context.lineWidth, size - context.lineWidth);
+  context.fillStyle = '#e8e9ec';
+  context.font = `650 ${Math.round(size * (text.length > 5 ? 0.15 : 0.17))}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(text, size / 2, size * 0.515);
+  const t = new CanvasTexture(canvas);
   t.colorSpace = SRGBColorSpace;
 
   return t;

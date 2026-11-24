@@ -20,9 +20,9 @@ function params(e: SketchEntity): number[] {
     case 'line':
       return [...e.a, ...e.b];
     case 'arc': {
-      const c = arcFrom3(e.a, e.m, e.b);
+      const arc = arcFrom3(e.a, e.m, e.b);
 
-      return c ? [c.c[0], c.c[1], c.r, c.a0, c.sweep] : [...e.a, ...e.m, ...e.b];
+      return arc ? [arc.c[0], arc.c[1], arc.r, arc.a0, arc.sweep] : [...e.a, ...e.m, ...e.b];
     }
     case 'circle':
       return [...e.center, e.radius];
@@ -49,19 +49,19 @@ const STIFF = 4;
  * Length per unit of each parameter (1 for coordinates, the radius for angles). `stiff`: how much sooner a shape
  * keeps its size and its way round than its place (1 while it is dragged: a corner pulled is the shape pulled about).
  */
-function pullScale(e: SketchEntity, p: number[], stiff: number): number[] {
-  const r = (v: number) => Math.max(Math.abs(v), 1e-9);
+function pullScale(e: SketchEntity, params: number[], stiff: number): number[] {
+  const magnitude = (value: number) => Math.max(Math.abs(value), 1e-9);
   switch (e.kind) {
     case 'arc':
-      return p.length === 5 ? [1, 1, stiff, stiff * r(p[2]), stiff * r(p[2])] : p.map(() => 1);
+      return params.length === 5 ? [1, 1, stiff, stiff * magnitude(params[2]), stiff * magnitude(params[2])] : params.map(() => 1);
     case 'ellipse':
-      return [1, 1, stiff, stiff, r(Math.max(e.rx, e.ry))];
+      return [1, 1, stiff, stiff, magnitude(Math.max(e.rx, e.ry))];
     case 'rect':
-      return [1, 1, stiff, stiff, r(Math.hypot(e.w, e.h) / 2)];
+      return [1, 1, stiff, stiff, magnitude(Math.hypot(e.w, e.h) / 2)];
     case 'polygon':
-      return [1, 1, stiff, r(e.radius)];
+      return [1, 1, stiff, magnitude(e.radius)];
     default:
-      return p.map(() => 1);
+      return params.map(() => 1);
   }
 }
 
@@ -73,8 +73,8 @@ function withParams(e: SketchEntity, x: number[]): SketchEntity {
       if (x.length === 6) {
         return { ...e, a: [x[0], x[1]], m: [x[2], x[3]], b: [x[4], x[5]] };
       }
-      const [cx, cy, r, a0, sw] = x;
-      const at = (t: number): Vec2 => [cx + r * Math.cos(t), cy + r * Math.sin(t)];
+      const [cx, cy, radius, a0, sw] = x;
+      const at = (t: number): Vec2 => [cx + radius * Math.cos(t), cy + radius * Math.sin(t)];
 
       return { ...e, a: at(a0), m: at(a0 + sw / 2), b: at(a0 + sw) };
     }
@@ -104,9 +104,9 @@ export function pointsOf(e: SketchEntity): { p: string; at: Vec2 }[] {
     case 'line':
       return [{ p: 'a', at: e.a }, { p: 'b', at: e.b }];
     case 'arc': {
-      const c = arcFrom3(e.a, e.m, e.b);
+      const arc = arcFrom3(e.a, e.m, e.b);
 
-      return [{ p: 'a', at: e.a }, { p: 'b', at: e.b }, ...(c ? [{ p: 'c', at: c.c }] : [])];
+      return [{ p: 'a', at: e.a }, { p: 'b', at: e.b }, ...(arc ? [{ p: 'c', at: arc.c }] : [])];
     }
     case 'circle':
       return [{ p: 'c', at: e.center }];
@@ -140,8 +140,8 @@ export function pointsOf(e: SketchEntity): { p: string; at: Vec2 }[] {
   }
 }
 
-export function pointOf(e: SketchEntity, p: string): Vec2 | null {
-  return pointsOf(e).find(q => q.p === p)?.at ?? null;
+export function pointOf(e: SketchEntity, pointName: string): Vec2 | null {
+  return pointsOf(e).find(q => q.p === pointName)?.at ?? null;
 }
 
 /** Size of an entity by name, for dimension constraints and size fields. */
@@ -155,9 +155,9 @@ export function sizeOf(e: SketchEntity, prop: string): number | null {
       return null;
     case 'radius':
     case 'diameter': {
-      const r = e.kind === 'circle' || e.kind === 'polygon' ? e.radius : e.kind === 'arc' ? (arcFrom3(e.a, e.m, e.b)?.r ?? null) : null;
+      const radius = e.kind === 'circle' || e.kind === 'polygon' ? e.radius : e.kind === 'arc' ? (arcFrom3(e.a, e.m, e.b)?.r ?? null) : null;
 
-      return r === null ? null : prop === 'diameter' ? 2 * r : r;
+      return radius === null ? null : prop === 'diameter' ? 2 * radius : radius;
     }
     case 'w':
       return e.kind === 'rect' ? e.w : null;
@@ -207,26 +207,26 @@ function roundOf(e: SketchEntity): { c: Vec2; r: number } | null {
 type Lookup = (id: string) => SketchEntity | undefined;
 
 /** Residuals of one constraint (empty if it refers to something missing). */
-function residuals(c: SketchConstraint, get: Lookup): number[] {
-  const P = (r: PointRef) => {
-    const e = get(r.e);
+function residuals(sketchConstraint: SketchConstraint, get: Lookup): number[] {
+  const pointAt = (pointRef: PointRef) => {
+    const e = get(pointRef.e);
 
-    return e ? pointOf(e, r.p) : null;
+    return e ? pointOf(e, pointRef.p) : null;
   };
-  const E = (i: number) => (c.curves?.[i] ? get(c.curves[i]) : undefined);
-  const unit = (v: Vec2) => {
-    const l = Math.hypot(v[0], v[1]) || 1;
+  const entityAt = (i: number) => (sketchConstraint.curves?.[i] ? get(sketchConstraint.curves[i]) : undefined);
+  const unit = (vector: Vec2) => {
+    const length = Math.hypot(vector[0], vector[1]) || 1;
 
-    return [v[0] / l, v[1] / l] as Vec2;
+    return [vector[0] / length, vector[1] / length] as Vec2;
   };
-  switch (c.type) {
+  switch (sketchConstraint.type) {
     case 'coincident': {
-      const [a, b] = (c.pts ?? []).map(P);
+      const [a, b] = (sketchConstraint.pts ?? []).map(pointAt);
       if (a && b) {
         return [a[0] - b[0], a[1] - b[1]];
       }
       // Point on a curve.
-      const e = E(0);
+      const e = entityAt(0);
       if (a && e) {
         return distToEntity(a, e);
       }
@@ -235,42 +235,42 @@ function residuals(c: SketchConstraint, get: Lookup): number[] {
     }
     case 'horizontal':
     case 'vertical': {
-      const e = E(0);
-      const d = e && dirOf(e);
-      if (d) {
-        return [c.type === 'horizontal' ? d[1] : d[0]];
+      const e = entityAt(0);
+      const direction = e && dirOf(e);
+      if (direction) {
+        return [sketchConstraint.type === 'horizontal' ? direction[1] : direction[0]];
       }
-      const [a, b] = (c.pts ?? []).map(P);
+      const [a, b] = (sketchConstraint.pts ?? []).map(pointAt);
       if (a && b) {
-        return [c.type === 'horizontal' ? a[1] - b[1] : a[0] - b[0]];
+        return [sketchConstraint.type === 'horizontal' ? a[1] - b[1] : a[0] - b[0]];
       }
 
       return [];
     }
     case 'parallel':
     case 'perpendicular': {
-      const [d1, d2] = [E(0), E(1)].map(e => (e ? dirOf(e) : null));
+      const [d1, d2] = [entityAt(0), entityAt(1)].map(e => (e ? dirOf(e) : null));
       if (!d1 || !d2) {
         return [];
       }
-      const u = unit(d1);
-      const v = unit(d2);
+      const unitA = unit(d1);
+      const unitB = unit(d2);
 
-      return [c.type === 'parallel' ? u[0] * v[1] - u[1] * v[0] : u[0] * v[0] + u[1] * v[1]];
+      return [sketchConstraint.type === 'parallel' ? unitA[0] * unitB[1] - unitA[1] * unitB[0] : unitA[0] * unitB[0] + unitA[1] * unitB[1]];
     }
     case 'equal': {
-      const [e1, e2] = [E(0), E(1)];
+      const [e1, e2] = [entityAt(0), entityAt(1)];
       if (!e1 || !e2) {
         return [];
       }
-      const s = (e: SketchEntity) => sizeOf(e, e.kind === 'line' ? 'length' : 'radius');
-      const a = s(e1);
-      const b = s(e2);
+      const sizeAt = (e: SketchEntity) => sizeOf(e, e.kind === 'line' ? 'length' : 'radius');
+      const a = sizeAt(e1);
+      const b = sizeAt(e2);
 
       return a !== null && b !== null ? [a - b] : [];
     }
     case 'tangent': {
-      const [e1, e2] = [E(0), E(1)];
+      const [e1, e2] = [entityAt(0), entityAt(1)];
       if (!e1 || !e2) {
         return [];
       }
@@ -282,22 +282,22 @@ function residuals(c: SketchConstraint, get: Lookup): number[] {
         return [distPointLine(round.c, line.a, line.b) - round.r];
       }
       if (r1 && r2) {
-        const d = Math.hypot(r1.c[0] - r2.c[0], r1.c[1] - r2.c[1]);
+        const distance = Math.hypot(r1.c[0] - r2.c[0], r1.c[1] - r2.c[1]);
         // Touching from outside, or one inside the other: whichever is nearer. (With its sign: the smaller of the two
         // sizes has a kink right at the answer, and the last of the way there was crept.)
-        const out = d - (r1.r + r2.r);
-        const ins = d - Math.abs(r1.r - r2.r);
+        const out = distance - (r1.r + r2.r);
+        const ins = distance - Math.abs(r1.r - r2.r);
 
         return [Math.abs(out) < Math.abs(ins) ? out : ins];
       }
       // A line and an ellipse: the line is as far from the centre as the ellipse reaches that way.
       const ell = e1.kind === 'ellipse' ? e1 : e2.kind === 'ellipse' ? e2 : null;
       if (line && ell) {
-        const l = Math.hypot(line.b[0] - line.a[0], line.b[1] - line.a[1]) || 1;
-        const n: Vec2 = [(line.b[1] - line.a[1]) / l, -(line.b[0] - line.a[0]) / l];
+        const length = Math.hypot(line.b[0] - line.a[0], line.b[1] - line.a[1]) || 1;
+        const normal: Vec2 = [(line.b[1] - line.a[1]) / length, -(line.b[0] - line.a[0]) / length];
         const cs = Math.cos(ell.rotation);
         const sn = Math.sin(ell.rotation);
-        const reach = Math.hypot(ell.rx * (n[0] * cs + n[1] * sn), ell.ry * (-n[0] * sn + n[1] * cs));
+        const reach = Math.hypot(ell.rx * (normal[0] * cs + normal[1] * sn), ell.ry * (-normal[0] * sn + normal[1] * cs));
 
         return [distPointLine(ell.center, line.a, line.b) - reach];
       }
@@ -305,14 +305,14 @@ function residuals(c: SketchConstraint, get: Lookup): number[] {
       return [];
     }
     case 'concentric': {
-      const c1 = E(0) && centreOf(E(0)!);
-      const c2 = E(1) && centreOf(E(1)!);
+      const c1 = entityAt(0) && centreOf(entityAt(0)!);
+      const c2 = entityAt(1) && centreOf(entityAt(1)!);
 
       return c1 && c2 ? [c1[0] - c2[0], c1[1] - c2[1]] : [];
     }
     case 'midpoint': {
-      const a = c.pts?.[0] && P(c.pts[0]);
-      const e = E(0);
+      const a = sketchConstraint.pts?.[0] && pointAt(sketchConstraint.pts[0]);
+      const e = entityAt(0);
       if (!a || e?.kind !== 'line') {
         return [];
       }
@@ -320,47 +320,47 @@ function residuals(c: SketchConstraint, get: Lookup): number[] {
       return [a[0] - (e.a[0] + e.b[0]) / 2, a[1] - (e.a[1] + e.b[1]) / 2];
     }
     case 'symmetric': {
-      const [a, b] = (c.pts ?? []).map(P);
-      const e = E(0);
+      const [a, b] = (sketchConstraint.pts ?? []).map(pointAt);
+      const e = entityAt(0);
       if (!a || !b || e?.kind !== 'line') {
         return [];
       }
-      const m: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      const d = unit(dirOf(e)!);
+      const midpoint: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const direction = unit(dirOf(e)!);
 
       // Midpoint on the line, and a–b perpendicular to it.
-      return [distPointLineSigned(m, e.a, e.b), (b[0] - a[0]) * d[0] + (b[1] - a[1]) * d[1]];
+      return [distPointLineSigned(midpoint, e.a, e.b), (b[0] - a[0]) * direction[0] + (b[1] - a[1]) * direction[1]];
     }
     case 'fix': {
-      const a = c.pts?.[0] && P(c.pts[0]);
+      const a = sketchConstraint.pts?.[0] && pointAt(sketchConstraint.pts[0]);
 
-      return a && c.at ? [a[0] - c.at[0], a[1] - c.at[1]] : [];
+      return a && sketchConstraint.at ? [a[0] - sketchConstraint.at[0], a[1] - sketchConstraint.at[1]] : [];
     }
     case 'pattern': {
       // A copy in a sketch pattern: each of its points is the original's,
       // moved by `at` (or turned round `at` by `value` degrees); sizes the same.
-      const o = E(0);
-      const k = E(1);
-      if (!o || !k || o.kind !== k.kind || !c.at) {
+      const original = entityAt(0);
+      const copy = entityAt(1);
+      if (!original || !copy || original.kind !== copy.kind || !sketchConstraint.at) {
         return [];
       }
-      const t = ((c.value ?? 0) * Math.PI) / 180;
-      const [cx, cy] = c.at;
-      const map = (p: Vec2): Vec2 => (c.turn ? [cx + (p[0] - cx) * Math.cos(t) - (p[1] - cy) * Math.sin(t), cy + (p[0] - cx) * Math.sin(t) + (p[1] - cy) * Math.cos(t)] : [p[0] + cx, p[1] + cy]);
+      const t = ((sketchConstraint.value ?? 0) * Math.PI) / 180;
+      const [cx, cy] = sketchConstraint.at;
+      const map = (point: Vec2): Vec2 => (sketchConstraint.turn ? [cx + (point[0] - cx) * Math.cos(t) - (point[1] - cy) * Math.sin(t), cy + (point[0] - cx) * Math.sin(t) + (point[1] - cy) * Math.cos(t)] : [point[0] + cx, point[1] + cy]);
       const out: number[] = [];
-      for (const q of pointsOf(o)) {
-        const w = pointOf(k, q.p);
-        if (!w) {
+      for (const q of pointsOf(original)) {
+        const point = pointOf(copy, q.p);
+        if (!point) {
           return [];
         }
-        const m = map(q.at);
-        out.push(w[0] - m[0], w[1] - m[1]);
+        const moved = map(q.at);
+        out.push(point[0] - moved[0], point[1] - moved[1]);
       }
-      if ((o.kind === 'circle' || o.kind === 'polygon') && (k.kind === 'circle' || k.kind === 'polygon')) {
-        out.push(k.radius - o.radius);
+      if ((original.kind === 'circle' || original.kind === 'polygon') && (copy.kind === 'circle' || copy.kind === 'polygon')) {
+        out.push(copy.radius - original.radius);
       }
-      if (o.kind === 'ellipse' && k.kind === 'ellipse') {
-        out.push(k.rx - o.rx, k.ry - o.ry);
+      if (original.kind === 'ellipse' && copy.kind === 'ellipse') {
+        out.push(copy.rx - original.rx, copy.ry - original.ry);
       }
 
       return out;
@@ -369,104 +369,104 @@ function residuals(c: SketchConstraint, get: Lookup): number[] {
       // A copy made from another curve - its offset, its mirror image: it is that, of the original as it is now.
       // (An offset or a mirrored copy was a curve of its own from the moment it was made: the original given
       // another size - a dimension typed, a variable changed - the copy stayed as it had been.)
-      const o = E(0);
-      const k = E(1);
-      const how = c.how;
-      if (!o || !k || !how) {
+      const original = entityAt(0);
+      const copy = entityAt(1);
+      const how = sketchConstraint.how;
+      if (!original || !copy || !how) {
         return [];
       }
-      const want = how.mirror ? transformEntity(o, mirrorXf(how.mirror[0], how.mirror[1])) : how.offset !== undefined ? offsetEntity(o, how.offset) : null;
+      const want = how.mirror ? transformEntity(original, mirrorXf(how.mirror[0], how.mirror[1])) : how.offset !== undefined ? offsetEntity(original, how.offset) : null;
       if (!want) {
         return [];
       }
       if (how.loose) {
         // A piece of an offset outline: on the original's offset (its ends are its neighbours' business).
-        if (want.kind === 'line' && k.kind === 'line') {
-          return [distPointLineSigned(k.a, want.a, want.b), distPointLineSigned(k.b, want.a, want.b)];
+        if (want.kind === 'line' && copy.kind === 'line') {
+          return [distPointLineSigned(copy.a, want.a, want.b), distPointLineSigned(copy.b, want.a, want.b)];
         }
-        if (want.kind === 'arc' && k.kind === 'arc') {
-          const w = arcFrom3(want.a, want.m, want.b);
+        if (want.kind === 'arc' && copy.kind === 'arc') {
+          const wanted = arcFrom3(want.a, want.m, want.b);
 
-          return w ? [k.a, k.m, k.b].map(p => Math.hypot(p[0] - w.c[0], p[1] - w.c[1]) - w.r) : [];
+          return wanted ? [copy.a, copy.m, copy.b].map(point => Math.hypot(point[0] - wanted.c[0], point[1] - wanted.c[1]) - wanted.r) : [];
         }
 
         return [];
       }
-      if (want.kind !== k.kind) {
+      if (want.kind !== copy.kind) {
         return [];
       }
       const out: number[] = [];
       for (const q of pointsOf(want)) {
-        const w = pointOf(k, q.p);
-        if (!w) {
+        const point = pointOf(copy, q.p);
+        if (!point) {
           return [];
         }
-        out.push(w[0] - q.at[0], w[1] - q.at[1]);
+        out.push(point[0] - q.at[0], point[1] - q.at[1]);
       }
-      if (want.kind === 'arc' && k.kind === 'arc') {
-        out.push(k.m[0] - want.m[0], k.m[1] - want.m[1]);
+      if (want.kind === 'arc' && copy.kind === 'arc') {
+        out.push(copy.m[0] - want.m[0], copy.m[1] - want.m[1]);
       }
-      if ((want.kind === 'circle' || want.kind === 'polygon') && (k.kind === 'circle' || k.kind === 'polygon')) {
-        out.push(k.radius - want.radius);
+      if ((want.kind === 'circle' || want.kind === 'polygon') && (copy.kind === 'circle' || copy.kind === 'polygon')) {
+        out.push(copy.radius - want.radius);
       }
-      if (want.kind === 'ellipse' && k.kind === 'ellipse') {
-        out.push(k.rx - want.rx, k.ry - want.ry, wrap(k.rotation - want.rotation) * Math.max(want.rx, want.ry));
+      if (want.kind === 'ellipse' && copy.kind === 'ellipse') {
+        out.push(copy.rx - want.rx, copy.ry - want.ry, wrap(copy.rotation - want.rotation) * Math.max(want.rx, want.ry));
       }
 
       return out;
     }
     case 'distance': {
-      if (c.value === undefined) {
+      if (sketchConstraint.value === undefined) {
         return [];
       }
       // Point to line: perpendicular distance.
-      if (c.pts?.length === 1 && c.curves?.length === 1) {
-        const p = P(c.pts[0]);
-        const l = E(0);
+      if (sketchConstraint.pts?.length === 1 && sketchConstraint.curves?.length === 1) {
+        const point = pointAt(sketchConstraint.pts[0]);
+        const curve = entityAt(0);
 
-        return p && l?.kind === 'line' ? [distPointLine(p, l.a, l.b) - c.value] : [];
+        return point && curve?.kind === 'line' ? [distPointLine(point, curve.a, curve.b) - sketchConstraint.value] : [];
       }
       // Line to line: they run the same way, that far apart (the second's middle from the first).
-      if (!c.pts?.length && c.curves?.length === 2) {
-        const [l, m] = [E(0), E(1)];
-        if (l?.kind !== 'line' || m?.kind !== 'line') {
+      if (!sketchConstraint.pts?.length && sketchConstraint.curves?.length === 2) {
+        const [first, second] = [entityAt(0), entityAt(1)];
+        if (first?.kind !== 'line' || second?.kind !== 'line') {
           return [];
         }
-        const [d1, d2] = [dirOf(l), dirOf(m)];
+        const [d1, d2] = [dirOf(first), dirOf(second)];
         if (!d1 || !d2) {
           return [];
         }
-        const mid: Vec2 = [(m.a[0] + m.b[0]) / 2, (m.a[1] + m.b[1]) / 2];
-        const len = Math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1]) || 1;
+        const mid: Vec2 = [(second.a[0] + second.b[0]) / 2, (second.a[1] + second.b[1]) / 2];
+        const len = Math.hypot(second.b[0] - second.a[0], second.b[1] - second.a[1]) || 1;
 
         // (The turn as a length - the second line's end off the first's way - so it weighs as the distance does.)
-        return [distPointLine(mid, l.a, l.b) - c.value, (d1[0] * d2[1] - d1[1] * d2[0]) * len];
+        return [distPointLine(mid, first.a, first.b) - sketchConstraint.value, (d1[0] * d2[1] - d1[1] * d2[0]) * len];
       }
-      const [a, b] = (c.pts ?? []).map(P);
+      const [a, b] = (sketchConstraint.pts ?? []).map(pointAt);
 
-      return a && b ? [Math.hypot(a[0] - b[0], a[1] - b[1]) - c.value] : [];
+      return a && b ? [Math.hypot(a[0] - b[0], a[1] - b[1]) - sketchConstraint.value] : [];
     }
     case 'dim': {
-      const e = E(0);
-      if (!e || !c.prop || c.value === undefined) {
+      const e = entityAt(0);
+      if (!e || !sketchConstraint.prop || sketchConstraint.value === undefined) {
         return [];
       }
-      if (c.prop === 'angle' && c.curves?.length === 2) {
+      if (sketchConstraint.prop === 'angle' && sketchConstraint.curves?.length === 2) {
         const d1 = dirOf(e);
-        const d2 = E(1) && dirOf(E(1)!);
+        const d2 = entityAt(1) && dirOf(entityAt(1)!);
         if (!d1 || !d2) {
           return [];
         }
         const ang = Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]);
 
-        return [wrap(Math.abs(ang) - (c.value * Math.PI) / 180)];
+        return [wrap(Math.abs(ang) - (sketchConstraint.value * Math.PI) / 180)];
       }
-      const s = sizeOf(e, c.prop);
-      if (s === null) {
+      const size = sizeOf(e, sketchConstraint.prop);
+      if (size === null) {
         return [];
       }
 
-      return c.prop === 'angle' ? [wrap(((s - c.value) * Math.PI) / 180)] : [s - c.value];
+      return sketchConstraint.prop === 'angle' ? [wrap(((size - sketchConstraint.value) * Math.PI) / 180)] : [size - sketchConstraint.value];
     }
   }
 }
@@ -490,35 +490,35 @@ function centreOf(e: SketchEntity): Vec2 | null {
   return roundOf(e)?.c ?? null;
 }
 
-function distPointLine(p: Vec2, a: Vec2, b: Vec2): number {
-  return Math.abs(distPointLineSigned(p, a, b));
+function distPointLine(point: Vec2, a: Vec2, b: Vec2): number {
+  return Math.abs(distPointLineSigned(point, a, b));
 }
 
-function distPointLineSigned(p: Vec2, a: Vec2, b: Vec2): number {
+function distPointLineSigned(point: Vec2, a: Vec2, b: Vec2): number {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
-  const l = Math.hypot(dx, dy) || 1;
+  const length = Math.hypot(dx, dy) || 1;
 
-  return ((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / l;
+  return ((point[0] - a[0]) * dy - (point[1] - a[1]) * dx) / length;
 }
 
-function distToEntity(p: Vec2, e: SketchEntity): number[] {
+function distToEntity(point: Vec2, e: SketchEntity): number[] {
   if (e.kind === 'line') {
-    return [distPointLineSigned(p, e.a, e.b)];
+    return [distPointLineSigned(point, e.a, e.b)];
   }
-  const r = roundOf(e);
-  if (r) {
-    return [Math.hypot(p[0] - r.c[0], p[1] - r.c[1]) - r.r];
+  const round = roundOf(e);
+  if (round) {
+    return [Math.hypot(point[0] - round.c[0], point[1] - round.c[1]) - round.r];
   }
   if (e.kind === 'ellipse') {
     // In the ellipse's own frame, how far out the point is as a share of the way to it (1: on it).
-    const dx = p[0] - e.center[0];
-    const dy = p[1] - e.center[1];
+    const dx = point[0] - e.center[0];
+    const dy = point[1] - e.center[1];
     const cs = Math.cos(e.rotation);
     const sn = Math.sin(e.rotation);
-    const k = Math.hypot((dx * cs + dy * sn) / Math.max(e.rx, 1e-12), (-dx * sn + dy * cs) / Math.max(e.ry, 1e-12));
+    const scaled = Math.hypot((dx * cs + dy * sn) / Math.max(e.rx, 1e-12), (-dx * sn + dy * cs) / Math.max(e.ry, 1e-12));
 
-    return [(k - 1) * Math.min(e.rx, e.ry)];
+    return [(scaled - 1) * Math.min(e.rx, e.ry)];
   }
   // A rectangle, a polygon, a polyline, a spline: from the nearest place on it (a spline: as it is drawn) to the
   // point, across and up. Two numbers that change evenly as the point goes round a corner, so it gets there from
@@ -537,15 +537,15 @@ function distToEntity(p: Vec2, e: SketchEntity): number[] {
       if (l2 < 1e-24) {
         continue;
       }
-      const s = ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / l2;
-      const c = Math.max(0, Math.min(1, s));
-      const vx = p[0] - a[0] - c * ux;
-      const vy = p[1] - a[1] - c * uy;
-      const d = Math.hypot(vx, vy);
-      if (d >= best) {
+      const along = ((point[0] - a[0]) * ux + (point[1] - a[1]) * uy) / l2;
+      const clamped = Math.max(0, Math.min(1, along));
+      const vx = point[0] - a[0] - clamped * ux;
+      const vy = point[1] - a[1] - clamped * uy;
+      const distance = Math.hypot(vx, vy);
+      if (distance >= best) {
         continue;
       }
-      best = d;
+      best = distance;
       out = [vx, vy];
     }
   }
@@ -590,7 +590,7 @@ export function solve(entities: SketchEntity[], constraints: SketchConstraint[],
     opts = { ...opts, fixed: new Set([...(opts.fixed ?? []), ...held.map(e => e.id)]) };
   }
   const ids = new Set(entities.map(e => e.id));
-  const live = constraints.filter(c => refsOf(c).every(id => ids.has(id)));
+  const live = constraints.filter(constraint => refsOf(constraint).every(id => ids.has(id)));
   const drags = opts.drag ?? [];
   if (!live.length && !drags.length) {
     return { entities, error: 0, ok: true };
@@ -598,13 +598,13 @@ export function solve(entities: SketchEntity[], constraints: SketchConstraint[],
   // Union–find over curves linked by a constraint (fixed curves don't link: they don't move).
   const parent = new Map<string, string>();
   const find = (a: string): string => {
-    let r = a;
-    while (parent.has(r) && parent.get(r) !== r) {
-      r = parent.get(r)!;
+    let root = a;
+    while (parent.has(root) && parent.get(root) !== root) {
+      root = parent.get(root)!;
     }
-    parent.set(a, r);
+    parent.set(a, root);
 
-    return r;
+    return root;
   };
   const join = (a: string, b: string) => {
     const ra = find(a);
@@ -614,42 +614,42 @@ export function solve(entities: SketchEntity[], constraints: SketchConstraint[],
     }
   };
   const moving = (id: string) => !opts.fixed?.has(id);
-  for (const c of live) {
-    const r = refsOf(c).filter(moving);
-    for (const id of r) {
+  for (const sketchConstraint of live) {
+    const refs = refsOf(sketchConstraint).filter(moving);
+    for (const id of refs) {
       find(id);
     }
-    for (let i = 1; i < r.length; i++) {
-      join(r[0], r[i]);
+    for (let i = 1; i < refs.length; i++) {
+      join(refs[0], refs[i]);
     }
   }
-  for (const d of drags) {
-    if (moving(d.ref.e)) {
-      find(d.ref.e);
+  for (const drag of drags) {
+    if (moving(drag.ref.e)) {
+      find(drag.ref.e);
     }
   }
   const groups = new Map<string, { cs: SketchConstraint[]; drag: typeof drags }>();
   const groupOf = (root: string) => {
-    let g = groups.get(root);
-    if (!g) {
-      groups.set(root, (g = { cs: [], drag: [] }));
+    let group = groups.get(root);
+    if (!group) {
+      groups.set(root, (group = { cs: [], drag: [] }));
     }
 
-    return g;
+    return group;
   };
   // Constraints on nothing that may move: either already met, or they can't be.
   const stuck: SketchConstraint[] = [];
-  for (const c of live) {
-    const r = refsOf(c).filter(moving);
-    if (r.length) {
-      groupOf(find(r[0])).cs.push(c);
+  for (const sketchConstraint of live) {
+    const refs = refsOf(sketchConstraint).filter(moving);
+    if (refs.length) {
+      groupOf(find(refs[0])).cs.push(sketchConstraint);
     } else {
-      stuck.push(c);
+      stuck.push(sketchConstraint);
     }
   }
-  for (const d of drags) {
-    if (moving(d.ref.e)) {
-      groupOf(find(d.ref.e)).drag.push(d);
+  for (const drag of drags) {
+    if (moving(drag.ref.e)) {
+      groupOf(find(drag.ref.e)).drag.push(drag);
     }
   }
   if (groups.size <= 1 && !stuck.length) {
@@ -657,18 +657,18 @@ export function solve(entities: SketchEntity[], constraints: SketchConstraint[],
   }
   const byId = new Map(entities.map(e => [e.id, e]));
   let error = constraintError(entities, stuck);
-  let ok = error < 1e-9 * Math.max(1, ...entities.flatMap(e => pointsOf(e).map(p => Math.max(Math.abs(p.at[0]), Math.abs(p.at[1])))));
-  for (const g of groups.values()) {
-    if (!g.drag.length && constraintError(entities, g.cs) < 1e-12) {
+  let ok = error < 1e-9 * Math.max(1, ...entities.flatMap(e => pointsOf(e).map(point => Math.max(Math.abs(point.at[0]), Math.abs(point.at[1])))));
+  for (const group of groups.values()) {
+    if (!group.drag.length && constraintError(entities, group.cs) < 1e-12) {
       continue;
     }
-    const need = new Set<string>([...g.cs.flatMap(refsOf), ...g.drag.map(d => d.ref.e)]);
-    const r = solveGroup(entities.filter(e => need.has(e.id)), g.cs, { ...opts, drag: g.drag });
-    for (const e of r.entities) {
+    const need = new Set<string>([...group.cs.flatMap(refsOf), ...group.drag.map(drag => drag.ref.e)]);
+    const solution = solveGroup(entities.filter(e => need.has(e.id)), group.cs, { ...opts, drag: group.drag });
+    for (const e of solution.entities) {
       byId.set(e.id, e);
     }
-    error = Math.max(error, r.error);
-    ok &&= r.ok;
+    error = Math.max(error, solution.error);
+    ok &&= solution.ok;
   }
 
   return { entities: entities.map(e => byId.get(e.id) ?? e), error, ok };
@@ -680,8 +680,8 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
   }
   // Only entities that take part move; everything else is left as is.
   const involved = new Set<string>(live.flatMap(refsOf));
-  for (const d of opts.drag ?? []) {
-    involved.add(d.ref.e);
+  for (const drag of opts.drag ?? []) {
+    involved.add(drag.ref.e);
   }
   for (const id of opts.fixed ?? []) {
     involved.delete(id);
@@ -695,22 +695,22 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
   const per: number[] = [];
   const x0: number[] = [];
   for (const e of movers) {
-    const p = params(e);
+    const entityParams = params(e);
     offsets.push(x0.length);
-    counts.push(p.length);
-    per.push(...pullScale(e, p, opts.drag?.length ? 1 : STIFF));
-    x0.push(...p);
+    counts.push(entityParams.length);
+    per.push(...pullScale(e, entityParams, opts.drag?.length ? 1 : STIFF));
+    x0.push(...entityParams);
   }
   // A line asked to lie a way it is far from (Vertical on one nearly level; an angle 130 degrees off): turned there
   // about its middle first, its length kept. Left to the steps alone it got there by shrinking - shorter is the
   // shortest way to "upright" - and a line given a far angle ended a speck.
   if (!opts.drag?.length) {
     const at = new Map(movers.map((e, i) => [e.id, i]));
-    for (const c of live) {
-      const pair = (c.type === 'parallel' || c.type === 'perpendicular') && c.curves?.length === 2;
+    for (const sketchConstraint of live) {
+      const pair = (sketchConstraint.type === 'parallel' || sketchConstraint.type === 'perpendicular') && sketchConstraint.curves?.length === 2;
       // (Parallel, Perpendicular: the second line is the one turned - the first if only that one may move.)
-      const which = pair ? (at.has(c.curves![1]) ? 1 : 0) : 0;
-      const i = (pair || c.curves?.length === 1) && !c.pts?.length ? at.get(c.curves![which]) : undefined;
+      const which = pair ? (at.has(sketchConstraint.curves![1]) ? 1 : 0) : 0;
+      const i = (pair || sketchConstraint.curves?.length === 1) && !sketchConstraint.pts?.length ? at.get(sketchConstraint.curves![which]) : undefined;
       const e = i === undefined ? undefined : movers[i];
       if (i === undefined || e?.kind !== 'line') {
         continue;
@@ -718,40 +718,40 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
       const now = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
       let want: number | null = null;
       if (pair) {
-        const o = entities.find(x => x.id === c.curves![1 - which]);
-        if (o?.kind !== 'line') {
+        const entity = entities.find(entity => entity.id === sketchConstraint.curves![1 - which]);
+        if (entity?.kind !== 'line') {
           continue;
         }
-        const base = Math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]) + (c.type === 'perpendicular' ? Math.PI / 2 : 0);
+        const base = Math.atan2(entity.b[1] - entity.a[1], entity.b[0] - entity.a[0]) + (sketchConstraint.type === 'perpendicular' ? Math.PI / 2 : 0);
         // (Either way along it will do: the nearer.)
         want = Math.abs(wrap(base - now)) <= Math.PI / 2 ? base : base + Math.PI;
       }
-      if (c.type === 'dim' && c.prop === 'angle' && c.value !== undefined) {
-        want = (c.value * Math.PI) / 180;
-      } else if (c.type === 'horizontal') {
+      if (sketchConstraint.type === 'dim' && sketchConstraint.prop === 'angle' && sketchConstraint.value !== undefined) {
+        want = (sketchConstraint.value * Math.PI) / 180;
+      } else if (sketchConstraint.type === 'horizontal') {
         want = Math.abs(wrap(now)) < Math.PI / 2 ? 0 : Math.PI;
-      } else if (c.type === 'vertical') {
+      } else if (sketchConstraint.type === 'vertical') {
         want = wrap(now) > 0 ? Math.PI / 2 : -Math.PI / 2;
       }
       if (want === null || Math.abs(wrap(want - now)) < Math.PI / 6) {
         continue;
       }
-      const o = offsets[i];
+      const offset = offsets[i];
       const mx = (e.a[0] + e.b[0]) / 2;
       const my = (e.a[1] + e.b[1]) / 2;
-      const h = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) / 2;
-      x0[o] = mx - h * Math.cos(want);
-      x0[o + 1] = my - h * Math.sin(want);
-      x0[o + 2] = mx + h * Math.cos(want);
-      x0[o + 3] = my + h * Math.sin(want);
+      const halfLength = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) / 2;
+      x0[offset] = mx - halfLength * Math.cos(want);
+      x0[offset + 1] = my - halfLength * Math.sin(want);
+      x0[offset + 2] = mx + halfLength * Math.cos(want);
+      x0[offset + 3] = my + halfLength * Math.sin(want);
     }
   }
   const byId = new Map(entities.map(e => [e.id, e]));
   const build = (x: number[]) => {
-    const m = new Map(byId);
-    movers.forEach((e, i) => m.set(e.id, withParams(e, x.slice(offsets[i], offsets[i] + counts[i]))));
+    const entities = new Map(byId);
+    movers.forEach((e, i) => entities.set(e.id, withParams(e, x.slice(offsets[i], offsets[i] + counts[i]))));
 
-    return m;
+    return entities;
   };
   const scale = Math.max(1, ...x0.map(Math.abs));
   const drags = opts.drag ?? [];
@@ -759,8 +759,8 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
   // parameter only changes those rows, so the Jacobian is built from just them.
   const moverOf = new Map(movers.map((e, i) => [e.id, i]));
   const usedBy: number[][] = movers.map(() => []);
-  live.forEach((c, ci) => {
-    for (const id of new Set(refsOf(c))) {
+  live.forEach((sketchConstraint, ci) => {
+    for (const id of new Set(refsOf(sketchConstraint))) {
       const i = moverOf.get(id);
       if (i !== undefined) {
         usedBy[i].push(ci);
@@ -768,33 +768,33 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
     }
   });
   const dragsOf: number[][] = movers.map(() => []);
-  drags.forEach((d, di) => {
-    const i = moverOf.get(d.ref.e);
+  drags.forEach((drag, di) => {
+    const i = moverOf.get(drag.ref.e);
     if (i !== undefined) {
       dragsOf[i].push(di);
     }
   });
 
   /** Residuals, laid out per constraint then per drag (rows found from the start). */
-  const evalAll = (m: Map<string, SketchEntity>, withDrag: boolean) => {
-    const get = (id: string) => m.get(id);
-    const parts = live.map(c => residuals(c, get));
-    const dr = withDrag ? drags.map(d => dragRes(m, d)) : [];
+  const evalAll = (entities: Map<string, SketchEntity>, withDrag: boolean) => {
+    const get = (id: string) => entities.get(id);
+    const parts = live.map(sketchConstraint => residuals(sketchConstraint, get));
+    const dr = withDrag ? drags.map(drag => dragRes(entities, drag)) : [];
 
     return { parts, dr };
   };
-  const dragRes = (m: Map<string, SketchEntity>, d: { ref: PointRef; to: Vec2 }) => {
-    const e = m.get(d.ref.e);
-    const p = e && pointOf(e, d.ref.p);
+  const dragRes = (entities: Map<string, SketchEntity>, drag: { ref: PointRef; to: Vec2 }) => {
+    const e = entities.get(drag.ref.e);
+    const point = e && pointOf(e, drag.ref.p);
 
     // The drag target is "soft but strong": constraints still win where they conflict.
-    return p ? [(p[0] - d.to[0]) * 0.3, (p[1] - d.to[1]) * 0.3] : [0, 0];
+    return point ? [(point[0] - drag.to[0]) * 0.3, (point[1] - drag.to[1]) * 0.3] : [0, 0];
   };
   const errorAt = (x: number[]) => {
     let worst = 0;
-    for (const r of evalAll(build(x), false).parts) {
-      for (const v of r) {
-        worst = Math.max(worst, Number.isFinite(v) ? Math.abs(v) : Infinity);
+    for (const part of evalAll(build(x), false).parts) {
+      for (const value of part) {
+        worst = Math.max(worst, Number.isFinite(value) ? Math.abs(value) : Infinity);
       }
     }
 
@@ -805,33 +805,33 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
   const deadline = performance.now() + (opts.budget ?? (drags.length ? 40 : 800));
   /** Fraction of the step dx that keeps every arc's change within about its size. */
   const stepLimit = (x: number[], dx: number[]) => {
-    let f = 1;
+    let fraction = 1;
     movers.forEach((e, i) => {
-      const o = offsets[i];
+      const offset = offsets[i];
       if (e.kind === 'arc' && counts[i] === 5) {
-        const r = Math.max(Math.abs(x[o + 2]), Math.abs(x0[o + 2]));
-        const move = Math.max(Math.abs(dx[o]), Math.abs(dx[o + 1]), Math.abs(dx[o + 2]));
-        if (move > 0.5 * r) {
-          f = Math.min(f, (0.5 * r) / move);
+        const radius = Math.max(Math.abs(x[offset + 2]), Math.abs(x0[offset + 2]));
+        const move = Math.max(Math.abs(dx[offset]), Math.abs(dx[offset + 1]), Math.abs(dx[offset + 2]));
+        if (move > 0.5 * radius) {
+          fraction = Math.min(fraction, (0.5 * radius) / move);
         }
-        const turn = Math.max(Math.abs(dx[o + 3]), Math.abs(dx[o + 4]));
+        const turn = Math.max(Math.abs(dx[offset + 3]), Math.abs(dx[offset + 4]));
         if (turn > 0.5) {
-          f = Math.min(f, 0.5 / turn);
+          fraction = Math.min(fraction, 0.5 / turn);
         }
       } else if (e.kind === 'ellipse' || e.kind === 'rect') {
-        const turn = Math.abs(dx[o + 4]);
+        const turn = Math.abs(dx[offset + 4]);
         if (turn > 0.5) {
-          f = Math.min(f, 0.5 / turn);
+          fraction = Math.min(fraction, 0.5 / turn);
         }
       } else if (e.kind === 'polygon') {
-        const turn = Math.abs(dx[o + 3]);
+        const turn = Math.abs(dx[offset + 3]);
         if (turn > 0.5) {
-          f = Math.min(f, 0.5 / turn);
+          fraction = Math.min(fraction, 0.5 / turn);
         }
       }
     });
 
-    return f;
+    return fraction;
   };
   const run = (t: number, from: number[]) => {
     let xs = from;
@@ -896,19 +896,19 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
   // then shown, saved and built so): each value a hair off a clean one is put
   // on it, when that keeps the constraints as well met.
   if (!drags.length) {
-    const clean = xs.map((v) => {
-      const r = Math.round(v * 1e9) / 1e9;
+    const clean = xs.map((value) => {
+      const rounded = Math.round(value * 1e9) / 1e9;
 
-      return r !== v && Math.abs(r - v) < 1e-10 * Math.max(1, Math.abs(v)) ? r : v;
+      return rounded !== value && Math.abs(rounded - value) < 1e-10 * Math.max(1, Math.abs(value)) ? rounded : value;
     });
-    if (clean.some((v, i) => v !== xs[i]) && errorAt(clean) <= Math.max(errorAt(xs), tol)) {
+    if (clean.some((value, i) => value !== xs[i]) && errorAt(clean) <= Math.max(errorAt(xs), tol)) {
       xs = clean;
     }
   }
-  const m = build(xs);
+  const solved = build(xs);
   const error = errorAt(xs);
 
-  return { entities: entities.map(e => m.get(e.id) ?? e), error, ok: error < 1e-6 * Math.max(1, scale) };
+  return { entities: entities.map(e => solved.get(e.id) ?? e), error, ok: error < 1e-6 * Math.max(1, scale) };
 
   /**
    * Levenberg–Marquardt from `from`. `t` < 1 asks for only that part of the
@@ -918,20 +918,20 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
     const keep = 1 - t;
     const flat = (ev: { parts: number[][]; dr: number[][] }) => {
       const out: number[] = [];
-      ev.parts.forEach((r, ci) => {
+      ev.parts.forEach((part, ci) => {
         const s0 = start.parts[ci];
-        for (let k = 0; k < r.length; k++) {
-          out.push(r[k] - (keep && s0.length === r.length ? s0[k] * keep : 0));
+        for (let index = 0; index < part.length; index++) {
+          out.push(part[index] - (keep && s0.length === part.length ? s0[index] * keep : 0));
         }
       });
-      ev.dr.forEach((r, di) => {
+      ev.dr.forEach((residual, di) => {
         const s0 = start.dr[di];
-        out.push(r[0] - s0[0] * keep, r[1] - s0[1] * keep);
+        out.push(residual[0] - s0[0] * keep, residual[1] - s0[1] * keep);
       });
 
       return out;
     };
-    const R = (x: number[]) => {
+    const residualsAt = (x: number[]) => {
       const out = flat(evalAll(build(x), withDrag));
       // Weak pull towards the start: picks the smallest change for free directions.
       for (let i = 0; i < x.length; i++) {
@@ -941,39 +941,39 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
       return out;
     };
     let x = from.slice();
-    let m = build(x);
-    let ev = evalAll(m, withDrag);
-    let r = R(x);
-    let cost = dot(r, r);
+    let entities = build(x);
+    let ev = evalAll(entities, withDrag);
+    let residualNow = residualsAt(x);
+    let cost = dot(residualNow, residualNow);
     // (Starting next to the answer - the exact pass of a drag - hardly any
     // damping: Gauss-Newton gets there in a step or two, damped it crept.)
     let lambda = lambda0;
-    const n = x.length;
+    const count = x.length;
     let extra = 0;
     for (let it = 0; it < maxIt + extra && cost > 1e-24 && performance.now() < deadline; it++) {
       // Row where each constraint's / drag's residuals start.
       const rowC: number[] = [];
       let row = 0;
-      for (const p of ev.parts) {
+      for (const part of ev.parts) {
         rowC.push(row);
-        row += p.length;
+        row += part.length;
       }
       const rowD = ev.dr.map((_, di) => row + di * 2);
-      const nRes = r.length;
+      const nRes = residualNow.length;
       // Numeric Jacobian, column by column, from only the rows that parameter
       // touches - kept as the few non-zeros of each row.
       const rows: { j: number; v: number }[][] = Array.from({ length: nRes }, () => []);
-      const get = (id: string) => m.get(id);
+      const get = (id: string) => entities.get(id);
       for (let i = 0; i < movers.length; i++) {
         const id = movers[i].id;
-        const was = m.get(id)!;
+        const was = entities.get(id)!;
         const base = x.slice(offsets[i], offsets[i] + counts[i]);
-        for (let k = 0; k < counts[i]; k++) {
-          const j = offsets[i] + k;
-          const h = 1e-6 * Math.max(1, Math.abs(x[j]), scale * 1e-3);
+        for (let index = 0; index < counts[i]; index++) {
+          const j = offsets[i] + index;
+          const step = 1e-6 * Math.max(1, Math.abs(x[j]), scale * 1e-3);
           const pert = base.slice();
-          pert[k] += h;
-          m.set(id, withParams(movers[i], pert));
+          pert[index] += step;
+          entities.set(id, withParams(movers[i], pert));
           for (const ci of usedBy[i]) {
             const rp = residuals(live[ci], get);
             const r0 = ev.parts[ci];
@@ -981,18 +981,18 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
               continue;
             }
             for (let q = 0; q < rp.length; q++) {
-              const v = (rp[q] - r0[q]) / h;
-              if (v !== 0) {
-                rows[rowC[ci] + q].push({ j, v });
+              const derivative = (rp[q] - r0[q]) / step;
+              if (derivative !== 0) {
+                rows[rowC[ci] + q].push({ j, v: derivative });
               }
             }
           }
           if (withDrag) {
             for (const di of dragsOf[i]) {
-              const rp = dragRes(m, drags[di]);
+              const rp = dragRes(entities, drags[di]);
               const r0 = ev.dr[di];
-              const v0 = (rp[0] - r0[0]) / h;
-              const v1 = (rp[1] - r0[1]) / h;
+              const v0 = (rp[0] - r0[0]) / step;
+              const v1 = (rp[1] - r0[1]) / step;
               if (v0 !== 0) {
                 rows[rowD[di]].push({ j, v: v0 });
               }
@@ -1001,29 +1001,29 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
               }
             }
           }
-          rows[nRes - n + j].push({ j, v: weight * per[j] });
+          rows[nRes - count + j].push({ j, v: weight * per[j] });
         }
-        m.set(id, was);
+        entities.set(id, was);
       }
-      // (JᵀJ + λ diag) dx = -Jᵀ r, from those non-zeros (each residual depends
+      // (JᵀJ + λ diag) dx = -Jᵀ·residualNow, from those non-zeros (each residual depends
       // on a handful of parameters), not the whole matrix.
-      const A: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
-      const g = new Array(n).fill(0);
+      const normalMatrix: number[][] = Array.from({ length: count }, () => new Array(count).fill(0));
+      const gradient = new Array(count).fill(0);
       for (let i = 0; i < nRes; i++) {
         const row = rows[i];
-        const ri = r[i];
-        for (let p = 0; p < row.length; p++) {
-          const { j: a, v: va } = row[p];
-          g[a] -= va * ri;
-          const Aa = A[a];
-          for (let q = p; q < row.length; q++) {
+        const ri = residualNow[i];
+        for (let column = 0; column < row.length; column++) {
+          const { j: a, v: va } = row[column];
+          gradient[a] -= va * ri;
+          const Aa = normalMatrix[a];
+          for (let q = column; q < row.length; q++) {
             Aa[row[q].j] += va * row[q].v;
           }
         }
       }
-      for (let a = 0; a < n; a++) {
-        for (let b = a + 1; b < n; b++) {
-          A[b][a] = A[a][b];
+      for (let a = 0; a < count; a++) {
+        for (let b = a + 1; b < count; b++) {
+          normalMatrix[b][a] = normalMatrix[a][b];
         }
       }
       let improved = false;
@@ -1033,16 +1033,16 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
       // are - stepped furthest in the direction that helped least: a line given a length drew its ends together
       // sideways until it stood upright, and stopped there, the length not met.
       let mean = 0;
-      for (let i = 0; i < n; i++) {
-        mean += A[i][i] / (per[i] * per[i]);
+      for (let i = 0; i < count; i++) {
+        mean += normalMatrix[i][i] / (per[i] * per[i]);
       }
-      mean = mean / Math.max(1, n) || 1;
+      mean = mean / Math.max(1, count) || 1;
       for (let tries = 0; tries < 8; tries++) {
-        const diag = A.map((rowA, i) => rowA[i] + lambda * mean * per[i] * per[i] + 1e-12);
-        let dx = solveSPD(A, diag, g);
+        const diag = normalMatrix.map((rowA, i) => rowA[i] + lambda * mean * per[i] * per[i] + 1e-12);
+        let dx = solveSPD(normalMatrix, diag, gradient);
         if (!dx) {
-          const M = A.map((rowA, i) => rowA.map((v, j) => (i === j ? diag[i] : v)));
-          dx = solveLinear(M, g);
+          const damped = normalMatrix.map((rowA, i) => rowA.map((value, j) => (i === j ? diag[i] : value)));
+          dx = solveLinear(damped, gradient);
         }
         if (!dx) {
           lambda *= 10;
@@ -1050,25 +1050,25 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
         }
         // Curved things are only near-linear within about their own size: a
         // longer step would land somewhere arbitrary (folded, inside out).
-        const f = stepLimit(x, dx);
-        if (f < 1) {
-          for (let i = 0; i < n; i++) {
-            dx[i] *= f;
+        const fraction = stepLimit(x, dx);
+        if (fraction < 1) {
+          for (let i = 0; i < count; i++) {
+            dx[i] *= fraction;
           }
           if (tries === 0) {
             extra = Math.min(extra + 1, 160);
           }
         }
-        const xn = x.map((v, i) => v + dx[i]);
-        const rn = R(xn);
+        const xn = x.map((value, i) => value + dx[i]);
+        const rn = residualsAt(xn);
         const cn = dot(rn, rn);
         if (cn < cost) {
           gain = (cost - cn) / cost;
           x = xn;
-          r = rn;
+          residualNow = rn;
           cost = cn;
-          m = build(x);
-          ev = evalAll(m, withDrag);
+          entities = build(x);
+          ev = evalAll(entities, withDrag);
           lambda = Math.max(1e-9, lambda / 3);
           improved = true;
           break;
@@ -1084,8 +1084,8 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
       if (untilMet && t >= 1) {
         let worst = 0;
         for (const rr of ev.parts) {
-          for (const v of rr) {
-            worst = Math.max(worst, Math.abs(v));
+          for (const value of rr) {
+            worst = Math.max(worst, Math.abs(value));
           }
         }
         if (worst < tol * 1e-4) {
@@ -1099,9 +1099,9 @@ function solveGroup(entities: SketchEntity[], live: SketchConstraint[], opts: So
 }
 
 /** Which way each joined corner of two lines turns, and each arc: a flip changes a sign. */
-function turnsOf(m: Map<string, SketchEntity>, cs: SketchConstraint[]): Map<string, number> {
+function turnsOf(entities: Map<string, SketchEntity>, cs: SketchConstraint[]): Map<string, number> {
   const out = new Map<string, number>();
-  for (const e of m.values()) {
+  for (const e of entities.values()) {
     if (e.kind !== 'arc') {
       continue;
     }
@@ -1113,33 +1113,33 @@ function turnsOf(m: Map<string, SketchEntity>, cs: SketchConstraint[]): Map<stri
   // Corners: two lines joined end to end (by a coincident constraint). Legs
   // that are next to nothing don't count - they can tip either way.
   let size = 0;
-  for (const e of m.values()) {
+  for (const e of entities.values()) {
     if (e.kind === 'line') {
       size = Math.max(size, Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]));
     }
   }
-  for (const c of cs) {
-    if (c.type !== 'coincident' || c.pts?.length !== 2) {
+  for (const sketchConstraint of cs) {
+    if (sketchConstraint.type !== 'coincident' || sketchConstraint.pts?.length !== 2) {
       continue;
     }
-    const [p, q] = c.pts;
-    const l1 = m.get(p.e);
-    const l2 = m.get(q.e);
-    if (l1?.kind !== 'line' || l2?.kind !== 'line' || l1 === l2 || (p.p !== 'a' && p.p !== 'b') || (q.p !== 'a' && q.p !== 'b')) {
+    const [pointRef, q] = sketchConstraint.pts;
+    const l1 = entities.get(pointRef.e);
+    const l2 = entities.get(q.e);
+    if (l1?.kind !== 'line' || l2?.kind !== 'line' || l1 === l2 || (pointRef.p !== 'a' && pointRef.p !== 'b') || (q.p !== 'a' && q.p !== 'b')) {
       continue;
     }
-    const o = p.p === 'a' ? l1.a : l1.b;
-    const u = p.p === 'a' ? l1.b : l1.a;
-    const v = q.p === 'a' ? l2.b : l2.a;
-    const lu = Math.hypot(u[0] - o[0], u[1] - o[1]);
-    const lv = Math.hypot(v[0] - o[0], v[1] - o[1]);
+    const origin = pointRef.p === 'a' ? l1.a : l1.b;
+    const endA = pointRef.p === 'a' ? l1.b : l1.a;
+    const endB = q.p === 'a' ? l2.b : l2.a;
+    const lu = Math.hypot(endA[0] - origin[0], endA[1] - origin[1]);
+    const lv = Math.hypot(endB[0] - origin[0], endB[1] - origin[1]);
     if (lu < size * 1e-4 || lv < size * 1e-4) {
       continue;
     }
-    const cr = (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
+    const cr = (endA[0] - origin[0]) * (endB[1] - origin[1]) - (endA[1] - origin[1]) * (endB[0] - origin[0]);
     // Straight-through or folded flat: no clear side.
     if (Math.abs(cr) > lu * lv * 0.02) {
-      out.set(c.id, Math.sign(cr));
+      out.set(sketchConstraint.id, Math.sign(cr));
     }
   }
 
@@ -1147,9 +1147,9 @@ function turnsOf(m: Map<string, SketchEntity>, cs: SketchConstraint[]): Map<stri
 }
 
 function sameTurns(a: Map<string, number>, b: Map<string, number>): boolean {
-  for (const [k, v] of a) {
-    const w = b.get(k);
-    if (w !== undefined && w !== v) {
+  for (const [key, turns] of a) {
+    const other = b.get(key);
+    if (other !== undefined && other !== turns) {
       return false;
     }
   }
@@ -1167,39 +1167,39 @@ function sameTurns(a: Map<string, number>, b: Map<string, number>): boolean {
  */
 export function definedCurves(entities: SketchEntity[], constraints: SketchConstraint[]): { defined: Set<string>; all: boolean } | null {
   const ids = new Set(entities.map(e => e.id));
-  const live = constraints.filter(c => refsOf(c).every(id => ids.has(id)));
+  const live = constraints.filter(constraint => refsOf(constraint).every(id => ids.has(id)));
   // Curves that follow a body's edge are where the edge is: held already.
   const movers = entities.filter(e => !e.id.startsWith(LINKED));
   const offsets: number[] = [];
   const counts: number[] = [];
   const x0: number[] = [];
   for (const e of movers) {
-    const p = params(e);
+    const entityParams = params(e);
     offsets.push(x0.length);
-    counts.push(p.length);
-    x0.push(...p);
+    counts.push(entityParams.length);
+    x0.push(...entityParams);
   }
-  const n = x0.length;
+  const count = x0.length;
   const linked = new Set(entities.filter(e => e.id.startsWith(LINKED)).map(e => e.id));
-  if (!n) {
+  if (!count) {
     return { defined: linked, all: true };
   }
-  if (n > 300) {
+  if (count > 300) {
     return null;
   }
   const byId = new Map(entities.map(e => [e.id, e]));
   const at = (id: string) => byId.get(id);
   const rowStart: number[] = [];
-  let m = 0;
-  for (const c of live) {
-    rowStart.push(m);
-    m += residuals(c, at).length;
+  let rowCount = 0;
+  for (const sketchConstraint of live) {
+    rowStart.push(rowCount);
+    rowCount += residuals(sketchConstraint, at).length;
   }
-  const J: Float64Array[] = Array.from({ length: m }, () => new Float64Array(n));
+  const jacobian: Float64Array[] = Array.from({ length: rowCount }, () => new Float64Array(count));
   const moverOf = new Map(movers.map((e, i) => [e.id, i]));
   const usedBy: number[][] = movers.map(() => []);
-  live.forEach((c, ci) => {
-    for (const id of new Set(refsOf(c))) {
+  live.forEach((sketchConstraint, ci) => {
+    for (const id of new Set(refsOf(sketchConstraint))) {
       const i = moverOf.get(id);
       if (i !== undefined) {
         usedBy[i].push(ci);
@@ -1209,23 +1209,23 @@ export function definedCurves(entities: SketchEntity[], constraints: SketchConst
   let big = 0;
   movers.forEach((e, i) => {
     const xs = x0.slice(offsets[i], offsets[i] + counts[i]);
-    for (let k = 0; k < counts[i]; k++) {
-      const j = offsets[i] + k;
-      const h = 1e-6 * Math.max(1, Math.abs(xs[k]));
+    for (let index = 0; index < counts[i]; index++) {
+      const j = offsets[i] + index;
+      const step = 1e-6 * Math.max(1, Math.abs(xs[index]));
       const up = xs.slice();
       const down = xs.slice();
-      up[k] += h;
-      down[k] -= h;
+      up[index] += step;
+      down[index] -= step;
       const ep = withParams(e, up);
       const em = withParams(e, down);
       for (const ci of usedBy[i]) {
         const rp = residuals(live[ci], id => (id === e.id ? ep : byId.get(id)));
         const rm = residuals(live[ci], id => (id === e.id ? em : byId.get(id)));
-        for (let r = 0; r < rp.length; r++) {
-          const v = (rp[r] - rm[r]) / (2 * h);
-          if (Number.isFinite(v)) {
-            J[rowStart[ci] + r][j] = v;
-            big = Math.max(big, Math.abs(v));
+        for (let row = 0; row < rp.length; row++) {
+          const derivative = (rp[row] - rm[row]) / (2 * step);
+          if (Number.isFinite(derivative)) {
+            jacobian[rowStart[ci] + row][j] = derivative;
+            big = Math.max(big, Math.abs(derivative));
           }
         }
       }
@@ -1233,52 +1233,52 @@ export function definedCurves(entities: SketchEntity[], constraints: SketchConst
   });
   // Reduced row echelon form; the columns without a pivot are free directions.
   const tol = 1e-7 * Math.max(1, big);
-  const pivotRow = new Int32Array(n).fill(-1);
+  const pivotRow = new Int32Array(count).fill(-1);
   let row = 0;
-  for (let col = 0; col < n && row < m; col++) {
-    let p = row;
-    for (let r = row + 1; r < m; r++) {
-      if (Math.abs(J[r][col]) > Math.abs(J[p][col])) {
-        p = r;
+  for (let col = 0; col < count && row < rowCount; col++) {
+    let pivot = row;
+    for (let candidateRow = row + 1; candidateRow < rowCount; candidateRow++) {
+      if (Math.abs(jacobian[candidateRow][col]) > Math.abs(jacobian[pivot][col])) {
+        pivot = candidateRow;
       }
     }
-    if (Math.abs(J[p][col]) < tol) {
+    if (Math.abs(jacobian[pivot][col]) < tol) {
       continue;
     }
-    [J[row], J[p]] = [J[p], J[row]];
-    const R = J[row];
-    const d = R[col];
-    for (let c = col; c < n; c++) {
-      R[c] /= d;
+    [jacobian[row], jacobian[pivot]] = [jacobian[pivot], jacobian[row]];
+    const values = jacobian[row];
+    const pivotValue = values[col];
+    for (let column = col; column < count; column++) {
+      values[column] /= pivotValue;
     }
-    for (let r = 0; r < m; r++) {
-      if (r === row) {
+    for (let otherRow = 0; otherRow < rowCount; otherRow++) {
+      if (otherRow === row) {
         continue;
       }
-      const f = J[r][col];
-      if (Math.abs(f) < 1e-15) {
+      const factor = jacobian[otherRow][col];
+      if (Math.abs(factor) < 1e-15) {
         continue;
       }
-      const Rr = J[r];
-      for (let c = col; c < n; c++) {
-        Rr[c] -= f * R[c];
+      const Rr = jacobian[otherRow];
+      for (let column = col; column < count; column++) {
+        Rr[column] -= factor * values[column];
       }
     }
     pivotRow[col] = row++;
   }
   const free: number[] = [];
-  for (let j = 0; j < n; j++) {
+  for (let j = 0; j < count; j++) {
     if (pivotRow[j] < 0) {
       free.push(j);
     }
   }
   // A pivot parameter is held when no free direction moves it.
-  const held = (j: number) => pivotRow[j] >= 0 && free.every(f => Math.abs(J[pivotRow[j]][f]) < 1e-6);
+  const held = (j: number) => pivotRow[j] >= 0 && free.every(freeColumn => Math.abs(jacobian[pivotRow[j]][freeColumn]) < 1e-6);
   const defined = new Set(linked);
   movers.forEach((e, i) => {
     let ok = true;
-    for (let k = 0; k < counts[i] && ok; k++) {
-      ok = held(offsets[i] + k);
+    for (let index = 0; index < counts[i] && ok; index++) {
+      ok = held(offsets[i] + index);
     }
     if (ok) {
       defined.add(e.id);
@@ -1288,17 +1288,17 @@ export function definedCurves(entities: SketchEntity[], constraints: SketchConst
   return { defined, all: defined.size === entities.length };
 }
 
-export function refsOf(c: SketchConstraint): string[] {
-  return [...(c.pts ?? []).map(p => p.e), ...(c.curves ?? [])];
+export function refsOf(sketchConstraint: SketchConstraint): string[] {
+  return [...(sketchConstraint.pts ?? []).map(pointRef => pointRef.e), ...(sketchConstraint.curves ?? [])];
 }
 
 function dot(a: number[], b: number[]): number {
-  let s = 0;
+  let sum = 0;
   for (let i = 0; i < a.length; i++) {
-    s += a[i] * b[i];
+    sum += a[i] * b[i];
   }
 
-  return s;
+  return sum;
 }
 
 /**
@@ -1307,28 +1307,28 @@ function dot(a: number[], b: number[]): number {
  * to their neighbours, so this is far less work than full elimination.
  * Null if the matrix turns out not positive definite.
  */
-function solveSPD(A: number[][], diag: number[], b: number[]): number[] | null {
-  // A holds the upper triangle (A[j][i], j ≤ i); diag replaces its diagonal.
-  const n = b.length;
-  const first = new Array<number>(n);
-  for (let i = 0; i < n; i++) {
-    let f = i;
+function solveSPD(matrix: number[][], diag: number[], b: number[]): number[] | null {
+  // `matrix` holds the upper triangle (matrix[j][i], j ≤ i); diag replaces its diagonal.
+  const count = b.length;
+  const first = new Array<number>(count);
+  for (let i = 0; i < count; i++) {
+    let firstColumn = i;
     for (let j = 0; j < i; j++) {
-      if (A[j][i] !== 0) {
-        f = j;
+      if (matrix[j][i] !== 0) {
+        firstColumn = j;
         break;
       }
     }
-    first[i] = f;
+    first[i] = firstColumn;
   }
-  const L: Float64Array[] = A.map(() => new Float64Array(n));
-  for (let i = 0; i < n; i++) {
-    const Li = L[i];
+  const lower: Float64Array[] = matrix.map(() => new Float64Array(count));
+  for (let i = 0; i < count; i++) {
+    const Li = lower[i];
     for (let j = first[i]; j <= i; j++) {
-      const Lj = L[j];
-      let sum = j === i ? diag[i] : A[j][i];
-      for (let k = Math.max(first[i], first[j]); k < j; k++) {
-        sum -= Li[k] * Lj[k];
+      const Lj = lower[j];
+      let sum = j === i ? diag[i] : matrix[j][i];
+      for (let index = Math.max(first[i], first[j]); index < j; index++) {
+        sum -= Li[index] * Lj[index];
       }
       if (j === i) {
         if (!(sum > 0)) {
@@ -1340,21 +1340,21 @@ function solveSPD(A: number[][], diag: number[], b: number[]): number[] | null {
       }
     }
   }
-  // L y = b, then Lᵀ x = y.
-  const y = new Array<number>(n);
-  for (let i = 0; i < n; i++) {
+  // lower·y = b, then lowerᵀ·x = y.
+  const y = new Array<number>(count);
+  for (let i = 0; i < count; i++) {
     let sum = b[i];
-    for (let k = first[i]; k < i; k++) {
-      sum -= L[i][k] * y[k];
+    for (let index = first[i]; index < i; index++) {
+      sum -= lower[i][index] * y[index];
     }
-    y[i] = sum / L[i][i];
+    y[i] = sum / lower[i][i];
   }
   const x = y.slice();
-  for (let i = n - 1; i >= 0; i--) {
-    x[i] /= L[i][i];
+  for (let i = count - 1; i >= 0; i--) {
+    x[i] /= lower[i][i];
     const xi = x[i];
-    for (let k = first[i]; k < i; k++) {
-      x[k] -= L[i][k] * xi;
+    for (let index = first[i]; index < i; index++) {
+      x[index] -= lower[i][index] * xi;
     }
   }
 
@@ -1362,37 +1362,37 @@ function solveSPD(A: number[][], diag: number[], b: number[]): number[] | null {
 }
 
 /** Gaussian elimination with partial pivoting. */
-function solveLinear(A: number[][], b: number[]): number[] | null {
-  const n = b.length;
-  const M = A.map((row, i) => [...row, b[i]]);
-  for (let c = 0; c < n; c++) {
-    let p = c;
-    for (let r = c + 1; r < n; r++) {
-      if (Math.abs(M[r][c]) > Math.abs(M[p][c])) {
-        p = r;
+function solveLinear(matrix: number[][], b: number[]): number[] | null {
+  const count = b.length;
+  const augmented = matrix.map((row, i) => [...row, b[i]]);
+  for (let column = 0; column < count; column++) {
+    let pivot = column;
+    for (let row = column + 1; row < count; row++) {
+      if (Math.abs(augmented[row][column]) > Math.abs(augmented[pivot][column])) {
+        pivot = row;
       }
     }
-    if (Math.abs(M[p][c]) < 1e-18) {
+    if (Math.abs(augmented[pivot][column]) < 1e-18) {
       return null;
     }
-    [M[c], M[p]] = [M[p], M[c]];
-    for (let r = c + 1; r < n; r++) {
-      const f = M[r][c] / M[c][c];
-      if (!f) {
+    [augmented[column], augmented[pivot]] = [augmented[pivot], augmented[column]];
+    for (let row = column + 1; row < count; row++) {
+      const factor = augmented[row][column] / augmented[column][column];
+      if (!factor) {
         continue;
       }
-      for (let k = c; k <= n; k++) {
-        M[r][k] -= f * M[c][k];
+      for (let entry = column; entry <= count; entry++) {
+        augmented[row][entry] -= factor * augmented[column][entry];
       }
     }
   }
-  const x = new Array(n).fill(0);
-  for (let r = n - 1; r >= 0; r--) {
-    let s = M[r][n];
-    for (let k = r + 1; k < n; k++) {
-      s -= M[r][k] * x[k];
+  const x = new Array(count).fill(0);
+  for (let row = count - 1; row >= 0; row--) {
+    let sum = augmented[row][count];
+    for (let column = row + 1; column < count; column++) {
+      sum -= augmented[row][column] * x[column];
     }
-    x[r] = s / M[r][r];
+    x[row] = sum / augmented[row][row];
   }
 
   return x;
@@ -1447,9 +1447,9 @@ export function addStrict(
   opts: SolveOptions = {}
 ): { ok: boolean; constraints: SketchConstraint[]; result: SolveResult } {
   const all = [...existing, ...added];
-  const r = solveFine(entities, all, opts);
+  const solution = solveFine(entities, all, opts);
 
-  return r.ok ? { ok: true, constraints: all, result: r } : { ok: false, constraints: existing, result: r };
+  return solution.ok ? { ok: true, constraints: all, result: solution } : { ok: false, constraints: existing, result: solution };
 }
 
 function curveSize(e: SketchEntity): number {
@@ -1462,9 +1462,9 @@ function curveSize(e: SketchEntity): number {
     case 'arc': {
       // Its length: a nearly full arc has almost no chord but is no crumb; one
       // that sweeps next to nothing is.
-      const c = arcFrom3(e.a, e.m, e.b);
+      const arc = arcFrom3(e.a, e.m, e.b);
 
-      return c ? c.r * Math.abs(c.sweep) : 0;
+      return arc ? arc.r * Math.abs(arc.sweep) : 0;
     }
     case 'rect':
       return Math.min(e.w, e.h);
@@ -1480,30 +1480,30 @@ function curveSize(e: SketchEntity): number {
  * (a line of zero length "is" horizontal and vertical at once - that's not a sketch).
  */
 export function solveFine(entities: SketchEntity[], constraints: SketchConstraint[], opts: SolveOptions = {}): SolveResult {
-  const r = solve(entities, constraints, opts);
+  const solution = solve(entities, constraints, opts);
   // Against the sketch's size before and after (a curve made huge can crush another).
   const extent = (e: SketchEntity) => (e.kind === 'rect' ? Math.max(e.w, e.h) : e.kind === 'ellipse' ? Math.max(e.rx, e.ry) : curveSize(e));
-  const scale = Math.max(1e-9, ...entities.map(extent), ...r.entities.map(extent));
+  const scale = Math.max(1e-9, ...entities.map(extent), ...solution.entities.map(extent));
   // One that was already tiny may stay so, but not shrink further towards nothing.
-  const ok = r.ok && r.entities.every((e, i) => curveSize(e) > scale * 1e-6 || curveSize(e) >= curveSize(entities[i]) * 0.99);
+  const ok = solution.ok && solution.entities.every((e, i) => curveSize(e) > scale * 1e-6 || curveSize(e) >= curveSize(entities[i]) * 0.99);
 
-  return { ...r, ok };
+  return { ...solution, ok };
 }
 
 /** A dimension's new value, strictly: refused (null) if the sketch can't take it. */
 export function setValueStrict(entities: SketchEntity[], constraints: SketchConstraint[], id: string, value: number, expr?: string): { constraints: SketchConstraint[]; result: SolveResult } | null {
-  const c = constraints.find(x => x.id === id);
-  if (!c) {
+  const constraint = constraints.find(constraint => constraint.id === id);
+  if (!constraint) {
     return null;
   }
-  const next = { ...c, value, expr };
-  const r = addStrict(entities, constraints.filter(x => x !== c), [next]);
-  if (!r.ok) {
+  const next = { ...constraint, value, expr };
+  const result = addStrict(entities, constraints.filter(sketchConstraint => sketchConstraint !== constraint), [next]);
+  if (!result.ok) {
     return null;
   }
 
   // Keep the constraint where it was in the list.
-  return { constraints: constraints.map(x => (x === c ? next : x)), result: r.result };
+  return { constraints: constraints.map(sketchConstraint => (sketchConstraint === constraint ? next : sketchConstraint)), result: result.result };
 }
 
 /**
@@ -1525,24 +1525,24 @@ export function addResolving(
   }
   // Only ones touching what the new constraint touches can be in its way.
   const refs = new Set(added.flatMap(refsOf));
-  const near = existing.filter(c => refsOf(c).some(r => refs.has(r))).reverse();
+  const near = existing.filter(sketchConstraint => refsOf(sketchConstraint).some(ref => refs.has(ref))).reverse();
   // One is usually enough: try each alone first.
-  for (const c of near) {
-    const rest = all.filter(x => x !== c);
-    const r = solveOk(rest);
-    if (r.ok) {
-      return { constraints: rest, removed: [c], result: r };
+  for (const sketchConstraint of near) {
+    const rest = all.filter(other => other !== sketchConstraint);
+    const solution = solveOk(rest);
+    if (solution.ok) {
+      return { constraints: rest, removed: [sketchConstraint], result: solution };
     }
   }
   // Else take them away one by one until it works out.
   const removed: SketchConstraint[] = [];
   let rest = all;
-  for (const c of near) {
-    rest = rest.filter(x => x !== c);
-    removed.push(c);
-    const r = solveOk(rest);
-    if (r.ok) {
-      return { constraints: rest, removed, result: r };
+  for (const sketchConstraint of near) {
+    rest = rest.filter(other => other !== sketchConstraint);
+    removed.push(sketchConstraint);
+    const solution = solveOk(rest);
+    if (solution.ok) {
+      return { constraints: rest, removed, result: solution };
     }
   }
 
@@ -1554,20 +1554,20 @@ export function addResolving(
  * angle or orientation the new one restates, then sizes, then shape links;
  * joins (coincident) and locks last of all - the user meant to keep those.
  */
-function yieldRank(c: SketchConstraint): number {
-  if (c.type === 'dim' && c.prop === 'angle') {
+function yieldRank(sketchConstraint: SketchConstraint): number {
+  if (sketchConstraint.type === 'dim' && sketchConstraint.prop === 'angle') {
     return 0;
   }
-  if (c.type === 'horizontal' || c.type === 'vertical' || c.type === 'parallel' || c.type === 'perpendicular') {
+  if (sketchConstraint.type === 'horizontal' || sketchConstraint.type === 'vertical' || sketchConstraint.type === 'parallel' || sketchConstraint.type === 'perpendicular') {
     return 1;
   }
-  if (c.type === 'dim' || c.type === 'distance') {
+  if (sketchConstraint.type === 'dim' || sketchConstraint.type === 'distance') {
     return 2;
   }
-  if (c.type === 'equal' || c.type === 'symmetric' || c.type === 'midpoint' || c.type === 'tangent' || c.type === 'concentric') {
+  if (sketchConstraint.type === 'equal' || sketchConstraint.type === 'symmetric' || sketchConstraint.type === 'midpoint' || sketchConstraint.type === 'tangent' || sketchConstraint.type === 'concentric') {
     return 3;
   }
-  if (c.type === 'coincident') {
+  if (sketchConstraint.type === 'coincident') {
     return 4;
   }
 
@@ -1591,104 +1591,104 @@ export function addForUser(
 ): { ok: boolean; constraints: SketchConstraint[]; removed: SketchConstraint[]; result: SolveResult } {
   const refs = new Set(added.flatMap(refsOf));
   const all = [...existing, ...added];
-  const holdFirst = !!first && refs.has(first) && [...refs].some(r => r !== first) && !added.every(c => c.type === 'fix');
+  const holdFirst = !!first && refs.has(first) && [...refs].some(ref => ref !== first) && !added.every(sketchConstraint => sketchConstraint.type === 'fix');
   const tries: SolveOptions[] = holdFirst ? [{ fixed: new Set([first!]) }, {}] : [{}];
   // No curve may all but vanish for it (a line squashed to a speck "is" any
   // direction): unless the new constraint sizes that very curve, each keeps
   // a good part of its size.
-  const sized = new Set(added.filter(c => c.type === 'dim' || c.type === 'equal').flatMap(refsOf));
+  const sized = new Set(added.filter(sketchConstraint => sketchConstraint.type === 'dim' || sketchConstraint.type === 'equal').flatMap(refsOf));
   const before = new Map(entities.map(e => [e.id, curveSize(e)]));
-  const sane = (r: SolveResult) => r.ok && r.entities.every(e => sized.has(e.id) || curveSize(e) >= 0.2 * (before.get(e.id) ?? 0));
+  const sane = (solveResult: SolveResult) => solveResult.ok && solveResult.entities.every(e => sized.has(e.id) || curveSize(e) >= 0.2 * (before.get(e.id) ?? 0));
   let last: SolveResult | null = null;
-  for (const o of tries) {
-    const r = solveFine(entities, all, o);
-    if (sane(r)) {
-      return { ok: true, constraints: all, removed: [], result: r };
+  for (const solveOptions of tries) {
+    const solution = solveFine(entities, all, solveOptions);
+    if (sane(solution)) {
+      return { ok: true, constraints: all, removed: [], result: solution };
     }
-    last = r;
+    last = solution;
   }
   // What can be in its way: constraints on the curves it touches, then on their neighbours.
-  const ring1 = existing.filter(c => refsOf(c).some(r => refs.has(r)));
+  const ring1 = existing.filter(sketchConstraint => refsOf(sketchConstraint).some(ref => refs.has(ref)));
   const near1 = new Set([...refs, ...ring1.flatMap(refsOf)]);
-  const ring2 = existing.filter(c => !ring1.includes(c) && refsOf(c).some(r => near1.has(r)));
+  const ring2 = existing.filter(sketchConstraint => !ring1.includes(sketchConstraint) && refsOf(sketchConstraint).some(ref => near1.has(ref)));
   // Lowest rank first; within a rank, newest first.
   const order = (list: SketchConstraint[]) =>
     list
-      .map((c, i) => ({ c, i }))
+      .map((sketchConstraint, i) => ({ c: sketchConstraint, i }))
       .sort((a, b) => yieldRank(a.c) - yieldRank(b.c) || b.i - a.i)
-      .map(x => x.c);
+      .map(entry => entry.c);
   // Locks stay: the user set them to hold things where they are.
-  const cands = [...order(ring1), ...order(ring2)].filter(c => c.type !== 'fix');
+  const cands = [...order(ring1), ...order(ring2)].filter(sketchConstraint => sketchConstraint.type !== 'fix');
   const attempt = (cs: SketchConstraint[]) => {
-    for (const o of tries) {
-      const r = solveFine(entities, cs, o);
-      if (sane(r)) {
-        return r;
+    for (const solveOptions of tries) {
+      const solution = solveFine(entities, cs, solveOptions);
+      if (sane(solution)) {
+        return solution;
       }
     }
 
     return null;
   };
   // One is usually enough: try each alone (the most willing first).
-  for (const c of cands) {
-    const rest = all.filter(x => x !== c);
-    const r = attempt(rest);
-    if (r) {
-      return { ok: true, constraints: rest, removed: [c], result: r };
+  for (const candidate of cands) {
+    const rest = all.filter(sketchConstraint => sketchConstraint !== candidate);
+    const solveResult = attempt(rest);
+    if (solveResult) {
+      return { ok: true, constraints: rest, removed: [candidate], result: solveResult };
     }
   }
   // Else take them away in that order until it works, then put back any that weren't needed.
   const removed: SketchConstraint[] = [];
   let rest = all;
-  for (const c of cands) {
-    rest = rest.filter(x => x !== c);
-    removed.push(c);
-    let r = attempt(rest);
-    if (!r) {
+  for (const candidate of cands) {
+    rest = rest.filter(sketchConstraint => sketchConstraint !== candidate);
+    removed.push(candidate);
+    let solveResult = attempt(rest);
+    if (!solveResult) {
       continue;
     }
     for (const back of [...removed].reverse()) {
-      const withBack = all.filter(x => rest.includes(x) || x === back);
+      const withBack = all.filter(sketchConstraint => rest.includes(sketchConstraint) || sketchConstraint === back);
       const rb = attempt(withBack);
       if (rb) {
         rest = withBack;
         removed.splice(removed.indexOf(back), 1);
-        r = rb;
+        solveResult = rb;
       }
     }
 
-    return { ok: true, constraints: rest, removed, result: r };
+    return { ok: true, constraints: rest, removed, result: solveResult };
   }
 
   return { ok: false, constraints: existing, removed: [], result: last! };
 }
 
 /** Short name of a constraint for messages ("angle dimension", "parallel"). */
-export function constraintName(c: SketchConstraint): string {
-  if (c.type === 'dim') {
-    return `${c.prop === 'angle' ? 'angle' : (c.prop ?? 'size')} dimension`;
+export function constraintName(sketchConstraint: SketchConstraint): string {
+  if (sketchConstraint.type === 'dim') {
+    return `${sketchConstraint.prop === 'angle' ? 'angle' : (sketchConstraint.prop ?? 'size')} dimension`;
   }
-  if (c.type === 'fix') {
+  if (sketchConstraint.type === 'fix') {
     return 'lock';
   }
-  if (c.type === 'pattern') {
+  if (sketchConstraint.type === 'pattern') {
     return 'pattern link';
   }
-  if (c.type === 'follow') {
-    return c.how?.mirror ? 'mirror link' : 'offset link';
+  if (sketchConstraint.type === 'follow') {
+    return sketchConstraint.how?.mirror ? 'mirror link' : 'offset link';
   }
 
-  return c.type;
+  return sketchConstraint.type;
 }
 
 /** Largest residual of the constraints on these entities as they are (0 = all met). */
 export function constraintError(entities: SketchEntity[], constraints: SketchConstraint[]): number {
-  const m = new Map(entities.map(e => [e.id, e]));
-  const get = (id: string) => m.get(id);
+  const byId = new Map(entities.map(e => [e.id, e]));
+  const get = (id: string) => byId.get(id);
   let worst = 0;
-  for (const c of constraints) {
-    for (const v of residuals(c, get)) {
-      worst = Math.max(worst, Number.isFinite(v) ? Math.abs(v) : Infinity);
+  for (const constraint of constraints) {
+    for (const residual of residuals(constraint, get)) {
+      worst = Math.max(worst, Number.isFinite(residual) ? Math.abs(residual) : Infinity);
     }
   }
 
@@ -1706,9 +1706,9 @@ export function followDrag(
   drag: { ref: PointRef; to: Vec2 }[],
   prevTo: Vec2[] | null
 ): { entities: SketchEntity[]; to: Vec2[]; ok: boolean } {
-  const r = solveFine(prev, constraints, { drag, budget: 30 });
-  if (r.ok || !prevTo) {
-    return { entities: r.ok ? r.entities : prev, to: drag.map(d => d.to), ok: r.ok };
+  const solution = solveFine(prev, constraints, { drag, budget: 30 });
+  if (solution.ok || !prevTo) {
+    return { entities: solution.ok ? solution.entities : prev, to: drag.map(drag => drag.to), ok: solution.ok };
   }
   // Halfway, and halfway again: the furthest point it can still reach.
   let lo = 0;
@@ -1717,8 +1717,8 @@ export function followDrag(
   let bestTo = prevTo;
   for (let i = 0; i < 3; i++) {
     const t = (lo + hi) / 2;
-    const to = drag.map((d, k) => [prevTo[k][0] + (d.to[0] - prevTo[k][0]) * t, prevTo[k][1] + (d.to[1] - prevTo[k][1]) * t] as Vec2);
-    const q = solveFine(prev, constraints, { drag: drag.map((d, k) => ({ ref: d.ref, to: to[k] })), budget: 8 });
+    const to = drag.map((drag, index) => [prevTo[index][0] + (drag.to[0] - prevTo[index][0]) * t, prevTo[index][1] + (drag.to[1] - prevTo[index][1]) * t] as Vec2);
+    const q = solveFine(prev, constraints, { drag: drag.map((drag, index) => ({ ref: drag.ref, to: to[index] })), budget: 8 });
     if (q.ok) {
       lo = t;
       best = q.entities;
@@ -1746,38 +1746,38 @@ export function touchingEnds(entities: SketchEntity[], constraints: SketchConstr
   const tol = size * 1e-7;
   // Already joined: groups of points linked by Coincident.
   const parent = new Map<string, string>();
-  const key = (r: PointRef) => `${r.e}:${r.p}`;
-  const find = (k: string): string => {
-    let r = k;
-    while (parent.has(r) && parent.get(r) !== r) {
-      r = parent.get(r)!;
+  const key = (pointRef: PointRef) => `${pointRef.e}:${pointRef.p}`;
+  const find = (key: string): string => {
+    let root = key;
+    while (parent.has(root) && parent.get(root) !== root) {
+      root = parent.get(root)!;
     }
 
-    return r;
+    return root;
   };
-  for (const c of constraints) {
-    if (c.type === 'coincident' && c.pts?.length === 2 && !c.curves?.length) {
-      parent.set(find(key(c.pts[0])), find(key(c.pts[1])));
+  for (const constraint of constraints) {
+    if (constraint.type === 'coincident' && constraint.pts?.length === 2 && !constraint.curves?.length) {
+      parent.set(find(key(constraint.pts[0])), find(key(constraint.pts[1])));
     }
   }
   const out: [PointRef, PointRef][] = [];
   for (let i = 0; i < ends.length; i++) {
     for (let j = i + 1; j < ends.length; j++) {
-      const A = ends[i];
-      const B = ends[j];
-      if (A.ref.e === B.ref.e || (!ids.has(A.ref.e) && !ids.has(B.ref.e))) {
+      const endA = ends[i];
+      const endB = ends[j];
+      if (endA.ref.e === endB.ref.e || (!ids.has(endA.ref.e) && !ids.has(endB.ref.e))) {
         continue;
       }
-      if (Math.hypot(A.at[0] - B.at[0], A.at[1] - B.at[1]) > tol) {
+      if (Math.hypot(endA.at[0] - endB.at[0], endA.at[1] - endB.at[1]) > tol) {
         continue;
       }
-      const ka = find(key(A.ref));
-      const kb = find(key(B.ref));
+      const ka = find(key(endA.ref));
+      const kb = find(key(endB.ref));
       if (ka === kb) {
         continue;
       }
       parent.set(ka, kb);
-      out.push([A.ref, B.ref]);
+      out.push([endA.ref, endB.ref]);
     }
   }
 

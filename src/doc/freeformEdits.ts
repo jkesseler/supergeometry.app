@@ -8,7 +8,7 @@ import type { Feature, FreeformEditFeature } from './types';
 
 /** The steps with their edits put in (the edit steps themselves stay, doing nothing more). */
 export function applyFreeformEdits<T extends Feature>(features: readonly T[]): T[] {
-  const edits = features.filter((f): f is T & FreeformEditFeature => f.type === 'freeformEdit' && !f.suppressed && !f.rolledBack);
+  const edits = features.filter((feature): feature is T & FreeformEditFeature => feature.type === 'freeformEdit' && !feature.suppressed && !feature.rolledBack);
   if (!edits.length) {
     return features as T[];
   }
@@ -17,16 +17,16 @@ export function applyFreeformEdits<T extends Feature>(features: readonly T[]): T
     patch.set(e.target, { ...(patch.get(e.target) ?? {}), ...e.patch });
   }
 
-  return features.map((f) => {
-    const p = patch.get(f.id);
+  return features.map((feature) => {
+    const change = patch.get(feature.id);
 
-    return p && (f.type === 'freeform' || f.type === 'faceFreeform') ? ({ ...f, ...p } as T) : f;
+    return change && (feature.type === 'freeform' || feature.type === 'faceFreeform') ? ({ ...feature, ...change } as T) : feature;
   });
 }
 
 /** One step as its edits leave it (up to and with the edit `upto`, when given). */
 export function editedStep<T extends Feature>(features: readonly Feature[], id: string, upto?: string): T | undefined {
-  const end = upto ? features.findIndex(f => f.id === upto) + 1 : features.length;
+  const end = upto ? features.findIndex(feature => feature.id === upto) + 1 : features.length;
 
-  return applyFreeformEdits(features.slice(0, end > 0 ? end : features.length)).find(f => f.id === id) as T | undefined;
+  return applyFreeformEdits(features.slice(0, end > 0 ? end : features.length)).find(feature => feature.id === id) as T | undefined;
 }

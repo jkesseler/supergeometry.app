@@ -24,10 +24,10 @@ export interface SectionHost extends AppContext {
 }
 
 /** The plane the view is cut with (offset and flip applied). */
-export function sectionPlane(s: SectionState): PlaneDef {
-  const n: Vec3 = s.flipped ? scale(s.plane.normal, -1) : s.plane.normal;
+export function sectionPlane(sectionState: SectionState): PlaneDef {
+  const normal: Vec3 = sectionState.flipped ? scale(sectionState.plane.normal, -1) : sectionState.plane.normal;
 
-  return { origin: add(s.plane.origin, scale(s.plane.normal, s.offset)), normal: n, xDir: s.plane.xDir };
+  return { origin: add(sectionState.plane.origin, scale(sectionState.plane.normal, sectionState.offset)), normal: normal, xDir: sectionState.plane.xDir };
 }
 
 /** Section view: pick a plane or flat face, then drag the cut along its normal. */
@@ -64,25 +64,25 @@ export class SectionTool implements Tool {
     this.app.ui.setHint('Tap a plane or a flat face to cut the view there, so you can see inside.');
   }
 
-  hover(p: ToolPointer | null): void {
-    if (!p || this.app.section) {
+  hover(pointer: ToolPointer | null): void {
+    if (!pointer || this.app.section) {
       return this.app.setHover(null);
     }
-    const hit = this.app.view.pick(p.x, p.y, { edges: false, vertices: false, profiles: false, planes: true, planesFirst: true });
+    const hit = this.app.view.pick(pointer.x, pointer.y, { edges: false, vertices: false, profiles: false, planes: true, planesFirst: true });
     const ok = hit && (hit.kind === 'plane' || (hit.kind === 'face' && !!this.app.view.body(hit.body)?.faces[hit.face]?.plane));
     this.app.setHover(ok ? hitToSel(hit) : null);
   }
 
-  tap(p: ToolPointer): void {
+  tap(pointer: ToolPointer): void {
     // With a section set, tapping empty space leaves the tool (the section stays on).
     if (this.app.section) {
-      if (!this.app.view.pick(p.x, p.y, { profiles: false })) {
+      if (!this.app.view.pick(pointer.x, pointer.y, { profiles: false })) {
         this.app.setTool(null);
       }
 
       return;
     }
-    const hit = this.app.view.pick(p.x, p.y, { edges: false, profiles: false, planes: true, planesFirst: true });
+    const hit = this.app.view.pick(pointer.x, pointer.y, { edges: false, profiles: false, planes: true, planesFirst: true });
     if (!hit) {
       return this.app.setTool(null);
     }
@@ -104,23 +104,23 @@ export class SectionTool implements Tool {
   }
 
   private showControls(): void {
-    const s = this.app.section!;
+    const section = this.app.section!;
     this.handle ??= new Handle(this.app.view, 'arrow');
     this.placeHandle();
     this.app.ui.setHint('Drag the arrow to move the cut. It stays until you delete it in History.');
     this.app.ui.showPanel({
       title: 'Section View',
       items: [
-        { type: 'number', label: 'Offset', value: s.offset, kind: 'length', onInput: v => this.setOffset(v) },
-        { type: 'button', label: 'Flip', icon: 'flip', onClick: () => (this.app.setSection({ ...s, flipped: !this.app.section!.flipped }), this.showControls()) },
-        { type: 'toggle', label: 'Section only', value: !!s.only, onChange: v => this.restyle({ only: v || undefined, flat: v ? undefined : s.flat }) },
+        { type: 'number', label: 'Offset', value: section.offset, kind: 'length', onInput: value => this.setOffset(value) },
+        { type: 'button', label: 'Flip', icon: 'flip', onClick: () => (this.app.setSection({ ...section, flipped: !this.app.section!.flipped }), this.showControls()) },
+        { type: 'toggle', label: 'Section only', value: !!section.only, onChange: isOn => this.restyle({ only: isOn || undefined, flat: isOn ? undefined : section.flat }) },
         {
           type: 'toggle',
           label: '2D section',
-          value: !!s.flat,
-          onChange: (v) => {
-            this.restyle({ flat: v || undefined, only: v ? undefined : s.only });
-            if (v) {
+          value: !!section.flat,
+          onChange: (isOn) => {
+            this.restyle({ flat: isOn || undefined, only: isOn ? undefined : section.only });
+            if (isOn) {
               this.lookAtCut();
             }
           }
@@ -134,61 +134,61 @@ export class SectionTool implements Tool {
   }
 
   private restyle(patch: Partial<SectionState>): void {
-    const s = this.app.section;
-    if (!s) {
+    const section = this.app.section;
+    if (!section) {
       return;
     }
-    this.app.setSection({ ...s, ...patch });
+    this.app.setSection({ ...section, ...patch });
     this.showControls();
   }
 
   /** Look straight at the cut, from the side that's cut away. */
   private lookAtCut(): void {
-    const s = this.app.section;
-    if (!s) {
+    const section = this.app.section;
+    if (!section) {
       return;
     }
-    const p = sectionPlane(s);
-    this.app.view.cam.lookAlong(p.normal, p.xDir);
+    const plane = sectionPlane(section);
+    this.app.view.cam.lookAlong(plane.normal, plane.xDir);
     this.app.view.fitAll();
   }
 
   /** A construction plane where the cut is now (to sketch on, split with...). */
   private placePlane(): void {
-    const s = this.app.section;
-    if (!s) {
+    const section = this.app.section;
+    if (!section) {
       return;
     }
     const id = this.app.store.newIdentity('plane', 'Section Plane');
     // Exactly where the cut is - on the face itself while the cut is still the hair inside it.
-    const untouched = s.inset !== undefined && Math.abs(s.offset - s.inset) < 1e-9;
-    this.app.store.add({ ...id, type: 'plane', kind: 'offset', plane: s.plane, offset: untouched ? 0 : s.offset });
+    const untouched = section.inset !== undefined && Math.abs(section.offset - section.inset) < 1e-9;
+    this.app.store.add({ ...id, type: 'plane', kind: 'offset', plane: section.plane, offset: untouched ? 0 : section.offset });
     this.app.ui.toast(`${id.name} placed on the cut`);
   }
 
-  private setOffset(v: number): void {
-    const s = this.app.section;
-    if (!s) {
+  private setOffset(offset: number): void {
+    const section = this.app.section;
+    if (!section) {
       return;
     }
-    this.app.setSection({ ...s, offset: v });
-    this.app.ui.updatePanelValues([v]);
+    this.app.setSection({ ...section, offset: offset });
+    this.app.ui.updatePanelValues([offset]);
     this.placeHandle();
   }
 
   private placeHandle(): void {
-    const s = this.app.section;
-    if (!s || !this.handle) {
+    const section = this.app.section;
+    if (!section || !this.handle) {
       return;
     }
-    this.handle.set(add(s.plane.origin, scale(s.plane.normal, s.offset)), s.plane.normal);
+    this.handle.set(add(section.plane.origin, scale(section.plane.normal, section.offset)), section.plane.normal);
   }
 
-  down(p: ToolPointer): boolean {
-    if (!this.handle?.hit(p) || !this.app.section) {
+  down(pointer: ToolPointer): boolean {
+    if (!this.handle?.hit(pointer) || !this.app.section) {
       return false;
     }
-    this.dragging = { from: p, o0: this.app.section.offset };
+    this.dragging = { from: pointer, o0: this.app.section.offset };
 
     return true;
   }
@@ -206,26 +206,26 @@ export class SectionTool implements Tool {
 
     return this.typing.key(e, {
       kind: 'length',
-      apply: v => this.setOffset(v),
+      apply: value => this.setOffset(value),
       commit: () => ((this.dragging = null), this.app.setTool(null)),
       cancel: () => this.setOffset(dr.o0)
     });
   }
 
-  drag(p: ToolPointer): void {
-    const s = this.app.section;
-    if (!this.dragging || !s) {
+  drag(pointer: ToolPointer): void {
+    const section = this.app.section;
+    if (!this.dragging || !section) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
-    const base = add(s.plane.origin, scale(s.plane.normal, this.dragging.o0));
-    const raw = this.dragging.o0 + axisDrag(this.app.view, base, s.plane.normal, this.dragging.from, p);
+    const base = add(section.plane.origin, scale(section.plane.normal, this.dragging.o0));
+    const raw = this.dragging.o0 + axisDrag(this.app.view, base, section.plane.normal, this.dragging.from, pointer);
     const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4);
     this.setOffset(Math.round(raw / step) * step);
-    this.app.ui.setLabel(p.x, p.y, fmtLen(this.app.section!.offset));
+    this.app.ui.setLabel(pointer.x, pointer.y, fmtLen(this.app.section!.offset));
   }
 
   up(): void {

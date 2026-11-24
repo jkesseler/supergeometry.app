@@ -38,7 +38,7 @@ const LOT = 300;
  */
 const LOOPS = 30;
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 /** The shapes whose faces are meshed, and how finely (so its edge lines needn't mesh it again). */
 const meshedAt = new WeakMap<object, string>();
@@ -62,13 +62,13 @@ function loopCount(face: { wrapped: unknown }): number {
   const oc = getOC() as any;
   const { ex, nothing } = explorer();
   const ANY = oc.TopAbs_ShapeEnum.TopAbs_SHAPE;
-  let n = 0;
+  let count = 0;
   for (ex.Init(face.wrapped, oc.TopAbs_ShapeEnum.TopAbs_WIRE, ANY); ex.More(); ex.Next()) {
-    n++;
+    count++;
   }
   ex.Init(nothing, ANY, ANY);
 
-  return n;
+  return count;
 }
 
 /** Is this a flat face with so many holes that it is cut into triangles here? */
@@ -84,8 +84,8 @@ function edgesOf(wrapped: unknown): { edges: any[]; at: (edge: any) => number; d
   const hash = (x: any): number => oc.ReplicadShapeHasher.HashCode(x, 2147483647);
   for (ex.Init(wrapped, oc.TopAbs_ShapeEnum.TopAbs_EDGE, ANY); ex.More(); ex.Next()) {
     const item = ex.Current();
-    const h = hash(item);
-    const b = buckets.get(h);
+    const hashCode = hash(item);
+    const b = buckets.get(hashCode);
     if (b?.some(i => edges[i].IsSame(item))) {
       item.delete();
       continue;
@@ -93,7 +93,7 @@ function edgesOf(wrapped: unknown): { edges: any[]; at: (edge: any) => number; d
     if (b) {
       b.push(edges.length);
     } else {
-      buckets.set(h, [edges.length]);
+      buckets.set(hashCode, [edges.length]);
     }
     edges.push(item);
   }
@@ -127,20 +127,20 @@ function readLines(wrapped: unknown, tolerance: number, angularTolerance: number
  * its last point not its first again). Null: they don't close up.
  */
 function outlines(lines: Float32Array[], grain: number): Float32Array[] | null {
-  const key = (l: Float32Array, k: number) => `${Math.round(l[k] / grain)},${Math.round(l[k + 1] / grain)},${Math.round(l[k + 2] / grain)}`;
+  const key = (values: Float32Array, offset: number) => `${Math.round(values[offset] / grain)},${Math.round(values[offset + 1] / grain)},${Math.round(values[offset + 2] / grain)}`;
   const out: Float32Array[] = [];
   // (A point given twice running - the kernel's lines have some, where a round face's seam is - is one point.)
   const add = (pts: ArrayLike<number>) => {
     const once: number[] = [];
-    const apart = (k: number, j: number) => Math.hypot(pts[k] - once[j], pts[k + 1] - once[j + 1], pts[k + 2] - once[j + 2]) > grain;
-    for (let k = 0; k < pts.length; k += 3) {
-      if (!once.length || apart(k, once.length - 3)) {
-        once.push(pts[k], pts[k + 1], pts[k + 2]);
+    const apart = (offset: number, j: number) => Math.hypot(pts[offset] - once[j], pts[offset + 1] - once[j + 1], pts[offset + 2] - once[j + 2]) > grain;
+    for (let pointIndex = 0; pointIndex < pts.length; pointIndex += 3) {
+      if (!once.length || apart(pointIndex, once.length - 3)) {
+        once.push(pts[pointIndex], pts[pointIndex + 1], pts[pointIndex + 2]);
       }
     }
-    const m = once.length;
-    if (m >= 6 && Math.hypot(once[m - 3] - once[0], once[m - 2] - once[1], once[m - 1] - once[2]) <= grain) {
-      once.length = m - 3;
+    const count = once.length;
+    if (count >= 6 && Math.hypot(once[count - 3] - once[0], once[count - 2] - once[1], once[count - 1] - once[2]) <= grain) {
+      once.length = count - 3;
     }
     if (once.length >= 9) {
       out.push(Float32Array.from(once));
@@ -148,20 +148,20 @@ function outlines(lines: Float32Array[], grain: number): Float32Array[] | null {
   };
   const ends = new Map<string, number[]>();
   const open: number[] = [];
-  lines.forEach((l, i) => {
-    if (l.length < 6) {
+  lines.forEach((line, i) => {
+    if (line.length < 6) {
       return;
     }
-    const [a, b] = [key(l, 0), key(l, l.length - 3)];
+    const [a, b] = [key(line, 0), key(line, line.length - 3)];
     if (a === b) {
       // (An edge that closes on itself - a circle - is an outline; one that only goes there and back is nothing.)
-      add(l);
+      add(line);
 
       return;
     }
     open.push(i);
-    for (const k of [a, b]) {
-      ends.set(k, [...(ends.get(k) ?? []), i]);
+    for (const end of [a, b]) {
+      ends.set(end, [...(ends.get(end) ?? []), i]);
     }
   });
   const used = new Set<number>();
@@ -179,17 +179,17 @@ function outlines(lines: Float32Array[], grain: number): Float32Array[] | null {
         return null;
       }
       used.add(next);
-      const l = lines[next];
-      if (key(l, 0) === tip) {
-        for (let k = 3; k < l.length; k++) {
-          pts.push(l[k]);
+      const line = lines[next];
+      if (key(line, 0) === tip) {
+        for (let index = 3; index < line.length; index++) {
+          pts.push(line[index]);
         }
-        tip = key(l, l.length - 3);
+        tip = key(line, line.length - 3);
       } else {
-        for (let k = l.length - 6; k >= 0; k -= 3) {
-          pts.push(l[k], l[k + 1], l[k + 2]);
+        for (let index = line.length - 6; index >= 0; index -= 3) {
+          pts.push(line[index], line[index + 1], line[index + 2]);
         }
-        tip = key(l, 0);
+        tip = key(line, 0);
       }
     }
     add(pts);
@@ -207,40 +207,40 @@ function flatTriangles(loops: Float32Array[], normal: [number, number, number]):
   if (!loops.length) {
     return null;
   }
-  const n = normal;
-  const l = Math.hypot(n[0], n[1], n[2]);
-  if (!(l > 0)) {
+  const axis = normal;
+  const length = Math.hypot(axis[0], axis[1], axis[2]);
+  if (!(length > 0)) {
     return null;
   }
-  // Two directions across the face (x, then y so that x, y, n turn the usual way).
-  const a = Math.abs(n[0]) < 0.9 * l ? [1, 0, 0] : [0, 1, 0];
-  let x = [a[1] * n[2] - a[2] * n[1], a[2] * n[0] - a[0] * n[2], a[0] * n[1] - a[1] * n[0]];
+  // Two directions across the face (x, then y so that x, y, axis turn the usual way).
+  const a = Math.abs(axis[0]) < 0.9 * length ? [1, 0, 0] : [0, 1, 0];
+  let x = [a[1] * axis[2] - a[2] * axis[1], a[2] * axis[0] - a[0] * axis[2], a[0] * axis[1] - a[1] * axis[0]];
   const xl = Math.hypot(x[0], x[1], x[2]);
-  x = x.map(v => v / xl);
-  const y = [(n[1] * x[2] - n[2] * x[1]) / l, (n[2] * x[0] - n[0] * x[2]) / l, (n[0] * x[1] - n[1] * x[0]) / l];
-  const flat = loops.map((p) => {
-    const q = new Float64Array((p.length / 3) * 2);
-    for (let k = 0, j = 0; k < p.length; k += 3, j += 2) {
-      q[j] = p[k] * x[0] + p[k + 1] * x[1] + p[k + 2] * x[2];
-      q[j + 1] = p[k] * y[0] + p[k + 1] * y[1] + p[k + 2] * y[2];
+  x = x.map(value => value / xl);
+  const y = [(axis[1] * x[2] - axis[2] * x[1]) / length, (axis[2] * x[0] - axis[0] * x[2]) / length, (axis[0] * x[1] - axis[1] * x[0]) / length];
+  const flat = loops.map((loop) => {
+    const q = new Float64Array((loop.length / 3) * 2);
+    for (let index = 0, j = 0; index < loop.length; index += 3, j += 2) {
+      q[j] = loop[index] * x[0] + loop[index + 1] * x[1] + loop[index + 2] * x[2];
+      q[j + 1] = loop[index] * y[0] + loop[index + 1] * y[1] + loop[index + 2] * y[2];
     }
 
     return q;
   });
   const area = (q: Float64Array) => {
-    let s = 0;
-    for (let j = 0, m = q.length; j < m; j += 2) {
-      s += q[j] * q[(j + 3) % m] - q[(j + 2) % m] * q[j + 1];
+    let area = 0;
+    for (let j = 0, count = q.length; j < count; j += 2) {
+      area += q[j] * q[(j + 3) % count] - q[(j + 2) % count] * q[j + 1];
     }
 
-    return s / 2;
+    return area / 2;
   };
   const areas = flat.map(area);
   // The outline itself is the biggest; the others are its holes.
   let outer = 0;
-  areas.forEach((v, i) => Math.abs(v) > Math.abs(areas[outer]) && (outer = i));
+  areas.forEach((area, i) => Math.abs(area) > Math.abs(areas[outer]) && (outer = i));
   const order = [outer, ...loops.map((_, i) => i).filter(i => i !== outer)];
-  const count = order.reduce((s, i) => s + flat[i].length / 2, 0);
+  const count = order.reduce((total, i) => total + flat[i].length / 2, 0);
   const data = new Float64Array(count * 2);
   const vertices = new Float32Array(count * 3);
   const holes: number[] = [];
@@ -271,36 +271,36 @@ function flatTriangles(loops: Float32Array[], normal: [number, number, number]):
   if (cut.length < 3) {
     return null;
   }
-  const twice = (p: number, q: number, r: number) => (data[2 * q] - data[2 * p]) * (data[2 * r + 1] - data[2 * p + 1]) - (data[2 * r] - data[2 * p]) * (data[2 * q + 1] - data[2 * p + 1]);
-  const far2 = (p: number, q: number) => (data[2 * q] - data[2 * p]) ** 2 + (data[2 * q + 1] - data[2 * p + 1]) ** 2;
+  const twice = (indexP: number, q: number, indexR: number) => (data[2 * q] - data[2 * indexP]) * (data[2 * indexR + 1] - data[2 * indexP + 1]) - (data[2 * indexR] - data[2 * indexP]) * (data[2 * q + 1] - data[2 * indexP + 1]);
+  const far2 = (indexP: number, q: number) => (data[2 * q] - data[2 * indexP]) ** 2 + (data[2 * q + 1] - data[2 * indexP + 1]) ** 2;
   // All turning the way the face looks (they all turn one way: as a whole, not
   // one by one - a triangle with next to no area can't say which way it turns).
   let tris: number[][] = [];
   let turn = 0;
-  for (let k = 0; k < cut.length; k += 3) {
-    tris.push([cut[k], cut[k + 1], cut[k + 2]]);
-    turn += twice(cut[k], cut[k + 1], cut[k + 2]);
+  for (let offset = 0; offset < cut.length; offset += 3) {
+    tris.push([cut[offset], cut[offset + 1], cut[offset + 2]]);
+    turn += twice(cut[offset], cut[offset + 1], cut[offset + 2]);
   }
   if (turn < 0) {
-    tris = tris.map(([p, q, r]) => [p, r, q]);
+    tris = tris.map(([indexP, q, indexR]) => [indexP, indexR, q]);
   }
   // No area: its third corner on its long side, to what a point's seven digits
   // can be out by, and well in from both its ends. (Not a long thin needle
   // between two holes far apart: that one has an area, small as it is.)
   const middle = (t: number[]): [number, number, number] | null => {
     let j = 0;
-    for (let m = 1; m < 3; m++) {
-      if (far2(t[m], t[(m + 1) % 3]) > far2(t[j], t[(j + 1) % 3])) {
-        j = m;
+    for (let corner = 1; corner < 3; corner++) {
+      if (far2(t[corner], t[(corner + 1) % 3]) > far2(t[j], t[(j + 1) % 3])) {
+        j = corner;
       }
     }
-    const [u, v, mid] = [t[j], t[(j + 1) % 3], t[(j + 2) % 3]];
-    const long2 = far2(u, v);
-    if (Math.abs(twice(u, v, mid)) > Math.sqrt(long2) * span * 4e-7) {
+    const [endU, endV, mid] = [t[j], t[(j + 1) % 3], t[(j + 2) % 3]];
+    const long2 = far2(endU, endV);
+    if (Math.abs(twice(endU, endV, mid)) > Math.sqrt(long2) * span * 4e-7) {
       return null;
     }
 
-    return Math.min(far2(u, mid), far2(v, mid)) > long2 * 1e-6 ? [u, v, mid] : null;
+    return Math.min(far2(endU, mid), far2(endV, mid)) > long2 * 1e-6 ? [endU, endV, mid] : null;
   };
   // Such a triangle is a point lying on the long side of its neighbour: that
   // neighbour is cut in two at the point, and the flat one goes. (Points in a
@@ -311,9 +311,9 @@ function flatTriangles(loops: Float32Array[], normal: [number, number, number]):
   for (let pass = 0; pass < 4096; pass++) {
     const flatOnes: [number, [number, number, number]][] = [];
     tris.forEach((t, i) => {
-      const m = middle(t);
-      if (m && !dealt.has([...t].sort((x, y) => x - y).join())) {
-        flatOnes.push([i, m]);
+      const center = middle(t);
+      if (center && !dealt.has([...t].sort((x, y) => x - y).join())) {
+        flatOnes.push([i, center]);
       }
     });
     if (!flatOnes.length) {
@@ -327,23 +327,23 @@ function flatTriangles(loops: Float32Array[], normal: [number, number, number]):
     });
     const gone = new Set<number>();
     const more: number[][] = [];
-    for (const [i, [u, v, mid]] of flatOnes) {
+    for (const [i, [endU, endV, mid]] of flatOnes) {
       if (gone.has(i)) {
         continue;
       }
-      const n = side.get(v * count + u);
-      if (n === undefined || n === i || gone.has(n)) {
+      const neighbour = side.get(endV * count + endU);
+      if (neighbour === undefined || neighbour === i || gone.has(neighbour)) {
         continue;
       }
-      const other = tris[n];
+      const other = tris[neighbour];
       if (middle(other)) {
         continue;
       }
-      const x = other.find(c => c !== u && c !== v)!;
-      dealt.add([...tris[i]].sort((p, q) => p - q).join());
+      const x = other.find(corner => corner !== endU && corner !== endV)!;
+      dealt.add([...tris[i]].sort((first, q) => first - q).join());
       gone.add(i);
-      gone.add(n);
-      more.push([v, mid, x], [mid, u, x]);
+      gone.add(neighbour);
+      more.push([endV, mid, x], [mid, endU, x]);
     }
     if (!gone.size) {
       break;
@@ -359,16 +359,16 @@ function flatTriangles(loops: Float32Array[], normal: [number, number, number]):
   }
   at = 0;
   for (const i of order) {
-    const m = flat[i].length / 2;
-    for (let k = 0; k < m; k++) {
-      const [p, q] = [at + k, at + ((k + 1) % m)];
-      if (!sides.has(Math.min(p, q) * count + Math.max(p, q))) {
+    const pointCount = flat[i].length / 2;
+    for (let index = 0; index < pointCount; index++) {
+      const [start, q] = [at + index, at + ((index + 1) % pointCount)];
+      if (!sides.has(Math.min(start, q) * count + Math.max(start, q))) {
         return null;
       }
     }
-    at += m;
+    at += pointCount;
   }
-  const want = Math.abs(areas[outer]) - areas.reduce((sum, v, i) => (i === outer ? sum : sum + Math.abs(v)), 0);
+  const want = Math.abs(areas[outer]) - areas.reduce((sum, area, i) => (i === outer ? sum : sum + Math.abs(area)), 0);
   const triangles = new Uint32Array(tris.length * 3);
   let got = 0;
   tris.forEach((t, i) => {
@@ -379,8 +379,8 @@ function flatTriangles(loops: Float32Array[], normal: [number, number, number]):
     return null;
   }
   const normals = new Float32Array(count * 3);
-  for (let k = 0; k < normals.length; k += 3) {
-    normals.set([n[0] / l, n[1] / l, n[2] / l], k);
+  for (let index = 0; index < normals.length; index += 3) {
+    normals.set([axis[0] / length, axis[1] / length, axis[2] / length], index);
   }
 
   return { vertices, normals, triangles, faceGroups: [{ start: 0, count: triangles.length }] };
@@ -433,26 +433,26 @@ function joined(parts: FaceMesh[]): FaceMesh {
   if (parts.length === 1) {
     return parts[0];
   }
-  const total = (pick: (m: FaceMesh) => { length: number }) => parts.reduce((n, m) => n + pick(m).length, 0);
+  const total = (pick: (m: FaceMesh) => { length: number }) => parts.reduce((total, part) => total + pick(part).length, 0);
   const out: FaceMesh = {
-    vertices: new Float32Array(total(m => m.vertices)),
-    normals: new Float32Array(total(m => m.normals)),
-    triangles: new Uint32Array(total(m => m.triangles)),
+    vertices: new Float32Array(total(faceMesh => faceMesh.vertices)),
+    normals: new Float32Array(total(faceMesh => faceMesh.normals)),
+    triangles: new Uint32Array(total(faceMesh => faceMesh.triangles)),
     faceGroups: []
   };
   let points = 0;
   let corners = 0;
-  for (const m of parts) {
-    out.vertices.set(m.vertices, points * 3);
-    out.normals.set(m.normals, points * 3);
-    for (let k = 0; k < m.triangles.length; k++) {
-      out.triangles[corners + k] = m.triangles[k] + points;
+  for (const part of parts) {
+    out.vertices.set(part.vertices, points * 3);
+    out.normals.set(part.normals, points * 3);
+    for (let triangleIndex = 0; triangleIndex < part.triangles.length; triangleIndex++) {
+      out.triangles[corners + triangleIndex] = part.triangles[triangleIndex] + points;
     }
-    for (const g of m.faceGroups) {
-      out.faceGroups.push({ start: g.start + corners, count: g.count });
+    for (const faceGroup of part.faceGroups) {
+      out.faceGroups.push({ start: faceGroup.start + corners, count: faceGroup.count });
     }
-    points += m.vertices.length / 3;
-    corners += m.triangles.length;
+    points += part.vertices.length / 3;
+    corners += part.triangles.length;
   }
 
   return out;
@@ -485,8 +485,8 @@ export function meshFaces(shape: Shape3D, tolerance: number, angularTolerance: n
       // A face that came to nothing left out of the count: each on its own, so the others keep their places.
       if (part.faceGroups.length !== lot.length) {
         part = joined(
-          lot.map((f) => {
-            const one = read(f.wrapped, tolerance, angularTolerance);
+          lot.map((face) => {
+            const one = read(face.wrapped, tolerance, angularTolerance);
 
             return one.faceGroups.length === 1 ? one : { ...one, faceGroups: [{ start: 0, count: one.triangles.length }] };
           })
@@ -614,13 +614,13 @@ function withFlatFaces(shape: Shape3D, faces: Face[], flat: boolean[], tolerance
     if (!each.every(Boolean)) {
       return null;
     }
-    const lines = new Float32Array(each.reduce((n, l) => n + l!.length, 0));
+    const lines = new Float32Array(each.reduce((total, values) => total + values!.length, 0));
     const edgeGroups: EdgeLines['edgeGroups'] = [];
     let at = 0;
-    for (const l of each as Float32Array[]) {
-      lines.set(l, at * 3);
-      edgeGroups.push({ start: at, count: l.length / 3 });
-      at += l.length / 3;
+    for (const values of each as Float32Array[]) {
+      lines.set(values, at * 3);
+      edgeGroups.push({ start: at, count: values.length / 3 });
+      at += values.length / 3;
     }
     linesReady.set(shape, { key: `${tolerance}/${angularTolerance}`, lines: { lines, edgeGroups } });
 
@@ -732,30 +732,30 @@ export function faceTriangles(face: Face, size: number): { vertices: Float32Arra
 
 /** Meshes as one binary STL file (each triangle with its own flat normal, as a slicer reads it). */
 export function binarySTL(meshes: FaceMesh[]): Uint8Array {
-  const count = meshes.reduce((n, m) => n + m.triangles.length / 3, 0);
+  const count = meshes.reduce((total, mesh) => total + mesh.triangles.length / 3, 0);
   const out = new Uint8Array(84 + count * 50);
   const view = new DataView(out.buffer);
   // (80 bytes of heading, never starting "solid": readers take that for the text kind.)
   out.set(new TextEncoder().encode('binary stl'), 0);
   view.setUint32(80, count, true);
   let at = 84;
-  for (const m of meshes) {
-    const p = m.vertices;
-    for (let k = 0; k < m.triangles.length; k += 3) {
-      const [a, b, c] = [m.triangles[k] * 3, m.triangles[k + 1] * 3, m.triangles[k + 2] * 3];
-      const [ux, uy, uz] = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]];
-      const [vx, vy, vz] = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]];
+  for (const mesh of meshes) {
+    const vertices = mesh.vertices;
+    for (let triangleIndex = 0; triangleIndex < mesh.triangles.length; triangleIndex += 3) {
+      const [a, b, offsetC] = [mesh.triangles[triangleIndex] * 3, mesh.triangles[triangleIndex + 1] * 3, mesh.triangles[triangleIndex + 2] * 3];
+      const [ux, uy, uz] = [vertices[b] - vertices[a], vertices[b + 1] - vertices[a + 1], vertices[b + 2] - vertices[a + 2]];
+      const [vx, vy, vz] = [vertices[offsetC] - vertices[a], vertices[offsetC + 1] - vertices[a + 1], vertices[offsetC + 2] - vertices[a + 2]];
       let [nx, ny, nz] = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
-      const l = Math.hypot(nx, ny, nz);
-      if (l > 0) {
-        [nx, ny, nz] = [nx / l, ny / l, nz / l];
+      const length = Math.hypot(nx, ny, nz);
+      if (length > 0) {
+        [nx, ny, nz] = [nx / length, ny / length, nz / length];
       }
       view.setFloat32(at, nx, true);
       view.setFloat32(at + 4, ny, true);
       view.setFloat32(at + 8, nz, true);
-      for (const [j, i] of [a, b, c].entries()) {
+      for (const [j, i] of [a, b, offsetC].entries()) {
         for (let x = 0; x < 3; x++) {
-          view.setFloat32(at + 12 + j * 12 + x * 4, p[i + x], true);
+          view.setFloat32(at + 12 + j * 12 + x * 4, vertices[i + x], true);
         }
       }
       at += 50;

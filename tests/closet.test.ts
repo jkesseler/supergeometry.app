@@ -19,25 +19,25 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 
-const W = 800, D = 500, H = 1800, T = 18, BACK = 3, PLINTH = 80, GAP = 2;
-const inner = W - 2 * T; // between the sides
-const deep = D - BACK - T; // sides stop at the back panel; doors sit in front of them
+const WIDTH = 800, DEPTH = 500, HEIGHT = 1800, THICKNESS = 18, BACK = 3, PLINTH = 80, GAP = 2;
+const inner = WIDTH - 2 * THICKNESS; // between the sides
+const deep = DEPTH - BACK - THICKNESS; // sides stop at the back panel; doors sit in front of them
 /** A board: an x × y rectangle on a horizontal plane at height z, pushed up h. */
 const boards: { id: string; name: string; x: number; y: number; z: number; w: number; d: number; h: number }[] = [
-  { id: 'sideL', name: 'Left side', x: 0, y: T, z: 0, w: T, d: deep, h: H },
-  { id: 'sideR', name: 'Right side', x: W - T, y: T, z: 0, w: T, d: deep, h: H },
-  { id: 'bottom', name: 'Bottom', x: T, y: T, z: PLINTH, w: inner, d: deep, h: T },
-  { id: 'top', name: 'Top', x: T, y: T, z: H - T, w: inner, d: deep, h: T },
-  { id: 'plinth', name: 'Plinth', x: T, y: T + 20, z: 0, w: inner, d: T, h: PLINTH },
-  ...[1, 2, 3].map((k) => {
-    const z0 = PLINTH + T;
-    const z = z0 + ((H - T - z0) / 4) * k - T / 2;
+  { id: 'sideL', name: 'Left side', x: 0, y: THICKNESS, z: 0, w: THICKNESS, d: deep, h: HEIGHT },
+  { id: 'sideR', name: 'Right side', x: WIDTH - THICKNESS, y: THICKNESS, z: 0, w: THICKNESS, d: deep, h: HEIGHT },
+  { id: 'bottom', name: 'Bottom', x: THICKNESS, y: THICKNESS, z: PLINTH, w: inner, d: deep, h: THICKNESS },
+  { id: 'top', name: 'Top', x: THICKNESS, y: THICKNESS, z: HEIGHT - THICKNESS, w: inner, d: deep, h: THICKNESS },
+  { id: 'plinth', name: 'Plinth', x: THICKNESS, y: THICKNESS + 20, z: 0, w: inner, d: THICKNESS, h: PLINTH },
+  ...[1, 2, 3].map((shelf) => {
+    const z0 = PLINTH + THICKNESS;
+    const z = z0 + ((HEIGHT - THICKNESS - z0) / 4) * shelf - THICKNESS / 2;
 
-    return { id: `shelf${k}`, name: `Shelf ${k}`, x: T, y: T + 20, z: Math.round(z), w: inner, d: deep - 20, h: T };
+    return { id: `shelf${shelf}`, name: `Shelf ${shelf}`, x: THICKNESS, y: THICKNESS + 20, z: Math.round(z), w: inner, d: deep - 20, h: THICKNESS };
   }),
-  { id: 'back', name: 'Back', x: 0, y: T + deep, z: 0, w: W, d: BACK, h: H },
-  { id: 'doorL', name: 'Left door', x: 0, y: 0, z: 0, w: W / 2 - GAP / 2, d: T, h: H },
-  { id: 'doorR', name: 'Right door', x: W / 2 + GAP / 2, y: 0, z: 0, w: W / 2 - GAP / 2, d: T, h: H }
+  { id: 'back', name: 'Back', x: 0, y: THICKNESS + deep, z: 0, w: WIDTH, d: BACK, h: HEIGHT },
+  { id: 'doorL', name: 'Left door', x: 0, y: 0, z: 0, w: WIDTH / 2 - GAP / 2, d: THICKNESS, h: HEIGHT },
+  { id: 'doorR', name: 'Right door', x: WIDTH / 2 + GAP / 2, y: 0, z: 0, w: WIDTH / 2 - GAP / 2, d: THICKNESS, h: HEIGHT }
 ];
 
 const feats: any[] = [];
@@ -48,27 +48,27 @@ for (const b of boards) {
 }
 
 const t0 = Date.now();
-const r: any = await regenerate(feats);
+const result: any = await regenerate(feats);
 const ms = Date.now() - t0;
-check('every board builds', !r.errors.length, r.errors.map((e: any) => `${e.feature}: ${e.message}`).join('; '));
-check('11 separate bodies', r.bodies.length === boards.length, `${r.bodies.length} bodies in ${ms} ms`);
+check('every board builds', !result.errors.length, result.errors.map((e: any) => `${e.feature}: ${e.message}`).join('; '));
+check('11 separate bodies', result.bodies.length === boards.length, `${result.bodies.length} bodies in ${ms} ms`);
 const shapes = boards.map(b => ({ b, s: debugBodies().get(b.id)! }));
 const wrong = shapes.filter(({ b, s }) => !s || !isHealthy(healthOf(s)) || Math.abs(Math.abs(measureVolume(s)) - b.w * b.d * b.h) > 1e-3 * b.w * b.d * b.h);
 check('each board a clean solid of its size', !wrong.length, wrong.map(({ b }) => b.name).join(', '));
 const overlaps: string[] = [];
 for (let i = 0; i < shapes.length; i++) {
   for (let j = i + 1; j < shapes.length; j++) {
-    const v = Math.abs(measureVolume((shapes[i].s as any).intersect(shapes[j].s)));
-    if (v > 1e-3) {
-      overlaps.push(`${shapes[i].b.name} × ${shapes[j].b.name} (${v.toFixed(1)} mm³)`);
+    const overlap = Math.abs(measureVolume((shapes[i].s as any).intersect(shapes[j].s)));
+    if (overlap > 1e-3) {
+      overlaps.push(`${shapes[i].b.name} × ${shapes[j].b.name} (${overlap.toFixed(1)} mm³)`);
     }
   }
 }
 check('no two boards overlap', !overlaps.length, overlaps.join('; '));
 const all = shapes.map(({ s }) => s.boundingBox.bounds);
-const lo = [0, 1, 2].map(k => Math.min(...all.map(b => b[0][k])));
-const hi = [0, 1, 2].map(k => Math.max(...all.map(b => b[1][k])));
-check('overall 800 × 500 × 1800', Math.abs(hi[0] - lo[0] - W) < 1e-6 && Math.abs(hi[1] - lo[1] - D) < 1e-6 && Math.abs(hi[2] - lo[2] - H) < 1e-6, `${(hi[0] - lo[0]).toFixed(1)} × ${(hi[1] - lo[1]).toFixed(1)} × ${(hi[2] - lo[2]).toFixed(1)}`);
+const lo = [0, 1, 2].map(axis => Math.min(...all.map(b => b[0][axis])));
+const hi = [0, 1, 2].map(axis => Math.max(...all.map(b => b[1][axis])));
+check('overall 800 × 500 × 1800', Math.abs(hi[0] - lo[0] - WIDTH) < 1e-6 && Math.abs(hi[1] - lo[1] - DEPTH) < 1e-6 && Math.abs(hi[2] - lo[2] - HEIGHT) < 1e-6, `${(hi[0] - lo[0]).toFixed(1)} × ${(hi[1] - lo[1]).toFixed(1)} × ${(hi[2] - lo[2]).toFixed(1)}`);
 
 // The same closet built through the tools on a phone-sized screen (tests/fixtures/closet-hand.json):
 // one floor sketch (side, plinth, door), patterns for the right side, right door
@@ -80,30 +80,30 @@ check('overall 800 × 500 × 1800', Math.abs(hi[0] - lo[0] - W) < 1e-6 && Math.a
   check('by hand: every step builds', !rh.errors.length, rh.errors.map((e: any) => `${e.feature}: ${e.message}`).join('; '));
   check('by hand: 11 separate bodies', rh.bodies.length === 11, `${rh.bodies.length}`);
   const hs = rh.bodies.map((b: any) => debugBodies().get(b.id)!);
-  check('by hand: each a clean solid', hs.every((x: any) => isHealthy(healthOf(x))));
+  check('by hand: each a clean solid', hs.every((shape: any) => isHealthy(healthOf(shape))));
   const over: string[] = [];
   for (let i = 0; i < hs.length; i++) {
     for (let j = i + 1; j < hs.length; j++) {
-      const v = Math.abs(measureVolume(hs[i].intersect(hs[j])));
-      if (v > 1e-3) {
-        over.push(`${i}×${j} ${v.toFixed(1)}`);
+      const overlap = Math.abs(measureVolume(hs[i].intersect(hs[j])));
+      if (overlap > 1e-3) {
+        over.push(`${i}×${j} ${overlap.toFixed(1)}`);
       }
     }
   }
   check('by hand: no two boards overlap', !over.length, over.join('; '));
-  const bb = hs.map((x: any) => x.boundingBox.bounds);
-  const l = [0, 1, 2].map(k => Math.min(...bb.map((b: any) => b[0][k])));
-  const h = [0, 1, 2].map(k => Math.max(...bb.map((b: any) => b[1][k])));
-  check('by hand: overall 800 × 500 × 1800', [W, D, H].every((v, k) => Math.abs(h[k] - l[k] - v) < 1e-6), `${(h[0] - l[0]).toFixed(1)} × ${(h[1] - l[1]).toFixed(1)} × ${(h[2] - l[2]).toFixed(1)}`);
-  const total = (xs: any[]) => xs.reduce((a, x) => a + Math.abs(measureVolume(x)), 0);
-  console.log(`     material: by code ${(total(shapes.map(x => x.s)) / 1e6).toFixed(4)} dm³, by hand ${(total(hs) / 1e6).toFixed(4)} dm³ (by hand: shelves full depth, plinth at the front)`);
+  const bb = hs.map((shape: any) => shape.boundingBox.bounds);
+  const low = [0, 1, 2].map(axis => Math.min(...bb.map((b: any) => b[0][axis])));
+  const high = [0, 1, 2].map(axis => Math.max(...bb.map((b: any) => b[1][axis])));
+  check('by hand: overall 800 × 500 × 1800', [WIDTH, DEPTH, HEIGHT].every((size, axis) => Math.abs(high[axis] - low[axis] - size) < 1e-6), `${(high[0] - low[0]).toFixed(1)} × ${(high[1] - low[1]).toFixed(1)} × ${(high[2] - low[2]).toFixed(1)}`);
+  const total = (xs: any[]) => xs.reduce((a, shape) => a + Math.abs(measureVolume(shape)), 0);
+  console.log(`     material: by code ${(total(shapes.map(shape => shape.s)) / 1e6).toFixed(4)} dm³, by hand ${(total(hs) / 1e6).toFixed(4)} dm³ (by hand: shelves full depth, plinth at the front)`);
 }
 
 if (process.argv[2]) {
   const wood = '#c8a27a', white = '#e9e6df';
   writeFileSync(process.argv[2], JSON.stringify({
     format: 'super', version: 2, name: 'Closet', features: feats, variables: [], views: [], units: 'mm',
-    hidden: feats.filter(f => f.type === 'sketch').map(f => f.id), pins: [],
+    hidden: feats.filter(feature => feature.type === 'sketch').map(feature => feature.id), pins: [],
     names: Object.fromEntries(boards.map(b => [b.id, b.name])),
     colors: Object.fromEntries(boards.map(b => [b.id, b.id === 'back' ? white : wood]))
   }));

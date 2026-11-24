@@ -23,16 +23,16 @@ function faceSlot(app: AppContext, label: string, get: () => FaceRef | null, set
       if (hit.kind !== 'face') {
         return false;
       }
-      const s = { kind: 'face' as const, body: hit.body, face: hit.face };
-      if (!fits(s)) {
+      const facePick = { kind: 'face' as const, body: hit.body, face: hit.face };
+      if (!fits(facePick)) {
         return false;
       }
-      const ref = faceRefOf(app, s);
+      const ref = faceRefOf(app, facePick);
       if (!ref) {
         return false;
       }
-      shown = [s];
-      set(ref, s);
+      shown = [facePick];
+      set(ref, facePick);
 
       return true;
     }
@@ -50,9 +50,9 @@ function shapesSlot(app: AppContext, get: () => ExtrudeSource | undefined, set: 
   const regionsOf = (sketch: string) => arrangement(app.sketchCurves(sketch)).regions;
   const same = (a: { c: number[] }, b: { c: number[] }) => Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) < 1e-6;
   const count = () => {
-    const s = get();
+    const source = get();
 
-    return s?.kind === 'profile' ? s.regions.length : 0;
+    return source?.kind === 'profile' ? source.regions.length : 0;
   };
 
   return {
@@ -62,21 +62,21 @@ function shapesSlot(app: AppContext, get: () => ExtrudeSource | undefined, set: 
     filled: () => count() > 0,
     pick: { bodies: false, edges: false, vertices: false, planes: false, axes: false },
     shows: () => {
-      const s = get();
-      if (s?.kind !== 'profile') {
+      const source = get();
+      if (source?.kind !== 'profile') {
         return [];
       }
-      const all = regionsOf(s.sketch).map(regionRef);
+      const all = regionsOf(source.sketch).map(regionRef);
 
-      return s.regions.map(r => ({ kind: 'profile' as const, sketch: s.sketch, region: all.findIndex(x => same(x, r)) })).filter(x => x.region >= 0);
+      return source.regions.map(region => ({ kind: 'profile' as const, sketch: source.sketch, region: all.findIndex(regionRef => same(regionRef, region)) })).filter(region => region.region >= 0);
     },
     presets: [
       {
         label: 'All',
         apply: () => {
-          const s = get();
-          if (s?.kind === 'profile') {
-            set({ ...s, regions: materialRegions(arrangement(app.sketchCurves(s.sketch))).map(regionRef) });
+          const source = get();
+          if (source?.kind === 'profile') {
+            set({ ...source, regions: materialRegions(arrangement(app.sketchCurves(source.sketch))).map(regionRef) });
           }
         }
       }
@@ -85,21 +85,21 @@ function shapesSlot(app: AppContext, get: () => ExtrudeSource | undefined, set: 
       if (hit.kind !== 'profile') {
         return false;
       }
-      const r = regionsOf(hit.sketch)[hit.region];
-      if (!r) {
+      const region = regionsOf(hit.sketch)[hit.region];
+      if (!region) {
         return false;
       }
-      const ref = regionRef(r);
-      const s = get();
+      const ref = regionRef(region);
+      const source = get();
       // (Another sketch's shape: that sketch's instead.)
-      if (s?.kind !== 'profile' || s.sketch !== hit.sketch) {
+      if (source?.kind !== 'profile' || source.sketch !== hit.sketch) {
         set({ kind: 'profile', sketch: hit.sketch, regions: [ref] });
       } else {
-        const i = s.regions.findIndex(x => same(x, ref));
-        if (i >= 0 && s.regions.length === 1) {
+        const i = source.regions.findIndex(region => same(region, ref));
+        if (i >= 0 && source.regions.length === 1) {
           return true;
         }
-        set({ ...s, regions: i >= 0 ? s.regions.filter((_, j) => j !== i) : [...s.regions, ref] });
+        set({ ...source, regions: i >= 0 ? source.regions.filter((_, j) => j !== i) : [...source.regions, ref] });
       }
 
       return true;
@@ -123,16 +123,16 @@ export class ImprintOp extends FeatureOp<ImprintFeature> {
     const only = app.view.bodyList.length === 1 ? app.view.bodyList[0].id : '';
     const body = sk?.attachedTo?.body ?? (source?.kind === 'face' ? source.face.body : only);
     super(app, { ...app.store.newIdentity('imprint'), type: 'imprint', body, ...('source' in from ? { source: from.source } : { edges: from.edges }) }, existing);
-    const f = this.feature;
-    this.onto = f.face ?? null;
-    if (f.source) {
+    const feature = this.feature;
+    this.onto = feature.face ?? null;
+    if (feature.source) {
       this.slots = [
-        shapesSlot(app, () => f.source, src => (f.source = src)),
+        shapesSlot(app, () => feature.source, src => (feature.source = src)),
         faceSlot(
           app,
           'Onto body',
-          () => (f.body ? ({ body: f.body } as FaceRef) : null),
-          (_, s) => s.kind === 'face' && (f.body = s.body),
+          () => (feature.body ? ({ body: feature.body } as FaceRef) : null),
+          (_, highlight) => highlight.kind === 'face' && (feature.body = highlight.body),
           () => true,
           'Tap the body to draw it onto',
           '1 body',
@@ -145,7 +145,7 @@ export class ImprintOp extends FeatureOp<ImprintFeature> {
           app,
           'Onto face',
           () => this.onto,
-          ref => ((this.onto = ref), (f.face = ref), (f.body = ref.body)),
+          ref => ((this.onto = ref), (feature.face = ref), (feature.body = ref.body)),
           () => true,
           'Tap the face to draw the edges onto'
         )
@@ -173,16 +173,16 @@ export class WrapOp extends FeatureOp<WrapFeature> {
 
   constructor(app: AppContext, source: ExtrudeSource, existing?: WrapFeature) {
     super(app, { ...app.store.newIdentity('wrap'), type: 'wrap', source, face: { body: '', center: [0, 0, 0], normal: [0, 0, 1], area: 0 }, height: 1 }, existing);
-    const f = this.feature;
+    const feature = this.feature;
     this.onto = existing ? existing.face : null;
     this.slots = [
-      shapesSlot(app, () => f.source, src => (f.source = src)),
+      shapesSlot(app, () => feature.source, src => (feature.source = src)),
       faceSlot(
         app,
         'Round face',
         () => this.onto,
-        ref => ((this.onto = ref), (f.face = ref)),
-        s => !!app.view.body(s.body)?.faces[s.face]?.round,
+        ref => ((this.onto = ref), (feature.face = ref)),
+        facePick => !!app.view.body(facePick.body)?.faces[facePick.face]?.round,
         'Wrap goes on a round face (a cylinder)'
       )
     ];
@@ -197,11 +197,11 @@ export class WrapOp extends FeatureOp<WrapFeature> {
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
 
     return [
-      { type: 'number', label: 'Height', value: Math.abs(f.height), kind: 'length', min: 0.01, onInput: v => ((f.height = Math.sign(f.height || 1) * Math.max(0.01, Math.abs(v))), this.update()) },
-      { type: 'toggle', label: 'Sink in', value: f.height < 0, onChange: v => ((f.height = (v ? -1 : 1) * Math.abs(f.height)), this.render(), this.update()) }
+      { type: 'number', label: 'Height', value: Math.abs(feature.height), kind: 'length', min: 0.01, onInput: value => ((feature.height = Math.sign(feature.height || 1) * Math.max(0.01, Math.abs(value))), this.update()) },
+      { type: 'toggle', label: 'Sink in', value: feature.height < 0, onChange: isOn => ((feature.height = (isOn ? -1 : 1) * Math.abs(feature.height)), this.render(), this.update()) }
     ];
   }
 }
@@ -218,18 +218,18 @@ export class ProjectSketchOp extends FeatureOp<SketchFeature> {
     super(app, { ...app.store.newIdentity('sketch'), type: 'sketch', plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: [] });
     const from = app.sketchPlane(source.sketch);
     const arr = arrangement(app.sketchCurves(source.sketch));
-    const regions = source.regions.map(r => resolveRegion(arr, r)).filter((r): r is Region => !!r);
+    const regions = source.regions.map(region => resolveRegion(arr, region)).filter((region): region is Region => !!region);
     this.slots = [
-      planeSlot(app, 'Onto', () => this.onto, (p, face) => {
-        this.onto = p;
-        const f = this.feature;
-        f.plane = p;
+      planeSlot(app, 'Onto', () => this.onto, (plane, face) => {
+        this.onto = plane;
+        const feature = this.feature;
+        feature.plane = plane;
         if (face) {
-          f.attachedTo = face;
+          feature.attachedTo = face;
         } else {
-          delete f.attachedTo;
+          delete feature.attachedTo;
         }
-        f.entities = from ? projectRegions(arr, regions, from, p) : [];
+        feature.entities = from ? projectRegions(arr, regions, from, plane) : [];
       })
     ];
   }

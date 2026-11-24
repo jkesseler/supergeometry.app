@@ -13,7 +13,7 @@ import type { Feature, ProjectDoc, SketchEntity } from './types';
 export function kindOfPath(path: string): 'length' | 'angle' | 'number' {
   // The value's own name (a number at the end is a place in a list: a point's X / Y / Z).
   const keys = path.split('.');
-  const last = [...keys].reverse().find(k => !/^\d+$/.test(k)) ?? '';
+  const last = [...keys].reverse().find(key => !/^\d+$/.test(key)) ?? '';
   // A turn's pivot point is a length (only its angle is an angle): a pivot
   // driven by a variable ("p1") was refused as "can't be evaluated".
   if (/angle|rot/i.test(last) && !/origin|translate|center/i.test(last)) {
@@ -27,19 +27,19 @@ export function kindOfPath(path: string): 'length' | 'angle' | 'number' {
 }
 
 export function getPath(obj: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((o, k) => (o == null ? undefined : (o as Record<string, unknown>)[k]), obj);
+  return path.split('.').reduce<unknown>((current, key) => (current == null ? undefined : (current as Record<string, unknown>)[key]), obj);
 }
 
 export function setPath(obj: unknown, path: string, value: unknown): void {
   const keys = path.split('.');
-  let o = obj as Record<string, unknown>;
-  for (const k of keys.slice(0, -1)) {
-    if (o[k] == null) {
+  let current = obj as Record<string, unknown>;
+  for (const key of keys.slice(0, -1)) {
+    if (current[key] == null) {
       return;
     }
-    o = o[k] as Record<string, unknown>;
+    current = current[key] as Record<string, unknown>;
   }
-  o[keys[keys.length - 1]] = value;
+  current[keys[keys.length - 1]] = value;
 }
 
 /** Recompute every expression-driven value and re-solve constrained sketches (in place). */
@@ -51,87 +51,87 @@ export function resolveDoc(doc: ProjectDoc): string[] {
     setUnits(doc.units);
   }
   setVariables(doc.variables ?? []);
-  for (const f of doc.features as Feature[]) {
-    for (const [path, expr] of Object.entries(f.exprs ?? {})) {
-      const v = evaluate(expr, kindOfPath(path));
-      if (v === null) {
-        problems.push(`${f.name}: "${expr}" can't be evaluated`);
+  for (const feature of doc.features as Feature[]) {
+    for (const [path, expr] of Object.entries(feature.exprs ?? {})) {
+      const value = evaluate(expr, kindOfPath(path));
+      if (value === null) {
+        problems.push(`${feature.name}: "${expr}" can't be evaluated`);
       } else {
-        setPath(f, path, v);
+        setPath(feature, path, value);
       }
     }
     // Curves projected from an earlier sketch: put where that sketch's curves are now (it was changed in History,
     // or by a variable - a step before this one, already worked out above).
-    if (f.type === 'sketch' && f.refs?.length) {
-      const next = refreshRefs(f, doc.features as Feature[]);
-      if (next && !sameNumbers(f.entities, next, 1e-9)) {
-        f.entities = next;
+    if (feature.type === 'sketch' && feature.refs?.length) {
+      const next = refreshRefs(feature, doc.features as Feature[]);
+      if (next && !sameNumbers(feature.entities, next, 1e-9)) {
+        feature.entities = next;
       }
     }
     // A sketch's patterns that follow a count: the count worked out, their copies made again if it is another number.
-    if (f.type === 'sketch' && f.repeats?.length) {
-      for (const r of f.repeats) {
-        const v = evaluate(r.countExpr, 'number');
-        if (v === null) {
-          problems.push(`${f.name}: "${r.countExpr}" can't be evaluated`);
-        } else if (!(v >= 1)) {
-          problems.push(`${f.name}: a pattern's count is ${Math.round(v)} ("${r.countExpr}") - it has to be at least 1`);
+    if (feature.type === 'sketch' && feature.repeats?.length) {
+      for (const repeat of feature.repeats) {
+        const value = evaluate(repeat.countExpr, 'number');
+        if (value === null) {
+          problems.push(`${feature.name}: "${repeat.countExpr}" can't be evaluated`);
+        } else if (!(value >= 1)) {
+          problems.push(`${feature.name}: a pattern's count is ${Math.round(value)} ("${repeat.countExpr}") - it has to be at least 1`);
         } else {
-          r.count = Math.round(v);
+          repeat.count = Math.round(value);
         }
       }
-      const again = applyRepeats(f.entities, f.constraints ?? [], f.repeats);
+      const again = applyRepeats(feature.entities, feature.constraints ?? [], feature.repeats);
       if (again) {
-        ((f.entities = again.entities), (f.constraints = again.constraints));
+        ((feature.entities = again.entities), (feature.constraints = again.constraints));
       }
     }
-    if (f.type === 'sketch' && f.constraints?.length) {
-      for (const c of f.constraints) {
+    if (feature.type === 'sketch' && feature.constraints?.length) {
+      for (const constraint of feature.constraints) {
         // A point held where X / Y were typed with a variable.
-        if (c.type === 'fix' && c.at && c.atExpr) {
-          c.at = c.at.map((x, i) => {
-            const e = c.atExpr![i];
+        if (constraint.type === 'fix' && constraint.at && constraint.atExpr) {
+          constraint.at = constraint.at.map((x, i) => {
+            const e = constraint.atExpr![i];
             if (!e) {
               return x;
             }
-            const v = evaluate(e, 'length');
-            if (v === null) {
-              problems.push(`${f.name}: "${e}" can't be evaluated`);
+            const value = evaluate(e, 'length');
+            if (value === null) {
+              problems.push(`${feature.name}: "${e}" can't be evaluated`);
             }
 
-            return v ?? x;
-          }) as typeof c.at;
+            return value ?? x;
+          }) as typeof constraint.at;
         }
-        if (!c.expr) {
+        if (!constraint.expr) {
           continue;
         }
-        const v = evaluate(c.expr, c.prop === 'angle' ? 'angle' : 'length');
-        if (v === null) {
-          problems.push(`${f.name}: "${c.expr}" can't be evaluated`);
+        const evaluated = evaluate(constraint.expr, constraint.prop === 'angle' ? 'angle' : 'length');
+        if (evaluated === null) {
+          problems.push(`${feature.name}: "${constraint.expr}" can't be evaluated`);
         } else {
-          c.value = v;
+          constraint.value = evaluated;
         }
       }
       // (Curves that are another sketch's stay where that sketch has them: the rest is solved round them.)
-      const held = new Set((f.refs ?? []).map(x => x.id));
-      const r = solveFine(f.entities, f.constraints, held.size ? { fixed: held } : {});
+      const held = new Set((feature.refs ?? []).map(sketchRef => sketchRef.id));
+      const solution = solveFine(feature.entities, feature.constraints, held.size ? { fixed: held } : {});
       // Can't all be met: the sketch stays as it was rather than being bent out of shape.
       // Met already (only rounding noise in the 14th digit): kept exactly as it
       // was - the noise changed the step, and every change anywhere (a colour,
       // a name, an eye in Items) rebuilt everything after the sketch: 20 s a
       // time on a desk fan.
-      if (!r.ok) {
-        problems.push(`${f.name}: constraints can't all be met`);
-      } else if (!sameNumbers(f.entities, r.entities, 1e-9)) {
-        f.entities = r.entities;
+      if (!solution.ok) {
+        problems.push(`${feature.name}: constraints can't all be met`);
+      } else if (!sameNumbers(feature.entities, solution.entities, 1e-9)) {
+        feature.entities = solution.entities;
       }
     }
     // Fill patterns follow their shapes, here too: a shape that changed size by a variable or a dimension has its
     // pattern made again (it was only made again when the sketch was changed in the sketch tool).
-    if (f.type === 'sketch' && f.fills?.length) {
-      const filled = refill(f.entities, f.fills);
-      if (!sameNumbers(f.entities, filled, 1e-9)) {
-        f.entities = filled;
+    if (feature.type === 'sketch' && feature.fills?.length) {
+      const filled = refill(feature.entities, feature.fills);
+      if (!sameNumbers(feature.entities, filled, 1e-9)) {
+        feature.entities = filled;
       }
     }
   }
@@ -143,24 +143,24 @@ export function resolveDoc(doc: ProjectDoc): string[] {
  * A sketch's curves with those it has from an earlier sketch as that sketch has them now, seen from this one's plane
  * (the two parallel: the same shapes, moved and turned into it). Null: none could be found again.
  */
-function refreshRefs(f: Extract<Feature, { type: 'sketch' }>, all: Feature[]): SketchEntity[] | null {
+function refreshRefs(sketch: Extract<Feature, { type: 'sketch' }>, all: Feature[]): SketchEntity[] | null {
   let changed = false;
-  const out = f.entities.map((e) => {
-    const ref = f.refs!.find(r => r.id === e.id);
+  const out = sketch.entities.map((e) => {
+    const ref = sketch.refs!.find(ref => ref.id === e.id);
     if (!ref) {
       return e;
     }
-    const from = all.find(x => x.id === ref.sketch);
-    if (!from || from.type !== 'sketch' || from === f) {
+    const from = all.find(feature => feature.id === ref.sketch);
+    if (!from || from.type !== 'sketch' || from === sketch) {
       return e;
     }
-    const src = from.entities.find(x => x.id === ref.entity);
-    if (!src || Math.abs(dot(from.plane.normal, f.plane.normal)) < 1 - 1e-9) {
+    const src = from.entities.find(entity => entity.id === ref.entity);
+    if (!src || Math.abs(dot(from.plane.normal, sketch.plane.normal)) < 1 - 1e-9) {
       return e;
     }
     changed = true;
 
-    return { ...transformEntity(src, uv => toPlane(f.plane, toWorld(from.plane, uv))), id: e.id, ...(e.construction ? { construction: true } : { construction: undefined }) } as SketchEntity;
+    return { ...transformEntity(src, uv => toPlane(sketch.plane, toWorld(from.plane, uv))), id: e.id, ...(e.construction ? { construction: true } : { construction: undefined }) } as SketchEntity;
   });
 
   return changed ? out : null;
@@ -172,13 +172,13 @@ function sameNumbers(a: unknown, b: unknown, tol: number): boolean {
     return Math.abs(a - b) <= tol;
   }
   if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && a.every((x, i) => sameNumbers(x, b[i], tol));
+    return a.length === b.length && a.every((item, i) => sameNumbers(item, b[i], tol));
   }
   if (a && b && typeof a === 'object' && typeof b === 'object') {
     const ka = Object.keys(a as object);
     const kb = Object.keys(b as object);
 
-    return ka.length === kb.length && ka.every(k => sameNumbers((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], tol));
+    return ka.length === kb.length && ka.every(key => sameNumbers((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], tol));
   }
 
   return a === b;

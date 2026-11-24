@@ -32,23 +32,23 @@ function loadFont(id: string): Promise<Font> {
   if (hit) {
     return hit;
   }
-  const def = FONTS.find(f => f.id === id) ?? FONTS[0];
-  const p = fetch(def.url!)
-    .then(r => r.arrayBuffer())
+  const def = FONTS.find(font => font.id === id) ?? FONTS[0];
+  const loading = fetch(def.url!)
+    .then(response => response.arrayBuffer())
     .then(b => parse(b));
-  loaded.set(def.id, p);
+  loaded.set(def.id, loading);
 
-  return p;
+  return loading;
 }
 
 /** Imported fonts, kept on this device (small ones; big ones last for this visit). */
 (() => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? '[]') as { id: string; name: string; data: string }[];
-    for (const f of saved) {
-      const bytes = Uint8Array.from(atob(f.data), c => c.charCodeAt(0));
-      FONTS.push({ id: f.id, name: f.name });
-      loaded.set(f.id, Promise.resolve(parse(bytes.buffer)));
+    for (const stored of saved) {
+      const bytes = Uint8Array.from(atob(stored.data), char => char.charCodeAt(0));
+      FONTS.push({ id: stored.id, name: stored.name });
+      loaded.set(stored.id, Promise.resolve(parse(bytes.buffer)));
     }
   } catch {
     // nothing saved
@@ -85,22 +85,22 @@ export async function importFont(file: File): Promise<string> {
  */
 const recent = new Map<string, SketchEntity[]>();
 
-/** A copy moved by d, with new ids. */
-function shifted(es: SketchEntity[], d: Vec2): SketchEntity[] {
-  const m = (p: Vec2): Vec2 => [p[0] + d[0], p[1] + d[1]];
+/** A copy moved by `offset`, with new ids. */
+function shifted(es: SketchEntity[], offset: Vec2): SketchEntity[] {
+  const move = (point: Vec2): Vec2 => [point[0] + offset[0], point[1] + offset[1]];
 
   return es.map((e) => {
-    const c = { ...e, id: uid() } as SketchEntity & Record<string, unknown>;
-    for (const k of ['a', 'b', 'm', 'center'] as const) {
-      if (Array.isArray(c[k])) {
-        c[k] = m(c[k] as Vec2);
+    const copy = { ...e, id: uid() } as SketchEntity & Record<string, unknown>;
+    for (const key of ['a', 'b', 'm', 'center'] as const) {
+      if (Array.isArray(copy[key])) {
+        copy[key] = move(copy[key] as Vec2);
       }
     }
-    if (Array.isArray(c.points)) {
-      c.points = (c.points as Vec2[]).map(m);
+    if (Array.isArray(copy.points)) {
+      copy.points = (copy.points as Vec2[]).map(move);
     }
 
-    return c;
+    return copy;
   });
 }
 

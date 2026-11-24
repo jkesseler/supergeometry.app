@@ -25,11 +25,11 @@ const DOWNLOAD
 
 /** "Today 14:32", "Yesterday 09:10", "3 Mar", "3 Mar 2025". */
 function when(ms: number): string {
-  const d = new Date(ms);
+  const date = new Date(ms);
   const now = new Date();
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.round((day(now) - day(d)) / 864e5);
+  const days = Math.round((day(now) - day(date)) / 864e5);
   if (days === 0) {
     return `Today ${time}`;
   }
@@ -37,7 +37,7 @@ function when(ms: number): string {
     return `Yesterday ${time}`;
   }
 
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
+  return date.toLocaleDateString([], { day: 'numeric', month: 'short', ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
 }
 
 /** The ways to support the project, each with room for its logo. */
@@ -52,35 +52,35 @@ function supportBox(): HTMLElement {
   );
   const row = el('div', 'library-support-row');
   // (Only the ways with a link.)
-  for (const w of SUPPORT.filter(s => s.url)) {
+  for (const supportWay of SUPPORT.filter(way => way.url)) {
     const b = el('button', 'library-support-btn');
     b.type = 'button';
     const logo = el('span', 'library-support-logo');
-    if (w.logo) {
+    if (supportWay.logo) {
       logo.classList.add('has-logo');
-      if (w.tile) {
-        logo.style.background = w.tile;
+      if (supportWay.tile) {
+        logo.style.background = supportWay.tile;
       }
       const img = el('img', '');
-      img.src = w.logo;
+      img.src = supportWay.logo;
       img.alt = '';
       img.draggable = false;
       logo.append(img);
     } else {
-      logo.innerHTML = w.mark;
+      logo.innerHTML = supportWay.mark;
     }
     const text = el('span', 'library-support-name');
-    text.append(el('b', '', w.name), el('span', '', w.url ? w.sub : 'Coming soon'));
+    text.append(el('b', '', supportWay.name), el('span', '', supportWay.url ? supportWay.sub : 'Coming soon'));
     b.append(logo, text);
-    if (w.tag) {
+    if (supportWay.tag) {
       const tag = el('span', 'library-support-tag');
-      tag.innerHTML = w.tag.icon;
-      tag.append(w.tag.text);
+      tag.innerHTML = supportWay.tag.icon;
+      tag.append(supportWay.tag.text);
       b.append(tag);
     }
-    if (w.url) {
-      b.title = `${w.name} - opens in a new tab`;
-      b.addEventListener('click', () => openSupport(w.url));
+    if (supportWay.url) {
+      b.title = `${supportWay.name} - opens in a new tab`;
+      b.addEventListener('click', () => openSupport(supportWay.url));
     } else {
       b.disabled = true;
     }

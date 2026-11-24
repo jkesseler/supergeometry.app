@@ -73,11 +73,11 @@ export type EditKeep = { edit?: string; inPlace?: boolean };
  * put down onto them - where they meet, the cage bends, and the smooth surface
  * through it rounds the corner off.
  */
-export function layFaceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3, n: number, several = false): { cage: Cage; n: number } | null {
-  for (const k of FACE_GRIDS.filter(g => g <= n).reverse()) {
-    const cage = faceCage(tris, center, normal, k);
+export function layFaceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Vec3, divisions: number, several = false): { cage: Cage; n: number } | null {
+  for (const grid of FACE_GRIDS.filter(gridSize => gridSize <= divisions).reverse()) {
+    const cage = faceCage(tris, center, normal, grid);
     if (cage) {
-      return { cage: several ? onCorners(liftOnto(cage, center, normal, tris), center, tris) : cage, n: k };
+      return { cage: several ? onCorners(liftOnto(cage, center, normal, tris), center, tris) : cage, n: grid };
     }
   }
 
@@ -85,8 +85,8 @@ export function layFaceCage(tris: [Vec3, Vec3, Vec3][], center: Vec3, normal: Ve
 }
 
 /** The way a Freeform Face step's faces face (one face: its normal; several: the middle of theirs). */
-export function faceStepNormal(f: FaceFreeformFeature): Vec3 {
-  return f.more?.length ? facesNormal([f.face.normal, ...f.more.map(m => m.normal)]) : norm(f.face.normal);
+export function faceStepNormal(faceFreeform: FaceFreeformFeature): Vec3 {
+  return faceFreeform.more?.length ? facesNormal([faceFreeform.face.normal, ...faceFreeform.more.map(faceRef => faceRef.normal)]) : norm(faceFreeform.face.normal);
 }
 
 /** "Pick in a box" (a finger draws the box): on until switched off. */
@@ -125,7 +125,7 @@ export class FreeformTool implements Tool {
   private past: { cage: Cage; picks: Pick[] }[] = [];
   private future: { cage: Cage; picks: Pick[] }[] = [];
   /** Moves applied to the body later in History: the cage is shown (and edited) where the body is. */
-  private place: Placement = { fwd: v => v, inv: v => v };
+  private place: Placement = { fwd: vector => vector, inv: vector => vector };
   private surfaceSheet = false;
   private thickness = 0;
   private thickSide: 'up' | 'down' | 'both' = 'up';
@@ -193,25 +193,25 @@ export class FreeformTool implements Tool {
     this.keep = ('keep' in from ? from.keep : 'face' in from ? from.face.keep : undefined) ?? {};
     if ('face' in from) {
       this.face = from.face;
-      const f = from.face.feature;
-      this.cage = { faces: structuredClone(f.cage.faces), verts: f.cage.verts.map(v => add(f.face.center, v)) };
+      const feature = from.face.feature;
+      this.cage = { faces: structuredClone(feature.cage.faces), verts: feature.cage.verts.map(vertex => add(feature.face.center, vertex)) };
       this.surfaceSheet = true;
-      const n = faceStepNormal(f);
-      const u = xDirFor(n);
-      this.axes = [u, norm(cross(n, u)), n];
+      const normal = faceStepNormal(feature);
+      const xDir = xDirFor(normal);
+      this.axes = [xDir, norm(cross(normal, xDir)), normal];
     } else if ('feature' in from) {
       this.existing = from.feature;
       this.place = placementOf(app.store.features, from.feature.id);
-      const c = structuredClone(from.feature.cage);
-      this.cage = { faces: c.faces, verts: c.verts.map(this.place.fwd), ...(c.creases ? { creases: c.creases } : {}) };
+      const copy = structuredClone(from.feature.cage);
+      this.cage = { faces: copy.faces, verts: copy.verts.map(this.place.fwd), ...(copy.creases ? { creases: copy.creases } : {}) };
       this.surfaceSheet = !!from.feature.surface;
       this.thickness = from.feature.thickness ?? 0;
       this.thickSide = from.feature.thickSide ?? 'up';
       // The symmetry plane set last time: still there (and shown).
       const sy = from.feature.symmetry;
       if (sy) {
-        const o = this.place.fwd(sy.origin);
-        this.sym = { origin: o, normal: norm(sub(this.place.fwd(add(sy.origin, sy.normal)), o)) };
+        const origin = this.place.fwd(sy.origin);
+        this.sym = { origin: origin, normal: norm(sub(this.place.fwd(add(sy.origin, sy.normal)), origin)) };
       }
     } else {
       this.cage = primitiveCage(from.primitive);
@@ -235,11 +235,11 @@ export class FreeformTool implements Tool {
     this.dots.renderOrder = 70;
     this.backLines.renderOrder = 66;
     this.backDots.renderOrder = 66.5;
-    for (const o of [this.marks, this.hoverMarks]) {
-      o.renderOrder = 69;
+    for (const lines of [this.marks, this.hoverMarks]) {
+      lines.renderOrder = 69;
     }
-    for (const o of [this.markDots, this.hoverDots]) {
-      o.renderOrder = 71;
+    for (const points of [this.markDots, this.hoverDots]) {
+      points.renderOrder = 71;
     }
   }
 
@@ -264,7 +264,7 @@ export class FreeformTool implements Tool {
   /** The steps as they would be with this edit kept (for a preview). */
   private withEdit(target: string, patch: FreeformEditFeature['patch']): Feature[] {
     const list = [...this.app.store.features];
-    const at = (id: string) => list.findIndex(x => x.id === id);
+    const at = (id: string) => list.findIndex(feature => feature.id === id);
     if (this.keep.edit && at(this.keep.edit) >= 0) {
       list[at(this.keep.edit)] = { ...(list[at(this.keep.edit)] as FreeformEditFeature), patch };
     } else if (this.keep.inPlace && at(target) >= 0) {
@@ -315,8 +315,8 @@ export class FreeformTool implements Tool {
     this.app.ui.setBottom([]);
     if (this.choosingPlane) {
       // Nothing shown yet: the origin planes (and flat faces) to put it on.
-      for (const o of [this.surface, this.faceEdges, this.lines, this.dots, this.backLines, this.backDots]) {
-        o.visible = false;
+      for (const object of [this.surface, this.faceEdges, this.lines, this.dots, this.backLines, this.backDots]) {
+        object.visible = false;
       }
       view.setOriginPlanesVisible(true);
       this.app.ui.setHint('Tap a plane or a flat face to put the shape on.');
@@ -334,7 +334,7 @@ export class FreeformTool implements Tool {
           { type: 'button', label: 'XY (floor)', onClick: on('XY') },
           { type: 'button', label: 'XZ (front)', onClick: on('XZ') },
           { type: 'button', label: 'YZ (side)', onClick: on('YZ') },
-          ...view.construction.planes.map(c => ({ type: 'button' as const, label: c.name, onClick: on(c.id) }))
+          ...view.construction.planes.map(plane => ({ type: 'button' as const, label: plane.name, onClick: on(plane.id) }))
         ],
         onCancel: () => this.cancel()
       });
@@ -366,29 +366,29 @@ export class FreeformTool implements Tool {
     this.hint();
     // A new shape: framed, clear of the card (it used to appear tiny, half under it on a phone).
     if (!this.existing && !this.face) {
-      const box = new Box3().setFromPoints(this.cage.verts.map(v => new Vector3(...v)));
+      const box = new Box3().setFromPoints(this.cage.verts.map(vertex => new Vector3(...vertex)));
       this.app.view.cam.fit(box, true, this.app.view.coveredInsets());
     }
   }
 
   /** Does the cage's box overlap any visible body's box? */
   private overlapsBodies(): boolean {
-    const lo = [0, 1, 2].map(k => Math.min(...this.cage.verts.map(v => v[k])));
-    const hi = [0, 1, 2].map(k => Math.max(...this.cage.verts.map(v => v[k])));
+    const lo = [0, 1, 2].map(axis => Math.min(...this.cage.verts.map(vertex => vertex[axis])));
+    const hi = [0, 1, 2].map(axis => Math.max(...this.cage.verts.map(vertex => vertex[axis])));
     const hidden = new Set(this.app.store.doc.hidden);
 
     return this.app.view.bodyList.some((b) => {
       if (hidden.has(b.id) || !b.positions.length) {
         return false;
       }
-      for (let k = 0; k < 3; k++) {
+      for (let axis = 0; axis < 3; axis++) {
         let mn = Infinity;
         let mx = -Infinity;
-        for (let i = k; i < b.positions.length; i += 3) {
+        for (let i = axis; i < b.positions.length; i += 3) {
           mn = Math.min(mn, b.positions[i]);
           mx = Math.max(mx, b.positions[i]);
         }
-        if (mx < lo[k] || mn > hi[k]) {
+        if (mx < lo[axis] || mn > hi[axis]) {
           return false;
         }
       }
@@ -407,9 +407,9 @@ export class FreeformTool implements Tool {
     view.overlay.remove(this.creaseLines);
     // (They share the front pass's points and lines: disposed with those.)
     view.overlay.remove(this.backLines, this.backDots);
-    for (const o of [this.symPlane, this.surface, this.lines, this.dots, this.markFill, this.marks, this.markDots, this.hoverMarks, this.hoverDots]) {
-      view.overlay.remove(o);
-      o.geometry.dispose();
+    for (const object of [this.symPlane, this.surface, this.lines, this.dots, this.markFill, this.marks, this.markDots, this.hoverMarks, this.hoverDots]) {
+      view.overlay.remove(object);
+      object.geometry.dispose();
     }
     this.gimbal?.dispose();
     this.gimbal = null;
@@ -418,9 +418,9 @@ export class FreeformTool implements Tool {
     this.app.ui.setHint(null);
     this.app.ui.setLabel(0, 0, null);
     this.typing.hideBox();
-    for (const o of [this.marks, this.hoverMarks, this.faceEdges, this.creaseLines]) {
-      o.geometry.dispose();
-      view.releaseLineMaterial(o.material);
+    for (const lines of [this.marks, this.hoverMarks, this.faceEdges, this.creaseLines]) {
+      lines.geometry.dispose();
+      view.releaseLineMaterial(lines.material);
     }
     view.requestRender();
   }
@@ -458,36 +458,36 @@ export class FreeformTool implements Tool {
   }
 
   private panel(): void {
-    const n = this.selectedVerts().length;
+    const count = this.selectedVerts().length;
     const items: PanelItem[] = this.liveItems();
-    if (n && (!this.live || this.live.kind === 'shape' || this.live.kind === 'sheet')) {
+    if (count && (!this.live || this.live.kind === 'shape' || this.live.kind === 'sheet')) {
       // Exact values (a phone can't type while dragging), from where the points are now.
       this.fieldBase = null;
       // Nothing moved yet: no offset, no turn - and every scale factor 1 (0 flattened the points).
       this.fieldVals = this.xform === 'scale' ? [1, 1, 1, 1] : [0, 0, 0, 1];
-      items.push({ type: 'choice', options: [{ id: 'move', label: 'Move' }, { id: 'turn', label: 'Turn' }, { id: 'scale', label: 'Scale' }, { id: 'place', label: 'Place at' }], value: this.xform, onChange: v => ((this.xform = v as typeof this.xform), this.panel(), this.placeGimbal()) });
+      items.push({ type: 'choice', options: [{ id: 'move', label: 'Move' }, { id: 'turn', label: 'Turn' }, { id: 'scale', label: 'Scale' }, { id: 'place', label: 'Place at' }], value: this.xform, onChange: value => ((this.xform = value as typeof this.xform), this.panel(), this.placeGimbal()) });
       if (this.xform === 'place') {
         // Where the picked points are (their middle), to type where they should be: X, Y and Z from the origin.
         const at = this.centroid(this.selectedVerts());
-        for (const [k, a] of ['X', 'Y', 'Z'].entries()) {
-          items.push({ type: 'number', label: a, value: Math.round(at[k] * 1000) / 1000, kind: 'length', onInput: v => this.placeAt(k, v) });
+        for (const [axis, a] of ['X', 'Y', 'Z'].entries()) {
+          items.push({ type: 'number', label: a, value: Math.round(at[axis] * 1000) / 1000, kind: 'length', onInput: value => this.placeAt(axis, value) });
         }
       } else if (this.xform === 'scale') {
-        items.push({ type: 'number', label: 'All', value: 1, kind: 'number', min: 0.01, onInput: v => this.setField(3, v) });
-        for (const [k, a] of ['X', 'Y', 'Z'].entries()) {
-          items.push({ type: 'number', label: a, value: 1, kind: 'number', min: 0.01, onInput: v => this.setField(k, v) });
+        items.push({ type: 'number', label: 'All', value: 1, kind: 'number', min: 0.01, onInput: value => this.setField(3, value) });
+        for (const [axis, a] of ['X', 'Y', 'Z'].entries()) {
+          items.push({ type: 'number', label: a, value: 1, kind: 'number', min: 0.01, onInput: value => this.setField(axis, value) });
         }
       } else {
         const turn = this.xform === 'turn';
-        for (const [k, a] of ['X', 'Y', 'Z'].entries()) {
-          items.push({ type: 'number', label: turn ? `${a}°` : `Δ${a}`, value: 0, kind: turn ? 'angle' : 'length', onInput: v => this.setField(k, v) });
+        for (const [axis, a] of ['X', 'Y', 'Z'].entries()) {
+          items.push({ type: 'number', label: turn ? `${a}°` : `Δ${a}`, value: 0, kind: turn ? 'angle' : 'length', onInput: value => this.setField(axis, value) });
         }
       }
     }
     // Soft: the points round the picked ones go along with a move, less the further off they are - a bump raised
     // by one point, not a spike. (0: only what is picked moves.)
-    if (n && !this.face && (!this.live || this.live.kind === 'shape' || this.live.kind === 'sheet') && (this.xform === 'move' || this.xform === 'place')) {
-      items.push({ type: 'number', label: 'Soft', value: softRadius, kind: 'length', min: 0, onInput: v => (softRadius = Math.max(0, v)) });
+    if (count && !this.face && (!this.live || this.live.kind === 'shape' || this.live.kind === 'sheet') && (this.xform === 'move' || this.xform === 'place')) {
+      items.push({ type: 'number', label: 'Soft', value: softRadius, kind: 'length', min: 0, onInput: value => (softRadius = Math.max(0, value)) });
     }
     // A phone has no mouse to draw a box round the points: a finger draws it while this is on.
     if (isCoarse && !this.placing && (!this.live || this.live.kind === 'shape' || this.live.kind === 'sheet')) {
@@ -513,13 +513,13 @@ export class FreeformTool implements Tool {
         value: !!this.sym || this.symPicking,
         onChange: (on) => {
           // Two facing (parallel) faces picked: the mirror goes midway between them.
-          const fs = this.picks.filter((p): p is Extract<Pick, { kind: 'face' }> => p.kind === 'face');
+          const fs = this.picks.filter((pick): pick is Extract<Pick, { kind: 'face' }> => pick.kind === 'face');
           if (on && fs.length === 2) {
-            const mid = (f: number) => this.centroid([...this.cage.faces[f]]);
-            const nrm = (f: number) => {
-              const [a, b, c, d] = this.cage.faces[f].map(i => this.cage.verts[i]);
+            const mid = (face: number) => this.centroid([...this.cage.faces[face]]);
+            const nrm = (face: number) => {
+              const [a, b, cornerC, cornerD] = this.cage.faces[face].map(i => this.cage.verts[i]);
 
-              return norm(cross(sub(c, a), sub(d, b)));
+              return norm(cross(sub(cornerC, a), sub(cornerD, b)));
             };
             const [n0, n1] = [nrm(fs[0].f), nrm(fs[1].f)];
             if (Math.abs(dot(n0, n1)) > 0.995) {
@@ -540,26 +540,26 @@ export class FreeformTool implements Tool {
         // (The middle of its size, not of its points: more detail on one side - an inset face - pulled the mirror
         // towards it, and nothing on the two sides matched.)
         const vs = this.cage.verts;
-        const mid = [0, 1, 2].map(k => (Math.min(...vs.map(v => v[k])) + Math.max(...vs.map(v => v[k]))) / 2) as Vec3;
-        items.push({ type: 'choice', label: 'Mirror across', options: [{ id: 'x', label: 'X' }, { id: 'y', label: 'Y' }, { id: 'z', label: 'Z' }], value: '', onChange: k => this.setSymmetry(mid, k === 'x' ? [1, 0, 0] : k === 'y' ? [0, 1, 0] : [0, 0, 1]) });
+        const mid = [0, 1, 2].map(axis => (Math.min(...vs.map(vertex => vertex[axis])) + Math.max(...vs.map(vertex => vertex[axis]))) / 2) as Vec3;
+        items.push({ type: 'choice', label: 'Mirror across', options: [{ id: 'x', label: 'X' }, { id: 'y', label: 'Y' }, { id: 'z', label: 'Z' }], value: '', onChange: axisKey => this.setSymmetry(mid, axisKey === 'x' ? [1, 0, 0] : axisKey === 'y' ? [0, 1, 0] : [0, 0, 1]) });
       }
     }
     // Points on an open border picked (two or more along it): new faces beyond them.
-    const pickedVerts = this.picks.filter((p): p is Extract<Pick, { kind: 'vert' }> => p.kind === 'vert').map(p => p.i);
+    const pickedVerts = this.picks.filter((pick): pick is Extract<Pick, { kind: 'vert' }> => pick.kind === 'vert').map(pick => pick.i);
     if (pickedVerts.length >= 2 && !this.placing && !this.live && extendBorder(this.cage, pickedVerts)) {
       items.push({
         type: 'button',
         label: 'Extend surface',
         icon: 'extrude',
         onClick: () => {
-          const r = extendBorder(this.cage, pickedVerts);
-          if (r) {
-            this.changeCage(r.cage, r.verts.map(i => ({ kind: 'vert' as const, i })));
+          const extended = extendBorder(this.cage, pickedVerts);
+          if (extended) {
+            this.changeCage(extended.cage, extended.verts.map(i => ({ kind: 'vert' as const, i })));
           }
         }
       });
     }
-    const faces = this.picks.filter(p => p.kind === 'face').length;
+    const faces = this.picks.filter(pick => pick.kind === 'face').length;
     if (faces && !this.placing) {
       items.push(
         { type: 'button', label: `Extrude face${faces > 1 ? 's' : ''}`, icon: 'extrude', onClick: () => this.extrudeSelected() },
@@ -574,12 +574,12 @@ export class FreeformTool implements Tool {
       items.push({ type: 'button', label: 'Bridge faces', icon: 'loft', onClick: () => this.bridgeSelectedFaces() });
     }
     // One edge picked: a new loop of points across the faces it runs through.
-    const edges = this.picks.filter(p => p.kind === 'edge');
+    const edges = this.picks.filter(pick => pick.kind === 'edge');
     // Edges picked: made sharp - the surface keeps a crease along them instead of rounding over - or smooth again.
     if (edges.length && !faces && !this.placing && !this.face) {
       const key = (e: [number, number]) => cageEdgeKey(e[0], e[1]);
       const sharp = new Set((this.cage.creases ?? []).map(key));
-      const picked = edges.map(p => (p as Extract<Pick, { kind: 'edge' }>).e);
+      const picked = edges.map(edge => (edge as Extract<Pick, { kind: 'edge' }>).e);
       const allSharp = picked.every(e => sharp.has(key(e)));
       const many = picked.length > 1;
       items.push({
@@ -619,11 +619,11 @@ export class FreeformTool implements Tool {
           label: 'Remove edge loop',
           icon: 'trash',
           onClick: () => {
-            const r = removeEdgeLoop(this.cage, edges[0].e[0], edges[0].e[1]);
-            if (!r) {
+            const cage = removeEdgeLoop(this.cage, edges[0].e[0], edges[0].e[1]);
+            if (!cage) {
               return this.app.ui.toast('That loop cannot be taken out');
             }
-            this.changeCage(r, []);
+            this.changeCage(cage, []);
             this.app.ui.toast('Edge loop removed - the faces either side of it are one');
           }
         });
@@ -641,16 +641,16 @@ export class FreeformTool implements Tool {
     // Two runs of border edges (two edges, two rows): a strip of faces between them.
     {
       const runs = this.placing ? [] : this.pickedRuns();
-      if (runs.length === 2 && !runs.every(r => r.closed)) {
+      if (runs.length === 2 && !runs.every(run => run.closed)) {
         items.push({ type: 'button', label: 'Connect edges', icon: 'loft', onClick: () => this.connectRuns(runs) });
       }
     }
     // An open shape can be given a thickness to become a solid.
     if (!isClosed(this.cage)) {
       items.push(
-        { type: 'number', label: 'Thickness', value: this.thickness, kind: 'length', min: 0, onInput: v => ((this.thickness = Math.max(0, v)), this.panelHint()) },
-        { type: 'choice', options: [{ id: 'up', label: 'Up' }, { id: 'down', label: 'Down' }, { id: 'both', label: 'Symmetric' }], value: this.thickSide, onChange: (v) => {
-          this.thickSide = v as typeof this.thickSide;
+        { type: 'number', label: 'Thickness', value: this.thickness, kind: 'length', min: 0, onInput: value => ((this.thickness = Math.max(0, value)), this.panelHint()) },
+        { type: 'choice', options: [{ id: 'up', label: 'Up' }, { id: 'down', label: 'Down' }, { id: 'both', label: 'Symmetric' }], value: this.thickSide, onChange: (value) => {
+          this.thickSide = value as typeof this.thickSide;
           // A side picked with no thickness yet makes it solid (2 thick), not nothing.
           if (!(this.thickness > 0)) {
             this.thickness = 2;
@@ -675,7 +675,7 @@ export class FreeformTool implements Tool {
     }
     const liveTitle = { shape: 'New shape', sheet: 'New surface', sweep: 'Pulled out', inset: 'Inset', bridge: 'Bridge' };
     this.app.ui.showPanel({
-      title: this.live ? `Freeform · ${liveTitle[this.live.kind]}` : `Freeform${n ? ` · ${n} point${n > 1 ? 's' : ''}` : ''}`,
+      title: this.live ? `Freeform · ${liveTitle[this.live.kind]}` : `Freeform${count ? ` · ${count} point${count > 1 ? 's' : ''}` : ''}`,
       items,
       actions: [
         { id: 'all', label: 'Select all', icon: 'pointer', run: () => ((this.picks = this.cage.verts.map((_, i) => ({ kind: 'vert' as const, i }))), this.selectionChanged()) },
@@ -690,22 +690,22 @@ export class FreeformTool implements Tool {
 
   /** Freeform Face's card: the cage presets, an edge loop, finer detail; nothing that changes the face's outline. */
   private facePanel(items: PanelItem[]): void {
-    const f = this.face!;
-    if (f.tris.length) {
+    const face = this.face!;
+    if (face.tris.length) {
       items.push({
         type: 'choice',
         label: 'Cells across',
-        options: FACE_GRIDS.map(n => ({ id: String(n), label: String(n) })),
-        value: String(f.feature.grid ?? ''),
-        onChange: (v) => {
-          const laid = layFaceCage(f.tris, f.feature.face.center, faceStepNormal(f.feature), Number(v), !!f.feature.more?.length);
+        options: FACE_GRIDS.map(grid => ({ id: String(grid), label: String(grid) })),
+        value: String(face.feature.grid ?? ''),
+        onChange: (value) => {
+          const laid = layFaceCage(face.tris, face.feature.face.center, faceStepNormal(face.feature), Number(value), !!face.feature.more?.length);
           if (!laid) {
             return this.app.ui.toast("This face's outline won't take a grid that fine");
           }
           const moved = !this.flat();
-          f.feature.grid = laid.n;
-          this.changeCage({ faces: laid.cage.faces, verts: laid.cage.verts.map(p => add(f.feature.face.center, p)) }, []);
-          if (laid.n !== Number(v)) {
+          face.feature.grid = laid.n;
+          this.changeCage({ faces: laid.cage.faces, verts: laid.cage.verts.map(vertex => add(face.feature.face.center, vertex)) }, []);
+          if (laid.n !== Number(value)) {
             this.app.ui.toast(`This face's outline takes ${laid.n} across at most`);
           } else if (moved) {
             this.app.ui.toast('A new grid: the face starts flat again (Undo brings the last one back)');
@@ -713,13 +713,13 @@ export class FreeformTool implements Tool {
         }
       });
     }
-    const edges = this.picks.filter(p => p.kind === 'edge');
-    if (edges.length === 1 && !this.picks.some(p => p.kind === 'face')) {
+    const edges = this.picks.filter(pick => pick.kind === 'edge');
+    if (edges.length === 1 && !this.picks.some(pick => pick.kind === 'face')) {
       items.push({ type: 'button', label: 'Add edge loop', icon: 'splitLine', onClick: () => this.addEdgeLoop(edges[0].e) });
     }
-    const n = this.selectedVerts().length;
+    const count = this.selectedVerts().length;
     this.app.ui.showPanel({
-      title: `Freeform Face${n ? ` · ${n} point${n > 1 ? 's' : ''}` : ''}`,
+      title: `Freeform Face${count ? ` · ${count} point${count > 1 ? 's' : ''}` : ''}`,
       beta: true,
       items,
       actions: [
@@ -734,23 +734,23 @@ export class FreeformTool implements Tool {
 
   /** Is every cage point still on the face's plane (nothing shaped)? */
   private flat(): boolean {
-    const f = this.face!.feature.face;
+    const face = this.face!.feature.face;
     // Several faces (a new step): every point still on them.
     const more = this.face!.feature.more;
     if (more?.length) {
-      const n = faceStepNormal(this.face!.feature);
+      const normal = faceStepNormal(this.face!.feature);
 
-      return !this.face!.existing && this.cage.verts.every(v => Math.abs(toFaces(v, n, this.face!.tris) ?? 1) < 1e-6);
+      return !this.face!.existing && this.cage.verts.every(vertex => Math.abs(toFaces(vertex, normal, this.face!.tris) ?? 1) < 1e-6);
     }
 
-    return this.cage.verts.every(v => Math.abs(dot(sub(v, f.center), f.normal)) < 1e-9);
+    return this.cage.verts.every(vertex => Math.abs(dot(sub(vertex, face.center), face.normal)) < 1e-9);
   }
 
   /** The step as it is now (its cage relative to the face's middle). */
   private faceDraft(): FaceFreeformFeature {
-    const f = this.face!.feature;
+    const feature = this.face!.feature;
 
-    return { ...f, cage: { faces: structuredClone(this.cage.faces), verts: this.cage.verts.map(v => sub(v, f.face.center)) } };
+    return { ...feature, cage: { faces: structuredClone(this.cage.faces), verts: this.cage.verts.map(vertex => sub(vertex, feature.face.center)) } };
   }
 
   /** The body previewed with the face shaped as the cage is now. */
@@ -762,11 +762,11 @@ export class FreeformTool implements Tool {
     } else {
       list.push(draft);
     }
-    void this.app.preview(list).then((r) => {
-      if (!r || this.gone) {
+    void this.app.preview(list).then((result) => {
+      if (!result || this.gone) {
         return;
       }
-      const e = r.errors.find(x => x.featureId === draft.id)?.message ?? null;
+      const e = result.errors.find(error => error.featureId === draft.id)?.message ?? null;
       if (e !== this.error) {
         ((this.error = e), this.hint());
       }
@@ -801,15 +801,15 @@ export class FreeformTool implements Tool {
     // face over the whole sheet. An outline with every edge picked is still taken, as before.)
     const exact = holeLoops(this.cage, chosen);
     const all = holeLoops(this.cage, new Set(border.map(([a, b]) => cageEdgeKey(a, b))));
-    const whole = all.filter(loop => loop.length * 2 <= this.cage.verts.length && loop.some((a, k) => chosen.has(cageEdgeKey(a, loop[(k + 1) % loop.length]))));
+    const whole = all.filter(loop => loop.length * 2 <= this.cage.verts.length && loop.some((a, index) => chosen.has(cageEdgeKey(a, loop[(index + 1) % loop.length]))));
 
-    return [...whole, ...exact.filter(l => !whole.some(w => w.length === l.length && w.every(x => l.includes(x))))];
+    return [...whole, ...exact.filter(loop => !whole.some(wholeLoop => wholeLoop.length === loop.length && wholeLoop.every(x => loop.includes(x))))];
   }
 
   /** Picked border edges grouped into runs (edges picked, or the points along them). */
   private pickedRuns(): Chain[] {
     const verts = new Set(this.selectedVerts());
-    const picked = new Set(this.picks.flatMap(p => (p.kind === 'edge' ? [cageEdgeKey(p.e[0], p.e[1])] : [])));
+    const picked = new Set(this.picks.flatMap(pick => (pick.kind === 'edge' ? [cageEdgeKey(pick.e[0], pick.e[1])] : [])));
     const chosen = new Set<string>();
     for (const [a, b] of boundaryEdges(this.cage)) {
       if (picked.has(cageEdgeKey(a, b)) || (verts.has(a) && verts.has(b) && !picked.size)) {
@@ -821,7 +821,7 @@ export class FreeformTool implements Tool {
   }
 
   private connectRuns(runs: Chain[]): void {
-    const edges = (c: Chain) => (c.closed ? c.verts.length : c.verts.length - 1);
+    const edges = (chain: Chain) => (chain.closed ? chain.verts.length : chain.verts.length - 1);
     if (runs[0].closed !== runs[1].closed) {
       return this.app.ui.toast('Connect a hole with a hole, or a row of edges with a row');
     }
@@ -853,13 +853,13 @@ export class FreeformTool implements Tool {
   /** Typical cage edge length (for default sizes). */
   private edgeSize(): number {
     const es = cageEdges(this.cage);
-    const t = es.reduce((s, [a, b]) => s + len(sub(this.cage.verts[a], this.cage.verts[b])), 0);
+    const t = es.reduce((sum, [a, b]) => sum + len(sub(this.cage.verts[a], this.cage.verts[b])), 0);
 
     return t / Math.max(1, es.length);
   }
 
   private pickedFaces(): number[] {
-    return this.picks.flatMap(p => (p.kind === 'face' ? [p.f] : []));
+    return this.picks.flatMap(pick => (pick.kind === 'face' ? [pick.f] : []));
   }
 
   /** The picked faces lift out a little, with new side faces; they stay picked to drag further. */
@@ -867,7 +867,7 @@ export class FreeformTool implements Tool {
     const picked = this.pickedFaces();
     if (picked.length === 1) {
       // One face: pulled out in steps, with Length / Bend / Taper sliders.
-      const q = this.cage.faces[picked[0]].map(v => this.cage.verts[v]);
+      const q = this.cage.faces[picked[0]].map(vertex => this.cage.verts[vertex]);
       const size = (len(sub(q[0], q[2])) + len(sub(q[1], q[3]))) / 2 / Math.SQRT2;
       this.startLive({ kind: 'sweep', base: this.cage, face: picked[0], steps: 4, length: Math.round(size * 2), bend: 0, taper: 1, size });
       this.app.ui.toast('Pulled out - Length, Bend and Taper on the line at the bottom shape it (a spout: bend it up)');
@@ -878,7 +878,7 @@ export class FreeformTool implements Tool {
     if (!out) {
       return;
     }
-    this.changeCage(out.cage, out.faces.map(f => ({ kind: 'face' as const, f })));
+    this.changeCage(out.cage, out.faces.map(face => ({ kind: 'face' as const, f: face })));
     this.app.ui.toast('Extruded - drag the gimbal to pull the faces further (or push them in)');
   }
 
@@ -894,7 +894,7 @@ export class FreeformTool implements Tool {
     if (!next) {
       return this.app.ui.toast('No clean loop runs through this edge (its ring of faces crosses itself) - try a neighbouring edge');
     }
-    this.changeCage(next, next.verts.slice(before).map((_, k) => ({ kind: 'vert' as const, i: before + k })));
+    this.changeCage(next, next.verts.slice(before).map((_, vertexIndex) => ({ kind: 'vert' as const, i: before + vertexIndex })));
     this.app.ui.toast('Edge loop added - its new points are picked (drag or scale them)');
   }
 
@@ -911,8 +911,8 @@ export class FreeformTool implements Tool {
     if (!bridgeFaces(this.cage, a, b)) {
       return this.app.ui.toast("These two faces can't be bridged (they touch each other)");
     }
-    const ca = scale(this.cage.faces[a].reduce((s, v) => add(s, this.cage.verts[v]), [0, 0, 0] as Vec3), 0.25);
-    const cb = scale(this.cage.faces[b].reduce((s, v) => add(s, this.cage.verts[v]), [0, 0, 0] as Vec3), 0.25);
+    const ca = scale(this.cage.faces[a].reduce((sum, vertex) => add(sum, this.cage.verts[vertex]), [0, 0, 0] as Vec3), 0.25);
+    const cb = scale(this.cage.faces[b].reduce((sum, vertex) => add(sum, this.cage.verts[vertex]), [0, 0, 0] as Vec3), 0.25);
     const span = len(sub(ca, cb));
     // Faces looking the same way (two on the back of a can): a handle, arched out.
     // Facing each other (a tunnel): straight across.
@@ -921,17 +921,17 @@ export class FreeformTool implements Tool {
     this.app.ui.toast(same ? 'Bridged into a handle - Arch on the line at the bottom sets how far it reaches out' : 'Bridged - the two faces are joined by a tube');
   }
 
-  private faceNormalOf(f: number): Vec3 {
-    const [p, q, r, t] = this.cage.faces[f].map(v => this.cage.verts[v]);
+  private faceNormalOf(face: number): Vec3 {
+    const [first, q, third, t] = this.cage.faces[face].map(vertex => this.cage.verts[vertex]);
 
-    return norm(cross(sub(r, p), sub(t, q)));
+    return norm(cross(sub(third, first), sub(t, q)));
   }
 
   // ---------------------------------------------------------- live steps
 
-  private startLive(l: Live): void {
+  private startLive(live: Live): void {
     this.remember();
-    this.live = l;
+    this.live = live;
     if (!this.applyLive()) {
       this.live = null;
       this.past.pop();
@@ -945,35 +945,35 @@ export class FreeformTool implements Tool {
 
   /** Re-make the live step from its base with the card's current values. */
   private applyLive(): boolean {
-    const l = this.live;
-    if (!l) {
+    const live = this.live;
+    if (!live) {
       return false;
     }
     let next: Cage | null = null;
     let picks: Pick[] = [];
-    if (l.kind === 'shape') {
-      next = shapeCage(l.prim, l.size, l.rows);
+    if (live.kind === 'shape') {
+      next = shapeCage(live.prim, live.size, live.rows);
       if (this.placing) {
         picks = next.verts.map((_, i) => ({ kind: 'vert' as const, i }));
       }
-    } else if (l.kind === 'sheet') {
-      const flat = planeCage(l.size, Math.max(1, Math.round(l.rows)));
-      next = { faces: flat.faces, verts: flat.verts.map(v => add(l.at, add(add(scale(l.x, v[0]), scale(l.y, v[1])), scale(l.n, v[2])))) };
+    } else if (live.kind === 'sheet') {
+      const flat = planeCage(live.size, Math.max(1, Math.round(live.rows)));
+      next = { faces: flat.faces, verts: flat.verts.map(vertex => add(live.at, add(add(scale(live.x, vertex[0]), scale(live.y, vertex[1])), scale(live.n, vertex[2])))) };
       if (this.placing) {
         picks = next.verts.map((_, i) => ({ kind: 'vert' as const, i }));
       }
-    } else if (l.kind === 'sweep') {
-      const r = sweepFace(l.base, l.face, l);
-      if (r) {
-        ((next = r.cage), (picks = [{ kind: 'face', f: r.face }]));
+    } else if (live.kind === 'sweep') {
+      const swept = sweepFace(live.base, live.face, live);
+      if (swept) {
+        ((next = swept.cage), (picks = [{ kind: 'face', f: swept.face }]));
       }
-    } else if (l.kind === 'inset') {
-      const r = insetFaces(l.base, l.faces, l.amount);
-      if (r) {
-        ((next = r.cage), (picks = r.faces.map(f => ({ kind: 'face' as const, f }))));
+    } else if (live.kind === 'inset') {
+      const inset = insetFaces(live.base, live.faces, live.amount);
+      if (inset) {
+        ((next = inset.cage), (picks = inset.faces.map(face => ({ kind: 'face' as const, f: face }))));
       }
     } else {
-      next = archBridge(l.base, l.fa, l.fb, l);
+      next = archBridge(live.base, live.fa, live.fb, live);
       if (!next) {
         this.app.ui.toast('That would twist the handle - try less arch or more segments');
       }
@@ -982,7 +982,7 @@ export class FreeformTool implements Tool {
       return false;
     }
     // (A live step is made again from the cage it began on: that one's sharp edges, each time.)
-    this.cage = 'base' in l ? carryCreases(l.base, next) : next;
+    this.cage = 'base' in live ? carryCreases(live.base, next) : next;
     this.picks = picks;
     this.rebuild();
     this.placeGimbal();
@@ -1008,77 +1008,77 @@ export class FreeformTool implements Tool {
   private frameSoon(): void {
     clearTimeout(this.frameTimer);
     this.frameTimer = window.setTimeout(() => {
-      const box = new Box3().setFromPoints(this.cage.verts.map(v => new Vector3(...v)));
+      const box = new Box3().setFromPoints(this.cage.verts.map(vertex => new Vector3(...vertex)));
       this.app.view.cam.fit(box, true, this.app.view.coveredInsets());
     }, 500);
   }
 
   /** The live step's controls, at the top of the card. */
   private liveItems(): PanelItem[] {
-    const l = this.live;
-    if (!l) {
+    const live = this.live;
+    if (!live) {
       return [];
     }
-    if (l.kind === 'sheet') {
+    if (live.kind === 'sheet') {
       return [
-        { type: 'number', label: 'Width', value: l.size[0], kind: 'length', min: 0.01, onInput: v => (this.setLive({ size: [v, l.size[1]] as unknown as Vec3 }), this.frameSoon()) },
-        { type: 'number', label: 'Depth', value: l.size[1], kind: 'length', min: 0.01, onInput: v => (this.setLive({ size: [l.size[0], v] as unknown as Vec3 }), this.frameSoon()) },
-        { type: 'slider', label: 'Faces', value: l.rows, min: 1, max: 8, step: 1, onInput: v => this.setLive({ rows: v }) },
+        { type: 'number', label: 'Width', value: live.size[0], kind: 'length', min: 0.01, onInput: value => (this.setLive({ size: [value, live.size[1]] as unknown as Vec3 }), this.frameSoon()) },
+        { type: 'number', label: 'Depth', value: live.size[1], kind: 'length', min: 0.01, onInput: value => (this.setLive({ size: [live.size[0], value] as unknown as Vec3 }), this.frameSoon()) },
+        { type: 'slider', label: 'Faces', value: live.rows, min: 1, max: 8, step: 1, onInput: rows => this.setLive({ rows: rows }) },
         // Where its middle is, from the origin: it lands on the middle of the
         // face tapped, which is rarely a round number (a base plate's top was
         // 1.43 off centre once a bumper ran along one edge) - ΔX / ΔY from there
         // were sums to do.
-        ...([0, 1, 2] as const).map(k => ({
+        ...([0, 1, 2] as const).map(axis => ({
           type: 'number' as const,
-          label: `Centre ${'XYZ'[k]}`,
-          value: Math.round(l.at[k] * 1000) / 1000,
+          label: `Centre ${'XYZ'[axis]}`,
+          value: Math.round(live.at[axis] * 1000) / 1000,
           kind: 'length' as const,
-          onInput: (v: number) => this.setLive({ at: l.at.map((x, i) => (i === k ? v : x)) as Vec3 })
+          onInput: (value: number) => this.setLive({ at: live.at.map((x, i) => (i === axis ? value : x)) as Vec3 })
         }))
       ];
     }
-    if (l.kind === 'shape') {
-      const round = l.prim !== 'box';
+    if (live.kind === 'shape') {
+      const round = live.prim !== 'box';
       const out: PanelItem[] = [
-        { type: 'number', label: round ? 'Diameter' : 'Width', value: l.size[0], kind: 'length', min: 0.01, onInput: v => (this.setLive({ size: round ? [v, v, l.prim === 'sphere' ? v : l.size[2]] : [v, l.size[1], l.size[2]] }), this.frameSoon()) }
+        { type: 'number', label: round ? 'Diameter' : 'Width', value: live.size[0], kind: 'length', min: 0.01, onInput: value => (this.setLive({ size: round ? [value, value, live.prim === 'sphere' ? value : live.size[2]] : [value, live.size[1], live.size[2]] }), this.frameSoon()) }
       ];
-      if (l.prim === 'box') {
-        out.push({ type: 'number', label: 'Depth', value: l.size[1], kind: 'length', min: 0.01, onInput: v => (this.setLive({ size: [l.size[0], v, l.size[2]] }), this.frameSoon()) });
+      if (live.prim === 'box') {
+        out.push({ type: 'number', label: 'Depth', value: live.size[1], kind: 'length', min: 0.01, onInput: value => (this.setLive({ size: [live.size[0], value, live.size[2]] }), this.frameSoon()) });
       }
       // A ring: how thick its tube is, and how many faces round the tube.
-      if (l.prim === 'torus') {
-        out.push({ type: 'number', label: 'Thickness', value: l.size[2], kind: 'length', min: 0.01, onInput: v => (this.setLive({ size: [l.size[0], l.size[1], Math.min(v, l.size[0] * 0.98)] }), this.frameSoon()) });
-        out.push({ type: 'slider', label: 'Rows', value: l.rows, min: 2, max: 6, step: 1, onInput: v => this.setLive({ rows: v }) });
-      } else if (l.prim !== 'sphere') {
-        out.push({ type: 'number', label: 'Height', value: l.size[2], kind: 'length', min: 0.01, onInput: v => (this.setLive({ size: [l.size[0], l.size[1], v] }), this.frameSoon()) });
-        out.push({ type: 'slider', label: l.prim === 'box' ? 'Faces' : 'Rows', value: l.rows, min: 1, max: 8, step: 1, onInput: v => this.setLive({ rows: v }) });
+      if (live.prim === 'torus') {
+        out.push({ type: 'number', label: 'Thickness', value: live.size[2], kind: 'length', min: 0.01, onInput: value => (this.setLive({ size: [live.size[0], live.size[1], Math.min(value, live.size[0] * 0.98)] }), this.frameSoon()) });
+        out.push({ type: 'slider', label: 'Rows', value: live.rows, min: 2, max: 6, step: 1, onInput: rows => this.setLive({ rows: rows }) });
+      } else if (live.prim !== 'sphere') {
+        out.push({ type: 'number', label: 'Height', value: live.size[2], kind: 'length', min: 0.01, onInput: value => (this.setLive({ size: [live.size[0], live.size[1], value] }), this.frameSoon()) });
+        out.push({ type: 'slider', label: live.prim === 'box' ? 'Faces' : 'Rows', value: live.rows, min: 1, max: 8, step: 1, onInput: rows => this.setLive({ rows: rows }) });
       }
 
       return out;
     }
-    if (l.kind === 'sweep') {
+    if (live.kind === 'sweep') {
       return [
       // (A length like any other: typed and shown in the unit in use. As a slider it was typed in millimetres
       // whatever the unit, and stopped at ten times the face's size.)
-        { type: 'number', label: 'Length', value: l.length, kind: 'length', min: 0.01, onInput: v => this.setLive({ length: v }) },
-        { type: 'slider', label: 'Bend', value: l.bend, min: -150, max: 150, step: 1, show: v => `${v}°`, onInput: v => this.setLive({ bend: v }) },
-        { type: 'slider', label: 'Taper', value: l.taper, min: 0.2, max: 2.5, step: 0.05, show: v => `${v.toFixed(2)}×`, onInput: v => this.setLive({ taper: v }) },
-        { type: 'slider', label: 'Steps', value: l.steps, min: 1, max: 12, step: 1, onInput: v => this.setLive({ steps: v }) }
+        { type: 'number', label: 'Length', value: live.length, kind: 'length', min: 0.01, onInput: length => this.setLive({ length: length }) },
+        { type: 'slider', label: 'Bend', value: live.bend, min: -150, max: 150, step: 1, show: value => `${value}°`, onInput: bend => this.setLive({ bend: bend }) },
+        { type: 'slider', label: 'Taper', value: live.taper, min: 0.2, max: 2.5, step: 0.05, show: value => `${value.toFixed(2)}×`, onInput: taper => this.setLive({ taper: taper }) },
+        { type: 'slider', label: 'Steps', value: live.steps, min: 1, max: 12, step: 1, onInput: steps => this.setLive({ steps: steps }) }
       ];
     }
     // (In percent, as it is shown: typed as a number it was taken as a fraction - 40 gave 90 %, the most there is.)
-    if (l.kind === 'inset') {
-      return [{ type: 'slider', label: 'Inset', value: Math.round(l.amount * 100), min: 5, max: 90, step: 1, show: v => `${Math.round(v)}%`, onInput: v => this.setLive({ amount: v / 100 }) }];
+    if (live.kind === 'inset') {
+      return [{ type: 'slider', label: 'Inset', value: Math.round(live.amount * 100), min: 5, max: 90, step: 1, show: value => `${Math.round(value)}%`, onInput: value => this.setLive({ amount: value / 100 }) }];
     }
 
     return [
-      { type: 'number', label: 'Arch', value: l.arch, kind: 'length', min: 0, onInput: v => this.setLive({ arch: v, segments: v > 0 && l.segments < 2 ? 6 : l.segments }) },
-      { type: 'slider', label: 'Segments', value: l.segments, min: 1, max: 12, step: 1, onInput: v => this.setLive({ segments: v }) }
+      { type: 'number', label: 'Arch', value: live.arch, kind: 'length', min: 0, onInput: arch => this.setLive({ arch: arch, segments: arch > 0 && live.segments < 2 ? 6 : live.segments }) },
+      { type: 'slider', label: 'Segments', value: live.segments, min: 1, max: 12, step: 1, onInput: segments => this.setLive({ segments: segments }) }
     ];
   }
 
   private deleteSelectedFaces(): void {
-    const faces = this.picks.flatMap(p => (p.kind === 'face' ? [p.f] : []));
+    const faces = this.picks.flatMap(pick => (pick.kind === 'face' ? [pick.f] : []));
     if (!faces.length) {
       return;
     }
@@ -1112,14 +1112,14 @@ export class FreeformTool implements Tool {
     const near = (loop: number[]) => {
       let best = Infinity;
       for (const q of points) {
-        for (const v of loop) {
-          best = Math.min(best, Math.hypot(...(sub(sub3.points[v], q) as [number, number, number])));
+        for (const vertex of loop) {
+          best = Math.min(best, Math.hypot(...(sub(sub3.points[vertex], q) as [number, number, number])));
         }
       }
 
       return best;
     };
-    const loop = loops.reduce((m, l) => (near(l) < near(m) ? l : m), loops[0]);
+    const loop = loops.reduce((nearest, candidate) => (near(candidate) < near(nearest) ? candidate : nearest), loops[0]);
     this.fillHoles([loop]);
 
     return true;
@@ -1149,26 +1149,26 @@ export class FreeformTool implements Tool {
   // --------------------------------------------------------------- picking
 
   private selectedVerts(): number[] {
-    const s = new Set<number>();
-    for (const p of this.picks) {
-      if (p.kind === 'vert') {
-        s.add(p.i);
-      } else if (p.kind === 'edge') {
-        p.e.forEach(i => s.add(i));
+    const ids = new Set<number>();
+    for (const pick of this.picks) {
+      if (pick.kind === 'vert') {
+        ids.add(pick.i);
+      } else if (pick.kind === 'edge') {
+        pick.e.forEach(i => ids.add(i));
       } else {
-        this.cage.faces[p.f].forEach(i => s.add(i));
+        this.cage.faces[pick.f].forEach(i => ids.add(i));
       }
     }
     const lock = this.locked();
 
-    return [...s].filter(i => !lock.has(i));
+    return [...ids].filter(i => !lock.has(i));
   }
 
   /** How far along the pointer's ray the smooth surface is (∞ if missed). */
-  private surfaceDepth(p: ToolPointer): number {
+  private surfaceDepth(pointer: ToolPointer): number {
     const view = this.app.view;
-    const r = view.canvas.getBoundingClientRect();
-    this.ray.setFromCamera(new Vector2((p.x / r.width) * 2 - 1, -(p.y / r.height) * 2 + 1), view.cam.camera);
+    const rect = view.canvas.getBoundingClientRect();
+    this.ray.setFromCamera(new Vector2((pointer.x / rect.width) * 2 - 1, -(pointer.y / rect.height) * 2 + 1), view.cam.camera);
 
     return this.ray.intersectObject(this.surface, false)[0]?.distance ?? Infinity;
   }
@@ -1176,32 +1176,32 @@ export class FreeformTool implements Tool {
 
   /** Is a cage point well behind the smooth surface, seen from the eye? */
   private hiddenPoint(q: Vec3, eye: Vec3): boolean {
-    const d = sub(q, eye);
-    const L = len(d);
-    if (L < 1e-9) {
+    const delta = sub(q, eye);
+    const length = len(delta);
+    if (length < 1e-9) {
       return false;
     }
-    this.ray.set(new Vector3(...eye), new Vector3(d[0] / L, d[1] / L, d[2] / L));
+    this.ray.set(new Vector3(...eye), new Vector3(delta[0] / length, delta[1] / length, delta[2] / length));
     const hit = this.ray.intersectObject(this.surface, false)[0]?.distance ?? Infinity;
-    const g = this.surface.geometry.boundingSphere;
-    const margin = (g?.radius ?? 10) * 0.15;
+    const boundingSphere = this.surface.geometry.boundingSphere;
+    const margin = (boundingSphere?.radius ?? 10) * 0.15;
 
-    return hit < L - margin;
+    return hit < length - margin;
   }
 
   /**
    * The cage point, edge or (frontmost) face the tap is closest to. Points and
    * edges behind the smooth surface (the far side) don't count.
    */
-  private pickAt(p: ToolPointer): Pick | null {
+  private pickAt(pointer: ToolPointer): Pick | null {
     const view = this.app.view;
-    const scr = this.cage.verts.map(v => view.toScreen(v));
+    const scr = this.cage.verts.map(vertex => view.toScreen(vertex));
     // Points are drawn on top of everything, and are picked that way too: a
     // generous reach, and one hidden behind the surface still counts (a point
     // in plain view nearby wins over it).
-    const tol = Math.max(16, p.tol * 1.8);
+    const tol = Math.max(16, pointer.tol * 1.8);
     const eye = view.cam.camera.position.toArray() as Vec3;
-    const wall = this.surfaceDepth(p);
+    const wall = this.surfaceDepth(pointer);
     // In front of the smooth surface along the tap's ray, give or take a little:
     // a cage edge can lie just millimetres outside the surface (a cylinder's
     // sides), and where along it the tap falls is only estimated - with no
@@ -1209,12 +1209,12 @@ export class FreeformTool implements Tool {
     const reach = (this.surface.geometry.boundingSphere?.radius ?? 10) * 0.08;
     const visible = (q: Vec3) => len(sub(q, eye)) < wall + reach;
     let best: { d: number; i: number } | null = null;
-    scr.forEach((s, i) => {
-      if (!s) {
+    scr.forEach((screenPoint, i) => {
+      if (!screenPoint) {
         return;
       }
-      const d = Math.hypot(s[0] - p.x, s[1] - p.y);
-      if (d >= tol) {
+      const distance = Math.hypot(screenPoint[0] - pointer.x, screenPoint[1] - pointer.y);
+      if (distance >= tol) {
         return;
       }
       const hidden = this.hiddenPoint(this.cage.verts[i], eye);
@@ -1224,7 +1224,7 @@ export class FreeformTool implements Tool {
       if (hidden && wall < Infinity) {
         return;
       }
-      const score = d + (hidden ? tol : 0);
+      const score = distance + (hidden ? tol : 0);
       if (!best || score < best.d) {
         best = { d: score, i };
       }
@@ -1236,24 +1236,24 @@ export class FreeformTool implements Tool {
       if (!a || !b) {
         continue;
       }
-      const { d, t } = segDist(p.x, p.y, a, b);
+      const { d, t } = segDist(pointer.x, pointer.y, a, b);
       const at = add(this.cage.verts[e[0]], scale(sub(this.cage.verts[e[1]], this.cage.verts[e[0]]), t));
-      if (d < p.tol && visible(at) && (!bestE || d < bestE.d)) {
+      if (d < pointer.tol && visible(at) && (!bestE || d < bestE.d)) {
         bestE = { d, e };
       }
     }
     // Faces: inside the projected quad; nearest to the camera wins.
     let bestF: { d: number; f: number; mid: number } | null = null;
-    this.cage.faces.forEach((f, fi) => {
-      const q = f.map(i => scr[i]);
-      if (q.some(s => !s) || !inPoly(p.x, p.y, q as [number, number][])) {
+    this.cage.faces.forEach((face, fi) => {
+      const q = face.map(i => scr[i]);
+      if (q.some(screenPoint => !screenPoint) || !inPoly(pointer.x, pointer.y, q as [number, number][])) {
         return;
       }
-      const c = scale(f.reduce((s, i) => add(s, this.cage.verts[i]), [0, 0, 0] as Vec3), 0.25);
-      const d = len(sub(c, eye));
-      const m = view.toScreen(c);
-      if (!bestF || d < bestF.d) {
-        bestF = { d, f: fi, mid: m ? Math.hypot(m[0] - p.x, m[1] - p.y) : Infinity };
+      const center = scale(face.reduce((sum, i) => add(sum, this.cage.verts[i]), [0, 0, 0] as Vec3), 0.25);
+      const distance = len(sub(center, eye));
+      const faceScreen = view.toScreen(center);
+      if (!bestF || distance < bestF.d) {
+        bestF = { d: distance, f: fi, mid: faceScreen ? Math.hypot(faceScreen[0] - pointer.x, faceScreen[1] - pointer.y) : Infinity };
       }
     });
     // Whichever the tap is closest to: a point, an edge, or the middle of the
@@ -1266,7 +1266,7 @@ export class FreeformTool implements Tool {
     // A point gets a few pixels' start on the edges running out of it: a tap a
     // fingertip's wobble from a point lies right on those edges (aiming at the
     // nine inner points of a sheet picked three edges).
-    const slack = Math.min(10, p.tol * 0.4);
+    const slack = Math.min(10, pointer.tol * 0.4);
     if (pt && pt.d <= Math.min((ed?.d ?? Infinity) + slack, faceAt)) {
       return { kind: 'vert', i: pt.i };
     }
@@ -1284,26 +1284,26 @@ export class FreeformTool implements Tool {
   }
 
   /** Every cage face under the pointer, nearest first. */
-  private facesUnder(p: ToolPointer): number[] {
+  private facesUnder(pointer: ToolPointer): number[] {
     const view = this.app.view;
-    const scr = this.cage.verts.map(v => view.toScreen(v));
+    const scr = this.cage.verts.map(vertex => view.toScreen(vertex));
     const eye = view.cam.camera.position.toArray() as Vec3;
     const out: { f: number; d: number }[] = [];
-    this.cage.faces.forEach((f, fi) => {
-      const q = f.map(i => scr[i]);
-      if (q.some(s => !s) || !inPoly(p.x, p.y, q as [number, number][])) {
+    this.cage.faces.forEach((face, fi) => {
+      const q = face.map(i => scr[i]);
+      if (q.some(screenPoint => !screenPoint) || !inPoly(pointer.x, pointer.y, q as [number, number][])) {
         return;
       }
-      const c = scale(f.reduce((s, i) => add(s, this.cage.verts[i]), [0, 0, 0] as Vec3), 0.25);
-      out.push({ f: fi, d: len(sub(c, eye)) });
+      const center = scale(face.reduce((sum, i) => add(sum, this.cage.verts[i]), [0, 0, 0] as Vec3), 0.25);
+      out.push({ f: fi, d: len(sub(center, eye)) });
     });
 
-    return out.sort((a, b) => a.d - b.d).map(x => x.f);
+    return out.sort((a, b) => a.d - b.d).map(entry => entry.f);
   }
 
   /** Which plane / flat face is under the pointer (choosing where a new surface goes). */
-  private planeAt(p: ToolPointer): { plane: PlaneDef; at: Vec3; sel: Sel } | null {
-    const hit = this.app.view.pick(p.x, p.y, { edges: false, vertices: false, planes: true, planesFirst: true, profiles: false, edgeTolPx: 0 });
+  private planeAt(pointer: ToolPointer): { plane: PlaneDef; at: Vec3; sel: Sel } | null {
+    const hit = this.app.view.pick(pointer.x, pointer.y, { edges: false, vertices: false, planes: true, planesFirst: true, profiles: false, edgeTolPx: 0 });
     if (hit?.kind === 'plane') {
       const plane = this.app.view.planeOf(hit.id);
 
@@ -1320,25 +1320,25 @@ export class FreeformTool implements Tool {
     return null;
   }
 
-  hover(p: ToolPointer | null): void {
+  hover(pointer: ToolPointer | null): void {
     if (this.choosingPlane) {
-      this.app.setHover(p ? (this.planeAt(p)?.sel ?? null) : null);
+      this.app.setHover(pointer ? (this.planeAt(pointer)?.sel ?? null) : null);
 
       return;
     }
     if (this.dragging) {
       return;
     }
-    const g = p && this.gimbal?.hit(p);
-    this.gimbal?.setHot(g ?? null);
-    this.hovered = p && !g ? this.pickAt(p) : null;
-    this.app.view.canvas.style.cursor = g ? 'grab' : '';
+    const part = pointer && this.gimbal?.hit(pointer);
+    this.gimbal?.setHot(part ?? null);
+    this.hovered = pointer && !part ? this.pickAt(pointer) : null;
+    this.app.view.canvas.style.cursor = part ? 'grab' : '';
     this.drawMarks();
   }
 
-  tap(p: ToolPointer, count = 1): void {
+  tap(pointer: ToolPointer, count = 1): void {
     if (this.symPicking && !this.choosingPlane) {
-      const hit = this.pickAt(p);
+      const hit = this.pickAt(pointer);
       if (hit?.kind === 'edge') {
         const [a, b] = hit.e.map(i => this.cage.verts[i]);
         this.setSymmetry(scale(add(a, b), 0.5), sub(b, a));
@@ -1349,7 +1349,7 @@ export class FreeformTool implements Tool {
       return this.app.ui.toast('Tap a cage edge (the mirror goes across its middle), or pick X / Y / Z under Symmetry on the line at the bottom');
     }
     if (this.choosingPlane) {
-      const at = this.planeAt(p);
+      const at = this.planeAt(pointer);
       if (!at) {
         return this.app.ui.toast('Select a plane or a flat face');
       }
@@ -1359,40 +1359,40 @@ export class FreeformTool implements Tool {
     // Tapped again where a face was just picked: the face behind it (a face
     // hidden behind another part - a handle's end behind its own arm - could
     // never be reached). Past the last one, it's dropped.
-    this.tapCage(p, count);
+    this.tapCage(pointer, count);
   }
 
   /** The new flat sheet put on a plane or flat face (centred at `at`). */
   private placeOn(at: { plane: PlaneDef; at: Vec3 }): void {
     // The flat sheet (made on XY at the origin) laid onto that plane.
     const x = norm(at.plane.xDir);
-    const n = norm(at.plane.normal);
-    const y = cross(n, x);
-    this.cage = { faces: this.cage.faces, verts: this.cage.verts.map(v => add(at.at, add(add(scale(x, v[0]), scale(y, v[1])), scale(n, v[2])))) };
+    const normal = norm(at.plane.normal);
+    const y = cross(normal, x);
+    this.cage = { faces: this.cage.faces, verts: this.cage.verts.map(vertex => add(at.at, add(add(scale(x, vertex[0]), scale(y, vertex[1])), scale(normal, vertex[2])))) };
     // Its size and faces in the card, like a new box (a 50 × 30 pad was a
     // 60 × 60 sheet to be scaled by 0.83 and 0.5).
-    this.live = { kind: 'sheet', size: [60, 60], rows: 4, at: at.at, x, y, n };
+    this.live = { kind: 'sheet', size: [60, 60], rows: 4, at: at.at, x, y, n: normal };
     this.choosingPlane = false;
     this.app.setHover(null);
     this.app.view.setOriginPlanesVisible(false);
-    for (const o of [this.surface, this.faceEdges, this.lines, this.dots, this.backLines, this.backDots]) {
-      o.visible = true;
+    for (const object of [this.surface, this.faceEdges, this.lines, this.dots, this.backLines, this.backDots]) {
+      object.visible = true;
     }
     this.startEditing();
   }
 
-  private tapCage(p: ToolPointer, count: number): void {
+  private tapCage(pointer: ToolPointer, count: number): void {
     const lt = this.lastFaceTap;
-    if (lt && Math.hypot(p.x - lt.x, p.y - lt.y) < 14 && performance.now() - lt.t < 4000 && this.picks.some(x => x.kind === 'face' && x.f === lt.f)) {
-      const under = this.facesUnder(p);
-      const k = under.indexOf(lt.f);
+    if (lt && Math.hypot(pointer.x - lt.x, pointer.y - lt.y) < 14 && performance.now() - lt.t < 4000 && this.picks.some(pick => pick.kind === 'face' && pick.f === lt.f)) {
+      const under = this.facesUnder(pointer);
+      const index = under.indexOf(lt.f);
       this.live = null;
-      this.picks = this.picks.filter(x => !(x.kind === 'face' && x.f === lt.f));
-      if (k >= 0 && k + 1 < under.length) {
-        const f = under[k + 1];
-        this.picks.push({ kind: 'face', f });
-        this.lastFaceTap = { x: p.x, y: p.y, t: performance.now(), f };
-        this.app.ui.toast(k + 2 < under.length ? 'The face behind - tap again for the next one' : 'The face behind (tap again to drop it)');
+      this.picks = this.picks.filter(pick => !(pick.kind === 'face' && pick.f === lt.f));
+      if (index >= 0 && index + 1 < under.length) {
+        const face = under[index + 1];
+        this.picks.push({ kind: 'face', f: face });
+        this.lastFaceTap = { x: pointer.x, y: pointer.y, t: performance.now(), f: face };
+        this.app.ui.toast(index + 2 < under.length ? 'The face behind - tap again for the next one' : 'The face behind (tap again to drop it)');
       } else {
         this.lastFaceTap = null;
       }
@@ -1403,11 +1403,11 @@ export class FreeformTool implements Tool {
     // Double-tap on empty space: finish and select the whole body (e.g. to move
     // or colour it). On a point, edge or face it's just quick tapping: keep it picked.
     if (count >= 2) {
-      const again = this.pickAt(p);
+      const again = this.pickAt(pointer);
       if (again) {
-        if (!this.picks.some(x => JSON.stringify(x) === JSON.stringify(again))) {
+        if (!this.picks.some(pick => JSON.stringify(pick) === JSON.stringify(again))) {
           this.live = null;
-          if (p.shift || p.add || p.type === 'touch') {
+          if (pointer.shift || pointer.add || pointer.type === 'touch') {
             this.picks.push(again);
           } else {
             this.picks = [again];
@@ -1431,7 +1431,7 @@ export class FreeformTool implements Tool {
       this.placing = false;
       this.picks = [];
     }
-    const hit = this.pickAt(p);
+    const hit = this.pickAt(pointer);
     if (!hit) {
       // Empty space: deselect. With nothing selected it used to finish the
       // whole edit - one stray tap on a phone (meant to deselect) ended it
@@ -1444,9 +1444,9 @@ export class FreeformTool implements Tool {
       return;
     }
     const key = JSON.stringify(hit);
-    const i = this.picks.findIndex(x => JSON.stringify(x) === key);
+    const i = this.picks.findIndex(pick => JSON.stringify(pick) === key);
     // A touch screen has no Shift: there every tap adds, and a second tap drops it.
-    if (p.shift || p.add || p.type === 'touch') {
+    if (pointer.shift || pointer.add || pointer.type === 'touch') {
       if (i >= 0) {
         this.picks.splice(i, 1);
       } else {
@@ -1455,8 +1455,8 @@ export class FreeformTool implements Tool {
     } else {
       this.picks = i >= 0 && this.picks.length === 1 ? [] : [hit];
     }
-    if (hit.kind === 'face' && this.picks.some(x => x.kind === 'face' && x.f === hit.f)) {
-      this.lastFaceTap = { x: p.x, y: p.y, t: performance.now(), f: hit.f };
+    if (hit.kind === 'face' && this.picks.some(pick => pick.kind === 'face' && pick.f === hit.f)) {
+      this.lastFaceTap = { x: pointer.x, y: pointer.y, t: performance.now(), f: hit.f };
     }
     this.selectionChanged();
   }
@@ -1469,7 +1469,7 @@ export class FreeformTool implements Tool {
   }
 
   private centroid(ids: number[]): Vec3 {
-    return scale(ids.reduce((s, i) => add(s, this.cage.verts[i]), [0, 0, 0] as Vec3), 1 / Math.max(1, ids.length));
+    return scale(ids.reduce((sum, i) => add(sum, this.cage.verts[i]), [0, 0, 0] as Vec3), 1 / Math.max(1, ids.length));
   }
 
   private placeGimbal(): void {
@@ -1505,32 +1505,32 @@ export class FreeformTool implements Tool {
     if (x1 - x0 < 3 && y1 - y0 < 3) {
       return;
     }
-    const inside = this.cage.verts.flatMap((v, i) => {
-      const q = this.app.view.toScreen(v);
+    const inside = this.cage.verts.flatMap((vertex, i) => {
+      const q = this.app.view.toScreen(vertex);
 
       return q && q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1 ? [i] : [];
     });
-    const keep = add ? this.picks.filter(p => p.kind === 'vert' && !inside.includes(p.i)) : [];
+    const keep = add ? this.picks.filter(pick => pick.kind === 'vert' && !inside.includes(pick.i)) : [];
     this.picks = [...keep, ...inside.map(i => ({ kind: 'vert' as const, i }))];
     this.selectionChanged();
   }
 
-  down(p: ToolPointer): boolean {
+  down(pointer: ToolPointer): boolean {
     if (this.choosingPlane) {
       return false;
     }
-    const part = this.gimbal?.hit(p);
+    const part = this.gimbal?.hit(pointer);
     if (!part || !this.gimbal) {
       return false;
     }
     // Another cage point right under the pointer: that's a tap on it, not a drag
     // of the gimbal's middle (arrows and rings still drag).
     if (part.kind === 'center' || part.kind === 'plane') {
-      const hit = this.pickAt(p);
+      const hit = this.pickAt(pointer);
       const sel = new Set(this.selectedVerts());
       if (hit?.kind === 'vert' && !sel.has(hit.i)) {
-        const s = this.app.view.toScreen(this.cage.verts[hit.i]);
-        if (s && Math.hypot(s[0] - p.x, s[1] - p.y) < Math.max(10, p.tol)) {
+        const screenPoint = this.app.view.toScreen(this.cage.verts[hit.i]);
+        if (screenPoint && Math.hypot(screenPoint[0] - pointer.x, screenPoint[1] - pointer.y) < Math.max(10, pointer.tol)) {
           return false;
         }
       }
@@ -1541,9 +1541,9 @@ export class FreeformTool implements Tool {
     this.remember();
     this.fieldBase = null;
     // (Scale: the press's distance from the middle on screen is "as it is" for this drag.)
-    const c = this.app.view.toScreen(this.gimbal.origin);
-    const r0 = c ? Math.max(24, Math.hypot(p.x - c[0], p.y - c[1])) : 60;
-    this.dragging = { part, from: p, base: this.cage.verts.map(v => [...v] as Vec3), center, d: [0, 0, 0], ang: 0, k: [1, 1, 1], r0, soft: this.softWeights(ids, this.cage.verts) };
+    const screenCenter = this.app.view.toScreen(this.gimbal.origin);
+    const r0 = screenCenter ? Math.max(24, Math.hypot(pointer.x - screenCenter[0], pointer.y - screenCenter[1])) : 60;
+    this.dragging = { part, from: pointer, base: this.cage.verts.map(vertex => [...vertex] as Vec3), center, d: [0, 0, 0], ang: 0, k: [1, 1, 1], r0, soft: this.softWeights(ids, this.cage.verts) };
     this.gimbal.setHot(part);
 
     return true;
@@ -1554,115 +1554,115 @@ export class FreeformTool implements Tool {
    * or pulled out along its own normal - several picked: along their average.
    * (As everywhere else on the model: the thing picked is dragged.)
    */
-  dragStart(p: ToolPointer): boolean {
+  dragStart(pointer: ToolPointer): boolean {
     if (this.dragging || this.choosingPlane || this.symPicking || this.placing || (this.live && this.live.kind !== 'shape' && this.live.kind !== 'sheet')) {
       return false;
     }
-    const hit = this.pickAt(p);
-    const faces = this.picks.filter((x): x is Extract<Pick, { kind: 'face' }> => x.kind === 'face');
-    if (hit?.kind !== 'face' || !faces.some(x => x.f === hit.f)) {
+    const hit = this.pickAt(pointer);
+    const faces = this.picks.filter((pick): pick is Extract<Pick, { kind: 'face' }> => pick.kind === 'face');
+    if (hit?.kind !== 'face' || !faces.some(face => face.f === hit.f)) {
       return false;
     }
-    const n = norm(faces.reduce((s, x) => add(s, this.faceNormalOf(x.f)), [0, 0, 0] as Vec3));
-    if (len(n) < 0.5) {
+    const normal = norm(faces.reduce((sum, face) => add(sum, this.faceNormalOf(face.f)), [0, 0, 0] as Vec3));
+    if (len(normal) < 0.5) {
       return false;
     }
     const ids = this.selectedVerts();
     this.remember();
     this.fieldBase = null;
-    this.dragging = { part: { kind: 'axis', i: 2 }, from: p, base: this.cage.verts.map(v => [...v] as Vec3), center: this.centroid(ids), d: [0, 0, 0], ang: 0, k: [1, 1, 1], r0: 60, along: n, soft: this.softWeights(ids, this.cage.verts) };
+    this.dragging = { part: { kind: 'axis', i: 2 }, from: pointer, base: this.cage.verts.map(vertex => [...vertex] as Vec3), center: this.centroid(ids), d: [0, 0, 0], ang: 0, k: [1, 1, 1], r0: 60, along: normal, soft: this.softWeights(ids, this.cage.verts) };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
     const view = this.app.view;
     const step = niceStep(view.cam.worldPerPixel(view.height) * 4);
-    const snap = (v: number) => (p.shift ? v : Math.round(v / step) * step);
+    const snap = (value: number) => (pointer.shift ? value : Math.round(value / step) * step);
     const part = dr.part;
     if (dr.along) {
-      const d = snap(axisDrag(view, dr.center, dr.along, dr.from, p));
-      this.apply(scale(dr.along, d), 0);
-      this.boxAt(p, fmtLen(d));
+      const distance = snap(axisDrag(view, dr.center, dr.along, dr.from, pointer));
+      this.apply(scale(dr.along, distance), 0);
+      this.boxAt(pointer, fmtLen(distance));
 
       return;
     }
     if (this.xform === 'scale' && (part.kind === 'axis' || part.kind === 'center')) {
-      const c = view.toScreen(dr.center);
-      if (!c) {
+      const screenPoint = view.toScreen(dr.center);
+      if (!screenPoint) {
         return;
       }
-      let f = part.kind === 'axis' ? (dr.r0 + axisDrag(view, dr.center, this.axes[part.i], dr.from, p) / view.cam.worldPerPixel(view.height)) / dr.r0 : Math.hypot(p.x - c[0], p.y - c[1]) / dr.r0;
-      f = Math.max(0.01, p.shift ? f : Math.round(f * 100) / 100);
-      this.scaleBy(part.kind === 'axis' ? ([0, 1, 2].map(i => (i === part.i ? f : 1)) as Vec3) : [f, f, f]);
-      this.boxAt(p, `×${f.toFixed(2)}`);
+      let factor = part.kind === 'axis' ? (dr.r0 + axisDrag(view, dr.center, this.axes[part.i], dr.from, pointer) / view.cam.worldPerPixel(view.height)) / dr.r0 : Math.hypot(pointer.x - screenPoint[0], pointer.y - screenPoint[1]) / dr.r0;
+      factor = Math.max(0.01, pointer.shift ? factor : Math.round(factor * 100) / 100);
+      this.scaleBy(part.kind === 'axis' ? ([0, 1, 2].map(i => (i === part.i ? factor : 1)) as Vec3) : [factor, factor, factor]);
+      this.boxAt(pointer, `×${factor.toFixed(2)}`);
 
       return;
     }
     if (part.kind === 'axis') {
       const dir = this.axes[part.i];
-      const d = snap(axisDrag(view, dr.center, dir, dr.from, p));
-      this.apply(scale(dir, d), 0);
-      this.boxAt(p, fmtLen(d));
+      const distance = snap(axisDrag(view, dr.center, dir, dr.from, pointer));
+      this.apply(scale(dir, distance), 0);
+      this.boxAt(pointer, fmtLen(distance));
     } else if (part.kind === 'plane' || part.kind === 'center') {
-      const n: Vec3 = part.kind === 'plane' ? this.axes[part.i] : (view.cam.viewDir().toArray() as Vec3);
-      const plane = { origin: dr.center, normal: n, xDir: xDirFor(n) };
+      const normal: Vec3 = part.kind === 'plane' ? this.axes[part.i] : (view.cam.viewDir().toArray() as Vec3);
+      const plane = { origin: dr.center, normal: normal, xDir: xDirFor(normal) };
       const a = view.rayToPlane(dr.from.x, dr.from.y, plane);
-      const b = view.rayToPlane(p.x, p.y, plane);
+      const b = view.rayToPlane(pointer.x, pointer.y, plane);
       if (!a || !b) {
         return;
       }
-      const d = sub(b, a);
-      this.apply([snap(d[0]), snap(d[1]), snap(d[2])], 0);
-      this.boxAt(p, fmtLen(len(dr.d)));
+      const delta = sub(b, a);
+      this.apply([snap(delta[0]), snap(delta[1]), snap(delta[2])], 0);
+      this.boxAt(pointer, fmtLen(len(dr.d)));
     } else if (part.kind === 'ring') {
       const axis = this.axes[part.i];
-      const c = view.toScreen(dr.center);
-      if (!c) {
+      const screenPoint = view.toScreen(dr.center);
+      if (!screenPoint) {
         return;
       }
-      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - c[1], q.x - c[0]);
+      const ang = (q: { x: number; y: number }) => Math.atan2(q.y - screenPoint[1], q.x - screenPoint[0]);
       const facing = dot(axis, view.cam.viewDir().toArray() as Vec3) < 0 ? 1 : -1;
-      let deg = ((-(ang(p) - ang(dr.from)) * 180) / Math.PI) * facing;
+      let deg = ((-(ang(pointer) - ang(dr.from)) * 180) / Math.PI) * facing;
       deg = ((deg + 540) % 360) - 180;
-      const total = p.shift ? deg : Math.round(deg);
+      const total = pointer.shift ? deg : Math.round(deg);
       this.apply([0, 0, 0], total);
-      this.boxAt(p, `${total}°`);
+      this.boxAt(pointer, `${total}°`);
     }
   }
 
-  /** Scale the selected points from where the drag began, about the gimbal's middle, by k along its three axes. */
-  private scaleBy(k: Vec3): void {
+  /** Scale the selected points from where the drag began, about the gimbal's middle, by `factors` along its three axes. */
+  private scaleBy(factors: Vec3): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    dr.k = k;
+    dr.k = factors;
     const ids = this.selectedVerts();
     for (const i of ids) {
-      const v = sub(dr.base[i], dr.center);
-      this.cage.verts[i] = this.axes.reduce((q, a, j) => add(q, scale(a, dot(v, a) * k[j])), dr.center);
+      const offset = sub(dr.base[i], dr.center);
+      this.cage.verts[i] = this.axes.reduce((q, a, j) => add(q, scale(a, dot(offset, a) * factors[j])), dr.center);
     }
     this.mirrorMoved(ids);
     this.gimbal?.setCenter(this.centroid(ids));
     this.rebuild();
   }
 
-  /** Move the selected points from where the drag began: translate d, then turn `deg` about the gimbal axis. */
-  private apply(d: Vec3, deg: number): void {
+  /** Move the selected points from where the drag began: translate `delta`, then turn `deg` about the gimbal axis. */
+  private apply(delta: Vec3, deg: number): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    dr.d = d;
+    dr.d = delta;
     dr.ang = deg;
     const ids = this.selectedVerts();
     const axis = dr.part.kind === 'ring' ? this.axes[dr.part.i] : null;
@@ -1671,14 +1671,14 @@ export class FreeformTool implements Tool {
       let q = dr.base[i];
       if (axis && deg) {
         // Rodrigues' rotation about the axis through the centre.
-        const v = sub(q, dr.center);
-        const r = add(add(scale(v, Math.cos(t)), scale(cross(axis, v), Math.sin(t))), scale(axis, dot(axis, v) * (1 - Math.cos(t))));
-        q = add(dr.center, r);
+        const offset = sub(q, dr.center);
+        const rotated = add(add(scale(offset, Math.cos(t)), scale(cross(axis, offset), Math.sin(t))), scale(axis, dot(axis, offset) * (1 - Math.cos(t))));
+        q = add(dr.center, rotated);
       }
-      this.cage.verts[i] = add(q, d);
+      this.cage.verts[i] = add(q, delta);
     }
     // (The points round them go along with a move, by their share - not with a turn.)
-    const soft = dr.soft?.size && !deg ? this.softened(dr.soft, d, dr.base) : [];
+    const soft = dr.soft?.size && !deg ? this.softened(dr.soft, delta, dr.base) : [];
     this.mirrorMoved([...ids, ...soft]);
     this.gimbal?.setCenter(this.centroid(ids));
     this.rebuild();
@@ -1694,11 +1694,11 @@ export class FreeformTool implements Tool {
   }
 
   private setSymmetry(origin: Vec3, normal: Vec3): void {
-    const n = norm(normal);
-    if (len(n) < 0.5) {
+    const unitNormal = norm(normal);
+    if (len(unitNormal) < 0.5) {
       return;
     }
-    this.sym = { origin, normal: n };
+    this.sym = { origin, normal: unitNormal };
     this.symPicking = false;
     this.symPairs = null;
     this.drawSymPlane();
@@ -1711,26 +1711,26 @@ export class FreeformTool implements Tool {
     if (this.symPairs && this.symPairs.size === base.length) {
       return this.symPairs;
     }
-    const box = new Box3().setFromPoints(base.map(v => new Vector3(...v)));
+    const box = new Box3().setFromPoints(base.map(vertex => new Vector3(...vertex)));
     const tol = Math.max(1e-6, box.getSize(new Vector3()).length() * 1e-4);
-    const m = new Map<number, number>();
-    base.forEach((v, i) => {
-      const w = this.mirrored(v);
+    const pairs = new Map<number, number>();
+    base.forEach((vertex, i) => {
+      const mirrored = this.mirrored(vertex);
       let best = -1;
       let bd = tol;
-      base.forEach((u, j) => {
-        const dd = Math.hypot(u[0] - w[0], u[1] - w[1], u[2] - w[2]);
+      base.forEach((other, j) => {
+        const dd = Math.hypot(other[0] - mirrored[0], other[1] - mirrored[1], other[2] - mirrored[2]);
         if (dd <= bd) {
           ((bd = dd), (best = j));
         }
       });
       if (best >= 0) {
-        m.set(i, best);
+        pairs.set(i, best);
       }
     });
-    this.symPairs = m;
+    this.symPairs = pairs;
 
-    return m;
+    return pairs;
   }
 
   /** After points moved: their mirror images follow; points on the plane stay on it. */
@@ -1751,8 +1751,8 @@ export class FreeformTool implements Tool {
         continue;
       }
       if (j === i) {
-        const v = this.cage.verts[i];
-        this.cage.verts[i] = sub(v, scale(normal, dot(sub(v, origin), normal)));
+        const vertex = this.cage.verts[i];
+        this.cage.verts[i] = sub(vertex, scale(normal, dot(sub(vertex, origin), normal)));
       } else if (!moved.has(j) || i < j) {
         this.cage.verts[j] = this.mirrored(this.cage.verts[i]);
       }
@@ -1761,27 +1761,27 @@ export class FreeformTool implements Tool {
 
   /** The symmetry plane, a see-through square round the shape. */
   private drawSymPlane(): void {
-    const g = this.symPlane.geometry;
+    const geometry = this.symPlane.geometry;
     this.symMark.visible = !!this.sym;
     if (!this.sym) {
-      g.setAttribute('position', new BufferAttribute(new Float32Array(0), 3));
+      geometry.setAttribute('position', new BufferAttribute(new Float32Array(0), 3));
 
       return;
     }
-    const box = new Box3().setFromPoints(this.cage.verts.map(v => new Vector3(...v)));
-    const r = box.getSize(new Vector3()).length() * 0.6 + 1;
-    const n = this.sym.normal;
-    const u = xDirFor(n);
-    const w = cross(n, u);
-    const c = sub(this.sym.origin, scale(n, 0));
-    const P = (a: number, b: number) => add(c, add(scale(u, a * r), scale(w, b * r)));
-    const q = [P(-1, -1), P(1, -1), P(1, 1), P(-1, -1), P(1, 1), P(-1, 1)].flat();
-    g.setAttribute('position', new BufferAttribute(new Float32Array(q), 3));
-    g.computeBoundingSphere();
+    const box = new Box3().setFromPoints(this.cage.verts.map(vertex => new Vector3(...vertex)));
+    const radius = box.getSize(new Vector3()).length() * 0.6 + 1;
+    const normal = this.sym.normal;
+    const xDir = xDirFor(normal);
+    const vAxis = cross(normal, xDir);
+    const center = sub(this.sym.origin, scale(normal, 0));
+    const planePoint = (a: number, b: number) => add(center, add(scale(xDir, a * radius), scale(vAxis, b * radius)));
+    const q = [planePoint(-1, -1), planePoint(1, -1), planePoint(1, 1), planePoint(-1, -1), planePoint(1, 1), planePoint(-1, 1)].flat();
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array(q), 3));
+    geometry.computeBoundingSphere();
     this.symPlane.renderOrder = 66;
     // Its mark at a corner (the symmetry symbol), so it reads as the mirror, not a plane of the model.
-    this.symMark.position.set(...P(-0.97, 0.97));
-    this.symMark.scale.set(2 * r * PLANE_MARK_SIZE, 2 * r * PLANE_MARK_SIZE, 1);
+    this.symMark.position.set(...planePoint(-0.97, 0.97));
+    this.symMark.scale.set(2 * radius * PLANE_MARK_SIZE, 2 * radius * PLANE_MARK_SIZE, 1);
     this.app.view.requestRender();
   }
 
@@ -1835,7 +1835,7 @@ export class FreeformTool implements Tool {
     if (this.xform === 'scale' && (part.kind === 'axis' || part.kind === 'center')) {
       return {
         kind: 'number',
-        apply: v => v > 0 && this.scaleBy(part.kind === 'axis' ? ([0, 1, 2].map(i => (i === part.i ? v : 1)) as Vec3) : [v, v, v]),
+        apply: value => value > 0 && this.scaleBy(part.kind === 'axis' ? ([0, 1, 2].map(i => (i === part.i ? value : 1)) as Vec3) : [value, value, value]),
         commit: () => this.up(),
         cancel: () => this.scaleBy([1, 1, 1])
       };
@@ -1843,13 +1843,13 @@ export class FreeformTool implements Tool {
 
     return {
       kind: part.kind === 'ring' ? 'angle' : 'length',
-      apply: (v) => {
+      apply: (value) => {
         if (part.kind === 'ring') {
-          this.apply([0, 0, 0], v);
+          this.apply([0, 0, 0], value);
         } else if (part.kind === 'axis') {
-          this.apply(scale(this.axes[part.i], v), 0);
+          this.apply(scale(this.axes[part.i], value), 0);
         } else if (len(dr.d) > 1e-9) {
-          this.apply(scale(dragDir, v), 0);
+          this.apply(scale(dragDir, value), 0);
         }
       },
       commit: () => this.up(),
@@ -1864,10 +1864,10 @@ export class FreeformTool implements Tool {
   }
 
   /** The drag's value in a box by the pointer (type into it while dragging). */
-  private boxAt(p: ToolPointer, text: string): void {
+  private boxAt(pointer: ToolPointer, text: string): void {
     const t = this.dragTarget();
     if (t) {
-      this.typing.box(p, text, t);
+      this.typing.box(pointer, text, t);
     }
   }
 
@@ -1875,8 +1875,8 @@ export class FreeformTool implements Tool {
    * A typed Move, Turn or Scale of the picked points (see moveTurnScale),
    * always from where they were when typing began.
    */
-  private setField(k: number, v: number): void {
-    if (this.xform === 'scale' && !(v > 0)) {
+  private setField(field: number, value: number): void {
+    if (this.xform === 'scale' && !(value > 0)) {
       return;
     }
     const ids = this.selectedVerts();
@@ -1887,15 +1887,15 @@ export class FreeformTool implements Tool {
       this.remember();
       this.fieldBase = new Map(ids.map(i => [i, [...this.cage.verts[i]] as Vec3]));
       this.fieldSoft = this.softWeights(ids, this.cage.verts);
-      this.fieldSoftBase = this.cage.verts.map(p => [...p] as Vec3);
+      this.fieldSoftBase = this.cage.verts.map(vertex => [...vertex] as Vec3);
     }
-    this.fieldVals[k] = v;
+    this.fieldVals[field] = value;
     if (this.xform === 'place') {
       return;
     }
     const base = [...this.fieldBase];
-    const moved = moveTurnScale(base.map(([, p]) => p), this.xform, this.fieldVals as [number, number, number, number]);
-    base.forEach(([i], n) => (this.cage.verts[i] = moved[n]));
+    const moved = moveTurnScale(base.map(([, point]) => point), this.xform, this.fieldVals as [number, number, number, number]);
+    base.forEach(([i], index) => (this.cage.verts[i] = moved[index]));
     const soft = this.xform === 'move' ? this.softened(this.fieldSoft, [this.fieldVals[0], this.fieldVals[1], this.fieldVals[2]]) : [];
     this.mirrorMoved([...base.map(([i]) => i), ...soft]);
     this.rebuild();
@@ -1925,49 +1925,49 @@ export class FreeformTool implements Tool {
       if (picked.has(j)) {
         continue;
       }
-      let d = Infinity;
+      let distance = Infinity;
       for (const i of ids) {
-        d = Math.min(d, len(sub(verts[j], verts[i])));
+        distance = Math.min(distance, len(sub(verts[j], verts[i])));
       }
-      if (d >= softRadius) {
+      if (distance >= softRadius) {
         continue;
       }
-      const u = 1 - (d / softRadius) ** 2;
-      out.set(j, u * u);
+      const falloff = 1 - (distance / softRadius) ** 2;
+      out.set(j, falloff * falloff);
     }
 
     return out;
   }
 
-  /** Move the soft points by their share of `d` from where they were; those moved. */
-  private softened(weights: Map<number, number>, d: Vec3, base: Vec3[] = this.fieldSoftBase): number[] {
-    for (const [j, w] of weights) {
+  /** Move the soft points by their share of `delta` from where they were; those moved. */
+  private softened(weights: Map<number, number>, delta: Vec3, base: Vec3[] = this.fieldSoftBase): number[] {
+    for (const [j, weight] of weights) {
       if (base[j]) {
-        this.cage.verts[j] = add(base[j], scale(d, w));
+        this.cage.verts[j] = add(base[j], scale(delta, weight));
       }
     }
 
     return [...weights.keys()];
   }
 
-  /** The picked points put where their middle is at `v` on axis `k` (X, Y or Z from the origin). */
-  private placeAt(k: number, v: number): void {
+  /** The picked points put where their middle is at `value` on `axis` (X, Y or Z from the origin). */
+  private placeAt(axis: number, value: number): void {
     const ids = this.selectedVerts();
-    if (!ids.length || !Number.isFinite(v)) {
+    if (!ids.length || !Number.isFinite(value)) {
       return;
     }
     if (!this.fieldBase) {
       this.remember();
       this.fieldBase = new Map(ids.map(i => [i, [...this.cage.verts[i]] as Vec3]));
     }
-    const d: Vec3 = [0, 0, 0];
-    d[k] = v - this.centroid(ids)[k];
+    const delta: Vec3 = [0, 0, 0];
+    delta[axis] = value - this.centroid(ids)[axis];
     for (const i of ids) {
-      this.cage.verts[i] = add(this.cage.verts[i], d);
+      this.cage.verts[i] = add(this.cage.verts[i], delta);
     }
     const soft = this.softWeights(ids, this.cage.verts);
-    for (const [j, w] of soft) {
-      this.cage.verts[j] = add(this.cage.verts[j], scale(d, w));
+    for (const [j, weight] of soft) {
+      this.cage.verts[j] = add(this.cage.verts[j], scale(delta, weight));
     }
     this.mirrorMoved([...ids, ...soft.keys()]);
     this.rebuild();
@@ -2063,29 +2063,29 @@ export class FreeformTool implements Tool {
     // the buffers are refilled in place (~0.3 ms, it was ~21 ms for a
     // watering can - 70–100 ms a finger move on a phone).
     const plan = cachedPlan(this.cage, 3);
-    const g = this.surface.geometry;
+    const geometry = this.surface.geometry;
     if (plan !== this.shownPlan) {
       this.shownPlan = plan;
       const pos = applyPlan(plan, this.cage.verts);
       const tri = planIndices(plan);
-      g.setAttribute('position', new BufferAttribute(pos, 3));
-      g.setAttribute('normal', new BufferAttribute(smoothNormals(pos, tri), 3));
-      g.setIndex(new BufferAttribute(tri, 1));
+      geometry.setAttribute('position', new BufferAttribute(pos, 3));
+      geometry.setAttribute('normal', new BufferAttribute(smoothNormals(pos, tri), 3));
+      geometry.setIndex(new BufferAttribute(tri, 1));
       // The faces' outlines: each face's grid border, once per shared edge.
       this.faceEdgeIdx = faceBorders(plan);
     } else {
-      const pa = g.getAttribute('position') as BufferAttribute;
-      const na = g.getAttribute('normal') as BufferAttribute;
+      const pa = geometry.getAttribute('position') as BufferAttribute;
+      const na = geometry.getAttribute('normal') as BufferAttribute;
       applyPlan(plan, this.cage.verts, pa.array as Float32Array);
-      smoothNormals(pa.array as Float32Array, g.getIndex()!.array as Uint32Array, na.array as Float32Array);
+      smoothNormals(pa.array as Float32Array, geometry.getIndex()!.array as Uint32Array, na.array as Float32Array);
       pa.needsUpdate = true;
       na.needsUpdate = true;
     }
-    g.computeBoundingSphere();
-    this.pull.value = (g.boundingSphere?.radius || 10) * 0.1;
-    const sp = g.getAttribute('position').array as Float32Array;
+    geometry.computeBoundingSphere();
+    this.pull.value = (geometry.boundingSphere?.radius || 10) * 0.1;
+    const sp = geometry.getAttribute('position').array as Float32Array;
     const fe: number[] = new Array(this.faceEdgeIdx.length * 3);
-    this.faceEdgeIdx.forEach((v, k) => ((fe[k * 3] = sp[v * 3]), (fe[k * 3 + 1] = sp[v * 3 + 1]), (fe[k * 3 + 2] = sp[v * 3 + 2])));
+    this.faceEdgeIdx.forEach((vertex, index) => ((fe[index * 3] = sp[vertex * 3]), (fe[index * 3 + 1] = sp[vertex * 3 + 1]), (fe[index * 3 + 2] = sp[vertex * 3 + 2])));
     setLines(this.faceEdges, fe);
     // (While a new surface's plane is still being chosen: not shown yet.)
     this.faceEdges.visible = this.surface.visible && fe.length > 0;
@@ -2100,38 +2100,38 @@ export class FreeformTool implements Tool {
 
   private drawMarks(): void {
     const seg = (ps: Pick[]) =>
-      ps.flatMap((p) => {
-        const V = this.cage.verts;
+      ps.flatMap((pick) => {
+        const vertices = this.cage.verts;
         // (A pick of a part the cage no longer has - a face just deleted: nothing to mark.)
-        if (p.kind === 'edge') {
-          return V[p.e[0]] && V[p.e[1]] ? [...V[p.e[0]], ...V[p.e[1]]] : [];
+        if (pick.kind === 'edge') {
+          return vertices[pick.e[0]] && vertices[pick.e[1]] ? [...vertices[pick.e[0]], ...vertices[pick.e[1]]] : [];
         }
-        if (p.kind === 'face') {
-          const f = this.cage.faces[p.f];
-          if (!f) {
+        if (pick.kind === 'face') {
+          const face = this.cage.faces[pick.f];
+          if (!face) {
             return [];
           }
 
-          return f.flatMap((i, k) => [...V[i], ...V[f[(k + 1) % 4]]]);
+          return face.flatMap((i, corner) => [...vertices[i], ...vertices[face[(corner + 1) % 4]]]);
         }
 
         return [];
       });
-    const pts = (ps: Pick[]) => ps.flatMap(p => (p.kind === 'vert' && this.cage.verts[p.i] ? [...this.cage.verts[p.i]] : []));
+    const pts = (ps: Pick[]) => ps.flatMap(pick => (pick.kind === 'vert' && this.cage.verts[pick.i] ? [...this.cage.verts[pick.i]] : []));
     setLines(this.creaseLines, (this.cage.creases ?? []).flatMap(([a, b]) => (this.cage.verts[a] && this.cage.verts[b] ? [...this.cage.verts[a], ...this.cage.verts[b]] : [])));
     setLines(this.marks, seg(this.picks));
     setPositions(this.markDots, pts(this.picks));
-    const h = this.hovered ? [this.hovered] : [];
-    setLines(this.hoverMarks, seg(h));
-    setPositions(this.hoverDots, pts(h));
+    const hovered = this.hovered ? [this.hovered] : [];
+    setLines(this.hoverMarks, seg(hovered));
+    setPositions(this.hoverDots, pts(hovered));
     // Picked faces filled (two triangles each).
-    const fill = this.picks.flatMap((p) => {
-      if (p.kind !== 'face' || !this.cage.faces[p.f]) {
+    const fill = this.picks.flatMap((pick) => {
+      if (pick.kind !== 'face' || !this.cage.faces[pick.f]) {
         return [];
       }
-      const [a, b, c, d] = this.cage.faces[p.f].map(i => this.cage.verts[i]);
+      const [a, b, cornerC, cornerD] = this.cage.faces[pick.f].map(i => this.cage.verts[i]);
 
-      return [...a, ...b, ...c, ...a, ...c, ...d];
+      return [...a, ...b, ...cornerC, ...a, ...cornerC, ...cornerD];
     });
     const fg = this.markFill.geometry;
     fg.setAttribute('position', new BufferAttribute(new Float32Array(fill), 3));
@@ -2172,7 +2172,7 @@ export class FreeformTool implements Tool {
     if (e.key === 'Enter') {
       return (this.done(), true);
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && !this.face && this.picks.some(p => p.kind === 'face')) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !this.face && this.picks.some(pick => pick.kind === 'face')) {
       return (this.deleteSelectedFaces(), true);
     }
     if (e.key.toLowerCase() === 'a' && (e.ctrlKey || e.metaKey)) {
@@ -2199,25 +2199,25 @@ export class FreeformTool implements Tool {
 
         return null;
       }
-      const f = this.faceDraft();
+      const faceFreeform = this.faceDraft();
       // A new step that shapes nothing: no step at all.
       if (this.face.existing) {
-        this.saveEdit(f.id, { cage: f.cage, grid: f.grid, ...(f.more ? { more: f.more } : {}) });
-      } else if (!this.flat() || f.more?.length) {
-        this.app.store.add(f);
+        this.saveEdit(faceFreeform.id, { cage: faceFreeform.cage, grid: faceFreeform.grid, ...(faceFreeform.more ? { more: faceFreeform.more } : {}) });
+      } else if (!this.flat() || faceFreeform.more?.length) {
+        this.app.store.add(faceFreeform);
       } // (several faces: made one smooth surface even as laid)
       this.app.setTool(null);
 
-      return f.face.body;
+      return faceFreeform.face.body;
     }
     // Stored where it was made: later move steps in History still apply on top.
     const cage = { faces: structuredClone(this.cage.faces), verts: this.cage.verts.map(this.place.inv), ...(this.cage.creases?.length ? { creases: structuredClone(this.cage.creases) } : {}) };
     const open = !isClosed(cage);
     const symmetry = this.sym
       ? (() => {
-        const o = this.place.inv(this.sym!.origin);
+        const origin = this.place.inv(this.sym!.origin);
 
-        return { origin: o, normal: norm(sub(this.place.inv(add(this.sym!.origin, this.sym!.normal)), o)) };
+        return { origin: origin, normal: norm(sub(this.place.inv(add(this.sym!.origin, this.sym!.normal)), origin)) };
       })()
       : undefined;
     const extra = { surface: this.surfaceSheet || undefined, thickness: open && this.thickness > 0 ? this.thickness : undefined, thickSide: open && this.thickness > 0 ? this.thickSide : undefined, symmetry };
@@ -2226,9 +2226,9 @@ export class FreeformTool implements Tool {
       id = this.existing.id;
       this.saveEdit(id, { cage, ...extra });
     } else {
-      const f: FreeformFeature = { ...this.app.store.newIdentity('freeform', isClosed(cage) ? 'Freeform' : 'Freeform surface'), type: 'freeform', cage, ...extra };
-      this.app.store.add(f);
-      id = f.id;
+      const freeform: FreeformFeature = { ...this.app.store.newIdentity('freeform', isClosed(cage) ? 'Freeform' : 'Freeform surface'), type: 'freeform', cage, ...extra };
+      this.app.store.add(freeform);
+      id = freeform.id;
     }
     // Left open with no thickness: a surface, which nothing solid can be done with - said as it is made, with the ways on.
     if (open && !(this.thickness > 0)) {
@@ -2251,18 +2251,18 @@ export class FreeformTool implements Tool {
    */
   deleteAt(points: Vec3[], kind: 'face' | 'edge' | 'vertex'): void {
     const sub3 = subdivide(this.cage, 3);
-    const n = sub3.n;
-    const size = Math.max(1e-9, ...[0, 1, 2].map(k => Math.max(...this.cage.verts.map(v => v[k])) - Math.min(...this.cage.verts.map(v => v[k]))));
+    const count = sub3.n;
+    const size = Math.max(1e-9, ...[0, 1, 2].map(axis => Math.max(...this.cage.verts.map(vertex => vertex[axis])) - Math.min(...this.cage.verts.map(vertex => vertex[axis]))));
     const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     const doomed = new Set<number>();
     for (const q of points) {
       if (kind === 'face') {
         let best = -1;
         let bd = Infinity;
-        sub3.grids.forEach((g, f) => {
-          const d = dist3(sub3.points[g[n >> 1][n >> 1]], q);
-          if (d < bd) {
-            [bd, best] = [d, f];
+        sub3.grids.forEach((grid, gridIndex) => {
+          const distance = dist3(sub3.points[grid[count >> 1][count >> 1]], q);
+          if (distance < bd) {
+            [bd, best] = [distance, gridIndex];
           }
         });
         if (best >= 0) {
@@ -2271,18 +2271,18 @@ export class FreeformTool implements Tool {
         continue;
       }
       // Patches whose rim passes through the edge / point.
-      const rim = sub3.grids.map((g) => {
-        let d = Infinity;
-        for (let i = 0; i <= n; i++) {
-          for (const [a, b] of [[0, i], [n, i], [i, 0], [i, n]]) {
-            d = Math.min(d, dist3(sub3.points[g[a][b]], q));
+      const rim = sub3.grids.map((grid) => {
+        let distance = Infinity;
+        for (let i = 0; i <= count; i++) {
+          for (const [a, b] of [[0, i], [count, i], [i, 0], [i, count]]) {
+            distance = Math.min(distance, dist3(sub3.points[grid[a][b]], q));
           }
         }
 
-        return d;
+        return distance;
       });
       const min = Math.min(...rim);
-      rim.forEach((d, f) => d < min + size * 0.01 && doomed.add(f));
+      rim.forEach((distance, face) => distance < min + size * 0.01 && doomed.add(face));
     }
     if (!doomed.size) {
       return;
@@ -2299,8 +2299,8 @@ export class FreeformTool implements Tool {
     this.panelHint();
   }
 
-  selectAt(p: ToolPointer): void {
-    const hit = this.pickAt(p);
+  selectAt(pointer: ToolPointer): void {
+    const hit = this.pickAt(pointer);
     if (!hit) {
       return;
     }
@@ -2311,37 +2311,37 @@ export class FreeformTool implements Tool {
 
 /** Thick lines (segment pairs). */
 /** Drawn as if `pull` (world units) nearer the eye - for the depth test only (never past halfway). */
-function pulled<M extends Material>(m: M, pull: { value: number }): M {
-  m.onBeforeCompile = (sh) => {
+function pulled<M extends Material>(material: M, pull: { value: number }): M {
+  material.onBeforeCompile = (sh) => {
     sh.uniforms.pull = pull;
     sh.vertexShader
       = 'uniform float pull;\n'
       + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  mvPosition.z = min(mvPosition.z + pull, mvPosition.z * 0.5);\n  gl_Position = projectionMatrix * mvPosition;');
   };
-  m.customProgramCacheKey = () => 'pulled';
+  material.customProgramCacheKey = () => 'pulled';
 
-  return m;
+  return material;
 }
 
 /** A see-through dot: its texture's edge is cut at a lower alpha (the faint dot's whole alpha is under 0.5). */
-function faint<M extends Material>(m: M): M {
-  m.alphaTest = 0.05;
+function faint<M extends Material>(material: M): M {
+  material.alphaTest = 0.05;
 
-  return m;
+  return material;
 }
 
-function setLines(o: LineSegments2, xyz: number[]): void {
-  const g = o.geometry as LineSegmentsGeometry;
+function setLines(lines: LineSegments2, xyz: number[]): void {
+  const geometry = lines.geometry as LineSegmentsGeometry;
   // (No segments: an empty instanced line draws nothing.)
-  g.setPositions(xyz.length ? xyz : [0, 0, 0, 0, 0, 0]);
-  o.visible = xyz.length > 0;
+  geometry.setPositions(xyz.length ? xyz : [0, 0, 0, 0, 0, 0]);
+  lines.visible = xyz.length > 0;
 }
 
-function setPositions(o: LineSegments | Points, xyz: number[]): void {
-  const g = o.geometry;
-  g.setAttribute('position', new BufferAttribute(new Float32Array(xyz), 3));
-  g.computeBoundingSphere();
-  g.computeBoundingBox();
+function setPositions(lines: LineSegments | Points, xyz: number[]): void {
+  const geometry = lines.geometry;
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(xyz), 3));
+  geometry.computeBoundingSphere();
+  geometry.computeBoundingBox();
 }
 
 /** Screen distance from (x, y) to segment a–b, and where along it (0…1). */
@@ -2377,45 +2377,45 @@ interface Placement {
  * act on it (not copies). `inv` undoes them, to store edits in the cage's own place.
  */
 function placementOf(features: readonly Feature[], id: string): Placement {
-  const i = features.findIndex(f => f.id === id);
+  const i = features.findIndex(feature => feature.id === id);
   const steps = features
     .slice(i + 1)
-    .filter((f): f is TransformFeature => f.type === 'transform' && !f.suppressed && !f.copy && f.bodies.includes(id) && ['move', 'scale', 'mirror'].includes(f.op.kind));
-  const turn = (p: Vec3, o: Vec3, axis: Vec3, deg: number): Vec3 => {
-    const k = norm(axis);
-    const v = sub(p, o);
+    .filter((feature): feature is TransformFeature => feature.type === 'transform' && !feature.suppressed && !feature.copy && feature.bodies.includes(id) && ['move', 'scale', 'mirror'].includes(feature.op.kind));
+  const turn = (point: Vec3, origin: Vec3, axis: Vec3, deg: number): Vec3 => {
+    const unitAxis = norm(axis);
+    const offset = sub(point, origin);
     const t = (deg * Math.PI) / 180;
 
-    return add(o, add(add(scale(v, Math.cos(t)), scale(cross(k, v), Math.sin(t))), scale(k, dot(k, v) * (1 - Math.cos(t)))));
+    return add(origin, add(add(scale(offset, Math.cos(t)), scale(cross(unitAxis, offset), Math.sin(t))), scale(unitAxis, dot(unitAxis, offset) * (1 - Math.cos(t)))));
   };
-  const reflect = (p: Vec3, o: Vec3, n: Vec3): Vec3 => {
-    const k = norm(n);
+  const reflect = (point: Vec3, origin: Vec3, normal: Vec3): Vec3 => {
+    const unitNormal = norm(normal);
 
-    return sub(p, scale(k, 2 * dot(sub(p, o), k)));
+    return sub(point, scale(unitNormal, 2 * dot(sub(point, origin), unitNormal)));
   };
-  const apply = (op: TransformFeature['op'], p: Vec3, back: boolean): Vec3 => {
+  const apply = (op: TransformFeature['op'], point: Vec3, back: boolean): Vec3 => {
     if (op.kind === 'move') {
-      const r = op.rotate;
+      const rotate = op.rotate;
       if (!back) {
-        return add(r && r.angle ? turn(p, r.origin, r.axis, r.angle) : p, op.translate);
+        return add(rotate && rotate.angle ? turn(point, rotate.origin, rotate.axis, rotate.angle) : point, op.translate);
       }
-      const q = sub(p, op.translate);
+      const q = sub(point, op.translate);
 
-      return r && r.angle ? turn(q, r.origin, r.axis, -r.angle) : q;
+      return rotate && rotate.angle ? turn(q, rotate.origin, rotate.axis, -rotate.angle) : q;
     }
     if (op.kind === 'scale') {
-      return add(op.center, scale(sub(p, op.center), back ? 1 / op.factor : op.factor));
+      return add(op.center, scale(sub(point, op.center), back ? 1 / op.factor : op.factor));
     }
     if (op.kind === 'mirror') {
-      return reflect(p, op.plane.origin, op.plane.normal);
+      return reflect(point, op.plane.origin, op.plane.normal);
     }
 
-    return p;
+    return point;
   };
 
   return {
-    fwd: v => steps.reduce((p, f) => apply(f.op, p, false), v),
-    inv: v => [...steps].reverse().reduce((p, f) => apply(f.op, p, true), v)
+    fwd: vector => steps.reduce((point, step) => apply(step.op, point, false), vector),
+    inv: vector => [...steps].reverse().reduce((point, step) => apply(step.op, point, true), vector)
   };
 }
 
@@ -2424,20 +2424,20 @@ function faceBorders(plan: SubdivPlan): Uint32Array {
   const seen = new Set<string>();
   const out: number[] = [];
   const seg = (a: number, b: number) => {
-    const k = a < b ? `${a},${b}` : `${b},${a}`;
-    if (seen.has(k)) {
+    const key = a < b ? `${a},${b}` : `${b},${a}`;
+    if (seen.has(key)) {
       return;
     }
-    seen.add(k);
+    seen.add(key);
     out.push(a, b);
   };
-  const n = plan.n;
-  for (const g of plan.grids) {
-    for (let k = 0; k < n; k++) {
-      seg(g[k][0], g[k + 1][0]);
-      seg(g[k][n], g[k + 1][n]);
-      seg(g[0][k], g[0][k + 1]);
-      seg(g[n][k], g[n][k + 1]);
+  const count = plan.n;
+  for (const grid of plan.grids) {
+    for (let row = 0; row < count; row++) {
+      seg(grid[row][0], grid[row + 1][0]);
+      seg(grid[row][count], grid[row + 1][count]);
+      seg(grid[0][row], grid[0][row + 1]);
+      seg(grid[count][row], grid[count][row + 1]);
     }
   }
 

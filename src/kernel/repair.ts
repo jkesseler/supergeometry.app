@@ -23,22 +23,22 @@ export interface Health {
   faces: number;
 }
 
-export function healthOf(s: Shape3D): Health {
-  const h: Health = { valid: false, solids: 0, shells: 0, openEdges: 0, pinched: 0, thin: 0, volume: 0, faces: 0 };
+export function healthOf(shape: Shape3D): Health {
+  const health: Health = { valid: false, solids: 0, shells: 0, openEdges: 0, pinched: 0, thin: 0, volume: 0, faces: 0 };
   try {
-    h.faces = s.faces.length;
-    h.valid = shapeValid(s);
-    h.solids = subShapes(s, 'SOLID').length;
-    h.shells = subShapes(s, 'SHELL').length;
-    h.openEdges = openEdges(s).length;
-    h.pinched = pinchedEdges(s);
-    h.thin = hairThin(s);
-    h.volume = h.solids ? measureVolume(s) : 0;
+    health.faces = shape.faces.length;
+    health.valid = shapeValid(shape);
+    health.solids = subShapes(shape, 'SOLID').length;
+    health.shells = subShapes(shape, 'SHELL').length;
+    health.openEdges = openEdges(shape).length;
+    health.pinched = pinchedEdges(shape);
+    health.thin = hairThin(shape);
+    health.volume = health.solids ? measureVolume(shape) : 0;
   } catch {
-    h.valid = false;
+    health.valid = false;
   }
 
-  return h;
+  return health;
 }
 
 export interface RepairOptions {
@@ -49,18 +49,18 @@ export interface RepairOptions {
 }
 
 /** A clean solid: valid, closed, no pieces meeting only at an edge, no hair-thin faces, real volume. */
-export function isHealthy(h: Health, o: RepairOptions = {}): boolean {
-  return h.valid && h.solids >= 1 && (!o.maxSolids || h.solids <= o.maxSolids) && h.openEdges === 0 && !h.pinched && h.thin === 0 && h.volume > 0;
+export function isHealthy(health: Health, repairOptions: RepairOptions = {}): boolean {
+  return health.valid && health.solids >= 1 && (!repairOptions.maxSolids || health.solids <= repairOptions.maxSolids) && health.openEdges === 0 && !health.pinched && health.thin === 0 && health.volume > 0;
 }
 
 /** How broken (0: healthy) - to tell whether a fix helped. */
-function badness(h: Health, o: RepairOptions): number {
-  return (h.valid ? 0 : 1000) + (h.solids ? 0 : 400) + (o.maxSolids && h.solids > o.maxSolids ? 300 : 0) + (h.volume > 0 ? 0 : 200) + Math.min(h.openEdges, 50) * 4 + Math.min(h.thin, 50) * 2;
+function badness(health: Health, repairOptions: RepairOptions): number {
+  return (health.valid ? 0 : 1000) + (health.solids ? 0 : 400) + (repairOptions.maxSolids && health.solids > repairOptions.maxSolids ? 300 : 0) + (health.volume > 0 ? 0 : 200) + Math.min(health.openEdges, 50) * 4 + Math.min(health.thin, 50) * 2;
 }
 
-function sizeOf(s: Shape3D): number {
+function sizeOf(shape: Shape3D): number {
   try {
-    const b = s.boundingBox;
+    const b = shape.boundingBox;
 
     return Math.hypot(b.width, b.height, b.depth) || 1;
   } catch {
@@ -80,26 +80,26 @@ type Fix = { label: string; run: (s: Shape3D, size: number) => Shape3D | null };
  * together. Left in, that speck is an edge to pick, and one the engine
  * stumbles on in every later cut and fillet there. Null: none to drop.
  */
-function withoutSpecks(s: Shape3D, tol: number): Shape3D | null {
+function withoutSpecks(shape: Shape3D, tol: number): Shape3D | null {
   type P = [number, number, number];
-  const far = (p: P, q: P) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-  const remade = (w: Wire): Wire => {
-    const all = w.edges.map(e => ({ e, a: e.startPoint.toTuple() as P, b: e.endPoint.toTuple() as P, m: e.pointAt(0.5).toTuple() as P, type: e.geomType as string, speck: e.length < tol, moved: false }));
-    const specks = all.filter(x => x.speck);
+  const far = (pointA: P, q: P) => Math.hypot(pointA[0] - q[0], pointA[1] - q[1], pointA[2] - q[2]);
+  const remade = (wire: Wire): Wire => {
+    const all = wire.edges.map(e => ({ e, a: e.startPoint.toTuple() as P, b: e.endPoint.toTuple() as P, m: e.pointAt(0.5).toTuple() as P, type: e.geomType as string, speck: e.length < tol, moved: false }));
+    const specks = all.filter(piece => piece.speck);
     if (!specks.length) {
-      return w;
+      return wire;
     }
     // The ends that were on a speck: both at its middle now.
-    const snap = (p: P): P | null => {
-      for (const k of specks) {
-        if (far(p, k.a) < tol || far(p, k.b) < tol) {
-          return [(k.a[0] + k.b[0]) / 2, (k.a[1] + k.b[1]) / 2, (k.a[2] + k.b[2]) / 2];
+    const snap = (point: P): P | null => {
+      for (const speck of specks) {
+        if (far(point, speck.a) < tol || far(point, speck.b) < tol) {
+          return [(speck.a[0] + speck.b[0]) / 2, (speck.a[1] + speck.b[1]) / 2, (speck.a[2] + speck.b[2]) / 2];
         }
       }
 
       return null;
     };
-    const rest = all.filter(x => !x.speck);
+    const rest = all.filter(piece => !piece.speck);
     for (const x of rest) {
       const [a, b] = [snap(x.a), snap(x.b)];
       if (!a && !b) {
@@ -116,9 +116,9 @@ function withoutSpecks(s: Shape3D, tol: number): Shape3D | null {
     const chain = [rest.shift()!];
     while (rest.length) {
       const end = chain[chain.length - 1].b;
-      let i = rest.findIndex(x => far(x.a, end) < tol);
+      let i = rest.findIndex(piece => far(piece.a, end) < tol);
       if (i < 0) {
-        i = rest.findIndex(x => far(x.b, end) < tol);
+        i = rest.findIndex(piece => far(piece.b, end) < tol);
         if (i < 0) {
           throw new Error("the outline doesn't close");
         }
@@ -127,20 +127,20 @@ function withoutSpecks(s: Shape3D, tol: number): Shape3D | null {
       chain.push(rest.splice(i, 1)[0]);
     }
 
-    return assembleWire(chain.map(x => (!x.moved ? x.e : x.type === 'LINE' ? makeLine(x.a, x.b) : makeThreePointArc(x.a, x.m, x.b))));
+    return assembleWire(chain.map(piece => (!piece.moved ? piece.e : piece.type === 'LINE' ? makeLine(piece.a, piece.b) : makeThreePointArc(piece.a, piece.m, piece.b))));
   };
   let any = false;
-  const faces = s.faces.map((f) => {
-    if (f.geomType !== 'PLANE' || !f.edges.some(e => e.length < tol)) {
-      return f.wrapped;
+  const faces = shape.faces.map((face) => {
+    if (face.geomType !== 'PLANE' || !face.edges.some(e => e.length < tol)) {
+      return face.wrapped;
     }
     try {
-      const made = makeFace(remade(f.clone().outerWire()), f.clone().innerWires().map(remade));
+      const made = makeFace(remade(face.clone().outerWire()), face.clone().innerWires().map(remade));
       any = true;
 
       return made.wrapped;
     } catch {
-      return f.wrapped;
+      return face.wrapped;
     }
   });
 
@@ -148,14 +148,14 @@ function withoutSpecks(s: Shape3D, tol: number): Shape3D | null {
 }
 
 /** Faces on the same surface to within `tol` made one (null: it can't be done). */
-function merged(s: Shape3D, tol: number): Shape3D | null {
+function merged(shape: Shape3D, tol: number): Shape3D | null {
   const oc = getOC();
-  const u = new oc.ShapeUpgrade_UnifySameDomain(s.wrapped, true, true, false);
+  const unifier = new oc.ShapeUpgrade_UnifySameDomain(shape.wrapped, true, true, false);
   try {
-    u.SetLinearTolerance(tol);
-    u.SetAngularTolerance(1e-5);
-    u.Build();
-    const made = u.Shape();
+    unifier.SetLinearTolerance(tol);
+    unifier.SetAngularTolerance(1e-5);
+    unifier.Build();
+    const made = unifier.Shape();
     try {
       return cast(made) as Shape3D;
     } finally {
@@ -164,7 +164,7 @@ function merged(s: Shape3D, tol: number): Shape3D | null {
   } catch {
     return null;
   } finally {
-    u.delete();
+    unifier.delete();
   }
 }
 
@@ -172,8 +172,8 @@ function sewToSolid(faces: unknown[], tol: number): Shape3D | null {
   const oc = getOC();
   const sw = new oc.BRepBuilderAPI_Sewing(tol, true, true, true, false);
   try {
-    for (const f of faces) {
-      sw.Add(f as never);
+    for (const face of faces) {
+      sw.Add(face as never);
     }
     sw.Perform(new oc.Message_ProgressRange());
     const sewed = cast(sw.SewedShape()) as Shape3D;
@@ -196,7 +196,7 @@ function sewToSolid(faces: unknown[], tol: number): Shape3D | null {
       return cast(solids[0] as never) as Shape3D;
     }
 
-    return makeCompound(solids.map(x => cast(x as never))) as Shape3D;
+    return makeCompound(solids.map(solid => cast(solid as never))) as Shape3D;
   } catch {
     return null;
   } finally {
@@ -204,17 +204,17 @@ function sewToSolid(faces: unknown[], tol: number): Shape3D | null {
   }
 }
 
-const facesOf = (s: Shape3D) => s.faces.map(f => f.wrapped);
+const facesOf = (shape: Shape3D) => shape.faces.map(face => face.wrapped);
 
 /** Chains of open edges into closed loops → flat faces filling them (holes where a face is missing). */
-function fillFlatHoles(s: Shape3D, size: number): unknown[] {
-  const open = openEdges(s).map(i => s.edges[i]);
+function fillFlatHoles(shape: Shape3D, size: number): unknown[] {
+  const open = openEdges(shape).map(i => shape.edges[i]);
   if (!open.length) {
     return [];
   }
   const tol = size * 1e-6;
   const ends = open.map(e => [e.startPoint.toTuple(), e.endPoint.toTuple()] as [number, number, number][]);
-  const same = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < tol;
+  const same = (point: number[], q: number[]) => Math.hypot(point[0] - q[0], point[1] - q[1], point[2] - q[2]) < tol;
   const used = new Set<number>();
   const out: unknown[] = [];
   for (let start = 0; start < open.length; start++) {
@@ -225,13 +225,13 @@ function fillFlatHoles(s: Shape3D, size: number): unknown[] {
     used.add(start);
     let tip = ends[start][1];
     for (let guard = 0; guard < open.length && !same(tip, ends[start][0]); guard++) {
-      const k = open.findIndex((_, i) => !used.has(i) && (same(ends[i][0], tip) || same(ends[i][1], tip)));
-      if (k < 0) {
+      const index = open.findIndex((_, i) => !used.has(i) && (same(ends[i][0], tip) || same(ends[i][1], tip)));
+      if (index < 0) {
         break;
       }
-      used.add(k);
-      loop.push(k);
-      tip = same(ends[k][0], tip) ? ends[k][1] : ends[k][0];
+      used.add(index);
+      loop.push(index);
+      tip = same(ends[index][0], tip) ? ends[index][1] : ends[index][0];
     }
     if (!same(tip, ends[start][0])) {
       continue;
@@ -253,35 +253,35 @@ function fillFlatHoles(s: Shape3D, size: number): unknown[] {
 const FIXES: Fix[] = [
   {
     label: 'rebuilt edge curves and tolerances',
-    run: (s, size) => {
+    run: (shape, size) => {
       const oc = getOC();
-      const c = deepCopy(s);
+      const copy = deepCopy(shape);
       try {
-        oc.BRepLib.BuildCurves3d(c.wrapped);
+        oc.BRepLib.BuildCurves3d(copy.wrapped);
       } catch {
         /* overload differs */
       }
       try {
-        oc.BRepLib.SameParameter(c.wrapped, size * 1e-7, true);
+        oc.BRepLib.SameParameter(copy.wrapped, size * 1e-7, true);
       } catch {
         /* overload differs */
       }
       try {
-        oc.BRepLib.UpdateTolerances(c.wrapped, true);
+        oc.BRepLib.UpdateTolerances(copy.wrapped, true);
       } catch {
         /* overload differs */
       }
 
-      return c;
+      return copy;
     }
   },
   {
     label: 'fixed faces',
-    run: (s, size) => {
+    run: (shape, size) => {
       const oc = getOC();
       const fixed: unknown[] = [];
-      for (const f of s.faces) {
-        const fx = new oc.ShapeFix_Face(f.wrapped);
+      for (const face of shape.faces) {
+        const fx = new oc.ShapeFix_Face(face.wrapped);
         try {
           fx.SetPrecision(size * 1e-7);
           fx.Perform();
@@ -295,31 +295,31 @@ const FIXES: Fix[] = [
     }
   },
   // Gaps between faces: sewn shut, the smallest tolerance that does it.
-  ...[1e-6, 1e-5, 1e-4, 1e-3].map(k => ({ label: 'sewed up gaps between faces', run: (s: Shape3D, size: number) => sewToSolid(facesOf(s), size * k) })),
+  ...[1e-6, 1e-5, 1e-4, 1e-3].map(factor => ({ label: 'sewed up gaps between faces', run: (shape: Shape3D, size: number) => sewToSolid(facesOf(shape), size * factor) })),
   {
     label: 'filled missing flat faces',
-    run: (s, size) => {
-      const add = fillFlatHoles(s, size);
+    run: (shape, size) => {
+      const add = fillFlatHoles(shape, size);
 
-      return add.length ? sewToSolid([...facesOf(s), ...add], size * 1e-6) : null;
+      return add.length ? sewToSolid([...facesOf(shape), ...add], size * 1e-6) : null;
     }
   },
   {
     label: 'removed hair-thin faces',
-    run: (s, size) => {
-      const areas = s.faces.map(f => measureArea(f));
+    run: (shape, size) => {
+      const areas = shape.faces.map(face => measureArea(face));
       const total = areas.reduce((a, b) => a + b, 0);
       const thin = areas.map(a => a < total * 1e-7);
       if (!thin.some(Boolean)) {
         return null;
       }
       // Their neighbours close the slot: sewn with a tolerance about as wide as the slivers.
-      const width = Math.max(...s.faces.filter((_, i) => thin[i]).map((f) => {
-        const b = f.boundingBox;
+      const width = Math.max(...shape.faces.filter((_, i) => thin[i]).map((face) => {
+        const b = face.boundingBox;
 
         return Math.min(...[b.width, b.height, b.depth].filter(x => x > 0), size * 1e-3);
       }));
-      const kept = s.faces.filter((_, i) => !thin[i]).map(f => f.wrapped);
+      const kept = shape.faces.filter((_, i) => !thin[i]).map(face => face.wrapped);
       const tol = Math.min(size * 1e-3, Math.max(size * 1e-6, width * 2));
       const closed = sewToSolid(kept, tol);
       if (!closed) {
@@ -333,8 +333,8 @@ const FIXES: Fix[] = [
           // roundings of a full round: one half cylinder): one face, with no line down it.
           const joined = merged(clean, tol);
           const one = joined && FIXES[0].run(joined, size);
-          const v = measureVolume(closed);
-          const good = (x: Shape3D) => shapeValid(x) && !openEdges(x).length && Math.abs(measureVolume(x) - v) < Math.abs(v) * 1e-4;
+          const volume = measureVolume(closed);
+          const good = (x: Shape3D) => shapeValid(x) && !openEdges(x).length && Math.abs(measureVolume(x) - volume) < Math.abs(volume) * 1e-4;
           if (one && one.faces.length < clean.faces.length && good(one)) {
             return one;
           }
@@ -351,9 +351,9 @@ const FIXES: Fix[] = [
   },
   {
     label: 'merged faces split on one surface',
-    run: (s) => {
+    run: (shape) => {
       try {
-        return unify(s);
+        return unify(shape);
       } catch {
         return null;
       }
@@ -361,40 +361,40 @@ const FIXES: Fix[] = [
   },
   {
     label: 'made a solid from its skin',
-    run: (s, size) => (subShapes(s, 'SOLID').length ? null : sewToSolid(facesOf(s), size * 1e-6))
+    run: (shape, size) => (subShapes(shape, 'SOLID').length ? null : sewToSolid(facesOf(shape), size * 1e-6))
   },
   {
     label: 'turned it the right way out',
-    run: (s) => {
+    run: (shape) => {
       const oc = getOC();
-      if (!(quickVolume(s) < 0)) {
+      if (!(quickVolume(shape) < 0)) {
         return null;
       }
-      const c = deepCopy(s);
-      for (const x of subShapes(c, 'SOLID')) {
+      const copy = deepCopy(shape);
+      for (const x of subShapes(copy, 'SOLID')) {
         oc.BRepLib.OrientClosedSolid(x);
       }
 
-      return c;
+      return copy;
     }
   }
 ];
 
 /** Healthy now: faces left split on one surface (a mesh's triangles) merged, if that keeps it so. */
-function tidy(s: Shape3D, h: Health, o: RepairOptions, fixes: string[]): Shape3D {
+function tidy(shape: Shape3D, health: Health, repairOptions: RepairOptions, fixes: string[]): Shape3D {
   try {
-    const u = unify(s);
-    const hu = healthOf(u);
-    if (isHealthy(hu, o) && hu.faces < h.faces && Math.abs(hu.volume - h.volume) <= h.volume * 1e-6) {
+    const unified = unify(shape);
+    const hu = healthOf(unified);
+    if (isHealthy(hu, repairOptions) && hu.faces < health.faces && Math.abs(hu.volume - health.volume) <= health.volume * 1e-6) {
       fixes.push('merged faces split on one surface');
 
-      return u;
+      return unified;
     }
   } catch {
     /* keep it as it is */
   }
 
-  return s;
+  return shape;
 }
 
 /**
@@ -403,45 +403,45 @@ function tidy(s: Shape3D, h: Health, o: RepairOptions, fixes: string[]): Shape3D
  * 0.5%, same size). Returns the repaired shape and what was done, or null if
  * it can't be made a clean solid.
  */
-export function repairShape(input: Shape3D, o: RepairOptions = {}): { shape: Shape3D; fixes: string[] } | null {
+export function repairShape(input: Shape3D, repairOptions: RepairOptions = {}): { shape: Shape3D; fixes: string[] } | null {
   let cur = input;
-  let h = healthOf(cur);
-  if (isHealthy(h, o)) {
+  let health = healthOf(cur);
+  if (isHealthy(health, repairOptions)) {
     return { shape: cur, fixes: [] };
   }
   const size = sizeOf(input);
-  const v0 = o.volume ?? (h.volume > 0 && h.valid ? h.volume : undefined);
+  const v0 = repairOptions.volume ?? (health.volume > 0 && health.valid ? health.volume : undefined);
   // Not valid: its measured volume can't be trusted, but one counted from a
   // mesh can (when it's closed). Without it, "fixed faces" was free to change
   // the shape: a slot cut into a drill's housing came back 764 mm³ bigger,
   // and the housing split in half later left pieces inside out.
   let m0: number | undefined;
-  if (v0 === undefined && h.solids && !h.openEdges) {
+  if (v0 === undefined && health.solids && !health.openEdges) {
     try {
-      const m = meshVolume(input, size);
-      if (m > 0) {
-        m0 = m;
+      const meshed = meshVolume(input, size);
+      if (meshed > 0) {
+        m0 = meshed;
       }
     } catch {
       m0 = undefined;
     }
   }
-  const sameShape = (s: Shape3D, hs: Health) => {
-    if (Math.abs(sizeOf(s) - size) > size * 1e-3) {
+  const sameShape = (shape: Shape3D, hs: Health) => {
+    if (Math.abs(sizeOf(shape) - size) > size * 1e-3) {
       return false;
     }
     // A sound solid measuring below nothing or more than its box is a broken
     // "fix": said at once. (Meshed to compare, each took 13 s - a cut through a
     // shelled mouse's curved top spent three minutes here before it said no.)
     if (hs.valid && hs.solids) {
-      const b = s.boundingBox;
+      const b = shape.boundingBox;
       if (!(hs.volume > 0) || hs.volume > b.width * b.height * b.depth * 1.001) {
         return false;
       }
     }
     if (m0 !== undefined) {
       try {
-        return Math.abs(meshVolume(s, size) - m0) <= m0 * 5e-3;
+        return Math.abs(meshVolume(shape, size) - m0) <= m0 * 5e-3;
       } catch {
         return false;
       }
@@ -466,14 +466,14 @@ export function repairShape(input: Shape3D, o: RepairOptions = {}): { shape: Sha
         continue;
       }
       const hn = healthOf(next);
-      if (badness(hn, o) < badness(h, o) && sameShape(next, hn)) {
+      if (badness(hn, repairOptions) < badness(health, repairOptions) && sameShape(next, hn)) {
         cur = next;
-        h = hn;
+        health = hn;
         if (!fixes.includes(fix.label)) {
           fixes.push(fix.label);
         }
-        if (isHealthy(h, o)) {
-          return { shape: tidy(cur, h, o, fixes), fixes };
+        if (isHealthy(health, repairOptions)) {
+          return { shape: tidy(cur, health, repairOptions, fixes), fixes };
         }
       }
     }

@@ -8,7 +8,7 @@ import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewSpec, Envelope
  * the same steps each time.
  */
 function lean(features: Feature[]): Feature[] {
-  return features.some(f => f.type === 'image' && f.src) ? features.map(f => (f.type === 'image' ? { ...f, src: '' } : f)) : features;
+  return features.some(feature => feature.type === 'image' && feature.src) ? features.map(feature => (feature.type === 'image' ? { ...feature, src: '' } : feature)) : features;
 }
 
 /** Promise-based wrapper around the kernel worker. */
@@ -77,9 +77,9 @@ export class KernelClient {
       this.stop();
       this.onLost?.();
     };
-    this.ready = this.call({ type: 'init' }).then((r) => {
-      if (r.type === 'error') {
-        throw new Error(r.message);
+    this.ready = this.call({ type: 'init' }).then((response) => {
+      if (response.type === 'error') {
+        throw new Error(response.message);
       }
     });
   }
@@ -92,13 +92,13 @@ export class KernelClient {
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     const spare: { worker: Worker; bodies: BodyMesh[] | null } = { worker, bodies: null };
     this.spare = spare;
-    let n = 0;
+    let count = 0;
     const waiting = new Map<number, (r: Response) => void>();
     worker.onmessage = (e: MessageEvent<Envelope<Response>>) => waiting.get(e.data.id)?.(e.data.msg);
     const ask = (msg: Request) =>
       new Promise<Response>((resolve) => {
-        waiting.set(++n, resolve);
-        worker.postMessage({ id: n, msg } satisfies Envelope<Request>);
+        waiting.set(++count, resolve);
+        worker.postMessage({ id: count, msg } satisfies Envelope<Request>);
       });
     const { features, saved } = this.last;
     (async () => {
@@ -107,11 +107,11 @@ export class KernelClient {
       }
       const got = new Map<number, BodyMesh>();
       const regen = async (fs: Feature[], asSaved: boolean) => {
-        const r = await ask({ type: 'regenerate', features: lean(fs), saved: asSaved });
-        if (r.type !== 'regenerated') {
+        const response = await ask({ type: 'regenerate', features: lean(fs), saved: asSaved });
+        if (response.type !== 'regenerated') {
           throw new Error('regenerate');
         }
-        const bodies = r.result.bodies.map(b => ((b as { same?: boolean }).same ? got.get(b.key)! : b));
+        const bodies = response.result.bodies.map(b => ((b as { same?: boolean }).same ? got.get(b.key)! : b));
         for (const b of bodies) {
           got.set(b.key, b);
         }
@@ -137,17 +137,17 @@ export class KernelClient {
 
   /** The spare engine takes over, if it's ready and nothing is running. */
   private swapIfIdle(): void {
-    const s = this.spare;
-    if (!s?.bodies || this.regenRunning || this.pending.size) {
+    const spare = this.spare;
+    if (!spare?.bodies || this.regenRunning || this.pending.size) {
       return;
     }
     this.spare = null;
     this.worker.terminate();
-    this.worker = s.worker;
+    this.worker = spare.worker;
     this.worker.onmessage = this.handler;
     this.ready = Promise.resolve();
     // It sends meshes it already sent (to us, while warming) as keys only.
-    this.meshes = new Map(s.bodies.map(b => [b.key, b]));
+    this.meshes = new Map(spare.bodies.map(b => [b.key, b]));
   }
 
   /**
@@ -187,8 +187,8 @@ export class KernelClient {
     }
 
     return new Promise((resolve) => {
-      this.pending.set(id, (r) => {
-        resolve(r);
+      this.pending.set(id, (response) => {
+        resolve(response);
         if (this.pending.size === 0 && !this.regenQueued) {
           this.onBusy?.(false);
         }
@@ -220,23 +220,23 @@ export class KernelClient {
     this.running = features;
     this.last = { features, saved: saved ? features : this.last.saved };
     const worker = this.worker;
-    const r = await this.call({ type: 'regenerate', features: lean(features), saved });
+    const response = await this.call({ type: 'regenerate', features: lean(features), saved });
     // Stopped meanwhile: the fresh worker has its own queue.
     if (worker !== this.worker) {
       return resolve(null);
     }
     this.running = null;
-    resolve(r.type === 'regenerated' ? this.withMeshes(r.result) : null);
-    if (r.type === 'error') {
-      console.error(r.message);
+    resolve(response.type === 'regenerated' ? this.withMeshes(response.result) : null);
+    if (response.type === 'error') {
+      console.error(response.message);
     }
-    if (r.type === 'regenerated' && r.result.memoryMB !== undefined) {
+    if (response.type === 'regenerated' && response.result.memoryMB !== undefined) {
       // (A fresh engine starts small again: that isn't a rebuild giving memory back.)
-      const cost = this.memoryMB ? Math.max(0, r.result.memoryMB - this.memoryMB) : 0;
-      if (r.result.memoryMB < this.memoryMB) {
+      const cost = this.memoryMB ? Math.max(0, response.result.memoryMB - this.memoryMB) : 0;
+      if (response.result.memoryMB < this.memoryMB) {
         this.costMB = 0;
       }
-      this.memoryMB = r.result.memoryMB;
+      this.memoryMB = response.result.memoryMB;
       this.costMB = this.costMB * 0.7 + cost * 0.3;
       this.restUntil = performance.now() + KernelClient.restFor(this.costMB);
     }
@@ -251,7 +251,7 @@ export class KernelClient {
     this.regenRunning = false;
     // A big engine: a spare is got ready (also in the middle of a drag, where
     // it used to wait for the drag to end), and takes over between two rebuilds.
-    if (r.type === 'regenerated' && (r.result.memoryMB ?? 0) > KernelClient.RECYCLE_MB) {
+    if (response.type === 'regenerated' && (response.result.memoryMB ?? 0) > KernelClient.RECYCLE_MB) {
       this.warmSpare();
     }
     this.swapIfIdle();
@@ -281,39 +281,39 @@ export class KernelClient {
   /** The bodies drawn in views, hidden lines found (for BIM drawings). */
   async drawing(features: Feature[], views: ViewSpec[], bodies?: string[]): Promise<ProjectedView[]> {
     await this.ready;
-    const r = await this.call({ type: 'drawing', features: lean(features), views, bodies });
-    if (r.type === 'drawing') {
-      return r.views;
+    const response = await this.call({ type: 'drawing', features: lean(features), views, bodies });
+    if (response.type === 'drawing') {
+      return response.views;
     }
-    throw new Error(r.type === 'error' ? r.message : 'Could not draw the views');
+    throw new Error(response.type === 'error' ? response.message : 'Could not draw the views');
   }
 
   /** Each body's volume, area, centre of mass and box (for BIM). */
   async properties(features: Feature[]): Promise<BodyProps[]> {
     await this.ready;
-    const r = await this.call({ type: 'properties', features: lean(features) });
-    if (r.type === 'properties') {
-      return r.bodies;
+    const response = await this.call({ type: 'properties', features: lean(features) });
+    if (response.type === 'properties') {
+      return response.bodies;
     }
-    throw new Error(r.type === 'error' ? r.message : 'Could not measure the bodies');
+    throw new Error(response.type === 'error' ? response.message : 'Could not measure the bodies');
   }
 
   /** Each body's health: valid, closed, solids, faces, volume (the console's sg.health()). */
   async health(features: Feature[]): Promise<BodyHealth[]> {
     await this.ready;
-    const r = await this.call({ type: 'health', features: lean(features) });
-    if (r.type === 'health') {
-      return r.bodies;
+    const response = await this.call({ type: 'health', features: lean(features) });
+    if (response.type === 'health') {
+      return response.bodies;
     }
-    throw new Error(r.type === 'error' ? r.message : 'Could not check the bodies');
+    throw new Error(response.type === 'error' ? response.message : 'Could not check the bodies');
   }
 
   async export(features: Feature[], format: ExportFormat, bodies?: string[]): Promise<Blob> {
     await this.ready;
-    const r = await this.call({ type: 'export', features: lean(features), format, bodies });
-    if (r.type === 'exported') {
-      return r.blob;
+    const response = await this.call({ type: 'export', features: lean(features), format, bodies });
+    if (response.type === 'exported') {
+      return response.blob;
     }
-    throw new Error(r.type === 'error' ? r.message : 'Export failed');
+    throw new Error(response.type === 'error' ? response.message : 'Export failed');
   }
 }

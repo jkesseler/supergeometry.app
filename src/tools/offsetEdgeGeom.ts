@@ -23,21 +23,21 @@ export interface OffsetLine {
  * (towards the face's middle when d > 0), from the face's outline to its
  * outline. A string says why there is none.
  */
-export function offsetLineOnFace(body: BodyMesh, face: number, plane: PlaneDef, ea: Vec3, eb: Vec3, d: number): OffsetLine | string {
-  const n = norm(plane.normal);
+export function offsetLineOnFace(body: BodyMesh, face: number, plane: PlaneDef, ea: Vec3, eb: Vec3, distance: number): OffsetLine | string {
+  const normal = norm(plane.normal);
   const dir0 = sub(eb, ea);
   if (len(dir0) < 1e-9) {
     return 'That edge has no length';
   }
   // The edge as seen on the face's plane: it has to run along the face.
-  const along = sub(dir0, scale(n, dot(dir0, n)));
+  const along = sub(dir0, scale(normal, dot(dir0, normal)));
   if (len(along) < len(dir0) * 0.9999) {
     return 'The edge has to run along the face (parallel to it)';
   }
   const e2a = toPlane(plane, ea);
   const e2b = toPlane(plane, eb);
-  const u = norm2(sub2(e2b, e2a));
-  let perp: Vec2 = [-u[1], u[0]];
+  const edgeDir = norm2(sub2(e2b, e2a));
+  let perp: Vec2 = [-edgeDir[1], edgeDir[0]];
   // Positive distances go into the face (towards its middle).
   const tris = faceTriangles(body, face, plane);
   if (!tris.length) {
@@ -47,34 +47,34 @@ export function offsetLineOnFace(body: BodyMesh, face: number, plane: PlaneDef, 
   if (dot2(sub2(mid, e2a), perp) < 0) {
     perp = [-perp[0], -perp[1]];
   }
-  const p0 = add2(e2a, scale2(perp, d));
+  const p0 = add2(e2a, scale2(perp, distance));
   // Where the line crosses the face's outline (the body's edges lying in its plane).
-  const size = Math.max(...tris.flat().map(p => Math.hypot(p[0] - mid[0], p[1] - mid[1])), 1e-6);
+  const size = Math.max(...tris.flat().map(triangle => Math.hypot(triangle[0] - mid[0], triangle[1] - mid[1])), 1e-6);
   const tol = size * 1e-6;
   const ts: number[] = [];
-  for (const g of body.edgeGroups) {
-    const info = body.edges[g.edge];
+  for (const edgeGroup of body.edgeGroups) {
+    const info = body.edges[edgeGroup.edge];
     const pts: Vec2[] = [];
     let flat = true;
-    for (let i = g.start; i < g.start + g.count; i++) {
-      const w: Vec3 = [body.edgePositions[i * 3], body.edgePositions[i * 3 + 1], body.edgePositions[i * 3 + 2]];
-      if (Math.abs(dot(sub(w, plane.origin), n)) > size * 1e-4) {
+    for (let i = edgeGroup.start; i < edgeGroup.start + edgeGroup.count; i++) {
+      const worldPoint: Vec3 = [body.edgePositions[i * 3], body.edgePositions[i * 3 + 1], body.edgePositions[i * 3 + 2]];
+      if (Math.abs(dot(sub(worldPoint, plane.origin), normal)) > size * 1e-4) {
         flat = false;
         break;
       }
-      pts.push(toPlane(plane, w));
+      pts.push(toPlane(plane, worldPoint));
     }
     if (!flat || pts.length < 2) {
       continue;
     }
     // A round edge: crossed exactly on its circle (not on the chord drawn for it).
     const circle = info?.type === 'CIRCLE' ? circleIn(plane, info.start, info.mid, info.end) : null;
-    for (let k = 0; k + 1 < pts.length; k++) {
-      const t = crossSegment(p0, u, pts[k], pts[k + 1], tol);
+    for (let pointIndex = 0; pointIndex + 1 < pts.length; pointIndex++) {
+      const t = crossSegment(p0, edgeDir, pts[pointIndex], pts[pointIndex + 1], tol);
       if (t === null) {
         continue;
       }
-      ts.push(circle ? nearest(onCircle(p0, u, circle), t) : t);
+      ts.push(circle ? nearest(onCircle(p0, edgeDir, circle), t) : t);
     }
   }
   ts.sort((x, y) => x - y);
@@ -82,8 +82,8 @@ export function offsetLineOnFace(body: BodyMesh, face: number, plane: PlaneDef, 
   // The spans between crossings that lie on the face, joined where they meet.
   const spans: [number, number][] = [];
   for (let i = 0; i + 1 < cuts.length; i++) {
-    const m = (cuts[i] + cuts[i + 1]) / 2;
-    if (!inside(tris, add2(p0, scale2(u, m)), tol)) {
+    const middle = (cuts[i] + cuts[i + 1]) / 2;
+    if (!inside(tris, add2(p0, scale2(edgeDir, middle)), tol)) {
       continue;
     }
     const last = spans[spans.length - 1];
@@ -97,11 +97,11 @@ export function offsetLineOnFace(body: BodyMesh, face: number, plane: PlaneDef, 
     return 'At that distance the line misses the face';
   }
   // The span beside the edge (where the edge's middle is, moved over).
-  const tm = dot2(sub2(scale2(add2(e2a, e2b), 0.5), e2a), u) + dot2(sub2(e2a, p0), u);
-  const gap = (s: [number, number]) => (tm < s[0] ? s[0] - tm : tm > s[1] ? tm - s[1] : 0);
-  const best = spans.reduce((x, y) => (gap(y) < gap(x) ? y : x));
-  const a2 = add2(p0, scale2(u, best[0]));
-  const b2 = add2(p0, scale2(u, best[1]));
+  const tm = dot2(sub2(scale2(add2(e2a, e2b), 0.5), e2a), edgeDir) + dot2(sub2(e2a, p0), edgeDir);
+  const gap = (span: [number, number]) => (tm < span[0] ? span[0] - tm : tm > span[1] ? tm - span[1] : 0);
+  const best = spans.reduce((best, span) => (gap(span) < gap(best) ? span : best));
+  const a2 = add2(p0, scale2(edgeDir, best[0]));
+  const b2 = add2(p0, scale2(edgeDir, best[1]));
 
   return { a: toWorld(plane, a2), b: toWorld(plane, b2), a2, b2 };
 }
@@ -109,13 +109,13 @@ export function offsetLineOnFace(body: BodyMesh, face: number, plane: PlaneDef, 
 /** The face's triangles, in its plane. */
 function faceTriangles(body: BodyMesh, face: number, plane: PlaneDef): [Vec2, Vec2, Vec2][] {
   const out: [Vec2, Vec2, Vec2][] = [];
-  const v = (i: number): Vec2 => toPlane(plane, [body.positions[i * 3], body.positions[i * 3 + 1], body.positions[i * 3 + 2]]);
-  for (const g of body.faceGroups) {
-    if (g.face !== face) {
+  const vertexAt = (i: number): Vec2 => toPlane(plane, [body.positions[i * 3], body.positions[i * 3 + 1], body.positions[i * 3 + 2]]);
+  for (const faceGroup of body.faceGroups) {
+    if (faceGroup.face !== face) {
       continue;
     }
-    for (let k = g.start; k + 2 < g.start + g.count; k += 3) {
-      out.push([v(body.indices[k]), v(body.indices[k + 1]), v(body.indices[k + 2])]);
+    for (let start = faceGroup.start; start + 2 < faceGroup.start + faceGroup.count; start += 3) {
+      out.push([vertexAt(body.indices[start]), vertexAt(body.indices[start + 1]), vertexAt(body.indices[start + 2])]);
     }
   }
 
@@ -125,27 +125,27 @@ function faceTriangles(body: BodyMesh, face: number, plane: PlaneDef): [Vec2, Ve
 function centroid(tris: [Vec2, Vec2, Vec2][]): Vec2 {
   let ax = 0;
   let ay = 0;
-  let w = 0;
-  for (const [a, b, c] of tris) {
-    const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
-    ax += ((a[0] + b[0] + c[0]) / 3) * area;
-    ay += ((a[1] + b[1] + c[1]) / 3) * area;
-    w += area;
+  let weight = 0;
+  for (const [a, b, vertexC] of tris) {
+    const area = Math.abs((b[0] - a[0]) * (vertexC[1] - a[1]) - (vertexC[0] - a[0]) * (b[1] - a[1])) / 2;
+    ax += ((a[0] + b[0] + vertexC[0]) / 3) * area;
+    ay += ((a[1] + b[1] + vertexC[1]) / 3) * area;
+    weight += area;
   }
 
-  return w > 0 ? [ax / w, ay / w] : tris[0][0];
+  return weight > 0 ? [ax / weight, ay / weight] : tris[0][0];
 }
 
-function inside(tris: [Vec2, Vec2, Vec2][], p: Vec2, tol: number): boolean {
-  for (const [a, b, c] of tris) {
-    const d = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
-    if (Math.abs(d) < 1e-18) {
+function inside(tris: [Vec2, Vec2, Vec2][], point: Vec2, tol: number): boolean {
+  for (const [a, b, vertexC] of tris) {
+    const area = (b[0] - a[0]) * (vertexC[1] - a[1]) - (vertexC[0] - a[0]) * (b[1] - a[1]);
+    if (Math.abs(area) < 1e-18) {
       continue;
     }
-    const s = ((p[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (p[1] - a[1])) / d;
-    const t = ((b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1])) / d;
-    const e = tol / Math.sqrt(Math.abs(d));
-    if (s >= -e && t >= -e && s + t <= 1 + e) {
+    const baryS = ((point[0] - a[0]) * (vertexC[1] - a[1]) - (vertexC[0] - a[0]) * (point[1] - a[1])) / area;
+    const t = ((b[0] - a[0]) * (point[1] - a[1]) - (point[0] - a[0]) * (b[1] - a[1])) / area;
+    const e = tol / Math.sqrt(Math.abs(area));
+    if (baryS >= -e && t >= -e && baryS + t <= 1 + e) {
       return true;
     }
   }
@@ -153,20 +153,20 @@ function inside(tris: [Vec2, Vec2, Vec2][], p: Vec2, tol: number): boolean {
   return false;
 }
 
-/** Where line p + t·u crosses segment q0-q1 (t), or null. */
-function crossSegment(p: Vec2, u: Vec2, q0: Vec2, q1: Vec2, tol: number): number | null {
-  const w = sub2(q1, q0);
-  const den = u[0] * w[1] - u[1] * w[0];
-  const lw = Math.hypot(w[0], w[1]);
+/** Where line point + t·direction crosses segment q0-q1 (t), or null. */
+function crossSegment(point: Vec2, direction: Vec2, q0: Vec2, q1: Vec2, tol: number): number | null {
+  const edge = sub2(q1, q0);
+  const den = direction[0] * edge[1] - direction[1] * edge[0];
+  const lw = Math.hypot(edge[0], edge[1]);
   if (Math.abs(den) < 1e-12 * Math.max(1, lw)) {
     return null;
   } // along the line: its ends are other edges' crossings
-  const r = sub2(q0, p);
-  const t = (r[0] * w[1] - r[1] * w[0]) / den;
-  const s = (r[0] * u[1] - r[1] * u[0]) / den;
+  const offset = sub2(q0, point);
+  const t = (offset[0] * edge[1] - offset[1] * edge[0]) / den;
+  const along = (offset[0] * direction[1] - offset[1] * direction[0]) / den;
   const e = lw > 0 ? tol / lw : 0;
 
-  return s >= -e && s <= 1 + e ? t : null;
+  return along >= -e && along <= 1 + e ? t : null;
 }
 
 interface Circle2 {
@@ -176,34 +176,34 @@ interface Circle2 {
 
 /** The circle a round edge lies on, in the plane (a whole circle: start = end, mid across from it). */
 function circleIn(plane: PlaneDef, start: Vec3, mid: Vec3, end: Vec3): Circle2 | null {
-  const [a, m, b] = [start, mid, end].map(p => toPlane(plane, p));
-  let c: Vec2;
+  const [a, middle, b] = [start, mid, end].map(point => toPlane(plane, point));
+  let center: Vec2;
   if (Math.hypot(...sub2(a, b)) < 1e-6) {
-    c = scale2(add2(a, m), 0.5);
+    center = scale2(add2(a, middle), 0.5);
   } else {
     // Circumcentre of start, mid, end.
-    const d = 2 * (a[0] * (m[1] - b[1]) + m[0] * (b[1] - a[1]) + b[0] * (a[1] - m[1]));
-    if (Math.abs(d) < 1e-12) {
+    const denominator = 2 * (a[0] * (middle[1] - b[1]) + middle[0] * (b[1] - a[1]) + b[0] * (a[1] - middle[1]));
+    if (Math.abs(denominator) < 1e-12) {
       return null;
     }
-    const sq = (p: Vec2) => p[0] * p[0] + p[1] * p[1];
-    c = [(sq(a) * (m[1] - b[1]) + sq(m) * (b[1] - a[1]) + sq(b) * (a[1] - m[1])) / d, (sq(a) * (b[0] - m[0]) + sq(m) * (a[0] - b[0]) + sq(b) * (m[0] - a[0])) / d];
+    const sq = (point: Vec2) => point[0] * point[0] + point[1] * point[1];
+    center = [(sq(a) * (middle[1] - b[1]) + sq(middle) * (b[1] - a[1]) + sq(b) * (a[1] - middle[1])) / denominator, (sq(a) * (b[0] - middle[0]) + sq(middle) * (a[0] - b[0]) + sq(b) * (middle[0] - a[0])) / denominator];
   }
-  const r = Math.hypot(...sub2(m, c));
+  const radius = Math.hypot(...sub2(middle, center));
 
-  return r > 0 ? { c, r } : null;
+  return radius > 0 ? { c: center, r: radius } : null;
 }
 
-function onCircle(p: Vec2, u: Vec2, k: Circle2): number[] {
-  const f = sub2(p, k.c);
-  const b = dot2(f, u);
-  const disc = b * b - (dot2(f, f) - k.r * k.r);
+function onCircle(point: Vec2, direction: Vec2, circle2: Circle2): number[] {
+  const offset = sub2(point, circle2.c);
+  const b = dot2(offset, direction);
+  const disc = b * b - (dot2(offset, offset) - circle2.r * circle2.r);
   if (disc < 0) {
     return [];
   }
-  const s = Math.sqrt(disc);
+  const root = Math.sqrt(disc);
 
-  return [-b - s, -b + s];
+  return [-b - root, -b + root];
 }
 
 function nearest(ts: number[], t: number): number {
@@ -212,10 +212,10 @@ function nearest(ts: number[], t: number): number {
 
 const sub2 = (a: Vec2, b: Vec2): Vec2 => [a[0] - b[0], a[1] - b[1]];
 const add2 = (a: Vec2, b: Vec2): Vec2 => [a[0] + b[0], a[1] + b[1]];
-const scale2 = (a: Vec2, s: number): Vec2 => [a[0] * s, a[1] * s];
+const scale2 = (a: Vec2, factor: number): Vec2 => [a[0] * factor, a[1] * factor];
 const dot2 = (a: Vec2, b: Vec2) => a[0] * b[0] + a[1] * b[1];
 const norm2 = (a: Vec2): Vec2 => {
-  const l = Math.hypot(a[0], a[1]);
+  const length = Math.hypot(a[0], a[1]);
 
-  return [a[0] / l, a[1] / l];
+  return [a[0] / length, a[1] / length];
 };

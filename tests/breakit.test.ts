@@ -9,13 +9,12 @@
 // valid, closed solid with a sane volume and no hair-thin faces.
 import { writeFileSync } from 'node:fs';
 import opencascade from 'replicad-opencascadejs';
-import { getOC, measureArea, setOC, type Shape3D } from 'replicad';
+import { measureArea, setOC, type Shape3D } from 'replicad';
 import { debugBodies, regenerate } from '../src/kernel/engine';
 import { base, problems, randomStep, rng, solids } from './fuzzkit';
 import type { Feature } from '../src/doc/types';
 
 setOC(await (opencascade as unknown as () => Promise<any>)());
-const oc = getOC();
 
 const SCENARIOS = Number(process.argv[2] ?? 10);
 const STEPS = Number(process.argv[3] ?? 6);
@@ -33,45 +32,45 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
     // (Keep the random sequence the same: nothing else uses it across scenarios.)
     continue;
   }
-  const R = rng(SEED * 1000 + sc);
-  let features = base(R, sc);
+  const random = rng(SEED * 1000 + sc);
+  let features = base(random, sc);
   let res: any = await regenerate(features);
   if (res.errors.length) {
     console.log(`scenario ${sc}: base failed: ${res.errors[0].message}`);
     continue;
   }
-  const size = Math.max(...res.bodies[0].faces.map((f: any) => Math.max(...f.center.map(Math.abs)))) * 2 || 20;
+  const size = Math.max(...res.bodies[0].faces.map((face: any) => Math.max(...face.center.map(Math.abs)))) * 2 || 20;
   for (let st = 0; st < STEPS; st++) {
-    const step = randomStep(R, st, res, size);
+    const step = randomStep(random, st, res, size);
     if (!step) {
       continue;
     }
     const prevSolids = new Map(debugBodies());
     // What every body looks like now (its faces' areas): a step must never change an earlier result.
     // (A face whose area can't even be measured shows up as "?" - and as a failure below.)
-    const area = (f: any) => {
+    const area = (face: any) => {
       try {
-        return measureArea(f).toFixed(4);
+        return measureArea(face).toFixed(4);
       } catch {
         return '?';
       }
     };
-    const sig = (m: Map<string, Shape3D>) => [...m].map(([k, v]) => `${k}:${v.faces.map(area).join(',')}`).join('|');
+    const sig = (shapes: Map<string, Shape3D>) => [...shapes].map(([key, shape]) => `${key}:${shape.faces.map(area).join(',')}`).join('|');
     const sigBefore = sig(prevSolids);
     if (sigBefore.includes('?')) {
       failures.push({ scenario: sc, step: '(earlier step)', problems: ["a body has a face whose area can't be measured"], features });
       break;
     }
     const next = [...features, step];
-    let r: any;
+    let result: any;
     try {
-      r = await regenerate(next);
+      result = await regenerate(next);
     } catch (err) {
       failures.push({ scenario: sc, step: step.name, problems: [`threw: ${(err as Error).message}`], features: next });
       break;
     }
-    const err = r.errors.find((e: any) => e.featureId === step.id);
-    if (!err && (r.notes ?? []).some((n: any) => n.featureId === step.id && /Repaired automatically/.test(n.message))) {
+    const err = result.errors.find((e: any) => e.featureId === step.id);
+    if (!err && (result.notes ?? []).some((note: any) => note.featureId === step.id && /Repaired automatically/.test(note.message))) {
       repaired.push(step.name);
     }
     if (sig(prevSolids) !== sigBefore) {
@@ -80,7 +79,7 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
       break;
     }
     if (ONLY !== null) {
-      console.log(`  step ${st} ${step.name}: ${err ? 'refused: ' + err.message : 'ok'} | ${r.bodies.map((b: any) => b.id + ':' + b.faces.length + 'f').join(' ')}`);
+      console.log(`  step ${st} ${step.name}: ${err ? 'refused: ' + err.message : 'ok'} | ${result.bodies.map((b: any) => b.id + ':' + b.faces.length + 'f').join(' ')}`);
     }
     if (ONLY !== null && process.env.BREAKIT_DUMP) {
       writeFileSync(`${process.env.BREAKIT_DUMP}-${st}.json`, JSON.stringify(next));
@@ -94,16 +93,16 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
     }
     const solidsNow = new Map(debugBodies());
     const bad: string[] = [];
-    for (const b of r.bodies) {
-      const s = solidsNow.get(b.id);
-      if (!s) {
+    for (const b of result.bodies) {
+      const solid = solidsNow.get(b.id);
+      if (!solid) {
         continue;
       }
       const mayPart = step.type === 'boolean' || step.type === 'split' || (step.type === 'extrude' && !(step.source.kind === 'face' && step.target === step.source.face.body && step.mode !== 'new'));
       const prev = prevSolids.get(b.id);
-      const p = problems(s, b.openEdges.length, mayPart, prev ? solids(prev) : 1);
-      if (p.length) {
-        bad.push(`${b.name}: ${p.join(', ')}`);
+      const found = problems(solid, b.openEdges.length, mayPart, prev ? solids(prev) : 1);
+      if (found.length) {
+        bad.push(`${b.name}: ${found.join(', ')}`);
       }
     }
     if (bad.length) {
@@ -113,7 +112,7 @@ for (let sc = 0; sc < SCENARIOS; sc++) {
     }
     ok++;
     features = next;
-    res = r;
+    res = result;
   }
 }
 // Only when asked (BREAKIT_OUT=file), so a normal run leaves nothing behind.
@@ -125,13 +124,13 @@ if (repaired.length) {
 }
 console.log(`${ok} edits ok, ${refused} refused (${JSON.stringify(refusedBy)}), ${failures.length} broke the model`);
 const byStep: Record<string, number> = {};
-for (const f of failures) {
-  byStep[f.step] = (byStep[f.step] ?? 0) + 1;
+for (const failure of failures) {
+  byStep[failure.step] = (byStep[failure.step] ?? 0) + 1;
 }
 console.log('broken by:', JSON.stringify(byStep));
 if (process.env.BREAKIT_WHY) {
-  for (const [k, n] of Object.entries(refusedWhy).sort((a, b) => b[1] - a[1]).slice(0, 25)) {
-    console.log(`  ${n}× ${k}`);
+  for (const [reason, count] of Object.entries(refusedWhy).sort((a, b) => b[1] - a[1]).slice(0, 25)) {
+    console.log(`  ${count}× ${reason}`);
   }
 }
 if (failures.length) {

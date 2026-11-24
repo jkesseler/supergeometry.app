@@ -8,10 +8,10 @@ import { block, circle, done, extrude, poly, rect, sketch, XY } from './kit';
 import { build, near, say } from './grid';
 import type { Feature, SketchEntity } from '../src/doc/types';
 
-const A = block('A', 60, 40, 20); // 0..60, 0..40, 0..20
+const featuresA = block('A', 60, 40, 20); // 0..60, 0..40, 0..20
 const VA = 60 * 40 * 20;
-const ngon = (n: number, r: number, cx: number, cy: number, turn = 0): [number, number][] => Array.from({ length: n }, (_, i) => [cx + r * Math.cos(turn + (i * 2 * Math.PI) / n), cy + r * Math.sin(turn + (i * 2 * Math.PI) / n)]);
-const area = (pts: [number, number][]) => Math.abs(pts.reduce((s, p, i) => s + p[0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * p[1], 0)) / 2;
+const ngon = (sides: number, radius: number, cx: number, cy: number, turn = 0): [number, number][] => Array.from({ length: sides }, (_, i) => [cx + radius * Math.cos(turn + (i * 2 * Math.PI) / sides), cy + radius * Math.sin(turn + (i * 2 * Math.PI) / sides)]);
+const area = (pts: [number, number][]) => Math.abs(pts.reduce((total, point, i) => total + point[0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * point[1], 0)) / 2;
 // name, entities, area, inside the top face?
 const shapes: [string, SketchEntity[], number][] = [
   ['a circle', [circle('c', 30, 20, 8)], Math.PI * 64],
@@ -25,67 +25,67 @@ const shapes: [string, SketchEntity[], number][] = [
   ['a ring (circle with a hole)', [circle('c', 30, 20, 12), circle('d', 30, 20, 6)], Math.PI * (144 - 36)],
   ['two separate circles', [circle('c', 15, 20, 6), circle('d', 45, 20, 6)], 2 * Math.PI * 36],
   ['a star', [poly('p', Array.from({ length: 10 }, (_, i) => {
-    const r = i % 2 ? 5 : 12; const a = (i * Math.PI) / 5;
+    const radius = i % 2 ? 5 : 12; const a = (i * Math.PI) / 5;
 
-    return [30 + r * Math.cos(a), 20 + r * Math.sin(a)] as [number, number]; 
+    return [30 + radius * Math.cos(a), 20 + radius * Math.sin(a)] as [number, number]; 
   }))], area(Array.from({ length: 10 }, (_, i) => {
-    const r = i % 2 ? 5 : 12; const a = (i * Math.PI) / 5;
+    const radius = i % 2 ? 5 : 12; const a = (i * Math.PI) / 5;
 
-    return [30 + r * Math.cos(a), 20 + r * Math.sin(a)] as [number, number]; 
+    return [30 + radius * Math.cos(a), 20 + radius * Math.sin(a)] as [number, number]; 
   }))]
 ];
 
 for (const [name, es, ar] of shapes) {
-  const s = sketch('s', XY(20), es);
+  const feature = sketch('s', XY(20), es);
   // the ring: only the ring region (not the inner disc)
   const src = (extra: object) => {
-    const f = extrude('E', s, 10, 'new', extra) as any;
+    const extruded = extrude('E', feature, 10, 'new', extra) as any;
     if (name.startsWith('a ring')) {
-      f.source.regions = f.source.regions.filter((r: any) => r.a > 200);
+      extruded.source.regions = extruded.source.regions.filter((region: any) => region.a > 200);
     }
 
-    return f as Feature;
+    return extruded as Feature;
   };
   const pieces = name.startsWith('two') ? 2 : 1;
   // (A ring cut right through leaves the plug in its middle loose: two pieces.)
   const through = name.startsWith('a ring') ? 2 : 1;
-  let g = await build([...A, s, src({ mode: 'new' })], { E: pieces });
-  say(!g.errors.length && !g.unsound.length && near(g.vol.E, ar * 10, 2e-4), `${name}: new body`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.E?.toFixed(2)} want ${(ar * 10).toFixed(2)}`);
-  g = await build([...A, s, src({ mode: 'join', target: 'A' })]);
-  say(!g.errors.length && !g.unsound.length && g.ids.length === 1 && near(g.vol.A, VA + ar * 10, 2e-4), `${name}: joined onto the top`, `${g.errors.join(' | ')} ${g.unsound} ${g.ids} got ${g.vol.A?.toFixed(2)} want ${(VA + ar * 10).toFixed(2)}`);
-  g = await build([...A, s, src({ mode: 'auto', target: 'A' })]);
-  say(!g.errors.length && !g.unsound.length && g.ids.length === 1 && near(g.vol.A, VA + ar * 10, 2e-4), `${name}: auto, pulled up`, `${g.errors.join(' | ')} ${g.unsound} ${g.ids} got ${g.vol.A?.toFixed(2)} want ${(VA + ar * 10).toFixed(2)}`);
+  let got = await build([...featuresA, feature, src({ mode: 'new' })], { E: pieces });
+  say(!got.errors.length && !got.unsound.length && near(got.vol.E, ar * 10, 2e-4), `${name}: new body`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.E?.toFixed(2)} want ${(ar * 10).toFixed(2)}`);
+  got = await build([...featuresA, feature, src({ mode: 'join', target: 'A' })]);
+  say(!got.errors.length && !got.unsound.length && got.ids.length === 1 && near(got.vol.A, VA + ar * 10, 2e-4), `${name}: joined onto the top`, `${got.errors.join(' | ')} ${got.unsound} ${got.ids} got ${got.vol.A?.toFixed(2)} want ${(VA + ar * 10).toFixed(2)}`);
+  got = await build([...featuresA, feature, src({ mode: 'auto', target: 'A' })]);
+  say(!got.errors.length && !got.unsound.length && got.ids.length === 1 && near(got.vol.A, VA + ar * 10, 2e-4), `${name}: auto, pulled up`, `${got.errors.join(' | ')} ${got.unsound} ${got.ids} got ${got.vol.A?.toFixed(2)} want ${(VA + ar * 10).toFixed(2)}`);
   for (const depth of [5, 20, 30]) {
-    g = await build([...A, s, src({ mode: 'cut', target: 'A', distance: -depth })], { A: depth >= 20 ? through : 1 });
+    got = await build([...featuresA, feature, src({ mode: 'cut', target: 'A', distance: -depth })], { A: depth >= 20 ? through : 1 });
     const want = VA - ar * Math.min(depth, 20);
     if (want < 1e-6) {
-      say(g.errors.length > 0 || !g.ids.includes('A'), `${name}: cut ${depth} deep (all of it)`, `${g.errors.join(' | ')} ${JSON.stringify(g.vol)}`);
+      say(got.errors.length > 0 || !got.ids.includes('A'), `${name}: cut ${depth} deep (all of it)`, `${got.errors.join(' | ')} ${JSON.stringify(got.vol)}`);
     } else {
-      say(!g.errors.length && !g.unsound.length && near(g.vol.A, want, 2e-4), `${name}: cut ${depth} deep`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.A?.toFixed(2)} want ${want.toFixed(2)}`);
+      say(!got.errors.length && !got.unsound.length && near(got.vol.A, want, 2e-4), `${name}: cut ${depth} deep`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.A?.toFixed(2)} want ${want.toFixed(2)}`);
     }
   }
-  g = await build([...A, s, src({ mode: 'auto', target: 'A', distance: -5 })]);
-  say(!g.errors.length && !g.unsound.length && near(g.vol.A, VA - ar * 5, 2e-4), `${name}: auto, pushed in 5`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.A?.toFixed(2)} want ${(VA - ar * 5).toFixed(2)}`);
-  g = await build([...A, s, src({ mode: 'cut', target: 'A', extent: 'through', distance: -1 })], { A: through });
+  got = await build([...featuresA, feature, src({ mode: 'auto', target: 'A', distance: -5 })]);
+  say(!got.errors.length && !got.unsound.length && near(got.vol.A, VA - ar * 5, 2e-4), `${name}: auto, pushed in 5`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.A?.toFixed(2)} want ${(VA - ar * 5).toFixed(2)}`);
+  got = await build([...featuresA, feature, src({ mode: 'cut', target: 'A', extent: 'through', distance: -1 })], { A: through });
   if (name.includes('whole top')) {
-    say(g.errors.length > 0 || !g.ids.includes('A'), `${name}: cut through all (all of it)`, `${g.errors.join(' | ')} ${JSON.stringify(g.vol)}`);
+    say(got.errors.length > 0 || !got.ids.includes('A'), `${name}: cut through all (all of it)`, `${got.errors.join(' | ')} ${JSON.stringify(got.vol)}`);
   } else {
-    say(!g.errors.length && !g.unsound.length && near(g.vol.A, VA - ar * 20, 2e-4), `${name}: cut through all`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.A?.toFixed(2)} want ${(VA - ar * 20).toFixed(2)}`);
+    say(!got.errors.length && !got.unsound.length && near(got.vol.A, VA - ar * 20, 2e-4), `${name}: cut through all`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.A?.toFixed(2)} want ${(VA - ar * 20).toFixed(2)}`);
   }
-  g = await build([...A, s, src({ mode: 'intersect', target: 'A', distance: -8 })], { A: pieces });
-  say(!g.errors.length && !g.unsound.length && near(g.vol.A, ar * 8, 2e-4), `${name}: intersect, 8 down`, `${g.errors.join(' | ')} ${g.unsound} ${JSON.stringify(g.vol)} want ${(ar * 8).toFixed(2)}`);
-  g = await build([...A, s, src({ mode: 'new', symmetric: true, distance: 6 })], { E: pieces });
-  say(!g.errors.length && !g.unsound.length && near(g.vol.E, ar * 12, 2e-4), `${name}: new, both sides`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.E?.toFixed(2)} want ${(ar * 12).toFixed(2)}`);
-  g = await build([...A, s, src({ mode: 'new', start: 5 })], { E: pieces });
-  say(!g.errors.length && !g.unsound.length && near(g.vol.E, ar * 10, 2e-4), `${name}: new, starting 5 above`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.E?.toFixed(2)} want ${(ar * 10).toFixed(2)}`);
+  got = await build([...featuresA, feature, src({ mode: 'intersect', target: 'A', distance: -8 })], { A: pieces });
+  say(!got.errors.length && !got.unsound.length && near(got.vol.A, ar * 8, 2e-4), `${name}: intersect, 8 down`, `${got.errors.join(' | ')} ${got.unsound} ${JSON.stringify(got.vol)} want ${(ar * 8).toFixed(2)}`);
+  got = await build([...featuresA, feature, src({ mode: 'new', symmetric: true, distance: 6 })], { E: pieces });
+  say(!got.errors.length && !got.unsound.length && near(got.vol.E, ar * 12, 2e-4), `${name}: new, both sides`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.E?.toFixed(2)} want ${(ar * 12).toFixed(2)}`);
+  got = await build([...featuresA, feature, src({ mode: 'new', start: 5 })], { E: pieces });
+  say(!got.errors.length && !got.unsound.length && near(got.vol.E, ar * 10, 2e-4), `${name}: new, starting 5 above`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.E?.toFixed(2)} want ${(ar * 10).toFixed(2)}`);
   for (const draft of [5, -5]) {
-    g = await build([...A, s, src({ mode: 'new', draft })], { E: pieces });
-    say(!g.errors.length && !g.unsound.length && g.vol.E > ar * 10 * 0.5 && g.vol.E < ar * 10 * 1.6 && (draft > 0 ? g.vol.E < ar * 10 : g.vol.E > ar * 10), `${name}: new, draft ${draft}`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.E?.toFixed(2)} straight ${(ar * 10).toFixed(2)}`);
+    got = await build([...featuresA, feature, src({ mode: 'new', draft })], { E: pieces });
+    say(!got.errors.length && !got.unsound.length && got.vol.E > ar * 10 * 0.5 && got.vol.E < ar * 10 * 1.6 && (draft > 0 ? got.vol.E < ar * 10 : got.vol.E > ar * 10), `${name}: new, draft ${draft}`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.E?.toFixed(2)} straight ${(ar * 10).toFixed(2)}`);
   }
-  g = await build([...A, s, src({ mode: 'new', taper: 0.5 })], { E: pieces });
+  got = await build([...featuresA, feature, src({ mode: 'new', taper: 0.5 })], { E: pieces });
   // a frustum-like solid: h/3 (A0 + A1 + sqrt(A0 A1)) with A1 = A0/4 -> 10/3 * A0 * 1.75
   if (!name.startsWith('a ring') && !name.startsWith('two')) {
-    say(!g.errors.length && !g.unsound.length && near(g.vol.E, (10 / 3) * ar * 1.75, 2e-3), `${name}: new, tapered to 50%`, `${g.errors.join(' | ')} ${g.unsound} got ${g.vol.E?.toFixed(2)} want ${((10 / 3) * ar * 1.75).toFixed(2)}`);
+    say(!got.errors.length && !got.unsound.length && near(got.vol.E, (10 / 3) * ar * 1.75, 2e-3), `${name}: new, tapered to 50%`, `${got.errors.join(' | ')} ${got.unsound} got ${got.vol.E?.toFixed(2)} want ${((10 / 3) * ar * 1.75).toFixed(2)}`);
   }
 }
 done();

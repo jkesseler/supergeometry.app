@@ -161,25 +161,25 @@ export interface HistoryHandlers {
   merge?(): void;
 }
 
-const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
+const query = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 /** A tool card on a phone is at most this wide (px): a narrow strip, not one across the screen. */
 const PHONE_CARD_MAX = 300;
 
 /** All DOM chrome around the viewport. Deliberately framework-free and small. */
 export class UI {
-  private toolbar = $<HTMLElement>('#toolbar');
-  private bottomLeft = $<HTMLElement>('#bottom-left');
-  private flyout = $<HTMLElement>('#flyout');
-  private hint = $<HTMLElement>('#hint');
-  private panel = $<HTMLElement>('#panel');
-  private historyEl = $<HTMLElement>('#history');
-  private historyList = $<HTMLElement>('#history-list');
-  private toastEl = $<HTMLElement>('#toast');
-  private labelEl = $<HTMLElement>('#label');
-  private status = $<HTMLElement>('#status');
-  private rightCol = $<HTMLElement>('#right-col');
-  private popover = $<HTMLElement>('#popover');
-  readonly pins = $<HTMLElement>('#pins');
+  private toolbar = query<HTMLElement>('#toolbar');
+  private bottomLeft = query<HTMLElement>('#bottom-left');
+  private flyout = query<HTMLElement>('#flyout');
+  private hint = query<HTMLElement>('#hint');
+  private panel = query<HTMLElement>('#panel');
+  private historyEl = query<HTMLElement>('#history');
+  private historyList = query<HTMLElement>('#history-list');
+  private toastEl = query<HTMLElement>('#toast');
+  private labelEl = query<HTMLElement>('#label');
+  private status = query<HTMLElement>('#status');
+  private rightCol = query<HTMLElement>('#right-col');
+  private popover = query<HTMLElement>('#popover');
+  readonly pins = query<HTMLElement>('#pins');
   private toastTimer = 0;
   private panelSpec: ValuePanel | null = null;
   private flyoutOwner: string | null = null;
@@ -207,8 +207,8 @@ export class UI {
       },
       true
     );
-    $('#history-close').innerHTML = icons.close;
-    $('#history-close').addEventListener('click', () => this.toggleHistory(false));
+    query('#history-close').innerHTML = icons.close;
+    query('#history-close').addEventListener('click', () => this.toggleHistory(false));
     document.addEventListener('pointerdown', (e) => {
       const t = e.target as HTMLElement;
       if (!t.closest('#flyout, #toolbar, #bottom-left')) {
@@ -242,9 +242,9 @@ export class UI {
         if (!el) {
           return null;
         }
-        const r = el.getBoundingClientRect();
+        const rect = el.getBoundingClientRect();
 
-        return r.width && r.height ? r : null;
+        return rect.width && rect.height ? rect : null;
       };
       const it = items.classList.contains('open') ? box(items) : null;
       const hi = history.classList.contains('open') ? box(history) : null;
@@ -255,7 +255,7 @@ export class UI {
       // (Short of it by a finger's gap: the column's top, undo's top. The view cube is at the top, where History always is: it moves over as before.)
       // (Where a column stands with nothing beside it: the middle of the edge. With History open some screens move
       // the right one up beside History - going by where it is then, it never came back for a short History.)
-      const mid = (r: DOMRect) => innerHeight / 2 - r.height / 2;
+      const mid = (rect: DOMRect) => innerHeight / 2 - rect.height / 2;
       set('items-clear-col', !!it && !!left && it.bottom < mid(left) - 8);
       set('items-clear-undo', !!it && !!undo && it.bottom < undo.top - 8);
       set('history-clear-col', !!hi && !!right && hi.bottom < mid(right) - 8);
@@ -335,8 +335,8 @@ export class UI {
         if (!held || e.pointerId !== held.id) {
           return;
         }
-        const r = held.btn.getBoundingClientRect();
-        const out = e.clientX < r.left - 6 || e.clientX > r.right + 6 || e.clientY < r.top - 6 || e.clientY > r.bottom + 6;
+        const rect = held.btn.getBoundingClientRect();
+        const out = e.clientX < rect.left - 6 || e.clientX > rect.right + 6 || e.clientY < rect.top - 6 || e.clientY > rect.bottom + 6;
         if (out && !held.off) {
           // Slid off: it won't be used.
           held.off = true;
@@ -486,7 +486,7 @@ export class UI {
     item.run();
     // Running it may have redrawn the column: open the options on the new button
     // (or where the button was, if a tool took the column over).
-    const fresh = items().find(x => x.id === item.id) ?? item;
+    const fresh = items().find(toolItem => toolItem.id === item.id) ?? item;
     const nb = host.querySelector<HTMLElement>(`[data-tool="${CSS.escape(item.id)}"]`) ?? ({ getBoundingClientRect: () => rect } as HTMLElement);
     if (fresh.children?.length) {
       this.openFlyout(fresh, nb);
@@ -539,11 +539,11 @@ export class UI {
     }
     this.flyoutOwner = item.id;
     // Measure before re-rendering: a nested anchor lives inside this flyout.
-    const r = anchor.getBoundingClientRect();
+    const rect = anchor.getBoundingClientRect();
     this.flyout.innerHTML = '';
     renderTools(this.flyout, item.children ?? [], (child, btn) => this.openFlyout(child, btn), () => this.closeFlyout());
     // Colour choices show as a grid of circles.
-    this.flyout.classList.toggle('swatch-grid', !!item.children?.length && item.children.every(c => c.swatch));
+    this.flyout.classList.toggle('swatch-grid', !!item.children?.length && item.children.every(child => child.swatch));
     this.flyout.hidden = false;
     // A strip of tools along the bottom (phones, main tools): the options open
     // above it. A column of tools (the sketch tools, also on phones): beside it.
@@ -553,13 +553,13 @@ export class UI {
     if (narrow) {
       // Above the bottom strip and the buttons stacked over it (undo, section…).
       const stack = [this.bottomLeft, document.getElementById('undo-dock')!].filter(e => e.childElementCount && getComputedStyle(e).display !== 'none').map(e => e.getBoundingClientRect().top);
-      const above = Math.min(r.top, ...stack.filter(t => t < r.top));
+      const above = Math.min(rect.top, ...stack.filter(t => t < rect.top));
       this.flyout.style.left = '8px';
       this.flyout.style.top = '';
       this.flyout.style.bottom = `${window.innerHeight - above + 8}px`;
     } else {
       // Clear of the whole column (it can be wider than its buttons, with a scrollbar).
-      this.flyout.style.left = `${Math.max(r.right, col?.right ?? 0) + 6}px`;
+      this.flyout.style.left = `${Math.max(rect.right, col?.right ?? 0) + 6}px`;
       this.flyout.style.bottom = '';
       // Short screens (phones sideways): within the tool column's height, never over the
       // top bar or the undo buttons, scrolling if longer. Elsewhere: clear of the top bar.
@@ -570,8 +570,8 @@ export class UI {
       const stackTop = Math.min(window.innerHeight, ...[this.bottomLeft, document.getElementById('undo-dock')!].filter(e => e.childElementCount && getComputedStyle(e).display !== 'none').map(e => e.getBoundingClientRect().top));
       const bottom = short ? toolbar.bottom : Math.min(window.innerHeight - 12, stackTop - 8);
       this.flyout.style.maxHeight = `${Math.max(120, bottom - top)}px`;
-      const h = Math.min(this.flyout.scrollHeight, bottom - top);
-      this.flyout.style.top = `${Math.max(top, Math.min(r.top, bottom - h))}px`;
+      const height = Math.min(this.flyout.scrollHeight, bottom - top);
+      this.flyout.style.top = `${Math.max(top, Math.min(rect.top, bottom - height))}px`;
     }
   }
 
@@ -590,11 +590,11 @@ export class UI {
     b.title = title;
     b.innerHTML = icons[icon];
     if (label) {
-      const l = document.createElement('span');
-      l.className = 'right-label';
-      b.append(l);
+      const span = document.createElement('span');
+      span.className = 'right-label';
+      b.append(span);
       b.dataset.dynamic = '1';
-      (b as HTMLButtonElement & { refresh?: () => void }).refresh = () => (l.textContent = label());
+      (b as HTMLButtonElement & { refresh?: () => void }).refresh = () => (span.textContent = label());
       (b as HTMLButtonElement & { refresh?: () => void }).refresh!();
     }
     b.addEventListener('click', () => {
@@ -614,7 +614,7 @@ export class UI {
       this.popover.hidden = false;
       this.popoverAt = { button: b, cube: !!place };
       this.placePopover();
-      document.querySelectorAll('.pop-open').forEach(x => x.classList.remove('pop-open'));
+      document.querySelectorAll('.pop-open').forEach(element => element.classList.remove('pop-open'));
       b.classList.add('pop-open');
       // Things placed beside the right column (the constraint column) move over.
       window.dispatchEvent(new Event('resize'));
@@ -646,13 +646,13 @@ export class UI {
     if (!at || pop.hidden) {
       return;
     }
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    const r = at.button.getBoundingClientRect();
+    const innerWidth = window.innerWidth;
+    const innerHeight = window.innerHeight;
+    const rect = at.button.getBoundingClientRect();
     const col = this.rightCol.getBoundingClientRect();
     pop.style.maxHeight = '';
     // Sideways: beside the column (the stylesheet's place), or under the cube with its right edge at the button.
-    pop.style.right = at.cube ? `${Math.max(W - r.right, col.width ? W - col.left + 8 : 8)}px` : '';
+    pop.style.right = at.cube ? `${Math.max(innerWidth - rect.right, col.width ? innerWidth - col.left + 8 : 8)}px` : '';
     let box = pop.getBoundingClientRect();
     const seen = (sel: string): DOMRect | null => {
       const e = document.querySelector<HTMLElement>(sel);
@@ -669,19 +669,19 @@ export class UI {
     };
     // (What stands above it gives way to nothing; what stands below neither: the window takes what is between.)
     let top = 8;
-    let bottom = H - 8;
+    let bottom = innerHeight - 8;
     const between = () => {
       top = 8;
-      bottom = H - 8;
+      bottom = innerHeight - 8;
       for (const sel of ['#topbar', '#viewcube-host', '#history.open', '#items.open', '#hint', '.sn-line', '#undo-dock', '#numpad']) {
         const q = seen(sel);
         if (!q) {
           continue;
         }
         // (Above the middle: over it. Below: under it. One down the whole edge - a long History - is beside it.)
-        if (q.bottom < H * 0.55) {
+        if (q.bottom < innerHeight * 0.55) {
           top = Math.max(top, q.bottom + 6);
-        } else if (q.top > H * 0.45) {
+        } else if (q.top > innerHeight * 0.45) {
           bottom = Math.min(bottom, q.top - 6);
         }
       }
@@ -690,15 +690,15 @@ export class UI {
     // Hardly any room under the view cube (a phone on its side): beside the cube, not a slit under it.
     const cube = !at.cube && bottom - top < 170 ? seen('#viewcube-host') : null;
     if (cube && cube.left - 8 >= box.width) {
-      pop.style.right = `${Math.round(W - cube.left + 6)}px`;
+      pop.style.right = `${Math.round(innerWidth - cube.left + 6)}px`;
       box = pop.getBoundingClientRect();
       between();
     }
     const room = Math.max(120, bottom - top);
     pop.style.maxHeight = `${room}px`;
-    const h = Math.min(pop.offsetHeight, room);
-    const want = at.cube ? r.bottom + 6 : r.top;
-    pop.style.top = `${Math.round(Math.max(top, Math.min(want, bottom - h)))}px`;
+    const height = Math.min(pop.offsetHeight, room);
+    const want = at.cube ? rect.bottom + 6 : rect.top;
+    pop.style.top = `${Math.round(Math.max(top, Math.min(want, bottom - height)))}px`;
     // Its size or the line's changes (a choice inside it, a list opened from the line): placed again.
     if (!this.popoverWatch) {
       let queued = false;
@@ -739,7 +739,7 @@ export class UI {
     this.popover.hidden = true;
     this.popoverFill = null;
     this.popoverAt = null;
-    document.querySelectorAll('.pop-open').forEach(x => x.classList.remove('pop-open'));
+    document.querySelectorAll('.pop-open').forEach(element => element.classList.remove('pop-open'));
     window.dispatchEvent(new Event('resize'));
   }
 
@@ -792,9 +792,9 @@ export class UI {
 
   /** A small persistent note (e.g. "body not closed"), never blocking. */
   setWarning(text: string | null): void {
-    const w = document.getElementById('warn')!;
-    w.textContent = text ?? '';
-    w.hidden = !text;
+    const element = document.getElementById('warn')!;
+    element.textContent = text ?? '';
+    element.hidden = !text;
   }
 
   setStatus(text: string | null): void {
@@ -809,38 +809,38 @@ export class UI {
    */
   menu(x: number, y: number, rows: (MenuRow | '-')[]): void {
     this.closeMenu();
-    const m = el('div', 'ctx-menu');
-    m.id = 'ctx-menu';
-    m.setAttribute('role', 'menu');
-    for (const r of rows) {
-      if (r === '-') {
-        m.append(el('div', 'ctx-sep'));
+    const element = el('div', 'ctx-menu');
+    element.id = 'ctx-menu';
+    element.setAttribute('role', 'menu');
+    for (const row of rows) {
+      if (row === '-') {
+        element.append(el('div', 'ctx-sep'));
         continue;
       }
       const b = el('button', 'ctx-row');
-      b.setAttribute('role', r.checked === undefined ? 'menuitem' : 'menuitemcheckbox');
-      if (r.checked !== undefined) {
-        b.setAttribute('aria-checked', String(r.checked));
+      b.setAttribute('role', row.checked === undefined ? 'menuitem' : 'menuitemcheckbox');
+      if (row.checked !== undefined) {
+        b.setAttribute('aria-checked', String(row.checked));
       }
-      b.disabled = !!r.disabled;
-      b.append(el('span', 'ctx-tick', r.checked ? '✓' : ''), el('span', 'ctx-label', r.label), el('span', 'ctx-key', r.shortcut ?? ''));
+      b.disabled = !!row.disabled;
+      b.append(el('span', 'ctx-tick', row.checked ? '✓' : ''), el('span', 'ctx-label', row.label), el('span', 'ctx-key', row.shortcut ?? ''));
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         this.closeMenu();
-        r.run();
+        row.run();
       });
-      m.append(b);
+      element.append(b);
     }
-    document.body.append(m);
-    const w = m.offsetWidth;
-    const h = m.offsetHeight;
-    m.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
-    m.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
+    document.body.append(element);
+    const offsetWidth = element.offsetWidth;
+    const offsetHeight = element.offsetHeight;
+    element.style.left = `${Math.max(8, Math.min(x, innerWidth - offsetWidth - 8))}px`;
+    element.style.top = `${Math.max(8, Math.min(y, innerHeight - offsetHeight - 8))}px`;
     const away = (e: Event) => {
       if (e.type === 'keydown' && (e as KeyboardEvent).key !== 'Escape') {
         return;
       }
-      if (e.type === 'pointerdown' && m.contains(e.target as Node)) {
+      if (e.type === 'pointerdown' && element.contains(e.target as Node)) {
         return;
       }
       if (e.type === 'keydown') {
@@ -850,7 +850,7 @@ export class UI {
     };
     // (Next tick: the right-click that opened it doesn't close it.)
     setTimeout(() => {
-      if (!m.isConnected) {
+      if (!element.isConnected) {
         return;
       }
       addEventListener('pointerdown', away, true);
@@ -862,7 +862,7 @@ export class UI {
         removeEventListener('wheel', away, true);
       };
     });
-    (m.querySelector('button:not(:disabled)') as HTMLButtonElement | null)?.focus({ preventScroll: true });
+    (element.querySelector('button:not(:disabled)') as HTMLButtonElement | null)?.focus({ preventScroll: true });
   }
 
   private menuOff: (() => void) | null = null;
@@ -875,12 +875,12 @@ export class UI {
    */
   setPanelWarning(text: string | null): void {
     this.panelWarning = text;
-    const w = this.panel.querySelector<HTMLElement>('.panel-warn');
-    if (!w) {
+    const element = this.panel.querySelector<HTMLElement>('.panel-warn');
+    if (!element) {
       return;
     }
-    w.textContent = text ? `⚠ ${text}` : '';
-    w.hidden = !text;
+    element.textContent = text ? `⚠ ${text}` : '';
+    element.hidden = !text;
     this.panel.querySelector('.panel-title')?.classList.toggle('warned', !!text);
   }
 
@@ -905,7 +905,7 @@ export class UI {
     const over = (t: DOMRect) =>
       [...document.querySelectorAll<HTMLElement>('.numpad:not([hidden]), .dim-widget, #panel:not([hidden]), #history, #items')]
         .map(el => el.getBoundingClientRect())
-        .filter(r => r.width > 0 && r.height > 0 && r.left < t.right && r.right > t.left && r.top < t.bottom && r.bottom > t.top);
+        .filter(rect => rect.width > 0 && rect.height > 0 && rect.left < t.right && rect.right > t.left && rect.top < t.bottom && rect.bottom > t.top);
     // Placed without its slide-in (measured mid-slide, it was where it had been).
     this.toastEl.style.transition = 'none';
     requestAnimationFrame(() => (this.toastEl.style.transition = ''));
@@ -916,8 +916,8 @@ export class UI {
       // Side panels (History, Items) in the way: in the middle of the space between them.
       const t = this.toastEl.getBoundingClientRect();
       const mid = (t.left + t.right) / 2;
-      const lo = Math.max(0, ...hits.filter(r => (r.left + r.right) / 2 < mid).map(r => r.right));
-      const hi = Math.min(innerWidth, ...hits.filter(r => (r.left + r.right) / 2 >= mid).map(r => r.left));
+      const lo = Math.max(0, ...hits.filter(hit => (hit.left + hit.right) / 2 < mid).map(hit => hit.right));
+      const hi = Math.min(innerWidth, ...hits.filter(hit => (hit.left + hit.right) / 2 >= mid).map(hit => hit.left));
       // (Narrower there, the text wraps: a tablet with both open has 240 px between them.)
       if (hi - lo >= 160) {
         this.toastEl.style.left = `${(lo + hi) / 2}px`;
@@ -986,7 +986,7 @@ export class UI {
       x.addEventListener('click', () => close(null));
       head.append(x);
       box.append(head);
-      const values = () => Object.fromEntries(fields.map((f, i) => [f.key, f.check ? ((inputs[i] as HTMLInputElement).checked ? '1' : '') : inputs[i].value]));
+      const values = () => Object.fromEntries(fields.map((field, i) => [field.key, field.check ? ((inputs[i] as HTMLInputElement).checked ? '1' : '') : inputs[i].value]));
       if (action) {
         const a = el('button', 'text-btn dialog-action');
         a.type = 'button';
@@ -1001,31 +1001,31 @@ export class UI {
       // The fields scroll inside the window; the title and the buttons stay in sight.
       const list = el('div', 'dialog-list');
       box.append(list);
-      const inputs = fields.map((f) => {
-        if (f.check) {
-          const l = el('label', 'dialog-check');
+      const inputs = fields.map((field) => {
+        if (field.check) {
+          const label = el('label', 'dialog-check');
           const i = document.createElement('input');
           i.type = 'checkbox';
-          i.checked = !!f.value;
-          l.append(i, el('span', '', f.label));
-          list.append(l);
+          i.checked = !!field.value;
+          label.append(i, el('span', '', field.label));
+          list.append(label);
 
           return i;
         }
-        const l = el('label', 'dialog-field');
-        l.append(el('span', 'field-label', f.label));
+        const fieldLabel = el('label', 'dialog-field');
+        fieldLabel.append(el('span', 'field-label', field.label));
         const i = textField();
-        i.value = f.value;
-        i.placeholder = f.placeholder ?? '';
-        l.append(i);
-        list.append(l);
+        i.value = field.value;
+        i.placeholder = field.placeholder ?? '';
+        fieldLabel.append(i);
+        list.append(fieldLabel);
 
         return i;
       });
       const row = el('div', 'panel-buttons');
-      const close = (v: Record<string, string> | null) => {
+      const close = (values: Record<string, string> | null) => {
         back.remove();
-        resolve(v);
+        resolve(values);
       };
       row.append(textButton('Cancel', 'Esc', () => close(null)));
       const ok = textButton('OK', 'Enter', () => close(values()), true);
@@ -1062,16 +1062,16 @@ export class UI {
         box.append(el('div', 'dialog-note', note));
       }
       const row = el('div', 'panel-buttons');
-      const close = (v: string | null) => {
+      const close = (value: string | null) => {
         back.remove();
         window.removeEventListener('keydown', onKey, true);
-        resolve(v);
+        resolve(value);
       };
       row.append(textButton('Cancel', 'Esc', () => close(null)));
       let primary: HTMLButtonElement | null = null;
-      for (const c of choices) {
-        const b = textButton(c.label, c.primary ? 'Enter' : '', () => (c.run?.(), close(c.id)), !!c.primary);
-        if (c.primary) {
+      for (const choice of choices) {
+        const b = textButton(choice.label, choice.primary ? 'Enter' : '', () => (choice.run?.(), close(choice.id)), !!choice.primary);
+        if (choice.primary) {
           primary = b;
         }
         row.append(b);
@@ -1113,7 +1113,7 @@ export class UI {
       return null;
     }
     const items: PanelItem[] = [
-      ...(spec.fields ?? []).map((f): PanelItem => ({ type: 'number', label: f.label, value: f.value, kind: f.kind ?? (f.integer ? 'int' : f.unit ? 'length' : 'number'), min: f.min, onInput: f.onInput })),
+      ...(spec.fields ?? []).map((valueField): PanelItem => ({ type: 'number', label: valueField.label, value: valueField.value, kind: valueField.kind ?? (valueField.integer ? 'int' : valueField.unit ? 'length' : 'number'), min: valueField.min, onInput: valueField.onInput })),
       ...(spec.items ?? [])
     ];
 
@@ -1125,18 +1125,18 @@ export class UI {
    * own record of it and its box follow (a tool doesn't always draw its
    * window again), so the next step starts from it.
    */
-  syncPanelValue(item: PanelItem, v: number): void {
+  syncPanelValue(item: PanelItem, value: number): void {
     const spec = this.panelSpec;
     if (!spec || !('label' in item)) {
       return;
     }
-    const f = spec.fields?.find(x => x.label === item.label);
-    if (f) {
-      f.value = v;
+    const field = spec.fields?.find(field => field.label === item.label);
+    if (field) {
+      field.value = value;
     }
-    const it = spec.items?.find(x => (x.type === 'number' || x.type === 'slider') && x.label === item.label);
+    const it = spec.items?.find(panelItem => (panelItem.type === 'number' || panelItem.type === 'slider') && panelItem.label === item.label);
     if (it && (it.type === 'number' || it.type === 'slider')) {
-      it.value = v;
+      it.value = value;
     }
     for (const box of Array.from(this.panel.querySelectorAll<HTMLElement>('.field'))) {
       if (box.querySelector('.field-label')?.textContent !== item.label) {
@@ -1147,13 +1147,13 @@ export class UI {
         continue;
       }
       if (input.type === 'range') {
-        input.value = String(v);
+        input.value = String(value);
       } else {
-        input.value = shown(v, (input.dataset.kind as FieldKind) || 'length');
+        input.value = shown(value, (input.dataset.kind as FieldKind) || 'length');
       }
       const out = box.querySelector('.slider-value');
       if (out && item.type === 'slider') {
-        out.textContent = item.show ? item.show(v) : String(v);
+        out.textContent = item.show ? item.show(value) : String(value);
       }
     }
   }
@@ -1197,7 +1197,7 @@ export class UI {
     const row = el('div', 'panel-fields');
     const items: PanelItem[] = [
       ...(spec.fields ?? []).map(
-        (f): PanelItem => ({ type: 'number', label: f.label, value: f.value, kind: f.kind ?? (f.integer ? 'int' : f.unit ? 'length' : 'number'), min: f.min, onInput: f.onInput })
+        (valueField): PanelItem => ({ type: 'number', label: valueField.label, value: valueField.value, kind: valueField.kind ?? (valueField.integer ? 'int' : valueField.unit ? 'length' : 'number'), min: valueField.min, onInput: valueField.onInput })
       ),
       ...(spec.items ?? [])
     ];
@@ -1230,11 +1230,11 @@ export class UI {
     let numberIndex = 0;
     for (const it of items) {
       if (it.type === 'number') {
-        const f = this.numberField(it, numberIndex++, spec);
+        const element = this.numberField(it, numberIndex++, spec);
         if (it.inBox) {
-          f.dataset.inbox = '1';
+          element.dataset.inbox = '1';
         }
-        row.append(f);
+        row.append(element);
       } else if (it.type === 'slot') {
         const b = el('button', `slot${it.active ? ' active' : ''}${it.filled ? ' filled' : ''}`);
         b.append(el('span', 'slot-label', it.label), el('span', 'slot-value', it.value));
@@ -1242,75 +1242,75 @@ export class UI {
         row.append(b);
       } else if (it.type === 'choice' && (it.options.length > 4 || it.list)) {
         // Many options (e.g. fonts, more with every imported one): a drop-down that stays in the panel.
-        const g = el('label', 'field choice-list');
+        const label = el('label', 'field choice-list');
         if (it.label) {
-          g.append(el('span', 'field-label', it.label));
+          label.append(el('span', 'field-label', it.label));
         }
         const sel = document.createElement('select');
-        for (const o of it.options) {
+        for (const option of it.options) {
           const opt = document.createElement('option');
-          opt.value = o.id;
-          opt.textContent = o.label;
+          opt.value = option.id;
+          opt.textContent = option.label;
           sel.append(opt);
         }
         sel.value = it.value;
         sel.addEventListener('change', () => it.onChange(sel.value));
         sel.addEventListener('pointerdown', e => e.stopPropagation());
-        g.append(sel);
-        row.append(g);
+        label.append(sel);
+        row.append(label);
       } else if (it.type === 'choice') {
-        const g = el('div', 'choice');
+        const element = el('div', 'choice');
         if (it.label) {
-          g.append(el('span', 'field-label', it.label));
+          element.append(el('span', 'field-label', it.label));
         }
-        for (const o of it.options) {
-          const b = el('button', o.id === it.value ? 'active' : '', o.label);
-          b.addEventListener('click', () => it.onChange(o.id));
-          g.append(b);
+        for (const option of it.options) {
+          const b = el('button', option.id === it.value ? 'active' : '', option.label);
+          b.addEventListener('click', () => it.onChange(option.id));
+          element.append(b);
         }
-        row.append(g);
+        row.append(element);
       } else if (it.type === 'slider') {
-        const g = el('label', 'field slider-field');
-        g.append(el('span', 'field-label', it.label));
-        const r = document.createElement('input');
-        r.type = 'range';
-        r.min = String(it.min);
-        r.max = String(it.max);
-        r.step = String(it.step ?? (it.max - it.min) / 100);
-        r.value = String(it.value);
+        const label = el('label', 'field slider-field');
+        label.append(el('span', 'field-label', it.label));
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.min = String(it.min);
+        input.max = String(it.max);
+        input.step = String(it.step ?? (it.max - it.min) / 100);
+        input.value = String(it.value);
         const out = el('span', 'slider-value', it.show ? it.show(it.value) : String(it.value));
-        r.addEventListener('input', () => {
-          const v = Number(r.value);
-          out.textContent = it.show ? it.show(v) : String(v);
-          it.onInput(v);
+        input.addEventListener('input', () => {
+          const value = Number(input.value);
+          out.textContent = it.show ? it.show(value) : String(value);
+          it.onInput(value);
         });
         // The card's grip and the view must not take the drag.
-        r.addEventListener('pointerdown', e => e.stopPropagation());
-        g.append(r, out);
-        row.append(g);
+        input.addEventListener('pointerdown', e => e.stopPropagation());
+        label.append(input, out);
+        row.append(label);
       } else if (it.type === 'chips') {
-        const g = el('div', 'chips');
+        const element = el('div', 'chips');
         if (it.label) {
-          g.append(el('span', 'field-label', it.label));
+          element.append(el('span', 'field-label', it.label));
         }
         const list = el('div', 'chip-list');
-        for (const c of it.chips) {
-          const b = el('button', `chip${c.on ? ' on' : ''}`);
-          if (c.glyph) {
-            b.append(el('span', 'chip-glyph', c.glyph));
+        for (const chip of it.chips) {
+          const b = el('button', `chip${chip.on ? ' on' : ''}`);
+          if (chip.glyph) {
+            b.append(el('span', 'chip-glyph', chip.glyph));
           }
-          b.append(c.label);
-          if (c.title) {
-            b.title = c.title;
+          b.append(chip.label);
+          if (chip.title) {
+            b.title = chip.title;
           }
-          b.addEventListener('click', c.onClick);
+          b.addEventListener('click', chip.onClick);
           list.append(b);
         }
         if (!it.chips.length && it.empty) {
           list.append(el('span', 'chip-empty', it.empty));
         }
-        g.append(list);
-        row.append(g);
+        element.append(list);
+        row.append(element);
       } else if (it.type === 'toggle') {
         const b = el('button', `toggle${it.value ? ' on' : ''}`, it.label);
         b.addEventListener('click', () => it.onChange(!it.value));
@@ -1344,9 +1344,9 @@ export class UI {
     }
     const buttons = el('div', 'panel-buttons');
     if (spec.onCancel) {
-      const c = textButton('Cancel', 'Esc', spec.onCancel);
-      c.classList.add('panel-cancel');
-      buttons.append(c);
+      const button = textButton('Cancel', 'Esc', spec.onCancel);
+      button.classList.add('panel-cancel');
+      buttons.append(button);
     }
     if (spec.onDone) {
       buttons.append(textButton('Done', 'Enter', spec.onDone, true));
@@ -1361,28 +1361,28 @@ export class UI {
     }
   }
 
-  private numberField(f: Extract<PanelItem, { type: 'number' }>, index: number, spec: ValuePanel): HTMLElement {
-    const kind = f.kind ?? 'length';
+  private numberField(field: Extract<PanelItem, { type: 'number' }>, index: number, spec: ValuePanel): HTMLElement {
+    const kind = field.kind ?? 'length';
     const label = el('label', 'field');
-    label.append(el('span', 'field-label', f.label));
+    label.append(el('span', 'field-label', field.label));
     const input = document.createElement('input');
     input.type = 'text';
     input.inputMode = 'decimal';
     numpadInput(input);
     input.autocomplete = 'off';
     input.spellcheck = false;
-    input.value = f.expr ?? shown(f.value, kind);
+    input.value = field.expr ?? shown(field.value, kind);
     input.dataset.index = String(index);
     input.dataset.kind = kind;
-    if (f.follows) {
+    if (field.follows) {
       input.dataset.follows = '1';
     }
-    if (f.expr) {
+    if (field.expr) {
       input.classList.add('has-expr');
     }
     const apply = () => {
-      const v = evaluate(input.value, kind === 'length' ? 'length' : kind === 'angle' ? 'angle' : 'number');
-      const ok = v !== null && (f.min === undefined || v >= f.min);
+      const value = evaluate(input.value, kind === 'length' ? 'length' : kind === 'angle' ? 'angle' : 'number');
+      const ok = value !== null && (field.min === undefined || value >= field.min);
       input.classList.toggle('invalid', !ok);
       if (!ok) {
         return;
@@ -1392,8 +1392,8 @@ export class UI {
       input.classList.toggle('has-expr', isExpr);
       // Key by key into this box: one undo step for the value typed.
       mergingCommits(input, () => {
-        f.onExpr?.(isExpr ? input.value.trim() : null);
-        f.onInput(kind === 'int' ? Math.round(v!) : v!);
+        field.onExpr?.(isExpr ? input.value.trim() : null);
+        field.onInput(kind === 'int' ? Math.round(value!) : value!);
       });
     };
     input.addEventListener('input', apply);
@@ -1413,9 +1413,9 @@ export class UI {
         spec.onCancel?.();
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
-        const v = evaluate(input.value, kind === 'length' ? 'length' : 'number') ?? 0;
+        const value = evaluate(input.value, kind === 'length' ? 'length' : 'number') ?? 0;
         const step = kind === 'length' ? (e.shiftKey ? 10 : 1) : e.shiftKey ? 10 : 1;
-        const next = v + (e.key === 'ArrowUp' ? step : -step) * (kind === 'length' ? unitScale() : 1);
+        const next = value + (e.key === 'ArrowUp' ? step : -step) * (kind === 'length' ? unitScale() : 1);
         input.value = shown(next, kind);
         apply();
       }
@@ -1426,7 +1426,7 @@ export class UI {
     if (unit) {
       label.append(el('span', 'field-unit', unit));
     }
-    if (f.onExpr && this.variableFactory) {
+    if (field.onExpr && this.variableFactory) {
       const fx = el('button', 'fx-btn', 'ƒx');
       fx.title = 'Variables: use one here, or make a new one from this value';
       fx.addEventListener('click', async (e) => {
@@ -1436,7 +1436,7 @@ export class UI {
         let name: string | null = null;
         if (names.length) {
           const pick = await this.ask('Variables', 'Use a variable for this value, or make a new one from it.', [
-            ...names.slice(0, 8).map(n => ({ id: `v:${n}`, label: n })),
+            ...names.slice(0, 8).map(name => ({ id: `v:${name}`, label: name })),
             { id: 'new', label: 'New variable', primary: true }
           ]);
           if (!pick) {
@@ -1498,67 +1498,67 @@ export class UI {
    * the bottom row is too full, just above it (over the hint text). As wide as
    * its contents, never wider than the gap.
    */
-  private placeOnPhone(p: HTMLElement): void {
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    const M = 8;
+  private placeOnPhone(element: HTMLElement): void {
+    const innerWidth = window.innerWidth;
+    const innerHeight = window.innerHeight;
+    const margin = 8;
     const obstacles = ['#items', '#history', '#toolbar', '#undo-dock', '#bottom-left', '#right-col', '#hint']
       .map(q => document.querySelector<HTMLElement>(q))
       .filter((e): e is HTMLElement => !!e && !e.hidden && e.offsetHeight > 0 && e.offsetWidth > 0 && getComputedStyle(e).display !== 'none')
       .map(e => e.getBoundingClientRect());
-    p.style.maxWidth = '';
-    const natural = Math.min(p.offsetWidth, W - 2 * M);
+    element.style.maxWidth = '';
+    const natural = Math.min(element.offsetWidth, innerWidth - 2 * margin);
     const need = Math.min(natural, 240);
     // Free stretches of a horizontal band [y0, y1].
     const gaps = (y0: number, y1: number): [number, number][] => {
-      const blocked = obstacles.filter(r => r.bottom > y0 && r.top < y1).map(r => [r.left - M, r.right + M] as [number, number]).sort((a, b) => a[0] - b[0]);
+      const blocked = obstacles.filter(obstacle => obstacle.bottom > y0 && obstacle.top < y1).map(obstacle => [obstacle.left - margin, obstacle.right + margin] as [number, number]).sort((a, b) => a[0] - b[0]);
       const out: [number, number][] = [];
-      let x = M;
+      let x = margin;
       for (const [a, b] of blocked) {
         if (a > x) {
           out.push([x, a]);
         }
         x = Math.max(x, b);
       }
-      if (W - M > x) {
-        out.push([x, W - M]);
+      if (innerWidth - margin > x) {
+        out.push([x, innerWidth - margin]);
       }
 
       return out;
     };
     // Bottom edges to try: the screen's, then just above each thing along the bottom.
-    const edges = [H - M, ...obstacles.filter(r => r.top > H * 0.4).map(r => r.top - M)].sort((a, b) => b - a);
+    const edges = [innerHeight - margin, ...obstacles.filter(obstacle => obstacle.top > innerHeight * 0.4).map(obstacle => obstacle.top - margin)].sort((a, b) => b - a);
     for (const y1 of edges) {
-      const h = p.offsetHeight;
-      const g = gaps(y1 - h, y1).sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
-      if (!g || g[1] - g[0] < need) {
+      const offsetHeight = element.offsetHeight;
+      const firstGap = gaps(y1 - offsetHeight, y1).sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
+      if (!firstGap || firstGap[1] - firstGap[0] < need) {
         continue;
       }
       // (No wider than a phone card is: fields wrap onto a second row instead.)
-      p.style.maxWidth = `${Math.floor(Math.min(g[1] - g[0], PHONE_CARD_MAX))}px`;
-      this.hugContents(p);
-      const h2 = p.offsetHeight;
-      p.style.left = `${Math.round(g[0])}px`;
-      p.style.top = `${Math.round(Math.max(52, y1 - h2))}px`;
+      element.style.maxWidth = `${Math.floor(Math.min(firstGap[1] - firstGap[0], PHONE_CARD_MAX))}px`;
+      this.hugContents(element);
+      const h2 = element.offsetHeight;
+      element.style.left = `${Math.round(firstGap[0])}px`;
+      element.style.top = `${Math.round(Math.max(52, y1 - h2))}px`;
 
       return;
     }
     // Nowhere clear: the bottom left, over whatever is there.
-    p.style.left = `${M}px`;
-    p.style.top = `${Math.round(Math.max(52, H - M - p.offsetHeight))}px`;
+    element.style.left = `${margin}px`;
+    element.style.top = `${Math.round(Math.max(52, innerHeight - margin - element.offsetHeight))}px`;
   }
 
   /**
    * A card whose contents wrap onto more rows keeps the width of the widest
    * row (a browser doesn't shrink it): trim it to what's really in it.
    */
-  private hugContents(p: HTMLElement): void {
-    p.style.width = '';
-    const left = p.getBoundingClientRect().left;
+  private hugContents(element: HTMLElement): void {
+    element.style.width = '';
+    const left = element.getBoundingClientRect().left;
     let right = left;
     // (Done is pushed to the row's end: measure where the others end, plus its own width.)
     let tail = 0;
-    for (const row of p.querySelectorAll<HTMLElement>(':scope > .panel-fields > *, :scope > .panel-buttons > *')) {
+    for (const row of element.querySelectorAll<HTMLElement>(':scope > .panel-fields > *, :scope > .panel-buttons > *')) {
       if (!row.offsetWidth) {
         continue;
       }
@@ -1569,9 +1569,9 @@ export class UI {
       }
     }
     right += tail;
-    const pad = parseFloat(getComputedStyle(p).paddingRight) || 0;
+    const pad = parseFloat(getComputedStyle(element).paddingRight) || 0;
     if (right > left) {
-      p.style.width = `${Math.ceil(right - left + pad + 1)}px`;
+      element.style.width = `${Math.ceil(right - left + pad + 1)}px`;
     }
   }
 
@@ -1613,8 +1613,8 @@ export class UI {
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const r = this.panel.getBoundingClientRect();
-      drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+      const rect = this.panel.getBoundingClientRect();
+      drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top, moved: false };
       this.panelDragging = true;
       grip.setPointerCapture(e.pointerId);
     });
@@ -1658,9 +1658,9 @@ export class UI {
 
   /** The card at this spot, kept whole on screen. */
   private putPanel(x: number, y: number): void {
-    const p = this.panel;
-    p.style.left = `${Math.round(Math.max(4, Math.min(window.innerWidth - p.offsetWidth - 4, x)))}px`;
-    p.style.top = `${Math.round(Math.max(4, Math.min(window.innerHeight - p.offsetHeight - 4, y)))}px`;
+    const panel = this.panel;
+    panel.style.left = `${Math.round(Math.max(4, Math.min(window.innerWidth - panel.offsetWidth - 4, x)))}px`;
+    panel.style.top = `${Math.round(Math.max(4, Math.min(window.innerHeight - panel.offsetHeight - 4, y)))}px`;
   }
 
   /** Bumped when the card's contents change (it may need placing again). */
@@ -1669,13 +1669,13 @@ export class UI {
   private panelKey = '';
 
   private placePanel(): void {
-    const p = this.panel;
+    const panel = this.panel;
     const box = [...document.querySelectorAll<HTMLElement>('.dim-widget.editable')].filter(e => !e.hidden && e.offsetWidth).pop();
     // Being dragged, or put somewhere by hand: it stays there.
     if (this.panelDragging) {
       return;
     }
-    const r = (e: Element | null) => {
+    const rectText = (e: Element | null) => {
       if (!e || (e as HTMLElement).hidden) {
         return '-';
       }
@@ -1683,32 +1683,32 @@ export class UI {
 
       return `${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.width)},${Math.round(b.height)}`;
     };
-    const q = (v: number) => Math.round(v / 16);
+    const q = (value: number) => Math.round(value / 16);
     const phone = screenClass() === 'phone';
     const key = [
       window.innerWidth,
       window.innerHeight,
       this.panelVersion,
-      p.offsetWidth,
-      p.offsetHeight,
-      r(box ?? null),
+      panel.offsetWidth,
+      panel.offsetHeight,
+      rectText(box ?? null),
       box?.dataset.seg ?? '',
-      phone ? ['#items', '#history', '#toolbar', '#undo-dock', '#bottom-left', '#right-col', '#hint'].map(s => r(document.querySelector(s))).join('|') : '',
+      phone ? ['#items', '#history', '#toolbar', '#undo-dock', '#bottom-left', '#right-col', '#hint'].map(selector => rectText(document.querySelector(selector))).join('|') : '',
       phone || !this.lastPointer ? '' : `${q(this.lastPointer.x)},${q(this.lastPointer.y)}`,
       phone || !this.pointerAt ? '' : `${q(this.pointerAt.x)},${q(this.pointerAt.y)}`,
       this.lastPress ? `${this.lastPress.x},${this.lastPress.y}` : '',
-      p.contains(document.activeElement) ? 'f' : ''
+      panel.contains(document.activeElement) ? 'f' : ''
     ].join(';');
     if (key === this.panelKey) {
       return;
     }
     this.panelKey = key;
-    p.classList.toggle('attached', !!box);
+    panel.classList.toggle('attached', !!box);
     const spot = this.panelSpot();
     if (spot) {
       if (screenClass() === 'phone') {
-        p.style.maxWidth = `${Math.min(window.innerWidth - 16, PHONE_CARD_MAX)}px`;
-        this.hugContents(p);
+        panel.style.maxWidth = `${Math.min(window.innerWidth - 16, PHONE_CARD_MAX)}px`;
+        this.hugContents(panel);
       }
       this.putPanel(spot.x, spot.y);
       this.panelSide = 0;
@@ -1718,39 +1718,39 @@ export class UI {
     // Phones: one fixed place, right above the hint text (or the bottom
     // buttons) - never chasing the model across a small screen.
     if (screenClass() === 'phone') {
-      this.placeOnPhone(p);
+      this.placeOnPhone(panel);
       this.panelSide = 0;
 
       return;
     }
     // Heading for the card (or typing in it): it holds still, so it can be clicked.
-    if (this.panelSide >= 0 && p.style.left) {
-      const cr = p.getBoundingClientRect();
+    if (this.panelSide >= 0 && panel.style.left) {
+      const cr = panel.getBoundingClientRect();
       const q = this.pointerAt;
       const near = q && q.x > cr.left - 60 && q.x < cr.right + 60 && q.y > cr.top - 60 && q.y < cr.bottom + 60;
-      if (near || p.contains(document.activeElement) || p.matches(':hover')) {
+      if (near || panel.contains(document.activeElement) || panel.matches(':hover')) {
         return;
       }
     }
-    const w = p.offsetWidth;
-    const h = p.offsetHeight;
-    const M = 8;
-    const W = window.innerWidth;
-    const H = window.innerHeight;
+    const offsetWidth = panel.offsetWidth;
+    const offsetHeight = panel.offsetHeight;
+    const margin = 8;
+    const innerWidth = window.innerWidth;
+    const innerHeight = window.innerHeight;
     // Places to try, in order of preference.
     let spots: [number, number][];
     // What the card must not cover: the dimension (the line being drawn, the
     // drag arrow) and the pointer.
     const avoid: [number, number][][] = [];
     if (box) {
-      const r = box.getBoundingClientRect();
+      const rect = box.getBoundingClientRect();
       spots = [
-        [r.right + 4, r.top],
-        [r.left - 4 - w, r.top],
-        [r.left, r.top - 4 - h],
-        [r.left, r.bottom + 4],
-        [r.right + 4, r.bottom - h],
-        [r.left - 4 - w, r.bottom - h]
+        [rect.right + 4, rect.top],
+        [rect.left - 4 - offsetWidth, rect.top],
+        [rect.left, rect.top - 4 - offsetHeight],
+        [rect.left, rect.bottom + 4],
+        [rect.right + 4, rect.bottom - offsetHeight],
+        [rect.left - 4 - offsetWidth, rect.bottom - offsetHeight]
       ];
       const seg = box.dataset.seg?.split(',').map(Number);
       if (seg && seg.length === 4 && seg.every(Number.isFinite)) {
@@ -1760,15 +1760,15 @@ export class UI {
       const q = this.lastPress;
       spots = [
         [q.x + 28, q.y + 20],
-        [q.x - 28 - w, q.y + 20],
-        [q.x + 28, q.y - 20 - h],
-        [q.x - 28 - w, q.y - 20 - h],
+        [q.x - 28 - offsetWidth, q.y + 20],
+        [q.x + 28, q.y - 20 - offsetHeight],
+        [q.x - 28 - offsetWidth, q.y - 20 - offsetHeight],
         // Straight under / over the tap: fits between columns too narrow for beside it.
-        [q.x - w / 2, q.y + 36],
-        [q.x - w / 2, q.y - 36 - h]
+        [q.x - offsetWidth / 2, q.y + 36],
+        [q.x - offsetWidth / 2, q.y - 36 - offsetHeight]
       ];
     } else {
-      spots = [[(W - w) / 2, H - h - 70]];
+      spots = [[(innerWidth - offsetWidth) / 2, innerHeight - offsetHeight - 70]];
     }
     if (this.lastPointer) {
       avoid.push([[this.lastPointer.x, this.lastPointer.y]]);
@@ -1776,64 +1776,64 @@ export class UI {
     // The app's own columns and bars: a card over the tool column hides the
     // tools (a tablet with Items open has the tools right beside it).
     const chrome = ['#toolbar', '#items', '#history', '#right-col', '#topbar', '#undo-dock', '#bottom-left', '#viewcube-host', '#hint']
-      .map(s => document.querySelector<HTMLElement>(s))
+      .map(selector => document.querySelector<HTMLElement>(selector))
       .filter((e): e is HTMLElement => !!e && !e.hidden && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden')
       .map(e => e.getBoundingClientRect());
     // …and somewhere clear of them all, should every spot by the tap be covered.
-    const free = { l: M, r: W - M };
-    for (const c of chrome) {
-      if (c.height > H * 0.2 && c.width < W * 0.5) {
-        c.left < W / 2 ? (free.l = Math.max(free.l, c.right + M)) : (free.r = Math.min(free.r, c.left - M));
+    const free = { l: margin, r: innerWidth - margin };
+    for (const rect of chrome) {
+      if (rect.height > innerHeight * 0.2 && rect.width < innerWidth * 0.5) {
+        rect.left < innerWidth / 2 ? (free.l = Math.max(free.l, rect.right + margin)) : (free.r = Math.min(free.r, rect.left - margin));
       }
     }
-    spots.push([(free.l + free.r - w) / 2, H - h - 70], [(free.l + free.r - w) / 2, 60]);
-    const clampX = (x: number) => Math.max(M, Math.min(W - w - M, x));
-    const clampY = (y: number) => Math.max(52, Math.min(H - h - M, y));
+    spots.push([(free.l + free.r - offsetWidth) / 2, innerHeight - offsetHeight - 70], [(free.l + free.r - offsetWidth) / 2, 60]);
+    const clampX = (x: number) => Math.max(margin, Math.min(innerWidth - offsetWidth - margin, x));
+    const clampY = (y: number) => Math.max(52, Math.min(innerHeight - offsetHeight - margin, y));
     // How badly a spot is in the way: off screen (moved back on), over the line, over the pointer.
     const cost = ([x0, y0]: [number, number], withPointer: boolean): number => {
       const x = clampX(x0);
       const y = clampY(y0);
-      let c = Math.abs(x - x0) + Math.abs(y - y0) > 1 ? 1 : 0;
-      for (const r of chrome) {
-        if (x < r.right && x + w > r.left && y < r.bottom && y + h > r.top) {
-          c += 3;
+      let penalty = Math.abs(x - x0) + Math.abs(y - y0) > 1 ? 1 : 0;
+      for (const rect of chrome) {
+        if (x < rect.right && x + offsetWidth > rect.left && y < rect.bottom && y + offsetHeight > rect.top) {
+          penalty += 3;
         }
       }
       const pad = 14;
-      const inside = (px: number, py: number) => px > x - pad && px < x + w + pad && py > y - pad && py < y + h + pad;
+      const inside = (px: number, py: number) => px > x - pad && px < x + offsetWidth + pad && py > y - pad && py < y + offsetHeight + pad;
       for (const a of avoid) {
         if (a.length === 1) {
           if (withPointer && inside(a[0][0], a[0][1])) {
-            c += 2;
+            penalty += 2;
           }
           continue;
         }
-        for (let k = 0; k <= 24; k++) {
-          const t = k / 24;
+        for (let step = 0; step <= 24; step++) {
+          const t = step / 24;
           if (inside(a[0][0] + (a[1][0] - a[0][0]) * t, a[0][1] + (a[1][1] - a[0][1]) * t)) {
-            c += 4;
+            penalty += 4;
             break;
           }
         }
       }
 
-      return c;
+      return penalty;
     };
     // Where it is stays as long as it's clear of the line (the pointer only steers where it goes next).
     let pick = this.panelSide >= 0 && this.panelSide < spots.length && cost(spots[this.panelSide], false) === 0 ? this.panelSide : -1;
     if (pick < 0) {
       let best = Infinity;
       spots.forEach((sp, i) => {
-        const c = cost(sp, true);
-        if (c < best) {
-          [best, pick] = [c, i];
+        const spotCost = cost(sp, true);
+        if (spotCost < best) {
+          [best, pick] = [spotCost, i];
         }
       });
     }
     this.panelSide = pick;
     const [x, y] = spots[pick];
-    p.style.left = `${Math.round(clampX(x))}px`;
-    p.style.top = `${Math.round(clampY(y))}px`;
+    panel.style.left = `${Math.round(clampX(x))}px`;
+    panel.style.top = `${Math.round(clampY(y))}px`;
   }
 
   /** Creates a variable from a field's current text; returns its name (set by the app). */
@@ -1844,9 +1844,9 @@ export class UI {
   /** Update displayed values without rebuilding (keeps focus while dragging). */
   updatePanelValues(values: number[]): void {
     this.panel.querySelectorAll<HTMLInputElement>('input[data-index]').forEach((input) => {
-      const v = values[Number(input.dataset.index)];
-      if (v !== undefined && !typingInto(input)) {
-        input.value = shown(v, input.dataset.kind as FieldKind);
+      const value = values[Number(input.dataset.index)];
+      if (value !== undefined && !typingInto(input)) {
+        input.value = shown(value, input.dataset.kind as FieldKind);
       }
     });
     // The line at the bottom says the same numbers (it read them once, as the tool opened: dragged to -22, it still
@@ -1904,8 +1904,8 @@ export class UI {
   }
 
   /** Group the ticked steps: everything from the first to the last of them (groups are runs of steps). */
-  private async groupSteps(features: readonly Feature[], h: HistoryHandlers): Promise<void> {
-    const order = features.map(f => f.id);
+  private async groupSteps(features: readonly Feature[], historyHandlers: HistoryHandlers): Promise<void> {
+    const order = features.map(feature => feature.id);
     const idx = [...this.historyChecked].map(id => order.indexOf(id)).filter(i => i >= 0);
     if (!idx.length) {
       return;
@@ -1913,32 +1913,32 @@ export class UI {
     let lo = Math.min(...idx);
     let hi = Math.max(...idx);
     // A group it runs into joins it (groups don't overlap).
-    let rest = h.groups;
+    let rest = historyHandlers.groups;
     let grew = true;
     while (grew) {
       grew = false;
       const keep: HistoryGroup[] = [];
-      for (const g of rest) {
-        const gi = g.steps.map(id => order.indexOf(id)).filter(i => i >= 0);
+      for (const historyGroup of rest) {
+        const gi = historyGroup.steps.map(id => order.indexOf(id)).filter(i => i >= 0);
         if (gi.length && Math.max(...gi) >= lo && Math.min(...gi) <= hi) {
           lo = Math.min(lo, ...gi);
           hi = Math.max(hi, ...gi);
           grew = true;
         } else {
-          keep.push(g);
+          keep.push(historyGroup);
         }
       }
       rest = keep;
     }
-    const name = await h.askName('New group', `Group ${h.groups.length + 1}`);
+    const name = await historyHandlers.askName('New group', `Group ${historyHandlers.groups.length + 1}`);
     if (!name) {
       return;
     }
-    const g: HistoryGroup = { id: `hgroup-${Date.now().toString(36)}`, name, steps: order.slice(lo, hi + 1) };
+    const group: HistoryGroup = { id: `hgroup-${Date.now().toString(36)}`, name, steps: order.slice(lo, hi + 1) };
     this.historyChecked.clear();
     this.historyPicking = false;
     document.getElementById('history-pick')?.classList.remove('on');
-    h.setGroups([...rest, g]);
+    historyHandlers.setGroups([...rest, group]);
     if (hi - lo + 1 > idx.length) {
       this.toast('Groups hold steps next to each other: the ones in between went in too');
     }
@@ -1949,18 +1949,18 @@ export class UI {
    * timeline (steps aren't moved): a group they were in the middle of splits
    * in two around them, so they show in their own place between the halves.
    */
-  private ungroupSteps(features: readonly Feature[], h: HistoryHandlers): void {
-    const out = ungroupedSteps(features.map(f => f.id), h.groups, this.historyChecked);
-    const n = [...this.historyChecked].filter(id => h.groups.some(g => g.steps.includes(id))).length;
+  private ungroupSteps(features: readonly Feature[], historyHandlers: HistoryHandlers): void {
+    const out = ungroupedSteps(features.map(feature => feature.id), historyHandlers.groups, this.historyChecked);
+    const count = [...this.historyChecked].filter(id => historyHandlers.groups.some(group => group.steps.includes(id))).length;
     this.historyChecked.clear();
     this.historyPicking = false;
     document.getElementById('history-pick')?.classList.remove('on');
-    h.setGroups(out);
-    this.toast(`${n} step${n === 1 ? '' : 's'} out of the group, in ${n === 1 ? 'its' : 'their'} place in the timeline`);
+    historyHandlers.setGroups(out);
+    this.toast(`${count} step${count === 1 ? '' : 's'} out of the group, in ${count === 1 ? 'its' : 'their'} place in the timeline`);
   }
 
-  renderHistory(features: readonly Feature[], errors: FeatureError[], activeId: string | null, h: HistoryHandlers, warnings: Map<string, string> = new Map()): void {
-    this.lastHistory = [features, errors, activeId, h, warnings];
+  renderHistory(features: readonly Feature[], errors: FeatureError[], activeId: string | null, historyHandlers: HistoryHandlers, warnings: Map<string, string> = new Map()): void {
+    this.lastHistory = [features, errors, activeId, historyHandlers, warnings];
     this.historyList.innerHTML = '';
     const pick = document.getElementById('history-pick');
     if (pick && !pick.dataset.wired) {
@@ -1980,7 +1980,7 @@ export class UI {
       return;
     }
     // Ticks for steps that are gone don't count.
-    const ids = new Set(features.map(f => f.id));
+    const ids = new Set(features.map(feature => feature.id));
     for (const id of this.historyChecked) {
       if (!ids.has(id)) {
         this.historyChecked.delete(id);
@@ -1988,118 +1988,118 @@ export class UI {
     }
     // Each step's group, and the step a group starts at (its row goes there).
     const groupOf = new Map<string, HistoryGroup>();
-    for (const g of h.groups) {
-      for (const id of g.steps) {
+    for (const group of historyHandlers.groups) {
+      for (const id of group.steps) {
         if (ids.has(id)) {
-          groupOf.set(id, g);
+          groupOf.set(id, group);
         }
       }
     }
     const started = new Set<string>();
-    const firstBack = features.find(f => f.rolledBack)?.id;
-    for (const f of features) {
+    const firstBack = features.find(feature => feature.rolledBack)?.id;
+    for (const feature of features) {
       // The breakpoint: a bar above the steps it switched off, and its Remove.
-      if (f.id === firstBack) {
+      if (feature.id === firstBack) {
         const bar = el('li', 'history-break');
         bar.append(el('span', 'history-break-label', 'Breakpoint - the steps below are off'));
         const rm = el('button', 'text-btn history-break-remove', 'Remove');
         rm.type = 'button';
         rm.title = 'Remove the breakpoint: every step on again';
-        rm.addEventListener('click', () => h.breakAfter?.(null));
+        rm.addEventListener('click', () => historyHandlers.breakAfter?.(null));
         bar.append(rm);
         this.historyList.append(bar);
       }
-      const g = groupOf.get(f.id);
-      if (g && !started.has(g.id)) {
-        started.add(g.id);
-        const members = features.filter(x => groupOf.get(x.id) === g);
+      const historyGroup = groupOf.get(feature.id);
+      if (historyGroup && !started.has(historyGroup.id)) {
+        started.add(historyGroup.id);
+        const members = features.filter(feature => groupOf.get(feature.id) === historyGroup);
         // The step being edited is inside: show it.
-        if (members.some(m => m.id === activeId)) {
-          this.closedGroups.delete(g.id);
+        if (members.some(member => member.id === activeId)) {
+          this.closedGroups.delete(historyGroup.id);
         }
-        this.historyList.append(this.groupRow(g, members, errors, h));
+        this.historyList.append(this.groupRow(historyGroup, members, errors, historyHandlers));
       }
-      if (g && this.closedGroups.has(g.id)) {
+      if (historyGroup && this.closedGroups.has(historyGroup.id)) {
         continue;
       }
-      const li = el('li', `history-item${g ? ' in-group' : ''}${this.historyChecked.has(f.id) ? ' checked' : ''}`);
+      const li = el('li', `history-item${historyGroup ? ' in-group' : ''}${this.historyChecked.has(feature.id) ? ' checked' : ''}`);
       if (this.historyPicking) {
         const box = document.createElement('input');
         box.type = 'checkbox';
         box.className = 'items-check';
-        box.checked = this.historyChecked.has(f.id);
-        box.addEventListener('change', () => this.checkStep(f.id));
+        box.checked = this.historyChecked.has(feature.id);
+        box.addEventListener('change', () => this.checkStep(feature.id));
         li.append(box);
       }
-      const err = errors.find(e => e.featureId === f.id);
+      const err = errors.find(e => e.featureId === feature.id);
       if (err) {
         li.classList.add('error');
       }
-      if (f.suppressed) {
+      if (feature.suppressed) {
         li.classList.add('suppressed');
       }
-      if (f.rolledBack) {
+      if (feature.rolledBack) {
         li.classList.add('rolled-back');
       }
-      if (f.id === activeId) {
+      if (feature.id === activeId) {
         li.classList.add('active');
       }
-      const name = el('button', 'history-name', f.name);
-      if (BETA_TYPES.has(f.type)) {
+      const name = el('button', 'history-name', feature.name);
+      if (BETA_TYPES.has(feature.type)) {
         name.append(betaTag());
       }
       name.title = err ? err.message : 'Edit';
       // A step that works but leaves something to look at (e.g. a body that isn't closed).
-      const warn = warnings.get(f.id);
+      const warn = warnings.get(feature.id);
       if (warn && !err) {
         // The ! folds the explanation out under the step (like a sketch's steps).
         const mark = el('button', 'history-warn', '!');
         mark.title = warn;
         mark.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (this.openWarns.has(f.id)) {
-            this.openWarns.delete(f.id);
+          if (this.openWarns.has(feature.id)) {
+            this.openWarns.delete(feature.id);
           } else {
-            this.openWarns.add(f.id);
+            this.openWarns.add(feature.id);
           }
-          this.renderHistory(features, errors, activeId, h, warnings);
+          this.renderHistory(features, errors, activeId, historyHandlers, warnings);
         });
         li.prepend(mark);
         name.title = warn;
       }
       // Ctrl/Cmd/Shift+click (or Select on): tick it for a group; a plain click edits it.
-      name.addEventListener('click', e => (e.ctrlKey || e.metaKey || e.shiftKey || this.historyPicking ? this.checkStep(f.id) : h.edit(f.id)));
-      li.addEventListener('pointerenter', () => h.hover?.(f.id));
-      li.addEventListener('pointerleave', () => h.hover?.(null));
+      name.addEventListener('click', e => (e.ctrlKey || e.metaKey || e.shiftKey || this.historyPicking ? this.checkStep(feature.id) : historyHandlers.edit(feature.id)));
+      li.addEventListener('pointerenter', () => historyHandlers.hover?.(feature.id));
+      li.addEventListener('pointerleave', () => historyHandlers.hover?.(null));
       // A sketch, plane or axis: the eye shows or hides it, like everywhere else. Switching
       // one off broke every step made from it ("Its sketch was deleted") when a beginner only
       // wanted its lines out of the way. (One switched off before still gets switched back on.)
-      const looks = (f.type === 'sketch' || f.type === 'plane' || f.type === 'axis') && !f.suppressed && !!h.toggleHidden;
-      const hid = looks && !!h.isHidden?.(f.id);
+      const looks = (feature.type === 'sketch' || feature.type === 'plane' || feature.type === 'axis') && !feature.suppressed && !!historyHandlers.toggleHidden;
+      const hid = looks && !!historyHandlers.isHidden?.(feature.id);
       const eye = looks
-        ? iconButton(hid ? 'eyeOff' : 'eye', hid ? 'Show' : 'Hide', () => h.toggleHidden!(f.id))
-        : iconButton(f.suppressed ? 'eyeOff' : 'eye', f.suppressed ? 'Enable' : 'Suppress', () => h.toggle(f.id));
+        ? iconButton(hid ? 'eyeOff' : 'eye', hid ? 'Show' : 'Hide', () => historyHandlers.toggleHidden!(feature.id))
+        : iconButton(feature.suppressed ? 'eyeOff' : 'eye', feature.suppressed ? 'Enable' : 'Suppress', () => historyHandlers.toggle(feature.id));
       if (hid) {
         li.classList.add('hidden-step');
       }
       // Two taps: the bin sits where a phone user expects the panel's close
       // button, and one stray tap deleted a whole extrude.
       const del = iconButton('trash', 'Delete', () => undefined);
-      twoTap(del, `history:${f.id}`, () => h.remove(f.id));
+      twoTap(del, `history:${feature.id}`, () => historyHandlers.remove(feature.id));
       // A sketch's own steps fold out under it (closed by default).
-      const steps = f.type === 'sketch' ? (f.log ?? []) : [];
+      const steps = feature.type === 'sketch' ? (feature.log ?? []) : [];
       if (steps.length) {
-        const open = this.openSteps.has(f.id);
+        const open = this.openSteps.has(feature.id);
         const caret = el('button', 'history-caret', open ? '▾' : '▸');
         caret.title = open ? 'Hide the steps in this sketch' : `Show the ${steps.length} step${steps.length > 1 ? 's' : ''} in this sketch`;
         caret.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (this.openSteps.has(f.id)) {
-            this.openSteps.delete(f.id);
+          if (this.openSteps.has(feature.id)) {
+            this.openSteps.delete(feature.id);
           } else {
-            this.openSteps.add(f.id);
+            this.openSteps.add(feature.id);
           }
-          this.renderHistory(features, errors, activeId, h, warnings);
+          this.renderHistory(features, errors, activeId, historyHandlers, warnings);
         });
         li.append(caret);
       }
@@ -2108,37 +2108,37 @@ export class UI {
       li.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         this.menu(e.clientX, e.clientY, [
-          { label: 'Edit', run: () => h.edit(f.id) },
-          ...(looks ? [{ label: hid ? 'Show' : 'Hide', run: () => h.toggleHidden!(f.id) }] : []),
-          { label: f.suppressed ? 'Enable' : 'Suppress', run: () => h.toggle(f.id) },
-          ...(h.breakAfter ? [{ label: 'Insert Breakpoint After', run: () => h.breakAfter!(f.id) }] : []),
-          ...(h.breakAfter && firstBack ? [{ label: 'Remove Breakpoint', run: () => h.breakAfter!(null) }] : []),
-          ...(h.merge ? ['-' as const, { label: 'Merge History…', run: () => h.merge!() }] : []),
+          { label: 'Edit', run: () => historyHandlers.edit(feature.id) },
+          ...(looks ? [{ label: hid ? 'Show' : 'Hide', run: () => historyHandlers.toggleHidden!(feature.id) }] : []),
+          { label: feature.suppressed ? 'Enable' : 'Suppress', run: () => historyHandlers.toggle(feature.id) },
+          ...(historyHandlers.breakAfter ? [{ label: 'Insert Breakpoint After', run: () => historyHandlers.breakAfter!(feature.id) }] : []),
+          ...(historyHandlers.breakAfter && firstBack ? [{ label: 'Remove Breakpoint', run: () => historyHandlers.breakAfter!(null) }] : []),
+          ...(historyHandlers.merge ? ['-' as const, { label: 'Merge History…', run: () => historyHandlers.merge!() }] : []),
           '-',
-          { label: 'Delete', shortcut: 'Del', run: () => h.remove(f.id) }
+          { label: 'Delete', shortcut: 'Del', run: () => historyHandlers.remove(feature.id) }
         ]);
       });
       if (err) {
         li.append(el('div', 'history-error', err.message));
       }
-      if (warn && !err && this.openWarns.has(f.id)) {
+      if (warn && !err && this.openWarns.has(feature.id)) {
         li.append(el('div', 'history-warning-text', warn));
       }
       this.historyList.append(li);
       // What was done inside a sketch, step by step.
-      if (f.type === 'sketch' && f.log?.length && this.openSteps.has(f.id)) {
-        const steps = f.log;
+      if (feature.type === 'sketch' && feature.log?.length && this.openSteps.has(feature.id)) {
+        const steps = feature.log;
         const shownSteps = steps.length > 12 ? steps.slice(-12) : steps;
         const sub = el('li', 'history-steps');
         if (steps.length > shownSteps.length) {
           sub.append(el('div', 'history-step more', `… ${steps.length - shownSteps.length} earlier`));
         }
-        for (const s of shownSteps) {
+        for (const shownStep of shownSteps) {
           // (What the step made or changed that is still in the sketch: picked when its line is tapped.)
-          const still = (s.ids ?? []).filter(id => f.entities.some(e => e.id === id));
-          const row = el('button', 'history-step', `${s.op}${s.n > 1 ? ` ×${s.n}` : ''}`);
+          const still = (shownStep.ids ?? []).filter(id => feature.entities.some(e => e.id === id));
+          const row = el('button', 'history-step', `${shownStep.op}${shownStep.n > 1 ? ` ×${shownStep.n}` : ''}`);
           row.title = still.length ? `Open the sketch with ${still.length === 1 ? 'this curve' : `these ${still.length} curves`} picked, to change ${still.length === 1 ? 'it' : 'them'}` : 'Open the sketch';
-          row.addEventListener('click', () => h.edit(f.id, still));
+          row.addEventListener('click', () => historyHandlers.edit(feature.id, still));
           sub.append(row);
         }
         this.historyList.append(sub);
@@ -2147,7 +2147,7 @@ export class UI {
     if (this.historyChecked.size) {
       const li = el('li', 'items-actions');
       const make = el('button', 'text-btn primary', `Group (${this.historyChecked.size})`);
-      make.addEventListener('click', () => void this.groupSteps(features, h));
+      make.addEventListener('click', () => void this.groupSteps(features, historyHandlers));
       li.append(make);
       // Ticked steps that are in a group: out of it, back in their place in the timeline.
       const inGroups = [...this.historyChecked].filter(id => groupOf.has(id)).length;
@@ -2156,7 +2156,7 @@ export class UI {
         un.innerHTML = icons.ungroup;
         un.append(` Ungroup (${inGroups})`);
         un.title = 'Take the ticked steps out of their group (they stay in their place in the timeline)';
-        un.addEventListener('click', () => this.ungroupSteps(features, h));
+        un.addEventListener('click', () => this.ungroupSteps(features, historyHandlers));
         li.append(un);
       }
       this.historyList.append(li);
@@ -2166,22 +2166,22 @@ export class UI {
   }
 
   /** A group's row: fold it open/shut, its name, switch all its steps off/on, rename, ungroup. */
-  private groupRow(g: HistoryGroup, members: Feature[], errors: FeatureError[], h: HistoryHandlers): HTMLElement {
-    const closed = this.closedGroups.has(g.id);
-    const bad = members.some(m => errors.some(e => e.featureId === m.id));
-    const allOff = members.every(m => m.suppressed);
+  private groupRow(historyGroup: HistoryGroup, members: Feature[], errors: FeatureError[], historyHandlers: HistoryHandlers): HTMLElement {
+    const closed = this.closedGroups.has(historyGroup.id);
+    const bad = members.some(member => errors.some(e => e.featureId === member.id));
+    const allOff = members.every(member => member.suppressed);
     const li = el('li', `history-item history-group${bad ? ' error' : ''}${allOff ? ' suppressed' : ''}`);
     // Ticking: the whole group's steps at once (to ungroup it, or group it with more).
     if (this.historyPicking) {
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'items-check';
-      const ticked = members.filter(m => this.historyChecked.has(m.id)).length;
+      const ticked = members.filter(member => this.historyChecked.has(member.id)).length;
       box.checked = ticked === members.length;
       box.indeterminate = ticked > 0 && ticked < members.length;
       box.addEventListener('change', () => {
-        for (const m of members) {
-          box.checked ? this.historyChecked.add(m.id) : this.historyChecked.delete(m.id);
+        for (const member of members) {
+          box.checked ? this.historyChecked.add(member.id) : this.historyChecked.delete(member.id);
         }
         this.rerenderHistory();
       });
@@ -2191,24 +2191,24 @@ export class UI {
     caret.title = closed ? `Show the ${members.length} steps` : 'Fold the group';
     const fold = (e: Event) => {
       e.stopPropagation();
-      if (this.closedGroups.has(g.id)) {
-        this.closedGroups.delete(g.id);
+      if (this.closedGroups.has(historyGroup.id)) {
+        this.closedGroups.delete(historyGroup.id);
       } else {
-        this.closedGroups.add(g.id);
+        this.closedGroups.add(historyGroup.id);
       }
       this.rerenderHistory();
     };
     caret.addEventListener('click', fold);
     const name = el('button', 'history-name');
     name.innerHTML = icons.folder;
-    name.append(` ${g.name}`, el('span', 'history-count', ` ${members.length}`));
+    name.append(` ${historyGroup.name}`, el('span', 'history-count', ` ${members.length}`));
     name.title = bad ? 'A step in this group failed - open it to see' : 'Fold / unfold';
     name.addEventListener('click', fold);
-    const eye = iconButton(allOff ? 'eyeOff' : 'eye', allOff ? 'Enable all its steps' : 'Suppress all its steps', () => h.suppress(members.map(m => m.id), !allOff));
+    const eye = iconButton(allOff ? 'eyeOff' : 'eye', allOff ? 'Enable all its steps' : 'Suppress all its steps', () => historyHandlers.suppress(members.map(member => member.id), !allOff));
     const ren = iconButton('rename', 'Rename group', () =>
-      void h.askName('Rename group', g.name).then(n => n && h.setGroups(h.groups.map(x => (x.id === g.id ? { ...x, name: n } : x))))
+      void historyHandlers.askName('Rename group', historyGroup.name).then(name => name && historyHandlers.setGroups(historyHandlers.groups.map(group => (group.id === historyGroup.id ? { ...group, name: name } : group))))
     );
-    const un = iconButton('ungroup', 'Ungroup (the steps stay, in their place in the timeline)', () => h.setGroups(h.groups.filter(x => x.id !== g.id)));
+    const un = iconButton('ungroup', 'Ungroup (the steps stay, in their place in the timeline)', () => historyHandlers.setGroups(historyHandlers.groups.filter(group => group.id !== historyGroup.id)));
     li.append(caret, name, eye, ren, un);
 
     return li;
@@ -2228,15 +2228,15 @@ function unitScale(): number {
   return { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 }[units()];
 }
 
-function shown(v: number, kind: FieldKind): string {
+function shown(value: number, kind: FieldKind): string {
   if (kind === 'length') {
-    return trim(toDisplay(v), 4);
+    return trim(toDisplay(value), 4);
   }
   if (kind === 'int') {
-    return String(Math.round(v));
+    return String(Math.round(value));
   }
 
-  return trim(v, 4);
+  return trim(value, 4);
 }
 
 /**
@@ -2261,7 +2261,7 @@ export function usable(items: ToolItem[]): ToolItem[] {
   }
 
   // No separators at the ends or twice in a row.
-  return out.filter((x, i, a) => !x.id.startsWith('---') || (i > 0 && i < a.length - 1 && !a[i - 1].id.startsWith('---')));
+  return out.filter((toolItem, i, a) => !toolItem.id.startsWith('---') || (i > 0 && i < a.length - 1 && !a[i - 1].id.startsWith('---')));
 }
 
 function renderTools(host: HTMLElement, all: ToolItem[], onFlyout: (item: ToolItem, btn: HTMLElement) => void, after?: () => void): void {
@@ -2317,7 +2317,7 @@ function toolButton(item: ToolItem, withLabel: boolean): HTMLButtonElement {
     b.innerHTML = icons[item.icon];
   }
   if (withLabel) {
-    const l = el('span', 'tool-label');
+    const span = el('span', 'tool-label');
     const top = el('span', 'tool-name', item.label);
     if (item.beta) {
       top.append(betaTag());
@@ -2325,11 +2325,11 @@ function toolButton(item: ToolItem, withLabel: boolean): HTMLButtonElement {
     if (item.shortcut) {
       top.append(el('kbd', '', item.shortcut));
     }
-    l.append(top);
+    span.append(top);
     if (item.sub) {
-      l.append(el('span', 'tool-sub', item.sub));
+      span.append(el('span', 'tool-sub', item.sub));
     }
-    b.append(l);
+    b.append(span);
   }
   if (item.trailing?.length) {
     const t = el('span', 'tool-trailing');
@@ -2438,6 +2438,6 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, t
   return e;
 }
 
-export function fmt(v: number): string {
-  return String(Math.round(v * 1000) / 1000);
+export function fmt(value: number): string {
+  return String(Math.round(value * 1000) / 1000);
 }

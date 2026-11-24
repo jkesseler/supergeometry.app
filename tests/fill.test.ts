@@ -4,8 +4,8 @@ import { measureArea } from 'replicad';
 import { fillEdgeKey, type Feature, type Vec3 } from '../src/doc/types';
 import { after, check, done, line, near, sketch, XY, XZ } from './kit';
 
-const area = (s: { faces: unknown[] } | undefined) => (s ? (s.faces as Parameters<typeof measureArea>[0][]).reduce((a, f) => a + measureArea(f), 0) : 0);
-const bounds = (s: { boundingBox: { bounds: [Vec3, Vec3] } } | undefined) => s?.boundingBox.bounds;
+const area = (shape: { faces: unknown[] } | undefined) => (shape ? (shape.faces as Parameters<typeof measureArea>[0][]).reduce((a, face) => a + measureArea(face), 0) : 0);
+const bounds = (shape: { boundingBox: { bounds: [Vec3, Vec3] } } | undefined) => shape?.boundingBox.bounds;
 const edgeRef = (body: string, e: { pointAt(t: number): { toTuple(): number[] }; tangentAt(t: number): { toTuple(): number[] }; length: number }) => ({ body, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length });
 
 // A 20×20 square loop on XY: a flat patch of 400.
@@ -19,10 +19,10 @@ const fill = (extra: Record<string, unknown> = {}): Feature => ({ id: 'F', name:
 // A guide across it: a tent of two lines in XZ (y = 10), up to z = 6 in the middle - the surface rises to it.
 {
   const guide = sketch('g', XZ(10), [line('g1', [0, 0], [10, 6]), line('g2', [10, 6], [20, 0])]);
-  const r = await after([loop, guide, fill({ guides: [{ kind: 'sketch', sketch: 'g', entities: ['g1', 'g2'] }] })], 'F');
-  const b = bounds(r.body);
-  check('a guide lifts the surface (to about 6)', !r.err && !!b && b[1][2] > 5 && b[1][2] < 7, { err: r.err, b });
-  check("so it's bigger than flat", !r.err && area(r.body) > 410, area(r.body));
+  const result = await after([loop, guide, fill({ guides: [{ kind: 'sketch', sketch: 'g', entities: ['g1', 'g2'] }] })], 'F');
+  const b = bounds(result.body);
+  check('a guide lifts the surface (to about 6)', !result.err && !!b && b[1][2] > 5 && b[1][2] < 7, { err: result.err, b });
+  check("so it's bigger than flat", !result.err && area(result.body) > 410, area(result.body));
 }
 
 // Bridging two flat patches: A on z = 0 (x 0…20), B on z = 10 (x 30…50).
@@ -30,10 +30,10 @@ const fill = (extra: Record<string, unknown> = {}): Feature => ({ id: 'F', name:
 // tangent to both (G1) it leaves and meets them level - an S, a little more.
 {
   const sq = (id: string, z: number, x0: number) => sketch(id, XY(z), [line('e1', [x0, 0], [x0 + 20, 0]), line('e2', [x0 + 20, 0], [x0 + 20, 20]), line('e3', [x0 + 20, 20], [x0, 20]), line('e4', [x0, 20], [x0, 0])]);
-  const A = sq('a', 0, 0);
-  const B = sq('b2', 10, 30);
+  const featureA = sq('a', 0, 0);
+  const featureB = sq('b2', 10, 30);
   const patch = (id: string, sk: string): Feature => ({ id, name: id, type: 'fill', boundary: [{ kind: 'sketch', sketch: sk, entities: ['e1', 'e2', 'e3', 'e4'] }] }) as Feature;
-  const base = [A, B, patch('PA', 'a'), patch('PB', 'b2')];
+  const base = [featureA, featureB, patch('PA', 'a'), patch('PB', 'b2')];
   const ra = (await after(base, 'PA')).body!;
   const rb = (await after(base, 'PB')).body!;
   const right = ra.edges.filter(e => near(e.pointAt(0.5).toTuple()[0], 20, 1e-6)).map(e => edgeRef('PA', e));
@@ -49,7 +49,7 @@ const fill = (extra: Record<string, unknown> = {}): Feature => ({ id: 'F', name:
   const g2 = await after([...base, sides, far, bridge('g2')], 'W');
   // (OpenCascade's filling can't hold curvature along flat faces: it says so, rather than a G1 passed off as G2.)
   // Tangent to one patch only (its edge set on its own): between the two.
-  const half = await after([...base, sides, far, { ...bridge(), edgeContinuity: Object.fromEntries(left.map(r => [fillEdgeKey(r), 'g1'])) } as Feature], 'W');
+  const half = await after([...base, sides, far, { ...bridge(), edgeContinuity: Object.fromEntries(left.map(edge => [fillEdgeKey(edge), 'g1'])) } as Feature], 'W');
   check('one edge tangent, the other touching: in between', !half.err && area(half.body) > area(g0.body) + 0.1 && area(half.body) < area(g1.body) - 0.1, { err: half.err, a: [area(g0.body), area(half.body), area(g1.body)] });
   check('G2 builds, or says to try G1', (!g2.err && area(g2.body) > area(g0.body) + 0.5) || /G1/.test(g2.err ?? ''), { err: g2.err, a: area(g2.body) });
 }

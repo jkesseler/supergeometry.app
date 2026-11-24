@@ -10,27 +10,27 @@ import type { BooleanFeature, Feature } from '../src/doc/types';
 
 const oc = getOC();
 const gap = (a: Shape3D, b: Shape3D) => {
-  const d = new oc.BRepExtrema_DistShapeShape(a.wrapped, b.wrapped);
+  const measure = new oc.BRepExtrema_DistShapeShape(a.wrapped, b.wrapped);
   try {
-    return d.IsDone() ? d.Value() : -1;
+    return measure.IsDone() ? measure.Value() : -1;
   } finally {
-    d.delete();
+    measure.delete();
   }
 };
-const B = (id: string) => bodies().get(id) as Shape3D;
-const V = (id: string) => Math.abs(measureVolume(B(id)));
-const pieces = (id: string) => countSolids(B(id));
-function countSolids(s: Shape3D): number {
-  const ex = new oc.TopExp_Explorer(s.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SOLID, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-  let n = 0;
+const bodyShape = (id: string) => bodies().get(id) as Shape3D;
+const volumeOf = (id: string) => Math.abs(measureVolume(bodyShape(id)));
+const pieces = (id: string) => countSolids(bodyShape(id));
+function countSolids(shape: Shape3D): number {
+  const ex = new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SOLID, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  let count = 0;
   for (; ex.More(); ex.Next()) {
-    n++;
+    count++;
   }
   ex.delete();
 
-  return n;
+  return count;
 }
-const sound = (id: string) => health(B(id), id).healthy;
+const sound = (id: string) => health(bodyShape(id), id).healthy;
 
 const PI = Math.PI;
 // A plate 40 x 30 x 10, a peg r5 standing 20 tall right through it (z -5..15).
@@ -47,39 +47,39 @@ async function run(label: string, extra: Partial<BooleanFeature>) {
 
 // No clearance: the usual subtract (the peg used up).
 if (await run('no clearance', {})) {
-  check('no clearance: the hole is the peg', near(V('plate'), 12000 - PI * 25 * 10, 1e-6), V('plate'));
+  check('no clearance: the hole is the peg', near(volumeOf('plate'), 12000 - PI * 25 * 10, 1e-6), volumeOf('plate'));
   check('no clearance: the peg is used up', !bodies().has('peg'));
 }
 
 // From the body, 0.2: a hole r5.2, the peg kept as it was.
 if (await run('from the plate', { clearance: 0.2, keepTools: true })) {
-  check('from the plate: a hole r5.2', near(V('plate'), 12000 - PI * 5.2 ** 2 * 10, 1e-6), V('plate'));
-  check('from the plate: the peg as it was', near(V('peg'), PI * 25 * 20, 1e-6), V('peg'));
-  check('from the plate: 0.2 apart', near(gap(B('plate'), B('peg')), 0.2, 1e-6), gap(B('plate'), B('peg')));
+  check('from the plate: a hole r5.2', near(volumeOf('plate'), 12000 - PI * 5.2 ** 2 * 10, 1e-6), volumeOf('plate'));
+  check('from the plate: the peg as it was', near(volumeOf('peg'), PI * 25 * 20, 1e-6), volumeOf('peg'));
+  check('from the plate: 0.2 apart', near(gap(bodyShape('plate'), bodyShape('peg')), 0.2, 1e-6), gap(bodyShape('plate'), bodyShape('peg')));
   check('from the plate: sound', sound('plate'));
 }
 
 // From the body, the peg not kept: a hole r5.2 all the same.
 if (await run('from the plate, peg not kept', { clearance: 0.2 })) {
-  check('from the plate, peg not kept: a hole r5.2', near(V('plate'), 12000 - PI * 5.2 ** 2 * 10, 1e-6), V('plate'));
+  check('from the plate, peg not kept: a hole r5.2', near(volumeOf('plate'), 12000 - PI * 5.2 ** 2 * 10, 1e-6), volumeOf('plate'));
   check('from the plate, peg not kept: the peg is used up', !bodies().has('peg'));
 }
 
 // From the peg, 0.2: the plate stays, the peg loses its middle (10.4 of it,
 // the plate grown 0.2 above and below) - two stubs, 4.8 tall each.
 if (await run('from the peg', { clearance: 0.2, cutFrom: 'tools' })) {
-  check('from the peg: the plate as it was', near(V('plate'), 12000, 1e-6), V('plate'));
-  check('from the peg: two stubs, 4.8 each', near(V('peg'), PI * 25 * 9.6, 1e-6) && pieces('peg') === 2, [V('peg'), pieces('peg')]);
-  check('from the peg: 0.2 apart', near(gap(B('plate'), B('peg')), 0.2, 1e-6), gap(B('plate'), B('peg')));
+  check('from the peg: the plate as it was', near(volumeOf('plate'), 12000, 1e-6), volumeOf('plate'));
+  check('from the peg: two stubs, 4.8 each', near(volumeOf('peg'), PI * 25 * 9.6, 1e-6) && pieces('peg') === 2, [volumeOf('peg'), pieces('peg')]);
+  check('from the peg: 0.2 apart', near(gap(bodyShape('plate'), bodyShape('peg')), 0.2, 1e-6), gap(bodyShape('plate'), bodyShape('peg')));
   check('from the peg: sound', sound('peg'));
 }
 
 // From both, 0.2: half each - a hole r5.1 and a pin r4.9 through it (the
 // peg's ends, outside the plate grown 0.2, as they were).
 if (await run('from both', { clearance: 0.2, cutFrom: 'all' })) {
-  check('from both: a hole r5.1', near(V('plate'), 12000 - PI * 5.1 ** 2 * 10, 1e-6), V('plate'));
-  check('from both: a pin r4.9 through it, in one piece', near(V('peg'), PI * (25 * 9.6 + 4.9 ** 2 * 10.4), 1e-6) && pieces('peg') === 1, [V('peg'), pieces('peg')]);
-  check('from both: 0.2 apart', near(gap(B('plate'), B('peg')), 0.2, 1e-6), gap(B('plate'), B('peg')));
+  check('from both: a hole r5.1', near(volumeOf('plate'), 12000 - PI * 5.1 ** 2 * 10, 1e-6), volumeOf('plate'));
+  check('from both: a pin r4.9 through it, in one piece', near(volumeOf('peg'), PI * (25 * 9.6 + 4.9 ** 2 * 10.4), 1e-6) && pieces('peg') === 1, [volumeOf('peg'), pieces('peg')]);
+  check('from both: 0.2 apart', near(gap(bodyShape('plate'), bodyShape('peg')), 0.2, 1e-6), gap(bodyShape('plate'), bodyShape('peg')));
   check('from both: sound', sound('plate') && sound('peg'));
 }
 
@@ -95,8 +95,8 @@ if (await run('from both', { clearance: 0.2, cutFrom: 'all' })) {
     const ids = ['plate', 'peg', 'bar'];
     for (let i = 0; i < 3; i++) {
       for (let j = i + 1; j < 3; j++) {
-        const g = gap(B(ids[i]), B(ids[j]));
-        check(`three bodies: ${ids[i]} and ${ids[j]} 0.3 apart`, g >= 0.3 - 1e-6 && g < 0.3 + 1e-3, g);
+        const clearance = gap(bodyShape(ids[i]), bodyShape(ids[j]));
+        check(`three bodies: ${ids[i]} and ${ids[j]} 0.3 apart`, clearance >= 0.3 - 1e-6 && clearance < 0.3 + 1e-3, clearance);
       }
     }
     check('three bodies: all sound', ids.every(sound));
@@ -113,10 +113,10 @@ if (await run('from both', { clearance: 0.2, cutFrom: 'all' })) {
   const { errors } = await after([...plate, sh, extrude('shaft', sh, 20), { ...cut({ clearance: 0.25, cutFrom: 'all' }), tools: ['shaft'] } as Feature]);
   check('hex shaft: no errors', errors.length === 0, errors);
   if (!errors.length) {
-    check('hex shaft: a hex hole 8.25 across', near(V('plate'), 12000 - area(8.25) * 10, 1e-6), V('plate'));
-    check('hex shaft: a shaft 7.75 across through it', near(V('shaft'), area(8) * 9.5 + area(7.75) * 10.5, 1e-6), V('shaft'));
-    const g = gap(B('plate'), B('shaft'));
-    check('hex shaft: 0.25 apart', g >= 0.25 - 1e-6 && g < 0.25 + 1e-4, g);
+    check('hex shaft: a hex hole 8.25 across', near(volumeOf('plate'), 12000 - area(8.25) * 10, 1e-6), volumeOf('plate'));
+    check('hex shaft: a shaft 7.75 across through it', near(volumeOf('shaft'), area(8) * 9.5 + area(7.75) * 10.5, 1e-6), volumeOf('shaft'));
+    const clearance = gap(bodyShape('plate'), bodyShape('shaft'));
+    check('hex shaft: 0.25 apart', clearance >= 0.25 - 1e-6 && clearance < 0.25 + 1e-4, clearance);
     check('hex shaft: sound', sound('plate') && sound('shaft'));
   }
 }

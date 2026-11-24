@@ -67,22 +67,22 @@ function all(doc: ProjectDoc): Record<string, number | null> {
   setUnits(doc.units);
   setVariables(doc.variables);
   const out: Record<string, number | null> = {};
-  for (const f of doc.features as any[]) {
-    for (const [path, expr] of Object.entries(f.exprs ?? {})) {
-      out[`${f.id}.${path}`] = evaluate(expr as string, kindOfPath(path));
+  for (const feature of doc.features as any[]) {
+    for (const [path, expr] of Object.entries(feature.exprs ?? {})) {
+      out[`${feature.id}.${path}`] = evaluate(expr as string, kindOfPath(path));
     }
-    for (const c of f.constraints ?? []) {
-      if (c.expr) {
-        out[`${f.id}.${c.id}`] = evaluate(c.expr, c.prop === 'angle' ? 'angle' : 'length');
+    for (const constraint of feature.constraints ?? []) {
+      if (constraint.expr) {
+        out[`${feature.id}.${constraint.id}`] = evaluate(constraint.expr, constraint.prop === 'angle' ? 'angle' : 'length');
       }
-      (c.atExpr ?? []).forEach((e: string | null, i: number) => e && (out[`${f.id}.${c.id}.at${i}`] = evaluate(e, 'length')));
+      (constraint.atExpr ?? []).forEach((e: string | null, i: number) => e && (out[`${feature.id}.${constraint.id}.at${i}`] = evaluate(e, 'length')));
     }
   }
   // Each variable as a length too - but for the ones that are counts or angles (those are checked where they are used).
   // (od is used to count with - floor(od / 25) - so it stays a plain number too, and each length made from it is fixed.)
-  for (const v of doc.variables) {
-    if (!['n', 'tilt', 'od'].includes(v.name)) {
-      out[`var ${v.name}`] = evaluate(v.name, 'length');
+  for (const variable of doc.variables) {
+    if (!['n', 'tilt', 'od'].includes(variable.name)) {
+      out[`var ${variable.name}`] = evaluate(variable.name, 'length');
     }
   }
 
@@ -92,7 +92,7 @@ function all(doc: ProjectDoc): Record<string, number | null> {
 const near = (a: number | null, b: number | null) => a !== null && b !== null && Math.abs(a - b) <= 1e-7 * Math.max(1, Math.abs(a));
 const doc = make();
 const first = all(doc);
-check('every formula reads to begin with', Object.values(first).every(v => v !== null), JSON.stringify(Object.entries(first).filter(([, v]) => v === null)));
+check('every formula reads to begin with', Object.values(first).every(value => value !== null), JSON.stringify(Object.entries(first).filter(([, value]) => value === null)));
 check('the bore is 40 mm, the pitch 26.667, the count 6', near(first['var bore'], 40) && near(first['var pitch'], 160 / 6) && first['t1.op.count'] === 6);
 
 // Without it, this is what a change of unit did.
@@ -102,20 +102,20 @@ check('left alone, inches make the bore 40 in (1016 mm)', near(all(naive)['var b
 
 let from: Units = 'mm';
 for (const to of ['in', 'cm', 'ft', 'm', 'mm', 'in', 'mm'] as Units[]) {
-  const r = keepSizes(doc, from, to);
+  const result = keepSizes(doc, from, to);
   doc.units = to;
   const now = all(doc);
-  const off = Object.keys(first).filter(k => !near(now[k], first[k]));
-  check(`${from} to ${to}: every size as it was`, !off.length && !r.lost, off.map(k => `${k}: ${first[k]} -> ${now[k]}`).join('; ') + (r.lost ? ` lost ${r.lost}` : ''));
+  const off = Object.keys(first).filter(key => !near(now[key], first[key]));
+  check(`${from} to ${to}: every size as it was`, !off.length && !result.lost, off.map(key => `${key}: ${first[key]} -> ${now[key]}`).join('; ') + (result.lost ? ` lost ${result.lost}` : ''));
   from = to;
 }
-console.log('     ' + doc.variables.map(v => `${v.name} = ${v.expr}`).join(' | '));
-check('a count is still a plain number', doc.variables.find(v => v.name === 'n')!.expr === '6');
-check('an angle is left alone', doc.variables.find(v => v.name === 'tilt')!.expr === '30 deg');
-check('a length that had its unit is left alone', doc.variables.find(v => v.name === 'wall')!.expr === '10 mm');
-check('a plain length says its unit', doc.variables.find(v => v.name === 'bore')!.expr === '40 mm');
-check('one that is counted with stays plain', doc.variables.find(v => v.name === 'od')!.expr === '160');
-check('a formula of variables only is left alone', doc.variables.find(v => v.name === 'hubD')!.expr === 'bore + 2*wall');
+console.log('     ' + doc.variables.map(variable => `${variable.name} = ${variable.expr}`).join(' | '));
+check('a count is still a plain number', doc.variables.find(variable => variable.name === 'n')!.expr === '6');
+check('an angle is left alone', doc.variables.find(variable => variable.name === 'tilt')!.expr === '30 deg');
+check('a length that had its unit is left alone', doc.variables.find(variable => variable.name === 'wall')!.expr === '10 mm');
+check('a plain length says its unit', doc.variables.find(variable => variable.name === 'bore')!.expr === '40 mm');
+check('one that is counted with stays plain', doc.variables.find(variable => variable.name === 'od')!.expr === '160');
+check('a formula of variables only is left alone', doc.variables.find(variable => variable.name === 'hubD')!.expr === 'bore + 2*wall');
 // The same unit: nothing touched.
 const same = make();
 check('no change of unit: nothing rewritten', keepSizes(same, 'mm', 'mm').changed === 0 && JSON.stringify(same) === JSON.stringify(make()));

@@ -53,7 +53,7 @@ export const plane = (origin: Vec3, normal: Vec3, xDir: Vec3): PlaneDef => ({ or
 
 export const rect = (id: string, x0: number, y0: number, x1: number, y1: number): SketchEntity =>
   ({ id, kind: 'polyline', points: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], closed: true }) as SketchEntity;
-export const circle = (id: string, x: number, y: number, r: number): SketchEntity => ({ id, kind: 'circle', center: [x, y], radius: r }) as SketchEntity;
+export const circle = (id: string, x: number, y: number, radius: number): SketchEntity => ({ id, kind: 'circle', center: [x, y], radius: radius }) as SketchEntity;
 export const line = (id: string, a: [number, number], b: [number, number]): SketchEntity => ({ id, kind: 'line', a, b }) as SketchEntity;
 export const poly = (id: string, points: [number, number][], closed = true): SketchEntity => ({ id, kind: 'polyline', points, closed }) as SketchEntity;
 
@@ -67,7 +67,7 @@ export function profile(sketchId: string, entities: SketchEntity[], pick?: (regi
 }
 
 /** The entities of a sketch step made above. */
-const entitiesOf = (fs: Feature[], id: string) => (fs.find(f => f.id === id) as { entities: SketchEntity[] } | undefined)?.entities ?? [];
+const entitiesOf = (fs: Feature[], id: string) => (fs.find(feature => feature.id === id) as { entities: SketchEntity[] } | undefined)?.entities ?? [];
 
 // ------------------------------------------------------------------ steps
 
@@ -79,38 +79,38 @@ export function extrude(id: string, sk: Feature | string, distance: number, mode
   return { id, name: id, type: 'extrude', source: profile(sid, es), distance, mode, ...extra } as Feature;
 }
 
-/** A block w x d x h from the origin (a sketch and its extrude). */
-export function block(id: string, w: number, d: number, h: number, at: Vec3 = [0, 0, 0]): Feature[] {
-  const s = sketch(`${id}-s`, XY(at[2]), [rect(`${id}-r`, at[0], at[1], at[0] + w, at[1] + d)]);
+/** A block `width` x `depth` x `height` from the origin (a sketch and its extrude). */
+export function block(id: string, width: number, depth: number, height: number, at: Vec3 = [0, 0, 0]): Feature[] {
+  const feature = sketch(`${id}-s`, XY(at[2]), [rect(`${id}-r`, at[0], at[1], at[0] + width, at[1] + depth)]);
 
-  return [s, extrude(id, s, h)];
+  return [feature, extrude(id, feature, height)];
 }
 
-/** A cylinder of radius r and height h standing on the XY plane at (x, y). */
-export function cylinder(id: string, r: number, h: number, x = 0, y = 0, z = 0): Feature[] {
-  const s = sketch(`${id}-s`, XY(z), [circle(`${id}-c`, x, y, r)]);
+/** A cylinder of `radius` and `height` standing on the XY plane at (x, y). */
+export function cylinder(id: string, radius: number, height: number, x = 0, y = 0, z = 0): Feature[] {
+  const feature = sketch(`${id}-s`, XY(z), [circle(`${id}-c`, x, y, radius)]);
 
-  return [s, extrude(id, s, h)];
+  return [feature, extrude(id, feature, height)];
 }
 
 // ------------------------------------------------------------------ results
 
 /** Rebuild the steps: the result, the solid of one body (by its id), and the first error. */
 export async function after(fs: Feature[], bodyId?: string): Promise<{ r: RegenResult; body: Shape3D | undefined; err?: string; errors: string[] }> {
-  const r = await regenerate(fs);
+  const result = await regenerate(fs);
   const bodies = debugBodies();
   const body = bodyId ? bodies.get(bodyId) : [...bodies.values()][0];
-  const errors = r.errors.map(e => `${e.featureId}: ${e.message}`);
+  const errors = result.errors.map(e => `${e.featureId}: ${e.message}`);
 
-  return { r, body, err: r.errors[0]?.message, errors };
+  return { r: result, body, err: result.errors[0]?.message, errors };
 }
 
 /** The solids of the last rebuild, by body id. */
 export const bodies = () => debugBodies();
 
-export const volume = (s: Shape3D | undefined) => (s ? measureVolume(s) : 0);
+export const volume = (shape: Shape3D | undefined) => (shape ? measureVolume(shape) : 0);
 
 /** A body's health: valid, closed, solids, faces, volume, box. */
-export const health = (s: Shape3D, id = 'body'): BodyHealth => healthReport(id, id, s);
+export const health = (shape: Shape3D, id = 'body'): BodyHealth => healthReport(id, id, shape);
 
 export { entitiesOf };

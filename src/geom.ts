@@ -4,7 +4,7 @@ import type { PlaneDef, Vec2, Vec3 } from './doc/types';
 
 export const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-export const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
+export const scale = (a: Vec3, factor: number): Vec3 => [a[0] * factor, a[1] * factor, a[2] * factor];
 export const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 export const cross = (a: Vec3, b: Vec3): Vec3 => [
   a[1] * b[2] - a[2] * b[1],
@@ -13,9 +13,9 @@ export const cross = (a: Vec3, b: Vec3): Vec3 => [
 ];
 export const len = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
 export const norm = (a: Vec3): Vec3 => {
-  const l = len(a) || 1;
+  const length = len(a) || 1;
 
-  return [a[0] / l, a[1] / l, a[2] / l];
+  return [a[0] / length, a[1] / length, a[2] / length];
 };
 export const dist = (a: Vec3, b: Vec3): number => len(sub(a, b));
 
@@ -23,20 +23,20 @@ export const GROUND: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0
 export const FRONT: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, -1, 0] };
 export const RIGHT: PlaneDef = { origin: [0, 0, 0], xDir: [0, 1, 0], normal: [1, 0, 0] };
 
-export function planeY(p: PlaneDef): Vec3 {
-  return cross(p.normal, p.xDir);
+export function planeY(plane: PlaneDef): Vec3 {
+  return cross(plane.normal, plane.xDir);
 }
 
-export function toWorld(p: PlaneDef, uv: Vec2): Vec3 {
-  const y = planeY(p);
+export function toWorld(plane: PlaneDef, uv: Vec2): Vec3 {
+  const y = planeY(plane);
 
-  return add(p.origin, add(scale(p.xDir, uv[0]), scale(y, uv[1])));
+  return add(plane.origin, add(scale(plane.xDir, uv[0]), scale(y, uv[1])));
 }
 
-export function toPlane(p: PlaneDef, w: Vec3): Vec2 {
-  const d = sub(w, p.origin);
+export function toPlane(plane: PlaneDef, worldPoint: Vec3): Vec2 {
+  const delta = sub(worldPoint, plane.origin);
 
-  return [dot(d, p.xDir), dot(d, planeY(p))];
+  return [dot(delta, plane.xDir), dot(delta, planeY(plane))];
 }
 
 /** Pick a stable in-plane x direction for a face normal (world X if possible). */
@@ -57,21 +57,21 @@ export function xDirFor(normal: Vec3): Vec3 {
  * centre moves as things are added to it - the pole typed at 0, 0 on a base
  * with letters and buttons landed at -0.9, 1.2).
  */
-export function originOnPlane(p: PlaneDef): PlaneDef {
-  const n = p.normal;
-  const k = (p.origin[0] * n[0] + p.origin[1] * n[1] + p.origin[2] * n[2]) / (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+export function originOnPlane(plane: PlaneDef): PlaneDef {
+  const normal = plane.normal;
+  const offset = (plane.origin[0] * normal[0] + plane.origin[1] * normal[1] + plane.origin[2] * normal[2]) / (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
 
-  return { ...p, origin: [n[0] * k, n[1] * k, n[2] * k] };
+  return { ...plane, origin: [normal[0] * offset, normal[1] * offset, normal[2] * offset] };
 }
 
-/** A default size: `v` rounded to two significant figures (217.4 -> 220, 0.0347 -> 0.035). */
-export function roundSig(v: number, sig = 2): number {
-  if (!Number.isFinite(v) || v === 0) {
-    return v;
+/** A default size: `value` rounded to two significant figures (217.4 -> 220, 0.0347 -> 0.035). */
+export function roundSig(value: number, sig = 2): number {
+  if (!Number.isFinite(value) || value === 0) {
+    return value;
   }
-  const p = Math.pow(10, Math.floor(Math.log10(Math.abs(v))) - sig + 1);
+  const step = Math.pow(10, Math.floor(Math.log10(Math.abs(value))) - sig + 1);
 
-  return Math.round(v / p) * p;
+  return Math.round(value / step) * step;
 }
 
 /**
@@ -84,8 +84,8 @@ export function patternSpacing(extent: number, fallback = 10): number {
 }
 
 export function niceStep(raw: number): number {
-  const p = Math.pow(10, Math.floor(Math.log10(raw)));
-  const m = raw / p;
+  const power = Math.pow(10, Math.floor(Math.log10(raw)));
+  const mantissa = raw / power;
 
-  return (m < 2 ? 1 : m < 7 ? 5 : 10) * p;
+  return (mantissa < 2 ? 1 : mantissa < 7 ? 5 : 10) * power;
 }

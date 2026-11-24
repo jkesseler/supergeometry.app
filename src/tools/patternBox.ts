@@ -31,10 +31,10 @@ export class PatternBox {
     opts: PatternBoxOptions
   ) {
     for (const [id, label] of [['between', 'Between'], ['total', 'Total']]) {
-      const o = document.createElement('option');
-      o.value = id;
-      o.textContent = label;
-      this.sel.append(o);
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = label;
+      this.sel.append(option);
     }
     this.sel.value = opts.measure;
     this.count.inputMode = 'numeric';
@@ -45,12 +45,12 @@ export class PatternBox {
     numpadInput(this.dist);
     this.dist.value = trim(toDisplay(opts.spacing), 3);
     const changed = () => {
-      const n = Math.round(Number(this.count.value));
-      const d = evaluate(this.dist.value, 'length');
-      const ok = Number.isFinite(n) && n >= 2 && d !== null;
+      const count = Math.round(Number(this.count.value));
+      const distance = evaluate(this.dist.value, 'length');
+      const ok = Number.isFinite(count) && count >= 2 && distance !== null;
       this.box.classList.toggle('invalid', !ok);
       if (ok) {
-        opts.onChange({ count: n, spacing: d!, measure: this.sel.value as 'between' | 'total' });
+        opts.onChange({ count: count, spacing: distance!, measure: this.sel.value as 'between' | 'total' });
       }
     };
     for (const i of [this.count, this.dist]) {
@@ -76,16 +76,16 @@ export class PatternBox {
   }
 
   /** Where the box sits (a world point, e.g. the arrow's tip). */
-  place(p: Vec3): void {
-    this.at.set(...p);
+  place(point: Vec3): void {
+    this.at.set(...point);
     this.layout();
   }
 
   private layout(): void {
-    const s = this.view.toScreen(this.at);
-    this.box.hidden = !s;
-    if (s) {
-      this.box.style.transform = `translate(${Math.round(s[0] + 24)}px, ${Math.round(s[1] - 24)}px) translate(0, -50%)`;
+    const screenPoint = this.view.toScreen(this.at);
+    this.box.hidden = !screenPoint;
+    if (screenPoint) {
+      this.box.style.transform = `translate(${Math.round(screenPoint[0] + 24)}px, ${Math.round(screenPoint[1] - 24)}px) translate(0, -50%)`;
     }
   }
 

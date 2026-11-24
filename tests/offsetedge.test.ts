@@ -19,7 +19,7 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 const near = (a: number, b: number, e = 1e-6) => Math.abs(a - b) < e;
-const f3 = (p: Vec3) => p.map(x => x.toFixed(3)).join(', ');
+const f3 = (point: Vec3) => point.map(x => x.toFixed(3)).join(', ');
 
 // A 40 x 30 box, 20 high (top face at z = 20).
 const XY = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] };
@@ -28,12 +28,12 @@ const box = (extra: any[] = [], ents: any[] = [{ id: 'r', kind: 'rect', center: 
   { id: 'body', name: 'Extrude 01', type: 'extrude', source: { kind: 'profile', sketch: 'sk', regions: [{ c: [20, 15], a: 1200 }] }, distance: 20, mode: 'auto' },
   ...extra
 ];
-const faceBy = (b: BodyMesh, n: Vec3) => b.faces.findIndex(f => f.type === 'PLANE' && len(sub(f.normal, n)) < 1e-6);
+const faceBy = (b: BodyMesh, normal: Vec3) => b.faces.findIndex(face => face.type === 'PLANE' && len(sub(face.normal, normal)) < 1e-6);
 const edgeBy = (b: BodyMesh, test: (e: BodyMesh['edges'][number]) => boolean) => b.edges.find(test)!;
 
 {
-  const r = await regenerate(box() as any);
-  const b = r.bodies[0];
+  const result = await regenerate(box() as any);
+  const b = result.bodies[0];
   const top = faceBy(b, [0, 0, 1]);
   // The top face's front edge (y = 0, z = 20, along X).
   const e = edgeBy(b, x => x.type === 'LINE' && near(x.mid[1], 0) && near(x.mid[2], 20));
@@ -61,14 +61,14 @@ const edgeBy = (b: BodyMesh, test: (e: BodyMesh['edges'][number]) => boolean) =>
     { id: 'sk2', name: 'Sketch 02', type: 'sketch', plane: { origin: [0, 0, 20], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: [{ id: 'c', kind: 'circle', center: [30, 20], radius: 4 }] },
     { id: 'cut', name: 'Extrude 02', type: 'extrude', source: { kind: 'profile', sketch: 'sk2', regions: [{ c: [30, 20], a: Math.PI * 16 }] }, distance: -20, mode: 'auto', target: 'body' }
   ];
-  const r = await regenerate(box(hole) as any);
-  const b = r.bodies[0];
+  const result = await regenerate(box(hole) as any);
+  const b = result.bodies[0];
   const top = faceBy(b, [0, 0, 1]);
   const e = edgeBy(b, x => x.type === 'LINE' && near(x.mid[1], 0) && near(x.mid[2], 20));
-  const l = offsetLineOnFace(b, top, b.faces[top].plane!, e.start, e.end, 18) as OffsetLine;
+  const offsetLine = offsetLineOnFace(b, top, b.faces[top].plane!, e.start, e.end, 18) as OffsetLine;
   // At y = 18 the hole (centre 30, 20, r 4) spans x = 30 ± √12. The edge's middle (x = 20) is left of it.
-  const xs = typeof l === 'string' ? [] : [l.a[0], l.b[0]].sort((p, q) => p - q);
-  check("across a hole: from the left side to the hole's rim, exactly on the circle", xs.length === 2 && near(xs[0], 0) && near(xs[1], 30 - Math.sqrt(12), 1e-6), typeof l === 'string' ? l : `x ${xs.map(x => x.toFixed(6)).join(' → ')}`);
+  const xs = typeof offsetLine === 'string' ? [] : [offsetLine.a[0], offsetLine.b[0]].sort((low, q) => low - q);
+  check("across a hole: from the left side to the hole's rim, exactly on the circle", xs.length === 2 && near(xs[0], 0) && near(xs[1], 30 - Math.sqrt(12), 1e-6), typeof offsetLine === 'string' ? offsetLine : `x ${xs.map(x => x.toFixed(6)).join(' → ')}`);
 }
 
 // The made sketch splits the face: two regions to extrude.
@@ -78,13 +78,13 @@ const edgeBy = (b: BodyMesh, test: (e: BodyMesh['edges'][number]) => boolean) =>
   const top = faceBy(b, [0, 0, 1]);
   const e = edgeBy(b, x => x.type === 'LINE' && near(x.mid[1], 0) && near(x.mid[2], 20));
   const pl = b.faces[top].plane!;
-  const l = offsetLineOnFace(b, top, pl, e.start, e.end, 5) as OffsetLine;
-  const f = b.faces[top];
-  const sketch = { id: 'off', name: 'Offset Edge 01', type: 'sketch', plane: pl, attachedTo: { body: 'body', center: f.center, normal: f.normal, area: f.area }, entities: [{ id: 'l', kind: 'line', a: l.a2, b: l.b2 }] };
-  const r = await regenerate(box([sketch]) as any);
+  const offsetLine = offsetLineOnFace(b, top, pl, e.start, e.end, 5) as OffsetLine;
+  const face = b.faces[top];
+  const sketch = { id: 'off', name: 'Offset Edge 01', type: 'sketch', plane: pl, attachedTo: { body: 'body', center: face.center, normal: face.normal, area: face.area }, entities: [{ id: 'l', kind: 'line', a: offsetLine.a2, b: offsetLine.b2 }] };
+  const result = await regenerate(box([sketch]) as any);
   const { arrangement } = await import('../src/sketch/regions');
-  const regions = arrangement([...(sketch.entities as any), ...(r.sketchBoundaries.off ?? [])]).regions;
-  const areas = regions.map((x: any) => Math.abs(x.area)).sort((p: number, q: number) => p - q);
+  const regions = arrangement([...(sketch.entities as any), ...(result.sketchBoundaries.off ?? [])]).regions;
+  const areas = regions.map((region: any) => Math.abs(region.area)).sort((low: number, q: number) => low - q);
   check('the line splits the top face into a 40 x 5 strip and the rest', areas.length === 2 && near(areas[0], 200, 1e-3) && near(areas[1], 1000, 1e-3), areas.map((a: number) => a.toFixed(3)).join(', '));
   void dot;
 }

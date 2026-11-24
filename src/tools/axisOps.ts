@@ -38,7 +38,7 @@ export class TwoPointAxisOp extends AxisFromPicks {
   private pts: (Vec3 | null)[] = [null, null];
   constructor(app: AppContext) {
     super(app, 'Axis Point to Point', '2pt');
-    this.slots = ['First point', 'Second point'].map((l, i) => pointSlot(app, l, () => this.pts[i], p => ((this.pts[i] = p), this.sync())));
+    this.slots = ['First point', 'Second point'].map((label, i) => pointSlot(app, label, () => this.pts[i], point => ((this.pts[i] = point), this.sync())));
     this.finishWhenPicked = true;
   }
   protected make(): { origin: Vec3; dir: Vec3 } | null {
@@ -62,8 +62,8 @@ export class PlanesAxisOp extends AxisFromPicks {
   constructor(app: AppContext) {
     super(app, 'Axis 2 Planes', 'planes');
     this.slots = [
-      planeSlot(app, 'First plane', () => this.a, p => ((this.a = p), this.sync())),
-      planeSlot(app, 'Second plane', () => this.b, p => ((this.b = p), this.sync()))
+      planeSlot(app, 'First plane', () => this.a, plane => ((this.a = plane), this.sync())),
+      planeSlot(app, 'Second plane', () => this.b, plane => ((this.b = plane), this.sync()))
     ];
     this.finishWhenPicked = true;
   }
@@ -79,21 +79,21 @@ export class PlanesAxisOp extends AxisFromPicks {
 export function planesMeet(a: PlaneDef, b: PlaneDef): { origin: Vec3; dir: Vec3 } | null {
   const n1 = norm(a.normal);
   const n2 = norm(b.normal);
-  const d = cross(n1, n2);
-  if (len(d) < 1e-6) {
+  const direction = cross(n1, n2);
+  if (len(direction) < 1e-6) {
     return null;
   }
-  const dir = norm(d);
+  const dir = norm(direction);
   // A point on both: x = q + s n1 + t n2, with n1·x = n1·a.origin and n2·x = n2·b.origin, q the middle.
   const q = scale(add(a.origin, b.origin), 0.5);
   const r1 = dot(n1, sub(a.origin, q));
   const r2 = dot(n2, sub(b.origin, q));
-  const c = dot(n1, n2);
-  const det = 1 - c * c;
-  const s = (r1 - c * r2) / det;
-  const t = (r2 - c * r1) / det;
+  const cosine = dot(n1, n2);
+  const det = 1 - cosine * cosine;
+  const factor = (r1 - cosine * r2) / det;
+  const t = (r2 - cosine * r1) / det;
 
-  return { origin: add(q, add(scale(n1, s), scale(n2, t))), dir };
+  return { origin: add(q, add(scale(n1, factor), scale(n2, t))), dir };
 }
 
 /**
@@ -108,79 +108,79 @@ export function surfaceAxis(app: AppContext, body: string, face: number): { orig
   }
   const b = app.view.body(body);
   const info = b?.faces[face];
-  const g = b?.faceGroups.find(x => x.face === face);
-  if (!b || !info || !g || g.count < 3 || !['CONE', 'CYLINDRE', 'REVOLUTION_SURFACE', 'TORUS', 'SPHERE'].includes(info.type)) {
+  const faceGroup = b?.faceGroups.find(faceGroup => faceGroup.face === face);
+  if (!b || !info || !faceGroup || faceGroup.count < 3 || !['CONE', 'CYLINDRE', 'REVOLUTION_SURFACE', 'TORUS', 'SPHERE'].includes(info.type)) {
     return null;
   }
-  const at = (A: ArrayLike<number>, i: number): Vec3 => [A[3 * i], A[3 * i + 1], A[3 * i + 2]];
-  const idx = [...new Set(Array.from(b.indices.subarray(g.start, g.start + g.count)))];
+  const at = (values: ArrayLike<number>, i: number): Vec3 => [values[3 * i], values[3 * i + 1], values[3 * i + 2]];
+  const idx = [...new Set(Array.from(b.indices.subarray(faceGroup.start, faceGroup.start + faceGroup.count)))];
   const ns = idx.map(i => norm(at(b.normals, i)));
   const ps = idx.map(i => at(b.positions, i));
   // The axis: the way the normals don't spread (their spread's least direction).
-  const m = scale(ns.reduce(add, [0, 0, 0] as Vec3), 1 / ns.length);
-  const C = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-  for (const n of ns) {
-    const v = sub(n, m);
-    for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
-        C[r * 3 + c] += v[r] * v[c];
+  const mean = scale(ns.reduce(add, [0, 0, 0] as Vec3), 1 / ns.length);
+  const covariance = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const normal of ns) {
+    const offset = sub(normal, mean);
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 3; column++) {
+        covariance[row * 3 + column] += offset[row] * offset[column];
       }
     }
   }
-  const tr = C[0] + C[4] + C[8];
+  const tr = covariance[0] + covariance[4] + covariance[8];
   if (tr < 1e-6 * ns.length) {
     return null;
   } // all the normals one way: a sliver, nothing to go by
-  // Power steps on (tr·I − C): its biggest is C's least.
-  let d: Vec3 = norm(cross(ns[0], ns[ns.length >> 1]));
-  if (len(d) < 0.5) {
-    d = [0.577, 0.577, 0.577];
+  // Power steps on (tr·I − covariance): its biggest is the covariance's least.
+  let direction: Vec3 = norm(cross(ns[0], ns[ns.length >> 1]));
+  if (len(direction) < 0.5) {
+    direction = [0.577, 0.577, 0.577];
   }
-  for (let k = 0; k < 60; k++) {
-    const nd: Vec3 = [0, 1, 2].map(r => tr * d[r] - (C[r * 3] * d[0] + C[r * 3 + 1] * d[1] + C[r * 3 + 2] * d[2])) as Vec3;
+  for (let iteration = 0; iteration < 60; iteration++) {
+    const nd: Vec3 = [0, 1, 2].map(row => tr * direction[row] - (covariance[row * 3] * direction[0] + covariance[row * 3 + 1] * direction[1] + covariance[row * 3 + 2] * direction[2])) as Vec3;
     if (len(nd) < 1e-12) {
       return null;
     }
-    d = norm(nd);
+    direction = norm(nd);
   }
   // The point on the axis: nearest every normal line, across the axis.
-  const A = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const system = [0, 0, 0, 0, 0, 0, 0, 0, 0];
   const rhs: Vec3 = [0, 0, 0];
   for (let i = 0; i < ns.length; i++) {
-    const u0 = sub(ns[i], scale(d, dot(ns[i], d)));
+    const u0 = sub(ns[i], scale(direction, dot(ns[i], direction)));
     if (len(u0) < 1e-6) {
       continue;
     }
-    const u = norm(u0);
-    for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
-        const M = (r === c ? 1 : 0) - u[r] * u[c] - d[r] * d[c];
-        A[r * 3 + c] += M;
-        rhs[r] += M * ps[i][c];
+    const unitU = norm(u0);
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 3; column++) {
+        const projector = (row === column ? 1 : 0) - unitU[row] * unitU[column] - direction[row] * direction[column];
+        system[row * 3 + column] += projector;
+        rhs[row] += projector * ps[i][column];
       }
     }
   }
   // (Along the axis it is free: held at the face's middle.)
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      A[r * 3 + c] += d[r] * d[c] * ns.length;
+  for (let row = 0; row < 3; row++) {
+    for (let column = 0; column < 3; column++) {
+      system[row * 3 + column] += direction[row] * direction[column] * ns.length;
     }
   }
-  for (let r = 0; r < 3; r++) {
-    rhs[r] += d[r] * dot(d, info.center) * ns.length;
+  for (let rhIndex = 0; rhIndex < 3; rhIndex++) {
+    rhs[rhIndex] += direction[rhIndex] * dot(direction, info.center) * ns.length;
   }
-  const o = solve3(A, rhs);
+  const solution = solve3(system, rhs);
 
-  return o && { origin: o, dir: d };
+  return solution && { origin: solution, dir: direction };
 }
 
-function solve3(A: number[], b: Vec3): Vec3 | null {
-  const det = (m: number[]) => m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
-  const D = det(A);
-  if (Math.abs(D) < 1e-12) {
+function solve3(matrix: number[], b: Vec3): Vec3 | null {
+  const det = (cells: number[]) => cells[0] * (cells[4] * cells[8] - cells[5] * cells[7]) - cells[1] * (cells[3] * cells[8] - cells[5] * cells[6]) + cells[2] * (cells[3] * cells[7] - cells[4] * cells[6]);
+  const determinant = det(matrix);
+  if (Math.abs(determinant) < 1e-12) {
     return null;
   }
-  const col = (k: number) => A.map((v, i) => (i % 3 === k ? b[Math.floor(i / 3)] : v));
+  const col = (column: number) => matrix.map((value, i) => (i % 3 === column ? b[Math.floor(i / 3)] : value));
 
-  return [det(col(0)) / D, det(col(1)) / D, det(col(2)) / D];
+  return [det(col(0)) / determinant, det(col(1)) / determinant, det(col(2)) / determinant];
 }

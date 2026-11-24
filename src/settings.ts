@@ -152,7 +152,7 @@ export const MOUSE_PRESETS: MousePreset[] = [
 
 /** The preset in use (one not known - an older setting - is the app's own). */
 export function mousePreset(id: string): MousePreset {
-  return MOUSE_PRESETS.find(m => m.id === id) ?? MOUSE_PRESETS[0];
+  return MOUSE_PRESETS.find(mousePreset => mousePreset.id === id) ?? MOUSE_PRESETS[0];
 }
 
 /** What a mouse press on the view does to the view, in a preset: null, nothing (the press is for the tools). */
@@ -168,9 +168,9 @@ export function mouseDrag(id: string, button: number, keys: { shift: boolean; ct
   if (button !== 1) {
     return null;
   }
-  const m = preset.middle;
+  const middle = preset.middle;
 
-  return (keys.ctrl && keys.shift ? (m.both ?? m.ctrl ?? m.shift) : keys.ctrl ? m.ctrl : keys.shift ? m.shift : undefined) ?? m.plain;
+  return (keys.ctrl && keys.shift ? (middle.both ?? middle.ctrl ?? middle.shift) : keys.ctrl ? middle.ctrl : keys.shift ? middle.shift : undefined) ?? middle.plain;
 }
 
 /** A middle drag while other buttons are held with it (`buttons` as a pointer event gives them): what it becomes, or null. */
@@ -252,8 +252,8 @@ class SettingsStore {
     this.value.direct = true;
   }
 
-  set<K extends keyof Settings>(key: K, v: Settings[K]): void {
-    this.value = { ...this.value, [key]: v };
+  set<K extends keyof Settings>(key: K, value: Settings[K]): void {
+    this.value = { ...this.value, [key]: value };
     try {
       localStorage.setItem(KEY, JSON.stringify(this.value));
     } catch {

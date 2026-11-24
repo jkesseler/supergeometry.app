@@ -19,32 +19,32 @@ export function cageToShape(cage: Cage, levels = 3, thicken?: Thicken, ready?: S
     throw new Error('The freeform has no faces');
   }
   const oc = getOC();
-  const s = ready ?? subdivide(cage, levels);
+  const subdivided = ready ?? subdivide(cage, levels);
   // Fitted through points on the smooth surface itself (see limitPoints).
   if (!ready) {
-    s.points = limitPoints(s);
+    subdivided.points = limitPoints(subdivided);
   }
-  const N = s.n + 1;
-  const tol = Math.max(1e-4, sizeOf(s.points) * 1e-5);
+  const count = subdivided.n + 1;
+  const tol = Math.max(1e-4, sizeOf(subdivided.points) * 1e-5);
   const sewing = new oc.BRepBuilderAPI_Sewing(tol, true, true, true, false);
   const gc: { delete(): void }[] = [sewing];
   // Shared by every patch: same size, same uniform parameters.
-  const k = cubicKnots(N);
-  const uKnots = new oc.NCollection_Array1_double(1, k.knots.length);
-  const uMults = new oc.NCollection_Array1_int(1, k.mults.length);
-  k.knots.forEach((x, i) => uKnots.SetValue(i + 1, x));
-  k.mults.forEach((x, i) => uMults.SetValue(i + 1, x));
+  const knots = cubicKnots(count);
+  const uKnots = new oc.NCollection_Array1_double(1, knots.knots.length);
+  const uMults = new oc.NCollection_Array1_int(1, knots.mults.length);
+  knots.knots.forEach((x, i) => uKnots.SetValue(i + 1, x));
+  knots.mults.forEach((x, i) => uMults.SetValue(i + 1, x));
   gc.push(uKnots, uMults);
-  for (const g of s.grids) {
+  for (const grid of subdivided.grids) {
     // Our own uniform interpolation: patches with the same border points get
     // identical border curves, so they sew exactly.
-    const poles = interpolateGrid(g.map(row => row.map(i => s.points[i])));
-    const arr = new oc.NCollection_Array2_gp_Pnt(1, N, 1, N);
+    const poles = interpolateGrid(grid.map(row => row.map(i => subdivided.points[i])));
+    const arr = new oc.NCollection_Array2_gp_Pnt(1, count, 1, count);
     gc.push(arr);
-    for (let i = 0; i < N; i++) {
-      for (let j = 0; j < N; j++) {
-        const p = poles[i][j];
-        const pt = new oc.gp_Pnt(p[0], p[1], p[2]);
+    for (let i = 0; i < count; i++) {
+      for (let j = 0; j < count; j++) {
+        const pole = poles[i][j];
+        const pt = new oc.gp_Pnt(pole[0], pole[1], pole[2]);
         arr.SetValue(i + 1, j + 1, pt);
         pt.delete();
       }
@@ -73,8 +73,8 @@ export function cageToShape(cage: Cage, levels = 3, thicken?: Thicken, ready?: S
 
     return cast(sewed) as Shape3D;
   } finally {
-    for (const o of gc) {
-      o.delete();
+    for (const object of gc) {
+      object.delete();
     }
   }
 }
@@ -82,10 +82,10 @@ export function cageToShape(cage: Cage, levels = 3, thicken?: Thicken, ready?: S
 /** An open sheet → a solid: grown along its normals (up), against them (down) or half each way. */
 function thickenSheet(sheet: unknown, { thickness: t, side }: Thicken): Shape3D {
   const oc = getOC();
-  const thick = (d: number): Shape3D => {
+  const thick = (distance: number): Shape3D => {
     const mk = new oc.BRepOffsetAPI_MakeThickSolid();
     try {
-      mk.MakeThickSolidBySimple(sheet as never, d);
+      mk.MakeThickSolidBySimple(sheet as never, distance);
       const solid = cast(mk.Shape()) as Shape3D;
       // Growing along the normals comes out inside-out, and marking the solid as reversed (as was done) measured
       // right but left its faces looking inwards: a rounding of its rim took every edge for a hollow one and came
@@ -135,9 +135,9 @@ function thickenSheet(sheet: unknown, { thickness: t, side }: Thicken): Shape3D 
 function sizeOf(pts: number[][]): number {
   let lo = [Infinity, Infinity, Infinity];
   let hi = [-Infinity, -Infinity, -Infinity];
-  for (const p of pts) {
-    lo = lo.map((v, k) => Math.min(v, p[k]));
-    hi = hi.map((v, k) => Math.max(v, p[k]));
+  for (const point of pts) {
+    lo = lo.map((value, axis) => Math.min(value, point[axis]));
+    hi = hi.map((value, axis) => Math.max(value, point[axis]));
   }
 
   return Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1;

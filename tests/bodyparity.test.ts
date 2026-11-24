@@ -20,20 +20,20 @@ const check = (name: string, ok: boolean, info: string) => {
     failed++;
   }
 };
-const zs = (r: Awaited<ReturnType<typeof regenerate>>) => Array.from(r.bodies[0].positions).filter((_, i) => i % 3 === 2);
+const zs = (result: Awaited<ReturnType<typeof regenerate>>) => Array.from(result.bodies[0].positions).filter((_, i) => i % 3 === 2);
 
 // Symmetric: 10 each side, from z = -10 to z = 10.
 {
-  const r = await regenerate([sketch, box({ symmetric: true } as Partial<Feature>)]);
-  const z = zs(r);
+  const result = await regenerate([sketch, box({ symmetric: true } as Partial<Feature>)]);
+  const z = zs(result);
   const lo = Math.min(...z);
   const hi = Math.max(...z);
-  check('symmetric extrude', r.errors.length === 0 && Math.abs(lo + 10) < 1e-6 && Math.abs(hi - 10) < 1e-6, `z ${lo}..${hi}, errors ${r.errors.map(e => e.message)}`);
+  check('symmetric extrude', result.errors.length === 0 && Math.abs(lo + 10) < 1e-6 && Math.abs(hi - 10) < 1e-6, `z ${lo}..${hi}, errors ${result.errors.map(e => e.message)}`);
 }
 // Symmetric with a taper: refused with a clear message.
 {
-  const r = await regenerate([sketch, box({ symmetric: true, taper: 0.5 } as Partial<Feature>)]);
-  check('symmetric + taper refused', r.errors.length === 1 && /one way/.test(r.errors[0].message), r.errors.map(e => e.message).join());
+  const result = await regenerate([sketch, box({ symmetric: true, taper: 0.5 } as Partial<Feature>)]);
+  check('symmetric + taper refused', result.errors.length === 1 && /one way/.test(result.errors[0].message), result.errors.map(e => e.message).join());
 }
 
 // Two-Distance chamfer on the top long edge (y = 10, z = 10): 2 along one face, 5 along the other.
@@ -55,12 +55,12 @@ const chamfer = (extra: object): Feature => ({ id: 'c1', name: 'Chamfer', type: 
 }
 
 /** How far the slant runs along the top face and down the side face (from the box's corner line). */
-async function slant(r: Awaited<ReturnType<typeof regenerate>>): Promise<[number, number]> {
-  const p = Array.from(r.bodies[0].positions);
+async function slant(result: Awaited<ReturnType<typeof regenerate>>): Promise<[number, number]> {
+  const positions = Array.from(result.bodies[0].positions);
   let topY = -Infinity;
   let sideZ = -Infinity;
-  for (let i = 0; i < p.length; i += 3) {
-    const [y, z] = [p[i + 1], p[i + 2]];
+  for (let i = 0; i < positions.length; i += 3) {
+    const [y, z] = [positions[i + 1], positions[i + 2]];
     if (Math.abs(z - 10) < 1e-6) {
       topY = Math.max(topY, y);
     }
@@ -71,10 +71,10 @@ async function slant(r: Awaited<ReturnType<typeof regenerate>>): Promise<[number
 
   return [Math.round((10 - topY) * 1e4) / 1e4, Math.round((10 - sideZ) * 1e4) / 1e4];
 }
-function near(v: [number, number], want: [number, number]): boolean {
-  const s = [...v].sort((x, y) => x - y);
+function near(pair: [number, number], want: [number, number]): boolean {
+  const sorted = [...pair].sort((x, y) => x - y);
 
-  return Math.abs(s[0] - want[0]) < 1e-3 && Math.abs(s[1] - want[1]) < 1e-3;
+  return Math.abs(sorted[0] - want[0]) < 1e-3 && Math.abs(sorted[1] - want[1]) < 1e-3;
 }
 
 // Sweep with an end size: a circle of radius 2 along a 50 long line, twice as big at the end.
@@ -84,12 +84,12 @@ function near(v: [number, number], want: [number, number]): boolean {
   const path: Feature = { id: 'p', name: 'p', type: 'sketch', plane: XZ, entities: [{ id: 'l', kind: 'line', a: [0, 0], b: [0, 50] }] as any };
   const regionsC = arrangement(prof.entities as any).regions.map(regionRef);
   const sweep = (scale?: number): Feature => ({ id: 'w', name: 'Sweep', type: 'sweep', source: { kind: 'profile', sketch: 'g', regions: regionsC }, path: { kind: 'sketch', sketch: 'p', entities: ['l'] }, mode: 'new', scale }) as Feature;
-  const radiusAt = (r: Awaited<ReturnType<typeof regenerate>>, zWant: number) => {
-    const p = Array.from(r.bodies[0].positions);
+  const radiusAt = (result: Awaited<ReturnType<typeof regenerate>>, zWant: number) => {
+    const positions = Array.from(result.bodies[0].positions);
     let best = 0;
-    for (let i = 0; i < p.length; i += 3) {
-      if (Math.abs(p[i + 2] - zWant) < 1e-3) {
-        best = Math.max(best, Math.hypot(p[i], p[i + 1]));
+    for (let i = 0; i < positions.length; i += 3) {
+      if (Math.abs(positions[i + 2] - zWant) < 1e-3) {
+        best = Math.max(best, Math.hypot(positions[i], positions[i + 1]));
       }
     }
 
@@ -109,24 +109,24 @@ function near(v: [number, number], want: [number, number]): boolean {
 // Variable fillet: radius 2 at one end of the edge, 5 at the other; Flip ends swaps them.
 {
   const fillet = (extra: object): Feature => ({ id: 'f1', name: 'Fillet', type: 'fillet', edges: [edge], radius: 2, ...extra }) as Feature;
-  const v = await regenerate([sketch, box(), fillet({ radius2: 5 })]);
+  const result = await regenerate([sketch, box(), fillet({ radius2: 5 })]);
   const vf = await regenerate([sketch, box(), fillet({ radius2: 5, flip: true })]);
-  const errs = [...v.errors, ...vf.errors].map(e => e.message);
+  const errs = [...result.errors, ...vf.errors].map(e => e.message);
   check('variable fillets rebuild', errs.length === 0, errs.join() || 'no errors');
   if (!errs.length) {
     // How far the rounding runs back from the edge along the top face, at each end (x = -20, x = 20).
-    const back = (r: Awaited<ReturnType<typeof regenerate>>, xWant: number) => {
-      const p = Array.from(r.bodies[0].positions);
+    const back = (built: Awaited<ReturnType<typeof regenerate>>, xWant: number) => {
+      const positions = Array.from(built.bodies[0].positions);
       let topY = -Infinity;
-      for (let i = 0; i < p.length; i += 3) {
-        if (Math.abs(p[i] - xWant) < 1e-6 && Math.abs(p[i + 2] - 10) < 1e-6) {
-          topY = Math.max(topY, p[i + 1]);
+      for (let i = 0; i < positions.length; i += 3) {
+        if (Math.abs(positions[i] - xWant) < 1e-6 && Math.abs(positions[i + 2] - 10) < 1e-6) {
+          topY = Math.max(topY, positions[i + 1]);
         }
       }
 
       return Math.round((10 - topY) * 1e3) / 1e3;
     };
-    const a = [back(v, -20), back(v, 20)];
+    const a = [back(result, -20), back(result, 20)];
     const b = [back(vf, -20), back(vf, 20)];
     check('variable radii at the ends', near(a as [number, number], [2, 5]), JSON.stringify(a));
     check('flip ends swaps them', a[0] === b[1] && a[1] === b[0], `${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
@@ -136,11 +136,11 @@ function near(v: [number, number], want: [number, number]): boolean {
 // Chord-width fillet: 2 across a square edge is a radius of 2 / sqrt(2).
 {
   const fillet = (extra: object): Feature => ({ id: 'f1', name: 'Fillet', type: 'fillet', edges: [edge], radius: 2, chord: true, ...extra }) as Feature;
-  const r = await regenerate([sketch, box(), fillet({})]);
-  check('chord fillet rebuilds', r.errors.length === 0, r.errors.map(e => e.message).join() || 'no errors');
-  if (!r.errors.length) {
-    const s = await slant(r);
-    check('chord 2 is radius 1.414', near(s, [Math.SQRT2, Math.SQRT2]), JSON.stringify(s));
+  const result = await regenerate([sketch, box(), fillet({})]);
+  check('chord fillet rebuilds', result.errors.length === 0, result.errors.map(e => e.message).join() || 'no errors');
+  if (!result.errors.length) {
+    const slantPair = await slant(result);
+    check('chord 2 is radius 1.414', near(slantPair, [Math.SQRT2, Math.SQRT2]), JSON.stringify(slantPair));
   }
   // Faces meeting at a changing angle (a loft between a rectangle and the same one turned 30°): still rounds.
   const top: Feature = { id: 's2', name: 's2', type: 'sketch', plane: { origin: [0, 0, 20], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: [{ id: 'r2', kind: 'rect', center: [0, 0], w: 40, h: 20, rotation: 30 }] as any };
@@ -168,12 +168,12 @@ function near(v: [number, number], want: [number, number]): boolean {
   const arc: Feature = { id: 'p', name: 'p', type: 'sketch', plane: XZ, entities: [{ id: 'l', kind: 'arc', a: [0, 0], m: [40 - 40 * Math.SQRT1_2, 40 * Math.SQRT1_2], b: [40, 40] }] as any };
   const regionsQ = arrangement(prof.entities as any).regions.map(regionRef);
   const sweep = (twist?: number): Feature => ({ id: 'w', name: 'Sweep', type: 'sweep', source: { kind: 'profile', sketch: 'g', regions: regionsQ }, path: { kind: 'sketch', sketch: 'p', entities: ['l'] }, mode: 'new', twist }) as Feature;
-  const span = (r: Awaited<ReturnType<typeof regenerate>>, zWant: number) => {
-    const p = Array.from(r.bodies[0].positions);
+  const span = (result: Awaited<ReturnType<typeof regenerate>>, zWant: number) => {
+    const positions = Array.from(result.bodies[0].positions);
     let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < p.length; i += 3) {
-      if (Math.abs(p[i + 2] - zWant) < 1e-3) {
-        ((lo = Math.min(lo, p[i])), (hi = Math.max(hi, p[i])));
+    for (let i = 0; i < positions.length; i += 3) {
+      if (Math.abs(positions[i + 2] - zWant) < 1e-3) {
+        ((lo = Math.min(lo, positions[i])), (hi = Math.max(hi, positions[i])));
       }
     }
 
@@ -190,14 +190,14 @@ function near(v: [number, number], want: [number, number]): boolean {
   check('twist along a curve rebuilds', errs.length === 0, errs.join() || 'no errors');
   if (!errs.length) {
     const vol = (b: any) => {
-      const p = b.positions, ix = b.indices;
-      let v = 0;
+      const positions = b.positions, ix = b.indices;
+      let volume = 0;
       for (let i = 0; i < ix.length; i += 3) {
-        const [a, c, d] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
-        v += p[a] * (p[c + 1] * p[d + 2] - p[c + 2] * p[d + 1]) - p[a + 1] * (p[c] * p[d + 2] - p[c + 2] * p[d]) + p[a + 2] * (p[c] * p[d + 1] - p[c + 1] * p[d]);
+        const [a, offsetB, offsetC] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
+        volume += positions[a] * (positions[offsetB + 1] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC + 1]) - positions[a + 1] * (positions[offsetB] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC]) + positions[a + 2] * (positions[offsetB] * positions[offsetC + 1] - positions[offsetB + 1] * positions[offsetC]);
       }
 
-      return Math.abs(v / 6);
+      return Math.abs(volume / 6);
     };
     const v0 = vol(plainArc.bodies[0]);
     const v1 = vol(twistArc.bodies[0]);
@@ -208,14 +208,14 @@ function near(v: [number, number], want: [number, number]): boolean {
 // Loft, closed loop: four small circles round the z axis make a ring; along a guide: radius 3 to 6 up a line.
 {
   const vol = (b: any) => {
-    const p = b.positions, ix = b.indices;
-    let v = 0;
+    const positions = b.positions, ix = b.indices;
+    let volume = 0;
     for (let i = 0; i < ix.length; i += 3) {
-      const [a, c, d] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
-      v += p[a] * (p[c + 1] * p[d + 2] - p[c + 2] * p[d + 1]) - p[a + 1] * (p[c] * p[d + 2] - p[c + 2] * p[d]) + p[a + 2] * (p[c] * p[d + 1] - p[c + 1] * p[d]);
+      const [a, offsetB, offsetC] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
+      volume += positions[a] * (positions[offsetB + 1] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC + 1]) - positions[a + 1] * (positions[offsetB] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC]) + positions[a + 2] * (positions[offsetB] * positions[offsetC + 1] - positions[offsetB + 1] * positions[offsetC]);
     }
 
-    return Math.abs(v / 6);
+    return Math.abs(volume / 6);
   };
   const ring: Feature[] = [0, 90, 180, 270].map((deg, i) => {
     const a = (deg * Math.PI) / 180;
@@ -226,9 +226,9 @@ function near(v: [number, number], want: [number, number]): boolean {
   const closed = await regenerate([...ring, { id: 'L', name: 'Loft', type: 'loft', sections: ring.map(sec), ruled: false, mode: 'new', closed: true } as any]);
   check('closed loop loft rebuilds', closed.errors.length === 0, closed.errors.map(e => e.message).join() || 'no errors');
   if (!closed.errors.length) {
-    const v = vol(closed.bodies[0]);
+    const volume = vol(closed.bodies[0]);
     const torus = 2 * Math.PI * Math.PI * 20 * 9;
-    check('closed loop is a ring', Math.abs(v - torus) / torus < 0.1, `${v.toFixed(0)} vs torus ${torus.toFixed(0)}`);
+    check('closed loop is a ring', Math.abs(volume - torus) / torus < 0.1, `${volume.toFixed(0)} vs torus ${torus.toFixed(0)}`);
   }
   const XZ: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, -1, 0] };
   const lo: Feature = { id: 'a', name: 'a', type: 'sketch', plane: XY, entities: [{ id: 'ca', kind: 'circle', center: [0, 0], radius: 3 }] } as any;
@@ -237,31 +237,31 @@ function near(v: [number, number], want: [number, number]): boolean {
   const guided = await regenerate([lo, hi, rail, { id: 'L', name: 'Loft', type: 'loft', sections: [sec(hi), sec(lo)], ruled: false, mode: 'new', guide: { kind: 'sketch', sketch: 'p', entities: ['l'] } } as any]);
   check('guided loft rebuilds', guided.errors.length === 0, guided.errors.map(e => e.message).join() || 'no errors');
   if (!guided.errors.length) {
-    const v = vol(guided.bodies[0]);
+    const volume = vol(guided.bodies[0]);
     const cone = (Math.PI * 30 * (9 + 18 + 36)) / 3;
-    check('guided loft: 3 to 6 is a cone', Math.abs(v - cone) / cone < 0.02, `${v.toFixed(0)} vs ${cone.toFixed(0)}`);
+    check('guided loft: 3 to 6 is a cone', Math.abs(volume - cone) / cone < 0.02, `${volume.toFixed(0)} vs ${cone.toFixed(0)}`);
   }
 }
 
 // Smooth (G2) fillet: on a box edge it starts 2 back on both faces; on a cylinder's rim it goes all round.
 {
-  const g = await regenerate([sketch, box(), { id: 'f1', name: 'Fillet', type: 'fillet', edges: [edge], radius: 2, g2: true } as Feature]);
-  check('G2 fillet on a box edge rebuilds', g.errors.length === 0 && g.bodies[0].faces.length === 7, `${g.errors.map(e => e.message).join() || 'no errors'}, ${g.bodies[0]?.faces.length} faces`);
-  if (!g.errors.length) {
-    const s = await slant(g);
-    check('G2 starts where a round of the same radius would', near(s, [2, 2]), JSON.stringify(s));
+  const result = await regenerate([sketch, box(), { id: 'f1', name: 'Fillet', type: 'fillet', edges: [edge], radius: 2, g2: true } as Feature]);
+  check('G2 fillet on a box edge rebuilds', result.errors.length === 0 && result.bodies[0].faces.length === 7, `${result.errors.map(e => e.message).join() || 'no errors'}, ${result.bodies[0]?.faces.length} faces`);
+  if (!result.errors.length) {
+    const slantPair = await slant(result);
+    check('G2 starts where a round of the same radius would', near(slantPair, [2, 2]), JSON.stringify(slantPair));
   }
   const disc: Feature = { id: 'd', name: 'd', type: 'sketch', plane: XY, entities: [{ id: 'cd', kind: 'circle', center: [0, 0], radius: 10 }] } as any;
   const cyl = { id: 'e2', name: 'Extrude', type: 'extrude', source: { kind: 'profile', sketch: 'd', regions: arrangement((disc as any).entities).regions.map(regionRef) }, distance: 20, mode: 'new' } as Feature;
   const rim = { body: 'e2', mid: [-10, 0, 20] as [number, number, number], dir: [0, 1, 0] as [number, number, number], length: 2 * Math.PI * 10 };
-  const c = await regenerate([disc, cyl, { id: 'f2', name: 'Fillet', type: 'fillet', edges: [rim], radius: 2, g2: true } as Feature]);
-  check('G2 fillet on a cylinder rim rebuilds', c.errors.length === 0, c.errors.map(e => e.message).join() || 'no errors');
-  if (!c.errors.length) {
-    const p = Array.from(c.bodies[0].positions);
+  const rounded = await regenerate([disc, cyl, { id: 'f2', name: 'Fillet', type: 'fillet', edges: [rim], radius: 2, g2: true } as Feature]);
+  check('G2 fillet on a cylinder rim rebuilds', rounded.errors.length === 0, rounded.errors.map(e => e.message).join() || 'no errors');
+  if (!rounded.errors.length) {
+    const positions = Array.from(rounded.bodies[0].positions);
     let topR = 0;
-    for (let i = 0; i < p.length; i += 3) {
-      if (Math.abs(p[i + 2] - 20) < 1e-6) {
-        topR = Math.max(topR, Math.hypot(p[i], p[i + 1]));
+    for (let i = 0; i < positions.length; i += 3) {
+      if (Math.abs(positions[i + 2] - 20) < 1e-6) {
+        topR = Math.max(topR, Math.hypot(positions[i], positions[i + 1]));
       }
     }
     check('G2 rim: the flat top ends 2 in', Math.abs(topR - 8) < 1e-3, `top radius ${topR.toFixed(4)}`);
@@ -278,14 +278,14 @@ function near(v: [number, number], want: [number, number]): boolean {
   const errs = [...plain.errors, ...back.errors].map(e => e.message);
   check('setback corner rebuilds', errs.length === 0, errs.join() || 'no errors');
   const vol = (b: any) => {
-    const p = b.positions, ix = b.indices;
-    let v = 0;
+    const positions = b.positions, ix = b.indices;
+    let volume = 0;
     for (let i = 0; i < ix.length; i += 3) {
-      const [a, c, d] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
-      v += p[a] * (p[c + 1] * p[d + 2] - p[c + 2] * p[d + 1]) - p[a + 1] * (p[c] * p[d + 2] - p[c + 2] * p[d]) + p[a + 2] * (p[c] * p[d + 1] - p[c + 1] * p[d]);
+      const [a, offsetB, offsetC] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
+      volume += positions[a] * (positions[offsetB + 1] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC + 1]) - positions[a + 1] * (positions[offsetB] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC]) + positions[a + 2] * (positions[offsetB] * positions[offsetC + 1] - positions[offsetB + 1] * positions[offsetC]);
     }
 
-    return v / 6;
+    return volume / 6;
   };
   if (!errs.length) {
     check('setback: about the same volume, a little less', vol(back.bodies[0]) < vol(plain.bodies[0]) && vol(plain.bodies[0]) - vol(back.bodies[0]) < 5, `${vol(plain.bodies[0]).toFixed(2)} -> ${vol(back.bodies[0]).toFixed(2)}`);
@@ -299,20 +299,20 @@ function near(v: [number, number], want: [number, number]): boolean {
 // true round (centre y 7, z -1) that cuts on through the bottom edge: the top ends at y 7, the bottom at 7 + sqrt(8).
 {
   const plate = box({ distance: 2 } as Partial<Feature>);
-  const r = await regenerate([sketch, plate, { id: 'f1', name: 'Fillet', type: 'fillet', edges: [{ body: 'e1', mid: [0, 10, 2], dir: [1, 0, 0], length: 40 }], radius: 3 } as Feature]);
-  check('overflowing round builds', r.errors.length === 0, r.errors.map(e => e.message).join() || 'no errors');
-  check('overflowing round says so', (r.notes ?? []).some(n => /cuts on through/.test(n.message)), (r.notes ?? []).map(n => n.message).join() || 'no note');
-  if (!r.errors.length) {
-    const p = Array.from(r.bodies[0].positions);
+  const result = await regenerate([sketch, plate, { id: 'f1', name: 'Fillet', type: 'fillet', edges: [{ body: 'e1', mid: [0, 10, 2], dir: [1, 0, 0], length: 40 }], radius: 3 } as Feature]);
+  check('overflowing round builds', result.errors.length === 0, result.errors.map(e => e.message).join() || 'no errors');
+  check('overflowing round says so', (result.notes ?? []).some(featureError => /cuts on through/.test(featureError.message)), (result.notes ?? []).map(featureError => featureError.message).join() || 'no note');
+  if (!result.errors.length) {
+    const positions = Array.from(result.bodies[0].positions);
     let top = -Infinity, bottom = -Infinity, far = -Infinity;
-    for (let i = 0; i < p.length; i += 3) {
-      if (Math.abs(p[i + 2] - 2) < 1e-6) {
-        top = Math.max(top, p[i + 1]);
+    for (let i = 0; i < positions.length; i += 3) {
+      if (Math.abs(positions[i + 2] - 2) < 1e-6) {
+        top = Math.max(top, positions[i + 1]);
       }
-      if (Math.abs(p[i + 2]) < 1e-6) {
-        bottom = Math.max(bottom, p[i + 1]);
+      if (Math.abs(positions[i + 2]) < 1e-6) {
+        bottom = Math.max(bottom, positions[i + 1]);
       }
-      far = Math.max(far, p[i + 1]);
+      far = Math.max(far, positions[i + 1]);
     }
     check('keeps a true round', Math.abs(top - 7) < 1e-3 && Math.abs(bottom - (7 + Math.sqrt(8))) < 1e-3 && far < 10 - 1e-3, `top ${top.toFixed(4)}, bottom ${bottom.toFixed(4)}, furthest ${far.toFixed(4)}`);
   }

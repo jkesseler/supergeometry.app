@@ -36,10 +36,10 @@ function nearestOnPolyline(pts: Vec3[], q: Vec3): { at: Vec3; tangent: Vec3 } | 
       continue;
     }
     const t = Math.max(0, Math.min(1, dot(sub(q, a), ab) / L2));
-    const p = add(a, scale(ab, t));
-    const d = len(sub(q, p));
-    if (!best || d < best.d) {
-      best = { at: p, tangent: norm(ab), d };
+    const foot = add(a, scale(ab, t));
+    const distance = len(sub(q, foot));
+    if (!best || distance < best.d) {
+      best = { at: foot, tangent: norm(ab), d: distance };
     }
   }
 
@@ -55,18 +55,18 @@ function curvePick(app: AppContext, hit: PickHit): CurvePick | null {
       return null;
     }
     let best: { edge: number; at: Vec3; d: number } | null = null;
-    for (const g of b.edgeGroups) {
+    for (const edgeGroup of b.edgeGroups) {
       const pts: Vec3[] = [];
-      for (let i = g.start; i < g.start + g.count; i++) {
+      for (let i = edgeGroup.start; i < edgeGroup.start + edgeGroup.count; i++) {
         pts.push([b.edgePositions[i * 3], b.edgePositions[i * 3 + 1], b.edgePositions[i * 3 + 2]]);
       }
       const near = nearestOnPolyline(pts, hit.point);
       if (!near) {
         continue;
       }
-      const d = len(sub(near.at, hit.point));
-      if (!best || d < best.d) {
-        best = { edge: g.edge, at: near.at, d };
+      const distance = len(sub(near.at, hit.point));
+      if (!best || distance < best.d) {
+        best = { edge: edgeGroup.edge, at: near.at, d: distance };
       }
     }
     if (!best) {
@@ -82,13 +82,13 @@ function curvePick(app: AppContext, hit: PickHit): CurvePick | null {
   }
   if (hit.kind === 'edge') {
     const b = app.view.body(hit.body);
-    const g = b?.edgeGroups.find(x => x.edge === hit.edge);
+    const edgeGroup = b?.edgeGroups.find(edgeGroup => edgeGroup.edge === hit.edge);
     const info = b?.edges[hit.edge];
-    if (!b || !g || !info) {
+    if (!b || !edgeGroup || !info) {
       return null;
     }
     const pts: Vec3[] = [];
-    for (let i = g.start; i < g.start + g.count; i++) {
+    for (let i = edgeGroup.start; i < edgeGroup.start + edgeGroup.count; i++) {
       pts.push([b.edgePositions[i * 3], b.edgePositions[i * 3 + 1], b.edgePositions[i * 3 + 2]]);
     }
     const near = nearestOnPolyline(pts, hit.point);
@@ -102,7 +102,7 @@ function curvePick(app: AppContext, hit: PickHit): CurvePick | null {
   }
   if (hit.kind === 'curve') {
     const plane = app.sketchPlane(hit.sketch);
-    const e = app.sketchCurves(hit.sketch).find(x => x.id === hit.entity);
+    const e = app.sketchCurves(hit.sketch).find(sketchCurve => sketchCurve.id === hit.entity);
     if (!plane || !e) {
       return null;
     }
@@ -128,11 +128,11 @@ function curveSlot(app: AppContext, label: string, get: () => CurvePick | null, 
     rejectHint: straightOnly ? 'Tap a straight edge or sketch line' : 'Tap an edge or a sketch curve',
     shows: () => (get() ? [get()!.sel] : []),
     accept(hit) {
-      const c = curvePick(app, hit);
-      if (!c || (straightOnly && !c.line)) {
+      const curve = curvePick(app, hit);
+      if (!curve || (straightOnly && !curve.line)) {
         return false;
       }
-      set(c);
+      set(curve);
 
       return true;
     }
@@ -149,9 +149,9 @@ abstract class PlaneFromPicks extends FeatureOp<PlaneFeature> {
   /** The plane the picks make (null: not yet / they don't make one). */
   protected abstract make(): PlaneDef | null;
   protected sync(): void {
-    const p = this.make();
-    if (p) {
-      this.feature.plane = p;
+    const plane = this.make();
+    if (plane) {
+      this.feature.plane = plane;
     }
   }
   protected ready(): boolean {
@@ -166,19 +166,19 @@ export class ThreePointPlaneOp extends PlaneFromPicks {
   private pts: (Vec3 | null)[] = [null, null, null];
   constructor(app: AppContext) {
     super(app, 'Plane 3 Points', '3pt');
-    this.slots = ['First point', 'Second point', 'Third point'].map((l, i) => pointSlot(app, l, () => this.pts[i], p => ((this.pts[i] = p), this.sync())));
+    this.slots = ['First point', 'Second point', 'Third point'].map((label, i) => pointSlot(app, label, () => this.pts[i], point => ((this.pts[i] = point), this.sync())));
   }
   protected make(): PlaneDef | null {
-    const [a, b, c] = this.pts;
-    if (!a || !b || !c) {
+    const [a, b, pointC] = this.pts;
+    if (!a || !b || !pointC) {
       return null;
     }
-    const n = cross(sub(b, a), sub(c, a));
-    if (len(n) < 1e-9 * Math.max(1, len(sub(b, a)) * len(sub(c, a)))) {
+    const normal = cross(sub(b, a), sub(pointC, a));
+    if (len(normal) < 1e-9 * Math.max(1, len(sub(b, a)) * len(sub(pointC, a)))) {
       return null;
     }
 
-    return { origin: a, normal: norm(n), xDir: norm(sub(b, a)) };
+    return { origin: a, normal: norm(normal), xDir: norm(sub(b, a)) };
   }
   protected hint(): string {
     return this.pts.every(Boolean) && !this.make() ? '⚠ The three points are on one line - pick another' : 'Tap three points (corners, points on edges or in sketches): the plane goes through all three.';
@@ -187,14 +187,14 @@ export class ThreePointPlaneOp extends PlaneFromPicks {
 
 /** On Curve at Point / Perpendicular to Edge at Point: across the curve where it's picked. */
 export class CurvePointPlaneOp extends PlaneFromPicks {
-  private c: CurvePick | null = null;
+  private curve: CurvePick | null = null;
   constructor(app: AppContext, private edgesOnly: boolean) {
     super(app, edgesOnly ? 'Plane Perp. to Edge' : 'Plane on Curve', edgesOnly ? 'perp' : 'curve');
-    this.slots = [curveSlot(app, edgesOnly ? 'Edge (tap where the plane goes)' : 'Curve (tap where the plane goes)', () => this.c, c => ((this.c = c), this.sync()))];
+    this.slots = [curveSlot(app, edgesOnly ? 'Edge (tap where the plane goes)' : 'Curve (tap where the plane goes)', () => this.curve, curvePick => ((this.curve = curvePick), this.sync()))];
     this.finishWhenPicked = true;
   }
   protected make(): PlaneDef | null {
-    return this.c && { origin: this.c.at, normal: this.c.tangent, xDir: xDirFor(this.c.tangent) };
+    return this.curve && { origin: this.curve.at, normal: this.curve.tangent, xDir: xDirFor(this.curve.tangent) };
   }
   protected hint(): string {
     return this.edgesOnly ? 'Tap an edge where the plane should cross it, square to it.' : 'Tap a line or edge where the plane should cross it, square to it.';
@@ -203,44 +203,44 @@ export class CurvePointPlaneOp extends PlaneFromPicks {
 
 /** Through a straight edge, turned about it from a face or plane by an angle. */
 export class EdgeAnglePlaneOp extends PlaneFromPicks {
-  private c: CurvePick | null = null;
+  private curve: CurvePick | null = null;
   private ref: PlaneDef | null = null;
   private angle = 45;
   /** `edge`: the straight edge picked before (Plane – Through Edge on an edge). */
   constructor(app: AppContext, edge?: { body: string; edge: number; point: Vec3 }) {
     super(app, 'Plane at Angle', 'angle');
     this.slots = [
-      curveSlot(app, 'Edge (the plane turns about it)', () => this.c, c => ((this.c = c), this.sync()), true),
-      planeSlot(app, 'From face or plane (0°)', () => this.ref, p => ((this.ref = p), this.sync()))
+      curveSlot(app, 'Edge (the plane turns about it)', () => this.curve, curvePick => ((this.curve = curvePick), this.sync()), true),
+      planeSlot(app, 'From face or plane (0°)', () => this.ref, plane => ((this.ref = plane), this.sync()))
     ];
     if (edge) {
-      const c = curvePick(app, { kind: 'edge', ...edge });
-      if (c?.line) {
-        (this.c = c), this.sync();
+      const curve = curvePick(app, { kind: 'edge', ...edge });
+      if (curve?.line) {
+        (this.curve = curve), this.sync();
       }
     }
   }
   protected make(): PlaneDef | null {
-    if (!this.c?.line) {
+    if (!this.curve?.line) {
       return null;
     }
-    const [a, b] = this.c.line;
-    const d = norm(sub(b, a));
+    const [a, b] = this.curve.line;
+    const direction = norm(sub(b, a));
     // 0°: the reference's direction (a face the edge lies on); without one, upright-ish.
-    let n0 = this.ref ? this.ref.normal : xDirFor(d);
-    n0 = sub(n0, scale(d, dot(n0, d)));
+    let n0 = this.ref ? this.ref.normal : xDirFor(direction);
+    n0 = sub(n0, scale(direction, dot(n0, direction)));
     if (len(n0) < 1e-9) {
       return null;
     } // edge across the reference: no turning about it
     n0 = norm(n0);
     const t = (this.angle * Math.PI) / 180;
-    const n = norm(add(scale(n0, Math.cos(t)), scale(cross(d, n0), Math.sin(t))));
+    const normal = norm(add(scale(n0, Math.cos(t)), scale(cross(direction, n0), Math.sin(t))));
 
     // Centred on the edge (that's where it's drawn).
-    return { origin: scale(add(a, b), 0.5), normal: n, xDir: d };
+    return { origin: scale(add(a, b), 0.5), normal: normal, xDir: direction };
   }
   protected items(): PanelItem[] {
-    return [{ type: 'number', label: 'Angle', value: this.angle, kind: 'angle', onInput: v => ((this.angle = v), this.sync(), this.update()) }];
+    return [{ type: 'number', label: 'Angle', value: this.angle, kind: 'angle', onInput: angle => ((this.angle = angle), this.sync(), this.update()) }];
   }
   protected hint(): string {
     return 'Tap a straight edge, then the face to measure the angle from, then type the angle.';
@@ -253,7 +253,7 @@ export class FacePointPlaneOp extends PlaneFromPicks {
   private at: Vec3 | null = null;
   constructor(app: AppContext) {
     super(app, 'Plane Parallel', 'parallel');
-    this.slots = [planeSlot(app, 'Parallel to', () => this.ref, p => ((this.ref = p), this.sync())), pointSlot(app, 'Through point', () => this.at, p => ((this.at = p), this.sync()))];
+    this.slots = [planeSlot(app, 'Parallel to', () => this.ref, plane => ((this.ref = plane), this.sync())), pointSlot(app, 'Through point', () => this.at, plane => ((this.at = plane), this.sync()))];
     this.finishWhenPicked = true;
   }
   protected make(): PlaneDef | null {

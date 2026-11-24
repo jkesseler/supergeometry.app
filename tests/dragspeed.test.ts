@@ -20,18 +20,18 @@ let failed = 0;
 for (const refs of cases) {
   const name = `drag ${refs[0].e}:${refs[0].p}`;
   try {
-    const at = refs.map(r => pointOf(entities.find(e => e.id === r.e)!, r.p)!);
+    const at = refs.map(ref => pointOf(entities.find(e => e.id === ref.e)!, ref.p)!);
     const times: number[] = [];
     for (let i = 1; i <= 30; i++) {
-      const to = (k: number): Vec2 => [at[k][0] + i * 25, at[k][1] - i * 9];
-      const s = performance.now();
-      const r = solve(entities, constraints, { drag: refs.map((ref, k) => ({ ref, to: to(k) })) });
-      times.push(performance.now() - s);
-      assert.ok(r.ok, `frame ${i} not solved`);
-      assert.ok(constraintError(r.entities, constraints) < 1e-4, `frame ${i} constraints off`);
-      const p = pointOf(r.entities.find(e => e.id === refs[0].e)!, refs[0].p)!;
+      const to = (index: number): Vec2 => [at[index][0] + i * 25, at[index][1] - i * 9];
+      const start = performance.now();
+      const solution = solve(entities, constraints, { drag: refs.map((ref, refIndex) => ({ ref, to: to(refIndex) })) });
+      times.push(performance.now() - start);
+      assert.ok(solution.ok, `frame ${i} not solved`);
+      assert.ok(constraintError(solution.entities, constraints) < 1e-4, `frame ${i} constraints off`);
+      const point = pointOf(solution.entities.find(e => e.id === refs[0].e)!, refs[0].p)!;
       if (!held.has(refs[0].e)) {
-        assert.ok(Math.hypot(p[0] - to(0)[0], p[1] - to(0)[1]) < 1, `frame ${i} not at the pointer`);
+        assert.ok(Math.hypot(point[0] - to(0)[0], point[1] - to(0)[1]) < 1, `frame ${i} not at the pointer`);
       }
     }
     times.sort((a, b) => a - b);

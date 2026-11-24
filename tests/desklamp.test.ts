@@ -29,13 +29,13 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 
-let n = 0;
-const id = () => `e${n++}`;
+let count = 0;
+const id = () => `e${count++}`;
 const XY = (z = 0): PlaneDef => ({ origin: [0, 0, z], normal: [0, 0, 1], xDir: [1, 0, 0] });
 const XZ = (y = 0): PlaneDef => ({ origin: [0, y, 0], normal: [0, -1, 0], xDir: [1, 0, 0] }); // u = x, v = z; extrudes towards -Y
 const all = (es: any[]) => arrangement(es.filter(e => !e.construction)).regions.map(regionRef);
-const Y: Vec3 = [0, 1, 0];
-const Z: Vec3 = [0, 0, 1];
+const Y_AXIS: Vec3 = [0, 1, 0];
+const Z_AXIS: Vec3 = [0, 0, 1];
 
 const baseVars: [string, string][] = [
   ['baseR', '70 mm'], // base radius
@@ -59,22 +59,22 @@ let variables = baseVars.map(([name, expr]) => ({ name, expr }));
 
 const feats: any[] = [];
 const doc = () => {
-  const d: any = { format: 'super', version: 2, name: 'Desk lamp', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
-  const problems = resolveDoc(d);
+  const doc: any = { format: 'super', version: 2, name: 'Desk lamp', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
+  const problems = resolveDoc(doc);
   if (problems.length) {
     console.log('problems:', problems);
   }
 
-  return d;
+  return doc;
 };
-const errs = (r: any, fs: any[]) => r.errors.map((e: any) => `${fs.find((f: any) => f.id === e.featureId)?.name ?? e.featureId}: ${e.message}`).join('; ');
+const errs = (result: any, fs: any[]) => result.errors.map((e: any) => `${fs.find((feature: any) => feature.id === e.featureId)?.name ?? e.featureId}: ${e.message}`).join('; ');
 const build = async () => {
-  const d = doc();
-  const r: any = await regenerate(d.features);
+  const project = doc();
+  const result: any = await regenerate(project.features);
 
-  return { r, d };
+  return { r: result, d: project };
 };
-const V = (b: string) => Math.abs(measureVolume(debugBodies().get(b)!));
+const volumeOf = (b: string) => Math.abs(measureVolume(debugBodies().get(b)!));
 
 // A dimension driven by an expression.
 const dim = (curve: string, prop: string, value: number, expr?: string) => ({ id: id(), type: 'dim', curves: [curve], prop, value, ...(expr ? { expr } : {}) });
@@ -87,14 +87,14 @@ const on = (a: [string, string], b: [string, string]) => ({ id: id(), type: 'coi
  * (construction): a round joint at each end it's asked for and a strip of
  * width `w` between them. Returns entities and constraints.
  */
-function bar(from: [number, string], len: [number, string], w: number, ends: { bottom: boolean; top: boolean }, wExpr?: string) {
+function bar(from: [number, string], len: [number, string], width: number, ends: { bottom: boolean; top: boolean }, wExpr?: string) {
   const L0 = id();
   const L1 = id();
-  const r = id();
+  const rightLine = id();
   const es: any[] = [
     { id: L0, kind: 'line', a: [0, 0], b: [0, from[0]], construction: true },
     { id: L1, kind: 'line', a: [0, from[0]], b: [0, from[0] + len[0]], construction: true },
-    { id: r, kind: 'rect', center: [0, from[0] + len[0] / 2], w, h: len[0], rotation: 0 }
+    { id: rightLine, kind: 'rect', center: [0, from[0] + len[0] / 2], w: width, h: len[0], rotation: 0 }
   ];
   const cs: any[] = [
     { id: id(), type: 'fix', pts: [{ e: L0, p: 'a' }], at: [0, 0] },
@@ -103,17 +103,17 @@ function bar(from: [number, string], len: [number, string], w: number, ends: { b
     on([L0, 'b'], [L1, 'a']),
     dim(L0, 'length', from[0], from[1]),
     dim(L1, 'length', len[0], len[1]),
-    { id: id(), type: 'midpoint', pts: [{ e: r, p: 'c' }], curves: [L1] },
-    dim(r, 'w', w, wExpr),
-    dim(r, 'h', len[0], len[1])
+    { id: id(), type: 'midpoint', pts: [{ e: rightLine, p: 'c' }], curves: [L1] },
+    dim(rightLine, 'w', width, wExpr),
+    dim(rightLine, 'h', len[0], len[1])
   ];
-  for (const [want, p] of [[ends.bottom, 'a'], [ends.top, 'b']] as [boolean, string][]) {
+  for (const [want, end] of [[ends.bottom, 'a'], [ends.top, 'b']] as [boolean, string][]) {
     if (!want) {
       continue;
     }
-    const c = id();
-    es.push({ id: c, kind: 'circle', center: [0, p === 'a' ? from[0] : from[0] + len[0]], radius: 10 });
-    cs.push(on([c, 'c'], [L1, p]), dim(c, 'radius', 10, 'kR'));
+    const capLine = id();
+    es.push({ id: capLine, kind: 'circle', center: [0, end === 'a' ? from[0] : from[0] + len[0]], radius: 10 });
+    cs.push(on([capLine, 'c'], [L1, end]), dim(capLine, 'radius', 10, 'kR'));
   }
 
   return { es, cs };
@@ -132,7 +132,7 @@ feats.push({ id: 'baseRound', name: 'Round the base', type: 'fillet', edges: [{ 
 
 // 2. Turret: a post up from the base's top face (a sketch on that face, so it
 //    follows the base's height), and the shoulder's middle tab on top of it.
-const topFace = { body: 'base', center: [0, 0, 16] as Vec3, normal: Z, area: Math.PI * 70 * 70 };
+const topFace = { body: 'base', center: [0, 0, 16] as Vec3, normal: Z_AXIS, area: Math.PI * 70 * 70 };
 const sPost = [{ id: 'postC', kind: 'circle', center: [0, 0], radius: 12 }];
 feats.push({ id: 'sPost', name: 'Post', type: 'sketch', plane: XY(16), attachedTo: topFace, entities: sPost });
 feats.push({ id: 'turret', name: 'Post', type: 'extrude', source: { kind: 'profile', sketch: 'sPost', regions: all(sPost) }, distance: 40, mode: 'new', exprs: { distance: 'post' } });
@@ -167,7 +167,7 @@ const br = bar([P3 + 24, 'p3 + yokeL - 6 mm'], [6, '6 mm'], 20, { bottom: false,
 feats.push({ id: 'sBridge', name: 'Yoke bridge', type: 'sketch', plane: XZ(9), entities: br.es, constraints: br.cs });
 feats.push({ id: 'bridge', name: 'Yoke bridge', type: 'extrude', source: { kind: 'profile', sketch: 'sBridge', regions: all(br.es) }, distance: 18, mode: 'join', target: 'head' });
 feats.push({ id: 'headJ', name: 'Yoke in one', type: 'boolean', op: 'union', target: 'head', tools: ['headM:head:0'] });
-const bridgeTop = { body: 'head', center: [0, 0, P3 + 30] as Vec3, normal: Z, area: 20 * 18 };
+const bridgeTop = { body: 'head', center: [0, 0, P3 + 30] as Vec3, normal: Z_AXIS, area: 20 * 18 };
 const sNeck = [{ id: 'neckC', kind: 'circle', center: [0, 0], radius: 16 }];
 feats.push({ id: 'sShade', name: 'Shade', type: 'sketch', plane: XY(P3 + 30), attachedTo: bridgeTop, entities: sNeck });
 // (The face's own outline splits the circle: both pieces are the shade - as
@@ -175,12 +175,12 @@ feats.push({ id: 'sShade', name: 'Shade', type: 'sketch', plane: XY(P3 + 30), at
 const faceEdge = ((await regenerate(doc().features)) as any).sketchBoundaries.sShade ?? [];
 check("the shade's sketch sits on the yoke's whole top (one face, 20 × 18)", faceEdge.length === 4, `${faceEdge.length} edges`);
 feats.push({ id: 'shade', name: 'Shade', type: 'extrude', source: { kind: 'profile', sketch: 'sShade', regions: all([...sNeck, ...faceEdge]) }, distance: 90, mode: 'new', taper: 55 / 16, exprs: { distance: 'shadeL', taper: 'shadeR / 16 mm' } });
-const mouth = { body: 'shade', center: [0, 0, P3 + 120] as Vec3, normal: Z, area: Math.PI * 55 * 55 };
+const mouth = { body: 'shade', center: [0, 0, P3 + 120] as Vec3, normal: Z_AXIS, area: Math.PI * 55 * 55 };
 feats.push({ id: 'hollow', name: 'Hollow the shade', type: 'shell', body: 'shade', faces: [mouth], thickness: 2 });
 feats.push({ id: 'headS', name: 'Shade on the yoke', type: 'boolean', op: 'union', target: 'head', tools: ['shade'] });
 
 // 6. The joints turn: head, then elbow, then shoulder, then the swivel.
-const turn = (fid: string, name: string, bodies: string[], at: number, atExpr: string, angle: string, axis = Y) => ({
+const turn = (fid: string, name: string, bodies: string[], at: number, atExpr: string, angle: string, axis = Y_AXIS) => ({
   id: fid,
   name,
   type: 'transform',
@@ -192,38 +192,38 @@ const turn = (fid: string, name: string, bodies: string[], at: number, atExpr: s
 feats.push(turn('tHead', 'Tip the head', ['head'], P3, 'p3', 'a3'));
 feats.push(turn('tElbow', 'Bend the elbow', ['arm2', 'head'], P2, 'p2', 'a2'));
 feats.push(turn('tShoulder', 'Lean the arm', ['arm1', 'arm2', 'head'], P1, 'p1', 'a1'));
-feats.push(turn('tSwivel', 'Swivel', ['turret', 'arm1', 'arm2', 'head'], 0, '', 'swivel', Z));
+feats.push(turn('tSwivel', 'Swivel', ['turret', 'arm1', 'arm2', 'head'], 0, '', 'swivel', Z_AXIS));
 
 const PARTS = ['base', 'turret', 'arm1', 'arm2', 'head'];
 const deg = Math.PI / 180;
 
 /** Where the joints and the shade's mouth should be, from the variables (forward kinematics). */
-function pose(v: Record<string, number>) {
-  const p1 = v.baseH + v.post + v.kR;
-  const s = v.swivel * deg;
-  const out = (r: number, z: number): Vec3 => [r * Math.cos(s), r * Math.sin(s), z];
-  const t1 = v.a1 * deg;
-  const t2 = t1 + v.a2 * deg;
-  const t3 = t2 + v.a3 * deg;
-  const e = [v.arm1 * Math.sin(t1), p1 + v.arm1 * Math.cos(t1)];
-  const h = [e[0] + v.arm2 * Math.sin(t2), e[1] + v.arm2 * Math.cos(t2)];
-  const reach = v.yokeL + v.shadeL;
-  const m = [h[0] + reach * Math.sin(t3), h[1] + reach * Math.cos(t3)];
+function pose(values: Record<string, number>) {
+  const p1 = values.baseH + values.post + values.kR;
+  const swivel = values.swivel * deg;
+  const out = (radius: number, z: number): Vec3 => [radius * Math.cos(swivel), radius * Math.sin(swivel), z];
+  const t1 = values.a1 * deg;
+  const t2 = t1 + values.a2 * deg;
+  const t3 = t2 + values.a3 * deg;
+  const e = [values.arm1 * Math.sin(t1), p1 + values.arm1 * Math.cos(t1)];
+  const head = [e[0] + values.arm2 * Math.sin(t2), e[1] + values.arm2 * Math.cos(t2)];
+  const reach = values.yokeL + values.shadeL;
+  const mouth = [head[0] + reach * Math.sin(t3), head[1] + reach * Math.cos(t3)];
 
-  return { shoulder: out(0, p1), elbow: out(e[0], e[1]), head: out(h[0], h[1]), mouth: out(m[0], m[1]), dir: [Math.sin(t3) * Math.cos(s), Math.sin(t3) * Math.sin(s), Math.cos(t3)] as Vec3 };
+  return { shoulder: out(0, p1), elbow: out(e[0], e[1]), head: out(head[0], head[1]), mouth: out(mouth[0], mouth[1]), dir: [Math.sin(t3) * Math.cos(swivel), Math.sin(t3) * Math.sin(swivel), Math.cos(t3)] as Vec3 };
 }
 const values = () => {
-  const d = doc();
-  const o: Record<string, number> = {};
+  const project = doc();
+  const values: Record<string, number> = {};
   const lens = new Set(['baseR', 'baseH', 'post', 'kR', 'arm1', 'arm2', 'yokeL', 'shadeL', 'shadeR']);
-  for (const v of variables) {
-    if (!/^p\d$/.test(v.name)) {
-      o[v.name] = lens.has(v.name) ? parseFloat(v.expr) : parseFloat(v.expr);
+  for (const variable of variables) {
+    if (!/^p\d$/.test(variable.name)) {
+      values[variable.name] = lens.has(variable.name) ? parseFloat(variable.expr) : parseFloat(variable.expr);
     }
   }
-  void d;
+  void project;
 
-  return o;
+  return values;
 };
 
 /** The shade's mouth: the round edge on the head of radius shadeR (centre and the way it faces). */
@@ -236,10 +236,10 @@ function mouthOf(shadeR: number, id = 'head'): Vec3 | null {
     }
     const a = e.pointAt(0).toTuple();
     const b = e.pointAt(0.5).toTuple();
-    const c: Vec3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
-    const r = Math.hypot(a[0] - c[0], a[1] - c[1], a[2] - c[2]);
-    if (Math.abs(r - shadeR) < 0.05) {
-      best = c;
+    const center: Vec3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+    const radius = Math.hypot(a[0] - center[0], a[1] - center[1], a[2] - center[2]);
+    if (Math.abs(radius - shadeR) < 0.05) {
+      best = center;
     }
   }
 
@@ -251,9 +251,9 @@ function clashes(): string[] {
   const out: string[] = [];
   for (let i = 0; i < PARTS.length; i++) {
     for (let j = i + 1; j < PARTS.length; j++) {
-      const v = inter(PARTS[i], PARTS[j]);
-      if (v > 0.01) {
-        out.push(`${PARTS[i]}/${PARTS[j]} ${v.toFixed(2)} mm³`);
+      const overlap = inter(PARTS[i], PARTS[j]);
+      if (overlap > 0.01) {
+        out.push(`${PARTS[i]}/${PARTS[j]} ${overlap.toFixed(2)} mm³`);
       }
     }
   }
@@ -266,8 +266,8 @@ const t0 = performance.now();
 const { r } = await build();
 const ms = performance.now() - t0;
 check('every step builds', !r.errors.length, errs(r, feats));
-check('five parts: base, turret, lower arm, upper arm, head', r.bodies.length === 5 && PARTS.every(p => debugBodies().has(p)), r.bodies.map((b: any) => b.id).join(', '));
-check('…each a clean solid', PARTS.every(p => isHealthy(healthOf(debugBodies().get(p)!))), PARTS.filter(p => !isHealthy(healthOf(debugBodies().get(p)!))).join(', '));
+check('five parts: base, turret, lower arm, upper arm, head', r.bodies.length === 5 && PARTS.every(part => debugBodies().has(part)), r.bodies.map((b: any) => b.id).join(', '));
+check('…each a clean solid', PARTS.every(part => isHealthy(healthOf(debugBodies().get(part)!))), PARTS.filter(part => !isHealthy(healthOf(debugBodies().get(part)!))).join(', '));
 check('…built in reasonable time', ms < 20000, `${Math.round(ms)} ms`);
 const v0 = values();
 const want = pose(v0);
@@ -278,46 +278,46 @@ const lo = (debugBodies().get('head') as any).boundingBox.bounds[0][2];
 check('the shade clears the desk', lo > 1, `lowest point z ${lo.toFixed(1)}`);
 // Stable: the centre of mass (same material all through) over the base.
 {
-  let m = 0;
-  const c = [0, 0, 0];
-  for (const p of PARTS) {
-    const pr = measureShapeVolumeProperties(debugBodies().get(p)!);
+  let mass = 0;
+  const center = [0, 0, 0];
+  for (const part of PARTS) {
+    const pr = measureShapeVolumeProperties(debugBodies().get(part)!);
     const cm = pr.centerOfMass;
-    m += pr.volume;
-    for (let k = 0; k < 3; k++) {
-      c[k] += cm[k] * pr.volume;
+    mass += pr.volume;
+    for (let axis = 0; axis < 3; axis++) {
+      center[axis] += cm[axis] * pr.volume;
     }
     pr.delete?.();
   }
-  const cx = c[0] / m;
-  const cy = c[1] / m;
+  const cx = center[0] / mass;
+  const cy = center[1] / mass;
   check("it doesn't tip over: the centre of mass is over the base", Math.hypot(cx, cy) < 70 - 5, `${Math.hypot(cx, cy).toFixed(1)} mm from the middle (base radius 70)`);
 }
-check('the shade is hollow (2 mm wall, open at the mouth)', V('head') < Math.PI * 90 * (16 * 16 + 16 * 55 + 55 * 55) / 3 * 0.3, `${(V('head') / 1000).toFixed(1)} cm³`);
-const codeV = new Map(PARTS.map(p => [p, V(p)]));
-const lo3 = [0, 1, 2].map(k => Math.min(...PARTS.map(p => (debugBodies().get(p) as any).boundingBox.bounds[0][k])));
-const hi3 = [0, 1, 2].map(k => Math.max(...PARTS.map(p => (debugBodies().get(p) as any).boundingBox.bounds[1][k])));
-console.log('     size', [0, 1, 2].map(k => (hi3[k] - lo3[k]).toFixed(1)).join(' × '), 'mm; volumes', PARTS.map(p => `${p} ${(codeV.get(p)! / 1000).toFixed(2)}`).join(', '), 'cm³');
+check('the shade is hollow (2 mm wall, open at the mouth)', volumeOf('head') < Math.PI * 90 * (16 * 16 + 16 * 55 + 55 * 55) / 3 * 0.3, `${(volumeOf('head') / 1000).toFixed(1)} cm³`);
+const codeV = new Map(PARTS.map(part => [part, volumeOf(part)]));
+const lo3 = [0, 1, 2].map(axis => Math.min(...PARTS.map(part => (debugBodies().get(part) as any).boundingBox.bounds[0][axis])));
+const hi3 = [0, 1, 2].map(axis => Math.max(...PARTS.map(part => (debugBodies().get(part) as any).boundingBox.bounds[1][axis])));
+console.log('     size', [0, 1, 2].map(axis => (hi3[axis] - lo3[axis]).toFixed(1)).join(' × '), 'mm; volumes', PARTS.map(part => `${part} ${(codeV.get(part)! / 1000).toFixed(2)}`).join(', '), 'cm³');
 
 // ------------------------------------------------- one change each: re-pose / resize
 async function withVars(set: Record<string, string>, label: string, more: (v: Record<string, number>) => void = () => {}) {
   const keep = variables;
   variables = baseVars.map(([name, expr]) => ({ name, expr: set[name] ?? expr }));
   const { r: r2 } = await build();
-  const v = values();
-  const w = pose(v);
-  const m = mouthOf(v.shadeR);
+  const current = values();
+  const expected = pose(current);
+  const mouth = mouthOf(current.shadeR);
   check(`${label}: builds`, !r2.errors.length && r2.bodies.length === 5, errs(r2, feats));
   if (!r2.errors.length) {
-    check(`${label}: the mouth moves with it`, !!m && dist(m, w.mouth) < 0.05, m ? `${dist(m, w.mouth).toFixed(3)} mm off` : 'no mouth edge');
+    check(`${label}: the mouth moves with it`, !!mouth && dist(mouth, expected.mouth) < 0.05, mouth ? `${dist(mouth, expected.mouth).toFixed(3)} mm off` : 'no mouth edge');
     check(`${label}: no parts run into each other`, !clashes().length, clashes().join('; '));
-    more(v);
+    more(current);
   }
   variables = keep;
 }
-await withVars({ a1: '0', a2: '0', a3: '0', swivel: '0' }, 'straight up', (v) => {
-  const top = Math.max(...PARTS.map(p => (debugBodies().get(p) as any).boundingBox.bounds[1][2]));
-  check('straight up: as tall as the parts add up', Math.abs(top - (v.baseH + v.post + v.kR + v.arm1 + v.arm2 + v.yokeL + v.shadeL)) < 0.05, `${top.toFixed(2)} mm`);
+await withVars({ a1: '0', a2: '0', a3: '0', swivel: '0' }, 'straight up', (values) => {
+  const top = Math.max(...PARTS.map(part => (debugBodies().get(part) as any).boundingBox.bounds[1][2]));
+  check('straight up: as tall as the parts add up', Math.abs(top - (values.baseH + values.post + values.kR + values.arm1 + values.arm2 + values.yokeL + values.shadeL)) < 0.05, `${top.toFixed(2)} mm`);
 });
 await withVars({ a1: '35', a2: '80', a3: '20' }, 'reaching out');
 await withVars({ a1: '-15', a2: '140', a3: '60', swivel: '-90' }, 'leaning back, turned');
@@ -351,7 +351,7 @@ await withVars({ shadeR: '70 mm', shadeL: '110 mm', kR: '12 mm' }, 'bigger shade
 }
 
 if (process.argv[2]) {
-  writeFileSync(process.argv[2], JSON.stringify({ ...doc(), hidden: feats.filter(f => f.type === 'sketch').map(f => f.id), colors: { base: '#3a3f47', turret: '#3a3f47', arm1: '#c8ccd2', arm2: '#c8ccd2', head: '#2f6f8f' } }));
+  writeFileSync(process.argv[2], JSON.stringify({ ...doc(), hidden: feats.filter(feature => feature.type === 'sketch').map(feature => feature.id), colors: { base: '#3a3f47', turret: '#3a3f47', arm1: '#c8ccd2', arm2: '#c8ccd2', head: '#2f6f8f' } }));
 }
 
 // The hand build (tests/fixtures/desklamp-hand.json: built on a phone-sized
@@ -374,23 +374,23 @@ if (process.argv[2]) {
     const keep = variables;
     variables = vars;
     const { r: rc } = await build();
-    const cv = new Map(PARTS.map(p => [p, V(p)]));
-    const v = values();
-    const cm = mouthOf(v.shadeR);
+    const cv = new Map(PARTS.map(part => [part, volumeOf(part)]));
+    const current = values();
+    const cm = mouthOf(current.shadeR);
     variables = keep;
     // The hand build, with the same.
-    const d = structuredClone(hand);
-    d.variables = vars;
-    const problems = resolveDoc(d);
-    const rh: any = await regenerate(d.features);
-    const ok = !problems.length && !rh.errors.length && rh.bodies.length === 5 && PARTS.every(p => debugBodies().has(HAND[p]));
-    check(`hand build, ${label}: builds, five parts`, ok && !rc.errors.length, [...problems, errs(rh, d.features)].join('; ') || rh.bodies.map((b: any) => b.id).join(', '));
+    const handDoc = structuredClone(hand);
+    handDoc.variables = vars;
+    const problems = resolveDoc(handDoc);
+    const rh: any = await regenerate(handDoc.features);
+    const ok = !problems.length && !rh.errors.length && rh.bodies.length === 5 && PARTS.every(part => debugBodies().has(HAND[part]));
+    check(`hand build, ${label}: builds, five parts`, ok && !rc.errors.length, [...problems, errs(rh, handDoc.features)].join('; ') || rh.bodies.map((b: any) => b.id).join(', '));
     if (!ok) {
       return;
     }
-    const off = PARTS.map(p => ({ p, rel: Math.abs(V(HAND[p]) - cv.get(p)!) / cv.get(p)! })).filter(x => x.rel > 0.001);
-    check(`hand build, ${label}: every part the same as by code (volume within 0.1 %)`, !off.length, off.map(x => `${x.p} ${(x.rel * 100).toFixed(2)} %`).join(', ') || PARTS.map(p => `${p} ${(V(HAND[p]) / 1000).toFixed(2)}`).join(', '));
-    const hm = mouthOf(v.shadeR, HAND.head);
+    const off = PARTS.map(part => ({ p: part, rel: Math.abs(volumeOf(HAND[part]) - cv.get(part)!) / cv.get(part)! })).filter(entry => entry.rel > 0.001);
+    check(`hand build, ${label}: every part the same as by code (volume within 0.1 %)`, !off.length, off.map(entry => `${entry.p} ${(entry.rel * 100).toFixed(2)} %`).join(', ') || PARTS.map(part => `${part} ${(volumeOf(HAND[part]) / 1000).toFixed(2)}`).join(', '));
+    const hm = mouthOf(current.shadeR, HAND.head);
     check(`hand build, ${label}: the shade's mouth in the same place`, !!hm && !!cm && dist(hm, cm) < 0.05, hm && cm ? `${dist(hm, cm).toFixed(3)} mm apart` : 'no mouth edge');
   };
   await compare({}, 'as drawn');
@@ -412,11 +412,11 @@ if (process.argv[2]) {
   check("a plain-number field takes variables with units (the shade's flare, in %)", pct !== null && Math.abs(pct - 343.75) < 1e-9, String(pct));
   check('…and a length typed in one counts in mm', evaluate('2 cm / 5 mm', 'number') === 4, String(evaluate('2 cm / 5 mm', 'number')));
   // Snapping: a line's end and a rectangle side's middle on one spot - the line's end (it can be kept on) wins.
-  const side = { label: 'Midpoint', d: 0.2 };
-  const end = { label: 'Endpoint', d: 0.3, ref: { e: 'L1', p: 'b' } };
+  const side = { label: 'Midpoint', distance: 0.2 };
+  const end = { label: 'Endpoint', distance: 0.3, ref: { e: 'L1', p: 'b' } };
   check('on one spot, the snap point a circle can be kept on wins', nearestSnap([side, end], 8)?.label === 'Endpoint' && nearestSnap([end, side], 8)?.label === 'Endpoint');
-  check('…but a clearly nearer one still wins', nearestSnap([{ label: 'near', d: 1 }, { ...end, d: 4 }], 8)?.label === 'near');
-  check('…and nothing out of reach', nearestSnap([{ label: 'far', d: 9 }], 8) === null);
+  check('…but a clearly nearer one still wins', nearestSnap([{ label: 'near', distance: 1 }, { ...end, distance: 4 }], 8)?.label === 'near');
+  check('…and nothing out of reach', nearestSnap([{ label: 'far', distance: 9 }], 8) === null);
 }
 
 console.log(failed ? `${failed} FAILED` : 'all passed');

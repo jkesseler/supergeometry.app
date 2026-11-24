@@ -27,9 +27,9 @@ const WORDS = /undefined|\bNaN\b|\bnull\b|is not|Cannot read|Standard_|BRep|exce
 
 async function errorOf(fs: Feature[], id: string): Promise<{ text: string; ms: number; bodies: number }> {
   const t0 = performance.now();
-  const r: any = await regenerate(fs);
+  const result: any = await regenerate(fs);
 
-  return { text: r.errors.find((e: any) => e.featureId === id)?.message ?? '', ms: performance.now() - t0, bodies: r.bodies.length };
+  return { text: result.errors.find((e: any) => e.featureId === id)?.message ?? '', ms: performance.now() - t0, bodies: result.bodies.length };
 }
 
 // Broken values: each refused as damaged, at once, the body before it untouched.
@@ -43,8 +43,8 @@ async function errorOf(fs: Feature[], id: string): Promise<{ text: string; ms: n
     ["a move by something that isn't three numbers", { id: 'x', name: 'x', type: 'transform', bodies: ['A'], op: { kind: 'move', translate: [5] } } as unknown as Feature],
     ["tools that aren't a list", { id: 'x', name: 'x', type: 'boolean', op: 'union', target: 'A', tools: null } as unknown as Feature]
   ];
-  for (const [name, f] of cases) {
-    const e = await errorOf([sketch, box, f], 'x');
+  for (const [name, feature] of cases) {
+    const e = await errorOf([sketch, box, feature], 'x');
     check(`${name}: refused in words, at once`, !!e.text && !WORDS.test(e.text) && e.ms < 5000 && e.bodies === 1, `"${e.text}" ${e.ms.toFixed(0)} ms, ${e.bodies} bodies`);
   }
 }
@@ -62,9 +62,9 @@ async function errorOf(fs: Feature[], id: string): Promise<{ text: string; ms: n
   const big = { ...sketch, entities: [{ id: 'c', kind: 'circle', center: [0, 0], radius: 2e6 }] } as Feature;
   const disc = { id: 'A', name: 'A', type: 'extrude', source: { kind: 'profile', sketch: 's', regions: arrangement(big.type === 'sketch' ? (big.entities as any) : []).regions.map(regionRef) }, distance: 1000, mode: 'new' } as Feature;
   const t0 = performance.now();
-  const r: any = await regenerate([big, disc]);
-  const tris = (r.bodies[0]?.indices.length ?? 0) / 3;
-  check('a disc 4 km across: shown, with a mesh of a sane size', !r.errors.length && tris > 0 && tris < 200000 && performance.now() - t0 < 10000, `${r.errors.map((x: any) => x.message)} ${tris} triangles, ${(performance.now() - t0).toFixed(0)} ms`);
+  const result: any = await regenerate([big, disc]);
+  const tris = (result.bodies[0]?.indices.length ?? 0) / 3;
+  check('a disc 4 km across: shown, with a mesh of a sane size', !result.errors.length && tris > 0 && tris < 200000 && performance.now() - t0 < 10000, `${result.errors.map((error: any) => error.message)} ${tris} triangles, ${(performance.now() - t0).toFixed(0)} ms`);
 }
 
 // The engine breaking down: told apart from a step that can't be done, a fresh engine, and once more.
@@ -72,7 +72,7 @@ async function errorOf(fs: Feature[], id: string): Promise<{ text: string; ms: n
   check('an engine fault is told apart from a refusal', isFault(new WebAssembly.RuntimeError('memory access out of bounds')) && isFault(new KernelFault('x')) && !isFault(new Error("That fillet doesn't fit here")) && !isFault(new TypeError('x is not iterable')));
   let loads = 0;
   let tries = 0;
-  const r: any = await withFreshKernel(
+  const result: any = await withFreshKernel(
     async () => (loads++, await load()),
     async () => {
       if (tries++ === 0) {
@@ -82,7 +82,7 @@ async function errorOf(fs: Feature[], id: string): Promise<{ text: string; ms: n
       return regenerate([sketch, box]);
     }
   );
-  check('after a fault: the engine loaded afresh, the rebuild done again', loads === 1 && tries === 2 && r.bodies.length === 1 && !r.errors.length, `${loads} loads, ${tries} tries`);
+  check('after a fault: the engine loaded afresh, the rebuild done again', loads === 1 && tries === 2 && result.bodies.length === 1 && !result.errors.length, `${loads} loads, ${tries} tries`);
   let gaveUp = '';
   try {
     await withFreshKernel(load, async () => {

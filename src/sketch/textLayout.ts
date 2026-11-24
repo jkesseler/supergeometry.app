@@ -20,8 +20,8 @@ type Seg = { line: boolean; p: Vec2[] };
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
 /** A point along a Bézier curve (any degree). */
-function bez(p: Vec2[], t: number): Vec2 {
-  let q = p.slice();
+function bez(controls: Vec2[], t: number): Vec2 {
+  let q = controls.slice();
   while (q.length > 1) {
     q = q.slice(1).map((b, i) => [q[i][0] + (b[0] - q[i][0]) * t, q[i][1] + (b[1] - q[i][1]) * t] as Vec2);
   }
@@ -29,16 +29,16 @@ function bez(p: Vec2[], t: number): Vec2 {
   return q[0];
 }
 
-const start = (s: Seg) => s.p[0];
-const end = (s: Seg) => s.p[s.p.length - 1];
+const start = (segment: Seg) => segment.p[0];
+const end = (segment: Seg) => segment.p[segment.p.length - 1];
 /** Which way a piece leaves its start, or heads into its end (unit vectors). */
-function dirAt(s: Seg, atEnd: boolean, tiny: number): Vec2 {
-  const p = atEnd ? s.p.slice().reverse() : s.p;
-  const q = p.find(x => dist(x, p[0]) > tiny) ?? p[p.length - 1];
-  const d = dist(p[0], q) || 1;
-  const v: Vec2 = [(q[0] - p[0][0]) / d, (q[1] - p[0][1]) / d];
+function dirAt(segment: Seg, atEnd: boolean, tiny: number): Vec2 {
+  const controls = atEnd ? segment.p.slice().reverse() : segment.p;
+  const q = controls.find(control => dist(control, controls[0]) > tiny) ?? controls[controls.length - 1];
+  const distance = dist(controls[0], q) || 1;
+  const direction: Vec2 = [(q[0] - controls[0][0]) / distance, (q[1] - controls[0][1]) / distance];
 
-  return atEnd ? [-v[0], -v[1]] : v;
+  return atEnd ? [-direction[0], -direction[1]] : direction;
 }
 const turn = (a: Vec2, b: Vec2) => Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1])));
 
@@ -48,9 +48,9 @@ const SAMPLES = 12;
 /** Points along a run of curves, close enough together to fit to (none repeated: a spline can't pass one spot twice in a row). */
 function sampleRun(run: Seg[], tiny: number): Vec2[] {
   const out: Vec2[] = [start(run[0])];
-  for (const s of run) {
+  for (const segment of run) {
     for (let i = 1; i <= SAMPLES; i++) {
-      const q = bez(s.p, i / SAMPLES);
+      const q = bez(segment.p, i / SAMPLES);
       if (dist(q, out[out.length - 1]) > tiny * 0.1) {
         out.push(q);
       }
@@ -67,15 +67,15 @@ function sampleRun(run: Seg[], tiny: number): Vec2[] {
  * within tol. Straight sides only: the polyline's corners instead.
  */
 function simplifyContour(segs: Seg[], tol: number, tiny: number): FreehandPiece[] | Vec2[] {
-  const n = segs.length;
+  const count = segs.length;
   // A corner where the outline turns (a line always starts / ends one: it stays itself).
-  const corner = segs.map((s, i) => {
-    const prev = segs[(i - 1 + n) % n];
-    const t = turn(dirAt(prev, true, tiny), dirAt(s, false, tiny));
+  const corner = segs.map((segment, i) => {
+    const prev = segs[(i - 1 + count) % count];
+    const t = turn(dirAt(prev, true, tiny), dirAt(segment, false, tiny));
 
-    return prev.line && s.line ? t > 1e-3 : prev.line || s.line || t > (12 * Math.PI) / 180;
+    return prev.line && segment.line ? t > 1e-3 : prev.line || segment.line || t > (12 * Math.PI) / 180;
   });
-  if (segs.every(s => s.line)) {
+  if (segs.every(segment => segment.line)) {
     // One closed polyline, as before (a side the font splits in two is one side here).
     return segs.filter((_, i) => corner[i]).map(start);
   }
@@ -83,9 +83,9 @@ function simplifyContour(segs: Seg[], tol: number, tiny: number): FreehandPiece[
     // A smooth loop (an "O"): a circle if it is one, else one closed spline.
     const pts = sampleRun(segs, tiny);
     pts.pop();
-    const c = fitCircle(pts);
-    if (c && pts.every(q => Math.abs(dist(q, c.c) - c.r) <= tol)) {
-      return [{ kind: 'circle', center: c.c, radius: c.r }];
+    const circle = fitCircle(pts);
+    if (circle && pts.every(q => Math.abs(dist(q, circle.c) - circle.r) <= tol)) {
+      return [{ kind: 'circle', center: circle.c, radius: circle.r }];
     }
 
     return [{ kind: 'spline', points: fitSpline(pts, true, tol), closed: true }];
@@ -93,8 +93,8 @@ function simplifyContour(segs: Seg[], tol: number, tiny: number): FreehandPiece[
   // Runs from corner to corner, starting at the first corner.
   const first = corner.indexOf(true);
   const runs: Seg[][] = [];
-  for (let k = 0; k < n; k++) {
-    const i = (first + k) % n;
+  for (let index = 0; index < count; index++) {
+    const i = (first + index) % count;
     if (corner[i]) {
       runs.push([]);
     }
@@ -127,7 +127,7 @@ function simplifyContour(segs: Seg[], tol: number, tiny: number): FreehandPiece[
 
 /** `text` with its capitals `size` tall, its baseline through `at` (aligned there by `align`), turned `angle` radians. */
 export function textOutlines(
-  f: Font,
+  font: Font,
   text: string,
   at: Vec2,
   size: number,
@@ -135,24 +135,24 @@ export function textOutlines(
   align: TextAlign = 'left'
 ): SketchEntity[] {
   // opentype sizes are em: scale so capitals are `size` tall (the font says how tall its caps are).
-  const os2 = (f.tables as { os2?: { sCapHeight?: number } }).os2;
-  const cap = os2?.sCapHeight ? os2.sCapHeight / f.unitsPerEm : 0.711;
+  const os2 = (font.tables as { os2?: { sCapHeight?: number } }).os2;
+  const cap = os2?.sCapHeight ? os2.sCapHeight / font.unitsPerEm : 0.711;
   const fontSize = size / cap;
   // Lay glyphs out ourselves: opentype's text shaper chokes on some of Roboto's
   // substitution tables ("substFormat 2 not supported").
-  const scale = fontSize / f.unitsPerEm;
+  const scale = fontSize / font.unitsPerEm;
   type Cmd = { type: string; x: number; y: number; x1: number; y1: number; x2: number; y2: number };
   const commands: Cmd[] = [];
   let x = 0;
   let prev: ReturnType<Font['charToGlyph']> | null = null;
   for (const ch of text) {
-    const g = f.charToGlyph(ch);
+    const glyph = font.charToGlyph(ch);
     if (prev) {
-      x += f.getKerningValue(prev, g) * scale;
+      x += font.getKerningValue(prev, glyph) * scale;
     }
-    commands.push(...(g.getPath(x, 0, fontSize).commands as Cmd[]));
-    x += (g.advanceWidth ?? 0) * scale;
-    prev = g;
+    commands.push(...(glyph.getPath(x, 0, fontSize).commands as Cmd[]));
+    x += (glyph.advanceWidth ?? 0) * scale;
+    prev = glyph;
   }
   // Points closer than this are one point: fonts repeat a point where a curve
   // meets a line (an "8" in Roboto), and a zero-length edge can't be made into
@@ -162,12 +162,12 @@ export function textOutlines(
   let cur: Seg[] = [];
   let from: Vec2 = [0, 0];
   let begin: Vec2 = [0, 0];
-  const add = (s: Seg) => {
-    if (s.p.every(q => dist(q, from) <= tiny)) {
+  const add = (segment: Seg) => {
+    if (segment.p.every(q => dist(q, from) <= tiny)) {
       return;
     } // a repeated point
-    cur.push(s);
-    from = end(s);
+    cur.push(segment);
+    from = end(segment);
   };
   const close = () => {
     if (cur.length && dist(from, begin) > tiny) {
@@ -187,17 +187,17 @@ export function textOutlines(
     }
     cur = [];
   };
-  for (const c of commands) {
-    if (c.type === 'M') {
+  for (const command of commands) {
+    if (command.type === 'M') {
       close();
-      from = begin = [c.x, -c.y];
-    } else if (c.type === 'L') {
-      add({ line: true, p: [from, [c.x, -c.y]] });
-    } else if (c.type === 'Q') {
-      add({ line: false, p: [from, [c.x1, -c.y1], [c.x, -c.y]] });
-    } else if (c.type === 'C') {
-      add({ line: false, p: [from, [c.x1, -c.y1], [c.x2, -c.y2], [c.x, -c.y]] });
-    } else if (c.type === 'Z') {
+      from = begin = [command.x, -command.y];
+    } else if (command.type === 'L') {
+      add({ line: true, p: [from, [command.x, -command.y]] });
+    } else if (command.type === 'Q') {
+      add({ line: false, p: [from, [command.x1, -command.y1], [command.x, -command.y]] });
+    } else if (command.type === 'C') {
+      add({ line: false, p: [from, [command.x1, -command.y1], [command.x2, -command.y2], [command.x, -command.y]] });
+    } else if (command.type === 'Z') {
       close();
     }
   }
@@ -207,9 +207,9 @@ export function textOutlines(
   if (align !== 'left' && contours.length) {
     let lo = Infinity;
     let hi = -Infinity;
-    for (const s of contours.flat()) {
+    for (const contour of contours.flat()) {
       for (let i = 0; i <= 16; i++) {
-        const q = bez(s.p, i / 16);
+        const q = bez(contour.p, i / 16);
         lo = Math.min(lo, q[0]);
         hi = Math.max(hi, q[0]);
       }
@@ -221,25 +221,25 @@ export function textOutlines(
   const sn = Math.sin(angle);
   const place = ([px, py]: Vec2): Vec2 => [at[0] + (px + dx) * cs - py * sn, at[1] + (px + dx) * sn + py * cs];
   for (const segs of contours) {
-    for (const s of segs) {
-      s.p = s.p.map(place);
+    for (const segment of segs) {
+      segment.p = segment.p.map(place);
     }
   }
   // Within a few thousandths of the letter height: nothing to see, on screen or printed.
   const tol = size * 3e-3;
   const out: SketchEntity[] = [];
   for (const segs of contours) {
-    const r = simplifyContour(segs, tol, tiny);
-    if (!r.length) {
+    const simplified = simplifyContour(segs, tol, tiny);
+    if (!simplified.length) {
       continue;
     }
-    if (Array.isArray(r[0])) {
-      if (r.length >= 3) {
-        out.push({ id: uid(), kind: 'polyline', closed: true, points: r as Vec2[] });
+    if (Array.isArray(simplified[0])) {
+      if (simplified.length >= 3) {
+        out.push({ id: uid(), kind: 'polyline', closed: true, points: simplified as Vec2[] });
       }
       continue;
     }
-    for (const pc of r as FreehandPiece[]) {
+    for (const pc of simplified as FreehandPiece[]) {
       if (pc.kind === 'spline') {
         out.push({ id: uid(), kind: 'spline', points: pc.points, closed: pc.closed, mode: 'fit' });
       } else {

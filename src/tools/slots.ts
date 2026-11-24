@@ -29,8 +29,8 @@ export function axisSlot(app: AppContext, label: string, get: () => AxisRef | nu
       // The project's own axes, by name: a thin dashed line far off is hard to
       // tap (a fan's axis tap caught the yoke's edge in front of it).
       ...app.store.features
-        .filter((f): f is AxisFeature => f.type === 'axis' && !f.suppressed)
-        .map(f => ({ label: f.name, apply: () => ((name = f.name), (shown = { kind: 'axis', id: f.id } as Sel), set({ origin: f.origin, dir: f.dir, ref: { kind: 'axis' as const, feature: f.id } })) }))
+        .filter((feature): feature is AxisFeature => feature.type === 'axis' && !feature.suppressed)
+        .map(feature => ({ label: feature.name, apply: () => ((name = feature.name), (shown = { kind: 'axis', id: feature.id } as Sel), set({ origin: feature.origin, dir: feature.dir, ref: { kind: 'axis' as const, feature: feature.id } })) }))
     ],
     shows: () => (shown ? [shown] : []),
     accept(hit) {
@@ -38,38 +38,38 @@ export function axisSlot(app: AppContext, label: string, get: () => AxisRef | nu
       // circle it halves has its own points on it): the sketch line through it.
       // (Tapped, it was taken for nothing - the Axis waited on.)
       if (hit.kind === 'point') {
-        const s = app.store.find<SketchFeature>(hit.sketch);
+        const sketch = app.store.find<SketchFeature>(hit.sketch);
         const plane = app.sketchPlane(hit.sketch);
-        if (!s || !plane) {
+        if (!sketch || !plane) {
           return false;
         }
         const at = toPlane(plane, hit.point);
-        const on = s.entities.find(e => e.kind === 'line' && closestOnPrim(entityPrims(e)[0], at).d < 1e-6 * Math.max(1, len(sub(toWorld(plane, e.b), toWorld(plane, e.a)))));
+        const on = sketch.entities.find(e => e.kind === 'line' && closestOnPrim(entityPrims(e)[0], at).d < 1e-6 * Math.max(1, len(sub(toWorld(plane, e.b), toWorld(plane, e.a)))));
         if (!on || on.kind !== 'line') {
           return false;
         }
         const a = toWorld(plane, on.a);
-        set({ origin: a, dir: norm(sub(toWorld(plane, on.b), a)), ref: { kind: 'sketchLine', sketch: s.id, entity: on.id } });
+        set({ origin: a, dir: norm(sub(toWorld(plane, on.b), a)), ref: { kind: 'sketchLine', sketch: sketch.id, entity: on.id } });
         name = 'Sketch line';
-        shown = { kind: 'curve', sketch: s.id, entity: on.id } as Sel;
+        shown = { kind: 'curve', sketch: sketch.id, entity: on.id } as Sel;
 
         return true;
       }
       if (hit.kind === 'curve') {
-        const s = app.store.find<SketchFeature>(hit.sketch);
-        const e = s?.entities.find(x => x.id === hit.entity);
+        const sketch = app.store.find<SketchFeature>(hit.sketch);
+        const e = sketch?.entities.find(entity => entity.id === hit.entity);
         const plane = app.sketchPlane(hit.sketch);
-        if (!s || !plane || !e) {
+        if (!sketch || !plane || !e) {
           return false;
         }
         if (e.kind === 'line') {
           const a = toWorld(plane, e.a);
-          set({ origin: a, dir: norm(sub(toWorld(plane, e.b), a)), ref: { kind: 'sketchLine', sketch: s.id, entity: e.id } });
+          set({ origin: a, dir: norm(sub(toWorld(plane, e.b), a)), ref: { kind: 'sketchLine', sketch: sketch.id, entity: e.id } });
           name = 'Sketch line';
         } else if ((e.kind === 'rect' || e.kind === 'polygon' || e.kind === 'polyline') && hit.point) {
           // The side of a shape that was tapped (a profile drawn against the axis).
           const at = toPlane(plane, hit.point);
-          const side = explode(e).reduce((m, x) => (closestOnPrim(entityPrims(x)[0], at).d < closestOnPrim(entityPrims(m)[0], at).d ? x : m));
+          const side = explode(e).reduce((sketchEntity, candidate) => (closestOnPrim(entityPrims(candidate)[0], at).d < closestOnPrim(entityPrims(sketchEntity)[0], at).d ? candidate : sketchEntity));
           if (side.kind !== 'line') {
             return false;
           }
@@ -144,17 +144,17 @@ export function planeSlot(
     // a thin sheet among the bodies, easy to miss with a finger).
     presets: [
       ...['XY', 'XZ', 'YZ'].map(id => ({ label: id, apply: () => ((name = `${id} plane`), (shown = null), set(app.view.planeOf(id)!)) })),
-      ...app.view.construction.planes.filter(c => !opts.skip?.(c.id)).map(c => ({ label: c.name, apply: () => ((name = c.name), (shown = null), set(c.plane)) }))
+      ...app.view.construction.planes.filter(plane => !opts.skip?.(plane.id)).map(plane => ({ label: plane.name, apply: () => ((name = plane.name), (shown = null), set(plane.plane)) }))
     ],
     shows: () => (shown ? [shown] : []),
     accept(hit) {
       if (hit.kind === 'plane') {
-        const p = app.view.planeOf(hit.id);
-        if (!p || opts.skip?.(hit.id)) {
+        const plane = app.view.planeOf(hit.id);
+        if (!plane || opts.skip?.(hit.id)) {
           return false;
         }
-        set(p);
-        name = ['XY', 'XZ', 'YZ'].includes(hit.id) ? `${hit.id} plane` : (app.view.construction.planes.find(c => c.id === hit.id)?.name ?? 'Plane');
+        set(plane);
+        name = ['XY', 'XZ', 'YZ'].includes(hit.id) ? `${hit.id} plane` : (app.view.construction.planes.find(constructionInfo => constructionInfo.id === hit.id)?.name ?? 'Plane');
         shown = { kind: 'plane', id: hit.id };
 
         return true;
@@ -191,9 +191,9 @@ export function planeSlot(
 
 /** "Face of Body 3": which body a face is on, by the name it has in Items. */
 export function faceOfName(app: AppContext, body: string): string {
-  const n = app.store.doc.names?.[body] ?? app.result?.bodies.find(b => b.id === body)?.name;
+  const name = app.store.doc.names?.[body] ?? app.result?.bodies.find(b => b.id === body)?.name;
 
-  return n ? `Face of ${n}` : 'Face';
+  return name ? `Face of ${name}` : 'Face';
 }
 
 /** A direction: an edge, an axis, a face normal, or X/Y/Z. */
@@ -248,32 +248,32 @@ export function pathSlot(app: AppContext, get: () => PathRef | null, set: (p: Pa
     label: 'Path',
     multi: true,
     describe: () => {
-      const p = get();
-      if (!p) {
+      const path = get();
+      if (!path) {
         return 'Tap curves or edges';
       }
 
-      return p.kind === 'sketch' ? `${p.entities.length} curve${p.entities.length > 1 ? 's' : ''}` : `${p.edges.length} edge${p.edges.length > 1 ? 's' : ''}`;
+      return path.kind === 'sketch' ? `${path.entities.length} curve${path.entities.length > 1 ? 's' : ''}` : `${path.edges.length} edge${path.edges.length > 1 ? 's' : ''}`;
     },
     filled: () => !!get(),
     pick: { profiles: false, curves: true, planes: false, axes: false },
     shows: () => {
-      const p = get();
-      if (!p) {
+      const path = get();
+      if (!path) {
         return [];
       }
-      if (p.kind === 'sketch') {
-        return p.entities.map(entity => ({ kind: 'curve', sketch: p.sketch, entity }) as Sel);
+      if (path.kind === 'sketch') {
+        return path.entities.map(entity => ({ kind: 'curve', sketch: path.sketch, entity }) as Sel);
       }
 
       return [];
     },
     accept(hit) {
-      const p = get();
+      const path = get();
       if (hit.kind === 'curve') {
-        if (p?.kind === 'sketch' && p.sketch === hit.sketch) {
-          const has = p.entities.includes(hit.entity);
-          set({ ...p, entities: has ? p.entities.filter(e => e !== hit.entity) : [...p.entities, hit.entity] });
+        if (path?.kind === 'sketch' && path.sketch === hit.sketch) {
+          const has = path.entities.includes(hit.entity);
+          set({ ...path, entities: has ? path.entities.filter(e => e !== hit.entity) : [...path.entities, hit.entity] });
         } else {
           // The first tap takes the whole run the curve is part of (a stem
           // drawn as line, arc, line: one tap, not three - the short pieces
@@ -293,7 +293,7 @@ export function pathSlot(app: AppContext, get: () => PathRef | null, set: (p: Pa
         if (!ref) {
           return false;
         }
-        const edges: EdgeRef[] = p?.kind === 'edges' ? [...p.edges, ref] : [ref];
+        const edges: EdgeRef[] = path?.kind === 'edges' ? [...path.edges, ref] : [ref];
         set({ kind: 'edges', edges });
 
         return true;
@@ -310,7 +310,7 @@ export function pathSlot(app: AppContext, get: () => PathRef | null, set: (p: Pa
  * again leaves it out.
  */
 export function curvesSlot(app: AppContext, label: string, get: () => PathRef[], set: (p: PathRef[]) => void, optional = false): Slot {
-  const count = () => get().reduce((n, p) => n + (p.kind === 'sketch' ? p.entities.length : p.edges.length), 0);
+  const count = () => get().reduce((total, pathRef) => total + (pathRef.kind === 'sketch' ? pathRef.entities.length : pathRef.edges.length), 0);
 
   return {
     label,
@@ -318,20 +318,20 @@ export function curvesSlot(app: AppContext, label: string, get: () => PathRef[],
     describe: () => (count() ? `${count()} curve${count() > 1 ? 's' : ''}` : optional ? 'None' : 'Tap curves or edges'),
     filled: () => optional || count() > 0,
     pick: { profiles: false, curves: true, planes: false, axes: false },
-    shows: () => get().flatMap(p => (p.kind === 'sketch' ? p.entities.map(entity => ({ kind: 'curve', sketch: p.sketch, entity }) as Sel) : [])),
+    shows: () => get().flatMap(pathRef => (pathRef.kind === 'sketch' ? pathRef.entities.map(entity => ({ kind: 'curve', sketch: pathRef.sketch, entity }) as Sel) : [])),
     get presets() {
       return count() ? [{ label: 'Clear', apply: () => set([]) }] : [];
     },
     accept(hit) {
       const paths = get();
       if (hit.kind === 'curve') {
-        const i = paths.findIndex(p => p.kind === 'sketch' && p.sketch === hit.sketch);
+        const i = paths.findIndex(path => path.kind === 'sketch' && path.sketch === hit.sketch);
         if (i < 0) {
           return set([...paths, { kind: 'sketch', sketch: hit.sketch, entities: [hit.entity] }]), true;
         }
-        const p = paths[i] as Extract<PathRef, { kind: 'sketch' }>;
-        const entities = p.entities.includes(hit.entity) ? p.entities.filter(e => e !== hit.entity) : [...p.entities, hit.entity];
-        set(entities.length ? paths.map((x, k) => (k === i ? { ...p, entities } : x)) : paths.filter((_, k) => k !== i));
+        const sketchPath = paths[i] as Extract<PathRef, { kind: 'sketch' }>;
+        const entities = sketchPath.entities.includes(hit.entity) ? sketchPath.entities.filter(e => e !== hit.entity) : [...sketchPath.entities, hit.entity];
+        set(entities.length ? paths.map((path, pathIndex) => (pathIndex === i ? { ...sketchPath, entities } : path)) : paths.filter((_, pathIndex) => pathIndex !== i));
 
         return true;
       }
@@ -341,14 +341,14 @@ export function curvesSlot(app: AppContext, label: string, get: () => PathRef[],
           return false;
         }
         // One path per body (its face is found from its own body).
-        const i = paths.findIndex(p => p.kind === 'edges' && p.edges[0]?.body === ref.body);
+        const i = paths.findIndex(path => path.kind === 'edges' && path.edges[0]?.body === ref.body);
         if (i < 0) {
           return set([...paths, { kind: 'edges', edges: [ref] }]), true;
         }
-        const p = paths[i] as Extract<PathRef, { kind: 'edges' }>;
+        const edgePath = paths[i] as Extract<PathRef, { kind: 'edges' }>;
         const same = (e: EdgeRef) => JSON.stringify(e) === JSON.stringify(ref);
-        const edges = p.edges.some(same) ? p.edges.filter(e => !same(e)) : [...p.edges, ref];
-        set(edges.length ? paths.map((x, k) => (k === i ? { ...p, edges } : x)) : paths.filter((_, k) => k !== i));
+        const edges = edgePath.edges.some(same) ? edgePath.edges.filter(e => !same(e)) : [...edgePath.edges, ref];
+        set(edges.length ? paths.map((path, pathIndex) => (pathIndex === i ? { ...edgePath, edges } : path)) : paths.filter((_, pathIndex) => pathIndex !== i));
 
         return true;
       }
@@ -382,10 +382,10 @@ export function facesSlot(app: AppContext, label: string, get: () => FaceRef[], 
       if (!ref) {
         return false;
       }
-      const i = picked.findIndex(s => s.kind === 'face' && s.body === hit.body && s.face === hit.face);
+      const i = picked.findIndex(highlight => highlight.kind === 'face' && highlight.body === hit.body && highlight.face === hit.face);
       if (i >= 0) {
         picked.splice(i, 1);
-        set(get().filter((_, k) => k !== i));
+        set(get().filter((_, index) => index !== i));
       } else {
         picked.push({ kind: 'face', body: hit.body, face: hit.face });
         set([...get(), ref]);
@@ -409,16 +409,16 @@ export function sectionsSlot(app: AppContext, get: () => ExtrudeSource[], set: (
     shows: () => picked,
     accept(hit) {
       if (hit.kind === 'profile') {
-        const r = arrangement(app.sketchCurves(hit.sketch)).regions[hit.region];
-        if (!r) {
+        const region = arrangement(app.sketchCurves(hit.sketch)).regions[hit.region];
+        if (!region) {
           return false;
         }
         // Tapped again: take it back out.
-        const i = picked.findIndex(p => p.kind === 'profile' && p.sketch === hit.sketch && p.region === hit.region);
-        const ref = regionRef(r);
+        const i = picked.findIndex(highlight => highlight.kind === 'profile' && highlight.sketch === hit.sketch && highlight.region === hit.region);
+        const ref = regionRef(region);
         if (i >= 0) {
           picked.splice(i, 1);
-          set(get().filter(s => !(s.kind === 'profile' && s.sketch === hit.sketch && s.regions.length === 1 && Math.hypot(s.regions[0].c[0] - ref.c[0], s.regions[0].c[1] - ref.c[1]) < 1e-6)));
+          set(get().filter(extrudeSource => !(extrudeSource.kind === 'profile' && extrudeSource.sketch === hit.sketch && extrudeSource.regions.length === 1 && Math.hypot(extrudeSource.regions[0].c[0] - ref.c[0], extrudeSource.regions[0].c[1] - ref.c[1]) < 1e-6)));
 
           return true;
         }
@@ -432,10 +432,10 @@ export function sectionsSlot(app: AppContext, get: () => ExtrudeSource[], set: (
         if (!ref || !app.view.body(hit.body)?.faces[hit.face]?.plane) {
           return false;
         }
-        const i = picked.findIndex(p => p.kind === 'face' && p.body === hit.body && p.face === hit.face);
+        const i = picked.findIndex(highlight => highlight.kind === 'face' && highlight.body === hit.body && highlight.face === hit.face);
         if (i >= 0) {
           picked.splice(i, 1);
-          set(get().filter(s => !(s.kind === 'face' && s.face.body === ref.body && Math.hypot(...(sub3(s.face.center, ref.center) as [number, number, number])) < 1e-6)));
+          set(get().filter(extrudeSource => !(extrudeSource.kind === 'face' && extrudeSource.face.body === ref.body && Math.hypot(...(sub3(extrudeSource.face.center, ref.center) as [number, number, number])) < 1e-6)));
 
           return true;
         }
@@ -462,9 +462,9 @@ export function pointSlot(app: AppContext, label: string, get: () => Vec3 | null
   return {
     label,
     describe: () => {
-      const p = get();
+      const point = get();
 
-      return p ? (p.every(v => v === 0) ? 'Origin (0, 0, 0)' : p.map(v => Math.round(v * 1000) / 1000).join(', ')) : 'Tap a corner, edge, face, point or the origin';
+      return point ? (point.every(value => value === 0) ? 'Origin (0, 0, 0)' : point.map(value => Math.round(value * 1000) / 1000).join(', ')) : 'Tap a corner, edge, face, point or the origin';
     },
     filled: () => !!get(),
     pick: { profiles: false, curves: true, planes: true, origin: true },
@@ -492,9 +492,9 @@ export function pointSlot(app: AppContext, label: string, get: () => Vec3 | null
         }
         shown = { kind: 'edge', body: hit.body, edge: hit.edge };
       } else if (hit.kind === 'face') {
-        const f = app.view.body(hit.body)?.faces[hit.face];
-        if (f?.plane && near(f.center)) {
-          at = f.center;
+        const face = app.view.body(hit.body)?.faces[hit.face];
+        if (face?.plane && near(face.center)) {
+          at = face.center;
         }
         shown = { kind: 'face', body: hit.body, face: hit.face };
       } else if (hit.kind === 'origin') {
@@ -532,11 +532,11 @@ function endsOf(e: Ent): [[number, number], [number, number]] | null {
  */
 export function chainThrough(entities: Ent[], id: string): string[] {
   const open = entities.filter(e => !e.construction && endsOf(e));
-  const key = (p: [number, number]) => `${Math.round(p[0] * 1e4)},${Math.round(p[1] * 1e4)}`;
+  const key = (point: [number, number]) => `${Math.round(point[0] * 1e4)},${Math.round(point[1] * 1e4)}`;
   const at = new Map<string, string[]>();
   for (const e of open) {
-    for (const p of endsOf(e)!) {
-      at.set(key(p), [...(at.get(key(p)) ?? []), e.id]);
+    for (const end of endsOf(e)!) {
+      at.set(key(end), [...(at.get(key(end)) ?? []), e.id]);
     }
   }
   const byId = new Map(open.map(e => [e.id, e]));
@@ -546,20 +546,20 @@ export function chainThrough(entities: Ent[], id: string): string[] {
   const used = new Set([id]);
   const walk = (from: [number, number]): string[] => {
     const out: string[] = [];
-    let p = from;
+    let point = from;
     for (;;) {
-      const there = at.get(key(p)) ?? [];
+      const there = at.get(key(point)) ?? [];
       if (there.length !== 2) {
         break;
       }
-      const next = there.find(x => !used.has(x));
+      const next = there.find(candidate => !used.has(candidate));
       if (!next) {
         break;
       }
       used.add(next);
       out.push(next);
       const [a, b] = endsOf(byId.get(next)!)!;
-      p = key(a) === key(p) ? b : a;
+      point = key(a) === key(point) ? b : a;
     }
 
     return out;
@@ -575,20 +575,20 @@ export function chainThrough(entities: Ent[], id: string): string[] {
 export function circleAxis(start: Vec3, mid: Vec3, end: Vec3, tangent: Vec3): AxisRef | null {
   const full = len(sub(start, end)) < 1e-6;
   if (full) {
-    const c = scale(add(start, mid), 0.5);
-    const n = cross(sub(mid, c), tangent);
+    const center = scale(add(start, mid), 0.5);
+    const normal = cross(sub(mid, center), tangent);
 
-    return len(n) < 1e-12 ? null : { origin: c, dir: norm(n) };
+    return len(normal) < 1e-12 ? null : { origin: center, dir: norm(normal) };
   }
   // Circumcentre of start, mid, end.
   const a = sub(start, mid);
   const b = sub(end, mid);
-  const n = cross(a, b);
-  const nn = dot(n, n);
+  const planeNormal = cross(a, b);
+  const nn = dot(planeNormal, planeNormal);
   if (nn < 1e-18) {
     return null;
   }
-  const c = add(mid, scale(add(scale(cross(n, a), dot(b, b)), scale(cross(b, n), dot(a, a))), 1 / (2 * nn)));
+  const arcCenter = add(mid, scale(add(scale(cross(planeNormal, a), dot(b, b)), scale(cross(b, planeNormal), dot(a, a))), 1 / (2 * nn)));
 
-  return { origin: c, dir: norm(n) };
+  return { origin: arcCenter, dir: norm(planeNormal) };
 }

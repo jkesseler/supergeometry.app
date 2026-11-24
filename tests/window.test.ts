@@ -32,8 +32,8 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 
-let n = 0;
-const id = () => `e${n++}`;
+let count = 0;
+const id = () => `e${count++}`;
 const XZ = (y = 0): PlaneDef => ({ origin: [0, y, 0], normal: [0, -1, 0], xDir: [1, 0, 0] }); // u = x, v = z; extrudes towards -Y
 const YZ = (x = 0): PlaneDef => ({ origin: [x, 0, 0], normal: [1, 0, 0], xDir: [0, 1, 0] }); // u = y, v = z; extrudes towards +X
 
@@ -65,62 +65,62 @@ let variables = baseVars.map(([name, expr]) => ({ name, expr }));
 
 const feats: any[] = [];
 const doc = () => {
-  const d: any = { format: 'super', version: 2, name: 'Passive window', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
-  const problems = resolveDoc(d);
+  const doc: any = { format: 'super', version: 2, name: 'Passive window', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
+  const problems = resolveDoc(doc);
   if (problems.length) {
     console.log('problems:', problems);
   }
 
-  return d;
+  return doc;
 };
-const errs = (r: any, fs: any[]) => r.errors.map((e: any) => `${fs.find((f: any) => f.id === e.featureId)?.name ?? e.featureId}: ${e.message}`).join('; ');
+const errs = (result: any, fs: any[]) => result.errors.map((e: any) => `${fs.find((feature: any) => feature.id === e.featureId)?.name ?? e.featureId}: ${e.message}`).join('; ');
 const build = async () => {
-  const d = doc();
-  const r: any = await regenerate(d.features);
+  const project = doc();
+  const result: any = await regenerate(project.features);
 
-  return { r, d };
+  return { r: result, d: project };
 };
 const body = (b: string) => debugBodies().get(b) as any;
-const V = (b: string) => Math.abs(measureVolume(debugBodies().get(b)!));
+const volumeOf = (b: string) => Math.abs(measureVolume(debugBodies().get(b)!));
 /** The variables' values now (lengths in mm). */
 const values = () => {
   setVariables(variables);
-  const o: Record<string, number> = {};
-  for (const v of variables) {
-    o[v.name] = evaluate(v.name, 'length')!;
+  const values: Record<string, number> = {};
+  for (const variable of variables) {
+    values[variable.name] = evaluate(variable.name, 'length')!;
   }
 
-  return o;
+  return values;
 };
 
 // --- sketch helpers: rectangles centred on the origin, sized by expressions.
-const fixC = (r: string) => ({ id: id(), type: 'fix', pts: [{ e: r, p: 'c' }], at: [0, 0] });
+const fixC = (rectId: string) => ({ id: id(), type: 'fix', pts: [{ e: rectId, p: 'c' }], at: [0, 0] });
 const dim = (curve: string, prop: string, value: number, expr: string) => ({ id: id(), type: 'dim', curves: [curve], prop, value, expr });
-/** Concentric rectangles (w, h as numbers for the first draw, and as expressions). */
+/** Concentric rectangles (`width`, `height` as numbers for the first draw, and as expressions). */
 function rings(rs: [number, number, string, string][]) {
   const es: any[] = [];
   const cs: any[] = [];
-  for (const [w, h, we, he] of rs) {
-    const r = id();
-    es.push({ id: r, kind: 'rect', center: [0, 0], w, h, rotation: 0 });
-    cs.push(fixC(r), dim(r, 'w', w, we), dim(r, 'h', h, he));
+  for (const [width, height, we, he] of rs) {
+    const rectId = id();
+    es.push({ id: rectId, kind: 'rect', center: [0, 0], w: width, h: height, rotation: 0 });
+    cs.push(fixC(rectId), dim(rectId, 'w', width, we), dim(rectId, 'h', height, he));
   }
 
   return { es, cs };
 }
 const regions = (es: any[]) => arrangement(es.filter(e => !e.construction)).regions.map(regionRef);
 /** The ring between two rectangles (outlined by both). */
-const ring = (es: any[]) => regions(es).filter(r => r.k?.length === 2);
+const ring = (es: any[]) => regions(es).filter(region => region.k?.length === 2);
 /** The inside of the one rectangle. */
 const whole = (es: any[]) => regions(es);
-const sketch = (sid: string, name: string, plane: PlaneDef, s: { es: any[]; cs: any[] }, exprs?: Record<string, string>) =>
-  feats.push({ id: sid, name, type: 'sketch', plane, entities: s.es, constraints: s.cs, ...(exprs ? { exprs } : {}) });
+const sketch = (sid: string, name: string, plane: PlaneDef, shape: { es: any[]; cs: any[] }, exprs?: Record<string, string>) =>
+  feats.push({ id: sid, name, type: 'sketch', plane, entities: shape.es, constraints: shape.cs, ...(exprs ? { exprs } : {}) });
 const extrude = (fid: string, name: string, sk: string, regs: any[], distance: number, mode: string, more: Record<string, unknown> = {}) =>
   feats.push({ id: fid, name, type: 'extrude', source: { kind: 'profile', sketch: sk, regions: regs }, distance, mode, ...more });
 
 // Numbers for the first draw (the expressions are what count).
 const v0 = values();
-const { W, H, D, F, R, c, S, SD, sl, g, cav, G, e, gap, sp, ins, Ws, Hs, Wg, Hg, yG } = v0;
+const { W, H, D, F, c, S, SD, sl, g, cav, G, gap, sp, ins, Ws, Hs, Wg, Hg, yG } = v0;
 
 // 1. Frame: the ring, D deep from the outside face.
 const sFrame = rings([
@@ -208,21 +208,21 @@ extrude('lever', 'Lever', 'sLever', whole(sLever.es), 14, 'join', { target: 'han
 
 const PARTS = ['frame', 'core', 'seal', 'sash', 'pane1', 'pane2:pane1:0', 'pane3:pane1:0', 'spacer1', 'spacer2:spacer1:0', 'sill', 'handle'];
 const NAME: Record<string, string> = { 'pane2:pane1:0': 'pane2', 'pane3:pane1:0': 'pane3', 'spacer2:spacer1:0': 'spacer2' };
-const nm = (p: string) => NAME[p] ?? p;
+const nm = (part: string) => NAME[part] ?? part;
 
 /** What each part's volume should be, from the variables. */
-function expected(v: Record<string, number>): Record<string, number> {
-  const box = (w: number, h: number) => w * h;
-  const opening = box(v.W - 2 * v.F, v.H - 2 * v.F);
-  const rebate = box(v.Ws + 2 * v.c, v.Hs + 2 * v.c) - opening;
-  const coreA = box(v.W - 2 * v.ins, v.H - 2 * v.ins) - box(v.Ws + 2 * v.c + 2 * v.ins, v.Hs + 2 * v.c + 2 * v.ins);
-  const core = coreA * (v.D - 2 * v.ins);
-  const frame = (box(v.W, v.H) - opening) * v.D - rebate * v.SD - core;
-  const seal = (box(v.Ws - 8, v.Hs - 8) - box(v.W - 2 * v.F + 8, v.H - 2 * v.F + 8)) * v.sl;
-  const sash = (box(v.Ws, v.Hs) - box(v.Ws - 2 * v.S, v.Hs - 2 * v.S)) * (v.SD - v.sl) - (box(v.Wg + 2 * v.gap, v.Hg + 2 * v.gap) - box(v.Ws - 2 * v.S, v.Hs - 2 * v.S)) * (v.G + 6);
-  const pane = box(v.Wg, v.Hg) * v.g;
-  const spacer = (box(v.Wg, v.Hg) - box(v.Wg - 2 * v.sp, v.Hg - 2 * v.sp)) * v.cav;
-  const sill = ((30 * 40 + (70 * (40 + 28)) / 2) - 36) * (v.W + 2 * v.ov);
+function expected(values: Record<string, number>): Record<string, number> {
+  const box = (width: number, height: number) => width * height;
+  const opening = box(values.W - 2 * values.F, values.H - 2 * values.F);
+  const rebate = box(values.Ws + 2 * values.c, values.Hs + 2 * values.c) - opening;
+  const coreA = box(values.W - 2 * values.ins, values.H - 2 * values.ins) - box(values.Ws + 2 * values.c + 2 * values.ins, values.Hs + 2 * values.c + 2 * values.ins);
+  const core = coreA * (values.D - 2 * values.ins);
+  const frame = (box(values.W, values.H) - opening) * values.D - rebate * values.SD - core;
+  const seal = (box(values.Ws - 8, values.Hs - 8) - box(values.W - 2 * values.F + 8, values.H - 2 * values.F + 8)) * values.sl;
+  const sash = (box(values.Ws, values.Hs) - box(values.Ws - 2 * values.S, values.Hs - 2 * values.S)) * (values.SD - values.sl) - (box(values.Wg + 2 * values.gap, values.Hg + 2 * values.gap) - box(values.Ws - 2 * values.S, values.Hs - 2 * values.S)) * (values.G + 6);
+  const pane = box(values.Wg, values.Hg) * values.g;
+  const spacer = (box(values.Wg, values.Hg) - box(values.Wg - 2 * values.sp, values.Hg - 2 * values.sp)) * values.cav;
+  const sill = ((30 * 40 + (70 * (40 + 28)) / 2) - 36) * (values.W + 2 * values.ov);
   const handle = Math.PI * 400 * 12 + 22 * 130 * 14;
 
   return { frame, core, seal, sash, pane1: pane, 'pane2:pane1:0': pane, 'pane3:pane1:0': pane, spacer1: spacer, 'spacer2:spacer1:0': spacer, sill, handle };
@@ -233,9 +233,9 @@ function clashes(): string[] {
   const out: string[] = [];
   for (let i = 0; i < PARTS.length; i++) {
     for (let j = i + 1; j < PARTS.length; j++) {
-      const v = inter(PARTS[i], PARTS[j]);
-      if (v > 0.01) {
-        out.push(`${nm(PARTS[i])}/${nm(PARTS[j])} ${v.toFixed(2)} mm³`);
+      const overlap = inter(PARTS[i], PARTS[j]);
+      if (overlap > 0.01) {
+        out.push(`${nm(PARTS[i])}/${nm(PARTS[j])} ${overlap.toFixed(2)} mm³`);
       }
     }
   }
@@ -243,51 +243,51 @@ function clashes(): string[] {
   return out;
 }
 const bb = (b: string) => body(b).boundingBox.bounds as [number[], number[]];
-const size = (b: string) => [0, 1, 2].map(k => bb(b)[1][k] - bb(b)[0][k]);
+const size = (b: string) => [0, 1, 2].map(axis => bb(b)[1][axis] - bb(b)[0][axis]);
 
 /** Every check that holds for any sizes. */
-function checkAll(label: string, r: any) {
-  check(`${label}: every step builds`, !r.errors.length, errs(r, feats));
-  if (r.errors.length) {
+function checkAll(label: string, result: any) {
+  check(`${label}: every step builds`, !result.errors.length, errs(result, feats));
+  if (result.errors.length) {
     return;
   }
-  const missing = PARTS.filter(p => !debugBodies().has(p));
-  check(`${label}: eleven parts`, r.bodies.length === PARTS.length && !missing.length, missing.length ? `missing ${missing.map(nm).join(', ')}` : r.bodies.map((b: any) => b.id).join(', '));
+  const missing = PARTS.filter(part => !debugBodies().has(part));
+  check(`${label}: eleven parts`, result.bodies.length === PARTS.length && !missing.length, missing.length ? `missing ${missing.map(nm).join(', ')}` : result.bodies.map((b: any) => b.id).join(', '));
   if (missing.length) {
     return;
   }
-  const sick = PARTS.filter(p => !isHealthy(healthOf(debugBodies().get(p)!)));
+  const sick = PARTS.filter(part => !isHealthy(healthOf(debugBodies().get(part)!)));
   check(`${label}: each a clean solid`, !sick.length, sick.map(nm).join(', '));
-  const v = values();
-  const want = expected(v);
-  const off = PARTS.map(p => ({ p, rel: Math.abs(V(p) - want[p]) / want[p] })).filter(x => x.rel > 1e-6);
-  check(`${label}: every part's volume as its sizes say`, !off.length, off.map(x => `${nm(x.p)} ${(x.rel * 100).toFixed(4)} % (${(V(x.p) / 1000).toFixed(2)} / ${(want[x.p] / 1000).toFixed(2)} cm³)`).join(', '));
+  const current = values();
+  const want = expected(current);
+  const off = PARTS.map(part => ({ p: part, rel: Math.abs(volumeOf(part) - want[part]) / want[part] })).filter(entry => entry.rel > 1e-6);
+  check(`${label}: every part's volume as its sizes say`, !off.length, off.map(entry => `${nm(entry.p)} ${(entry.rel * 100).toFixed(4)} % (${(volumeOf(entry.p) / 1000).toFixed(2)} / ${(want[entry.p] / 1000).toFixed(2)} cm³)`).join(', '));
   check(`${label}: no two parts run into each other`, !clashes().length, clashes().join('; '));
   const fs = size('frame');
-  check(`${label}: the frame is W × D × H`, Math.abs(fs[0] - v.W) < 1e-3 && Math.abs(fs[1] - v.D) < 1e-3 && Math.abs(fs[2] - v.H) < 1e-3, fs.map(x => x.toFixed(2)).join(' × '));
+  check(`${label}: the frame is W × D × H`, Math.abs(fs[0] - current.W) < 1e-3 && Math.abs(fs[1] - current.D) < 1e-3 && Math.abs(fs[2] - current.H) < 1e-3, fs.map(x => x.toFixed(2)).join(' × '));
   // The insulation is sealed inside the frame: ins of frame on every side of it, and it fills its pocket.
   const cb = bb('core');
-  const inside = [0, 1, 2].every(k => cb[0][k] > bb('frame')[0][k] + v.ins - 1e-3 && cb[1][k] < bb('frame')[1][k] - v.ins + 1e-3);
+  const inside = [0, 1, 2].every(axis => cb[0][axis] > bb('frame')[0][axis] + current.ins - 1e-3 && cb[1][axis] < bb('frame')[1][axis] - current.ins + 1e-3);
   check(`${label}: the core is sealed inside the frame, filling its pocket`, inside && measureDistanceBetween(body('core'), body('frame')) < 1e-4);
   // The glass: in its groove with air all round, covered by the sash by e.
-  const gaps = ['pane1', 'pane2:pane1:0', 'pane3:pane1:0'].map(p => measureDistanceBetween(body(p), body('sash')));
+  const gaps = ['pane1', 'pane2:pane1:0', 'pane3:pane1:0'].map(part => measureDistanceBetween(body(part), body('sash')));
   check(`${label}: the glass touches the sash nowhere (3 mm at least)`, gaps.every(x => x > 3 - 1e-4), gaps.map(x => x.toFixed(2)).join(', '));
   const p1 = bb('pane1');
-  const sashIn = (v.Ws - 2 * v.S) / 2;
-  check(`${label}: the glass's edge hidden e behind the sash all round`, Math.abs(p1[1][0] - sashIn - v.e) < 1e-3 && Math.abs(p1[1][2] - (v.Hs - 2 * v.S) / 2 - v.e) < 1e-3, `${(p1[1][0] - sashIn).toFixed(2)} mm`);
+  const sashIn = (current.Ws - 2 * current.S) / 2;
+  check(`${label}: the glass's edge hidden e behind the sash all round`, Math.abs(p1[1][0] - sashIn - current.e) < 1e-3 && Math.abs(p1[1][2] - (current.Hs - 2 * current.S) / 2 - current.e) < 1e-3, `${(p1[1][0] - sashIn).toFixed(2)} mm`);
   const unit = [bb('pane1')[1][1], bb('pane3:pane1:0')[0][1]];
-  check(`${label}: the glazing unit is G thick, in the sash's middle`, Math.abs(unit[0] - unit[1] - v.G) < 1e-3 && Math.abs((unit[0] + unit[1]) / 2 - (-v.D + (v.SD - v.sl) / 2)) < 1e-3, `${(unit[0] - unit[1]).toFixed(2)} mm, middle at y ${((unit[0] + unit[1]) / 2).toFixed(2)}`);
+  check(`${label}: the glazing unit is G thick, in the sash's middle`, Math.abs(unit[0] - unit[1] - current.G) < 1e-3 && Math.abs((unit[0] + unit[1]) / 2 - (-current.D + (current.SD - current.sl) / 2)) < 1e-3, `${(unit[0] - unit[1]).toFixed(2)} mm, middle at y ${((unit[0] + unit[1]) / 2).toFixed(2)}`);
   check(`${label}: the spacers fill the cavities edge to edge`, Math.abs(measureDistanceBetween(body('spacer1'), body('pane1'))) < 1e-4 && Math.abs(measureDistanceBetween(body('spacer1'), body('pane2:pane1:0'))) < 1e-4 && Math.abs(measureDistanceBetween(body('spacer2:spacer1:0'), body('pane3:pane1:0'))) < 1e-4);
   // The sash sits in the rebate with air round it, the seal pressed between it and the step.
-  check(`${label}: the sash clears the frame (c round it, the seal's room behind it)`, Math.abs(measureDistanceBetween(body('sash'), body('frame')) - Math.min(v.c, v.sl)) < 1e-3, `${measureDistanceBetween(body('sash'), body('frame')).toFixed(3)} mm`);
+  check(`${label}: the sash clears the frame (c round it, the seal's room behind it)`, Math.abs(measureDistanceBetween(body('sash'), body('frame')) - Math.min(current.c, current.sl)) < 1e-3, `${measureDistanceBetween(body('sash'), body('frame')).toFixed(3)} mm`);
   check(`${label}: the seal touches both the sash and the frame`, measureDistanceBetween(body('seal'), body('sash')) < 1e-4 && measureDistanceBetween(body('seal'), body('frame')) < 1e-4);
   // The sill: under the frame, longer than it by ov each side, and outside it.
-  const s = bb('sill');
-  check(`${label}: the sill is under the frame, ov past each side, out 70 mm`, Math.abs(s[1][2] + v.H / 2) < 1e-3 && Math.abs(s[1][0] - s[0][0] - v.W - 2 * v.ov) < 1e-3 && Math.abs(s[1][1] - 70) < 1e-3);
-  const h = bb('handle');
-  check(`${label}: the handle is on the sash's right side, in the room`, Math.abs((h[0][0] + h[1][0]) / 2 - (v.Ws / 2 - v.S / 2)) < 1e-3 && h[1][1] <= -v.D + 1e-3);
+  const sill = bb('sill');
+  check(`${label}: the sill is under the frame, ov past each side, out 70 mm`, Math.abs(sill[1][2] + current.H / 2) < 1e-3 && Math.abs(sill[1][0] - sill[0][0] - current.W - 2 * current.ov) < 1e-3 && Math.abs(sill[1][1] - 70) < 1e-3);
+  const handle = bb('handle');
+  check(`${label}: the handle is on the sash's right side, in the room`, Math.abs((handle[0][0] + handle[1][0]) / 2 - (current.Ws / 2 - current.S / 2)) < 1e-3 && handle[1][1] <= -current.D + 1e-3);
   // Passive-house numbers: a lot of glass for the frame (more daylight, less frame to lose heat through).
-  const glazed = ((v.Ws - 2 * v.S) * (v.Hs - 2 * v.S)) / (v.W * v.H);
+  const glazed = ((current.Ws - 2 * current.S) * (current.Hs - 2 * current.S)) / (current.W * current.H);
   if (label === 'as drawn') {
     check(`${label}: glass is over 60 % of the window`, glazed > 0.6, `${(glazed * 100).toFixed(1)} %`);
   } else {
@@ -301,7 +301,7 @@ const { r } = await build();
 const ms = performance.now() - t0;
 checkAll('as drawn', r);
 check('…built in reasonable time', ms < 20000, `${Math.round(ms)} ms`);
-console.log('     volumes', PARTS.map(p => `${nm(p)} ${(V(p) / 1000).toFixed(1)}`).join(', '), 'cm³');
+console.log('     volumes', PARTS.map(part => `${nm(part)} ${(volumeOf(part) / 1000).toFixed(1)}`).join(', '), 'cm³');
 
 // ------------------------------------------------- one change: it resizes
 async function withVars(set: Record<string, string>, label: string) {
@@ -326,7 +326,7 @@ await withVars({ D: '140 mm', ins: '20 mm', c: '6 mm' }, 'deeper frame, thicker 
 }
 
 if (process.argv[2]) {
-  writeFileSync(process.argv[2], JSON.stringify({ ...doc(), hidden: feats.filter(f => f.type === 'sketch').map(f => f.id) }));
+  writeFileSync(process.argv[2], JSON.stringify({ ...doc(), hidden: feats.filter(feature => feature.type === 'sketch').map(feature => feature.id) }));
 }
 
 // The hand build (tests/fixtures/window-hand.json, built on a phone-sized
@@ -340,27 +340,27 @@ if (existsSync(handFile)) {
     const keep = variables;
     variables = vars;
     const { r: rc } = await build();
-    const cv = new Map(PARTS.map(p => [p, V(p)]));
-    const cb = new Map(PARTS.map(p => [p, bb(p)]));
+    const cv = new Map(PARTS.map(part => [part, volumeOf(part)]));
+    const cb = new Map(PARTS.map(part => [part, bb(part)]));
     variables = keep;
-    const d = structuredClone(hand.doc);
-    d.variables = vars;
-    const problems = resolveDoc(d);
-    const rh: any = await regenerate(d.features);
-    const ok = !problems.length && !rh.errors.length && PARTS.every(p => debugBodies().has(HAND[nm(p)]));
-    check(`hand build, ${label}: builds, every part`, ok && !rc.errors.length, [...problems, errs(rh, d.features)].join('; ') || rh.bodies.map((b: any) => b.id).join(', '));
+    const handDoc = structuredClone(hand.doc);
+    handDoc.variables = vars;
+    const problems = resolveDoc(handDoc);
+    const rh: any = await regenerate(handDoc.features);
+    const ok = !problems.length && !rh.errors.length && PARTS.every(part => debugBodies().has(HAND[nm(part)]));
+    check(`hand build, ${label}: builds, every part`, ok && !rc.errors.length, [...problems, errs(rh, handDoc.features)].join('; ') || rh.bodies.map((b: any) => b.id).join(', '));
     if (!ok) {
       return;
     }
-    const off = PARTS.map(p => ({ p, rel: Math.abs(V(HAND[nm(p)]) - cv.get(p)!) / cv.get(p)! })).filter(x => x.rel > 0.001);
-    check(`hand build, ${label}: every part the same as by code (volume within 0.1 %)`, !off.length, off.map(x => `${nm(x.p)} ${(x.rel * 100).toFixed(2)} %`).join(', '));
+    const off = PARTS.map(part => ({ p: part, rel: Math.abs(volumeOf(HAND[nm(part)]) - cv.get(part)!) / cv.get(part)! })).filter(entry => entry.rel > 0.001);
+    check(`hand build, ${label}: every part the same as by code (volume within 0.1 %)`, !off.length, off.map(entry => `${nm(entry.p)} ${(entry.rel * 100).toFixed(2)} %`).join(', '));
     // And in the same place: sketches on planes follow them, a handle typed at
     // "Ws/2 - S/2" follows the sash (worked out once, it stayed where it was).
-    const moved = PARTS.filter((p) => {
-      const a = cb.get(p)!;
-      const b = bb(HAND[nm(p)]);
+    const moved = PARTS.filter((part) => {
+      const a = cb.get(part)!;
+      const b = bb(HAND[nm(part)]);
 
-      return [0, 1].some(i => [0, 1, 2].some(k => Math.abs(a[i][k] - b[i][k]) > 0.1));
+      return [0, 1].some(i => [0, 1, 2].some(axis => Math.abs(a[i][axis] - b[i][axis]) > 0.1));
     });
     check(`hand build, ${label}: every part where it is by code (within 0.1 mm)`, !moved.length, moved.map(nm).join(', '));
   };
@@ -379,9 +379,9 @@ if (existsSync(handFile)) {
     entities: [{ id: 'c', kind: 'circle', center: [520, 0], radius: 20 }],
     constraints: [{ id: 'f', type: 'fix', pts: [{ e: 'c', p: 'c' }], at: [520, 0], atExpr: ['a/2 - b', null] }]
   };
-  const d: any = { variables: [{ name: 'a', expr: '1000 mm' }, { name: 'b', expr: '30 mm' }], features: [sk] };
-  const problems = resolveDoc(d);
-  check('a point typed with a variable follows it', !problems.length && Math.abs(d.features[0].entities[0].center[0] - 470) < 1e-6 && Math.abs(d.features[0].entities[0].center[1]) < 1e-6, `${d.features[0].entities[0].center} ${problems}`);
+  const doc: any = { variables: [{ name: 'a', expr: '1000 mm' }, { name: 'b', expr: '30 mm' }], features: [sk] };
+  const problems = resolveDoc(doc);
+  check('a point typed with a variable follows it', !problems.length && Math.abs(doc.features[0].entities[0].center[0] - 470) < 1e-6 && Math.abs(doc.features[0].entities[0].center[1]) < 1e-6, `${doc.features[0].entities[0].center} ${problems}`);
   // A sketch on a construction plane follows the plane when its offset changes.
   const pl: any = { id: 'p', name: 'Plane', type: 'plane', kind: 'offset', plane: XZ(), offset: 30, exprs: { offset: 'o' } };
   const s2: any = { id: 's2', name: 'Sketch', type: 'sketch', plane: XZ(-30), onPlane: 'p', entities: [{ id: 'r', kind: 'rect', center: [0, 0], w: 100, h: 100, rotation: 0 }], constraints: [] };

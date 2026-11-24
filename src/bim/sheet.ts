@@ -37,19 +37,19 @@ export function partsList(app: AppContext, props: Map<string, BodyProps>): PartR
   return app.view.bodyList
     .filter(b => !doc.hidden.includes(b.id) && props.has(b.id))
     .map((b, i) => {
-      const p = props.get(b.id)!;
-      const m = materialOf(doc, b.id);
+      const bodyProps = props.get(b.id)!;
+      const material = materialOf(doc, b.id);
 
       return {
         item: i + 1,
         id: b.id,
         name: doc.names?.[b.id] ?? b.name,
-        material: m?.name ?? '',
-        volume: p.volume,
-        area: p.area,
-        mass: m ? massOf(m, p.volume) : undefined,
-        center: p.center,
-        size: [p.box[1][0] - p.box[0][0], p.box[1][1] - p.box[0][1], p.box[1][2] - p.box[0][2]]
+        material: material?.name ?? '',
+        volume: bodyProps.volume,
+        area: bodyProps.area,
+        mass: material ? massOf(material, bodyProps.volume) : undefined,
+        center: bodyProps.center,
+        size: [bodyProps.box[1][0] - bodyProps.box[0][0], bodyProps.box[1][1] - bodyProps.box[0][1], bodyProps.box[1][2] - bodyProps.box[0][2]]
       };
     });
 }
@@ -135,13 +135,13 @@ export async function openSheet(app: AppContext): Promise<void> {
     return;
   }
   csv.addEventListener('click', () => {
-    const u = UNIT_LABEL[units()];
-    const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-    const k = UNIT_MM[units()];
+    const unit = UNIT_LABEL[units()];
+    const q = (quote: string) => `"${quote.replace(/"/g, '""')}"`;
+    const factor = UNIT_MM[units()];
     const lines = [
-      ['Item', 'Name', 'Material', `Volume (${u}3)`, `Area (${u}2)`, 'Mass (kg)', `Centre of mass X (${u})`, `Y (${u})`, `Z (${u})`, `Size X (${u})`, `Size Y (${u})`, `Size Z (${u})`].join(','),
-      ...rows.map(r =>
-        [r.item, q(r.name), q(r.material), trim(r.volume / k ** 3, 4), trim(r.area / k ** 2, 4), r.mass === undefined ? '' : trim(r.mass, 4), ...r.center.map(len), ...r.size.map(len)].join(',')
+      ['Item', 'Name', 'Material', `Volume (${unit}3)`, `Area (${unit}2)`, 'Mass (kg)', `Centre of mass X (${unit})`, `Y (${unit})`, `Z (${unit})`, `Size X (${unit})`, `Size Y (${unit})`, `Size Z (${unit})`].join(','),
+      ...rows.map(row =>
+        [row.item, q(row.name), q(row.material), trim(row.volume / factor ** 3, 4), trim(row.area / factor ** 2, 4), row.mass === undefined ? '' : trim(row.mass, 4), ...row.center.map(len), ...row.size.map(len)].join(',')
       )
     ];
     const a = document.createElement('a');
@@ -161,18 +161,18 @@ function render(app: AppContext, paper: HTMLElement, rows: PartRow[]): void {
   // ---- Title block
   const head = el('div', 'bim-title-block');
   const field = (label: string, value: string, key?: keyof ProjectInfo) => {
-    const f = el('label', 'bim-tb-field');
-    f.append(el('span', 'bim-tb-label', label));
+    const field = el('label', 'bim-tb-field');
+    field.append(el('span', 'bim-tb-label', label));
     if (!key) {
-      f.append(el('span', 'bim-tb-value', value));
+      field.append(el('span', 'bim-tb-value', value));
     } else {
       const input = textField('bim-tb-value');
       input.value = value;
       input.placeholder = '-';
-      input.addEventListener('change', () => app.store.commit(d => (d.info = { ...(d.info ?? {}), [key]: input.value.trim() || undefined })));
-      f.append(input);
+      input.addEventListener('change', () => app.store.commit(draft => (draft.info = { ...(draft.info ?? {}), [key]: input.value.trim() || undefined })));
+      field.append(input);
     }
-    head.append(f);
+    head.append(field);
   };
   field('Project', doc.name || 'Untitled');
   field('Document', 'Technical sheet');
@@ -186,28 +186,28 @@ function render(app: AppContext, paper: HTMLElement, rows: PartRow[]): void {
 
   // ---- Parts list
   paper.append(el('h2', 'bim-h', '1. Parts list'));
-  const missing = rows.filter(r => r.mass === undefined).length;
+  const missing = rows.filter(row => row.mass === undefined).length;
   if (missing) {
     paper.append(el('div', 'bim-warn', `${missing === 1 ? '1 body has' : `${missing} bodies have`} no material yet: no mass for ${missing === 1 ? 'it' : 'them'}. Give each body a material in BIM - Materials.`));
   }
-  const u = UNIT_LABEL[units()];
+  const unit = UNIT_LABEL[units()];
   const t = el('table', 'bim-table');
   const hr = el('tr', '');
-  for (const h of ['Item', 'Name', 'Material', 'Volume', 'Surface area', 'Mass', `Centre of mass (${u})`, `Size X × Y × Z (${u})`]) {
-    hr.append(el('th', '', h));
+  for (const heading of ['Item', 'Name', 'Material', 'Volume', 'Surface area', 'Mass', `Centre of mass (${unit})`, `Size X × Y × Z (${unit})`]) {
+    hr.append(el('th', '', heading));
   }
   t.append(hr);
-  for (const r of rows) {
+  for (const row of rows) {
     const tr = el('tr', '');
-    for (const v of [String(r.item), r.name, r.material || '-', fmtVolume(r.volume), fmtArea(r.area), r.mass === undefined ? '-' : fmtMass(r.mass), r.center.map(len).join(', '), r.size.map(len).join(' × ')]) {
-      tr.append(el('td', '', v));
+    for (const value of [String(row.item), row.name, row.material || '-', fmtVolume(row.volume), fmtArea(row.area), row.mass === undefined ? '-' : fmtMass(row.mass), row.center.map(len).join(', '), row.size.map(len).join(' × ')]) {
+      tr.append(el('td', '', value));
     }
     t.append(tr);
   }
-  const total = rows.reduce((s, r) => s + (r.mass ?? 0), 0);
+  const total = rows.reduce((total, row) => total + (row.mass ?? 0), 0);
   const tf = el('tr', 'bim-total');
-  for (const v of ['', `${rows.length} ${rows.length === 1 ? 'part' : 'parts'}`, '', fmtVolume(rows.reduce((s, r) => s + r.volume, 0)), '', `${fmtMass(total)}${missing ? ' +' : ''}`, '', '']) {
-    tf.append(el('td', '', v));
+  for (const value of ['', `${rows.length} ${rows.length === 1 ? 'part' : 'parts'}`, '', fmtVolume(rows.reduce((total, row) => total + row.volume, 0)), '', `${fmtMass(total)}${missing ? ' +' : ''}`, '', '']) {
+    tf.append(el('td', '', value));
   }
   t.append(tf);
   const wrap = el('div', 'bim-table-wrap');
@@ -217,10 +217,10 @@ function render(app: AppContext, paper: HTMLElement, rows: PartRow[]): void {
   // ---- Materials used, with their data
   paper.append(el('h2', 'bim-h', '2. Materials'));
   const used = new Map<string, number[]>();
-  for (const r of rows) {
-    const m = materialOf(doc, r.id);
-    if (m) {
-      used.set(m.id, [...(used.get(m.id) ?? []), r.item]);
+  for (const row of rows) {
+    const material = materialOf(doc, row.id);
+    if (material) {
+      used.set(material.id, [...(used.get(material.id) ?? []), row.item]);
     }
   }
   if (!used.size) {
@@ -228,14 +228,14 @@ function render(app: AppContext, paper: HTMLElement, rows: PartRow[]): void {
   }
   const grid = el('div', 'bim-material-grid');
   for (const [, items] of used) {
-    const m = materialOf(doc, rows.find(r => r.item === items[0])!.id)!;
-    const c = el('div', 'bim-material-card');
-    const h = el('div', 'bim-material-head');
+    const material = materialOf(doc, rows.find(row => row.item === items[0])!.id)!;
+    const element = el('div', 'bim-material-card');
+    const head = el('div', 'bim-material-head');
     const sw = el('span', 'bim-swatch');
-    sw.style.background = m.color;
-    h.append(sw, el('b', '', m.name));
-    c.append(h, el('div', 'bim-sub', `Items ${items.join(', ')}`), dataTable(m));
-    grid.append(c);
+    sw.style.background = material.color;
+    head.append(sw, el('b', '', material.name));
+    element.append(head, el('div', 'bim-sub', `Items ${items.join(', ')}`), dataTable(material));
+    grid.append(element);
   }
   paper.append(grid);
   paper.append(

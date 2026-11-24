@@ -9,10 +9,10 @@ import { after, block, bodies, check, done, extrude, near, rect, sketch, XY } fr
 import type { Shape3D } from 'replicad';
 import type { Feature } from '../src/doc/types';
 
-const vol = (s: Shape3D) => Math.abs(measureVolume(s));
+const vol = (shape: Shape3D) => Math.abs(measureVolume(shape));
 const box = block('Box', 40, 40, 20); // 32000
 const slot = sketch('Slot', XY(10), [rect('s', 10, 10, 30, 30)]); // in the box's middle height
-const sum = () => [...bodies().values()].reduce((v, s) => v + vol(s as Shape3D), 0);
+const sum = () => [...bodies().values()].reduce((total, body) => total + vol(body as Shape3D), 0);
 
 {
   const { errors } = await after([...box, slot, extrude('Up', slot, 30, 'auto', { byDirection: true })]);
@@ -37,9 +37,9 @@ const sum = () => [...bodies().values()].reduce((v, s) => v + vol(s as Shape3D),
 {
   // On the box's top face: out adds, in cuts (target: the box).
   const top = { ...sketch('Top', XY(20), [rect('t', 10, 10, 30, 30)]), attachedTo: { body: 'Box', normal: [0, 0, 1] } } as Feature;
-  let r = await after([...box, top, extrude('Boss', top, 5, 'auto', { byDirection: true, target: 'Box' })]);
-  check('on a face, out: added to it', !r.errors.length && bodies().size === 1 && near(vol(bodies().get('Box') as Shape3D), 32000 + 2000, 1e-6), [r.errors, bodies().size, sum()]);
-  r = await after([...box, top, extrude('Pocket', top, -5, 'auto', { byDirection: true, target: 'Box' })]);
-  check('on a face, in: cut from it', !r.errors.length && bodies().size === 1 && near(vol(bodies().get('Box') as Shape3D), 32000 - 2000, 1e-6), [r.errors, bodies().size, sum()]);
+  let built = await after([...box, top, extrude('Boss', top, 5, 'auto', { byDirection: true, target: 'Box' })]);
+  check('on a face, out: added to it', !built.errors.length && bodies().size === 1 && near(vol(bodies().get('Box') as Shape3D), 32000 + 2000, 1e-6), [built.errors, bodies().size, sum()]);
+  built = await after([...box, top, extrude('Pocket', top, -5, 'auto', { byDirection: true, target: 'Box' })]);
+  check('on a face, in: cut from it', !built.errors.length && bodies().size === 1 && near(vol(bodies().get('Box') as Shape3D), 32000 - 2000, 1e-6), [built.errors, bodies().size, sum()]);
 }
 done();

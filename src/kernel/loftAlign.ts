@@ -12,20 +12,20 @@ import { cast, getOC, isShape3D, type Shape3D, type Wire } from 'replicad';
 import { add, cross, dot, len, norm, scale, sub } from '../geom';
 import type { Vec3 } from '../doc/types';
 
-const centre = (w: Wire): Vec3 => {
-  const e = w.edges[0];
-  let c: Vec3 = [0, 0, 0];
-  const n = 32;
-  for (let k = 0; k < n; k++) {
-    c = add(c, e.pointAt(k / n).toTuple() as Vec3);
+const centre = (wire: Wire): Vec3 => {
+  const e = wire.edges[0];
+  let center: Vec3 = [0, 0, 0];
+  const samples = 32;
+  for (let index = 0; index < samples; index++) {
+    center = add(center, e.pointAt(index / samples).toTuple() as Vec3);
   }
 
-  return scale(c, 1 / n);
+  return scale(center, 1 / samples);
 };
 
 /** Single closed curves, starts in line, all one way round: lofted without splitting (else null). */
 export function loftInLine(wires: Wire[], ruled: boolean): Shape3D | null {
-  if (wires.length < 2 || wires.some(w => w.edges.length !== 1 || !w.isClosed)) {
+  if (wires.length < 2 || wires.some(wire => wire.edges.length !== 1 || !wire.isClosed)) {
     return null;
   }
   const cs = wires.map(centre);
@@ -35,22 +35,22 @@ export function loftInLine(wires: Wire[], ruled: boolean): Shape3D | null {
   }
   let prev: Vec3 | null = null;
   let sense = 0;
-  for (const [i, w] of wires.entries()) {
-    const e = w.edges[0];
-    const s = sub(e.startPoint.toTuple() as Vec3, cs[i]);
+  for (const [i, wire] of wires.entries()) {
+    const e = wire.edges[0];
+    const offset = sub(e.startPoint.toTuple() as Vec3, cs[i]);
     // Seen down the loft's run, its start's direction from its middle...
-    const flat = sub(s, scale(axis, dot(s, axis)));
+    const flat = sub(offset, scale(axis, dot(offset, axis)));
     if (len(flat) < 1e-9) {
       return null;
     }
-    const d = norm(flat);
+    const direction = norm(flat);
     // ...within 45° of the one before's.
-    if (prev && dot(d, prev) < Math.SQRT1_2) {
+    if (prev && dot(direction, prev) < Math.SQRT1_2) {
       return null;
     }
-    prev = d;
+    prev = direction;
     // And the same way round.
-    const turn = Math.sign(dot(cross(s, e.tangentAt(0).toTuple() as Vec3), axis));
+    const turn = Math.sign(dot(cross(offset, e.tangentAt(0).toTuple() as Vec3), axis));
     if (!turn || (sense && turn !== sense)) {
       return null;
     }
@@ -60,8 +60,8 @@ export function loftInLine(wires: Wire[], ruled: boolean): Shape3D | null {
   const b = new oc.BRepOffsetAPI_ThruSections(true, ruled, 1e-6);
   try {
     b.CheckCompatibility(false);
-    for (const w of wires) {
-      b.AddWire(w.wrapped);
+    for (const wire of wires) {
+      b.AddWire(wire.wrapped);
     }
     b.Build();
     if (!b.IsDone()) {

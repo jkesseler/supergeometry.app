@@ -19,40 +19,40 @@ const check = (name: string, ok: boolean, info = '') => {
 };
 const doc = JSON.parse(readFileSync(new URL('./fixtures/sweepgaps.json', import.meta.url), 'utf8'));
 const BODY = 'sweep-mw6p7ni3-sy2n';
-const R = 2.5;
-const A = Math.PI * R * R;
+const RADIUS = 2.5;
+const AREA = Math.PI * RADIUS * RADIUS;
 await regenerate(doc.features);
 const s0 = debugBodies().get(BODY)!;
-const L0 = Math.abs(measureVolume(s0)) / A;
-for (const d of [4, 20]) {
+const L0 = Math.abs(measureVolume(s0)) / AREA;
+for (const distance of [4, 20]) {
   const feats = [
     ...doc.features,
-    { id: 'off', name: 'Offset Face 03', type: 'extrude', source: { kind: 'face', face: { body: BODY, center: [0, 86.28285598162046, 43.4103407849028], normal: [0, 0.6567807448042061, -0.7540815958863021], area: A } }, distance: -d, mode: 'auto', target: BODY }
+    { id: 'off', name: 'Offset Face 03', type: 'extrude', source: { kind: 'face', face: { body: BODY, center: [0, 86.28285598162046, 43.4103407849028], normal: [0, 0.6567807448042061, -0.7540815958863021], area: AREA } }, distance: -distance, mode: 'auto', target: BODY }
   ];
-  const r: any = await regenerate(feats);
-  const s = debugBodies().get(BODY)!;
-  check(`start pushed in ${d}: builds, one clean solid`, !r.errors.length && isHealthy(healthOf(s)), r.errors.map((e: any) => e.message).join('; '));
+  const result: any = await regenerate(feats);
+  const shape = debugBodies().get(BODY)!;
+  check(`start pushed in ${distance}: builds, one clean solid`, !result.errors.length && isHealthy(healthOf(shape)), result.errors.map((e: any) => e.message).join('; '));
   // (By volume: the length along the tube's own centre, which runs 2.34 off
   // the path - on a bend a little longer or shorter than the path itself.)
-  const L = Math.abs(measureVolume(s)) / A;
-  check(`…about ${d} mm shorter`, Math.abs(L0 - L - d) < d * 0.06, `${L0.toFixed(2)} → ${L.toFixed(2)}`);
-  const ends = s.faces.filter(f => f.geomType === 'PLANE');
-  check('…both ends round and profile-sized (square to the path, not a slanted oval)', ends.length === 2 && ends.every(f => Math.abs(measureArea(f) - A) < A * 1e-3), ends.map(f => measureArea(f).toFixed(3)).join(', '));
+  const length = Math.abs(measureVolume(shape)) / AREA;
+  check(`…about ${distance} mm shorter`, Math.abs(L0 - length - distance) < distance * 0.06, `${L0.toFixed(2)} → ${length.toFixed(2)}`);
+  const ends = shape.faces.filter(face => face.geomType === 'PLANE');
+  check('…both ends round and profile-sized (square to the path, not a slanted oval)', ends.length === 2 && ends.every(end => Math.abs(measureArea(end) - AREA) < AREA * 1e-3), ends.map(end => measureArea(end).toFixed(3)).join(', '));
 }
 
 // Pushed in twice (the second push finds the end where the first left it).
 {
-  const off = (id: string, center: number[], normal: number[], d: number) => ({ id, name: id, type: 'extrude', source: { kind: 'face', face: { body: BODY, center, normal, area: A } }, distance: -d, mode: 'auto', target: BODY });
+  const off = (id: string, center: number[], normal: number[], distance: number) => ({ id, name: id, type: 'extrude', source: { kind: 'face', face: { body: BODY, center, normal, area: AREA } }, distance: -distance, mode: 'auto', target: BODY });
   const first = off('off1', [0, 86.28285598162046, 43.4103407849028], [0, 0.6567807448042061, -0.7540815958863021], 4);
   await regenerate([...doc.features, first]);
   const s1 = debugBodies().get(BODY)!;
-  const end1 = s1.faces.filter(f => f.geomType === 'PLANE').sort((a, b) => a.center.z - b.center.z)[0];
-  const L1 = Math.abs(measureVolume(s1)) / A;
-  const r: any = await regenerate([...doc.features, first, off('off2', end1.center.toTuple(), end1.normalAt().toTuple(), 10)]);
-  const s = debugBodies().get(BODY)!;
-  const L = Math.abs(measureVolume(s)) / A;
-  const ends = s.faces.filter(f => f.geomType === 'PLANE');
-  check('pushed in again: about 10 shorter still, both ends round', !r.errors.length && Math.abs(L1 - L - 10) < 0.6 && ends.length === 2 && ends.every(f => Math.abs(measureArea(f) - A) < A * 1e-3), `${L1.toFixed(2)} → ${L.toFixed(2)}; ends ${ends.map(f => measureArea(f).toFixed(3)).join(', ')}`);
+  const end1 = s1.faces.filter(face => face.geomType === 'PLANE').sort((a, b) => a.center.z - b.center.z)[0];
+  const L1 = Math.abs(measureVolume(s1)) / AREA;
+  const result: any = await regenerate([...doc.features, first, off('off2', end1.center.toTuple(), end1.normalAt().toTuple(), 10)]);
+  const shape = debugBodies().get(BODY)!;
+  const length = Math.abs(measureVolume(shape)) / AREA;
+  const ends = shape.faces.filter(face => face.geomType === 'PLANE');
+  check('pushed in again: about 10 shorter still, both ends round', !result.errors.length && Math.abs(L1 - length - 10) < 0.6 && ends.length === 2 && ends.every(end => Math.abs(measureArea(end) - AREA) < AREA * 1e-3), `${L1.toFixed(2)} → ${length.toFixed(2)}; ends ${ends.map(end => measureArea(end).toFixed(3)).join(', ')}`);
 }
 
 // A profile centred on its path (the fan's guard spoke): exactly that much shorter.
@@ -66,9 +66,9 @@ for (const d of [4, 20]) {
   ];
   await regenerate(base);
   const L0 = Math.abs(measureVolume(debugBodies().get('spoke')!)) / a1;
-  const r: any = await regenerate([...base, { id: 'off', name: 'Offset Face', type: 'extrude', source: { kind: 'face', face: { body: 'spoke', center: [0, -62, 320], normal: [0, 0, 1], area: a1 } }, distance: -10, mode: 'auto', target: 'spoke' }]);
-  const s = debugBodies().get('spoke')!;
-  const L = Math.abs(measureVolume(s)) / a1;
-  check("fan spoke's top pushed in 10: exactly 10 shorter, ends round", !r.errors.length && Math.abs(L0 - L - 10) < 0.02 && s.faces.filter(f => f.geomType === 'PLANE').every(f => Math.abs(measureArea(f) - a1) < a1 * 1e-3), `${L0.toFixed(3)} → ${L.toFixed(3)}`);
+  const result: any = await regenerate([...base, { id: 'off', name: 'Offset Face', type: 'extrude', source: { kind: 'face', face: { body: 'spoke', center: [0, -62, 320], normal: [0, 0, 1], area: a1 } }, distance: -10, mode: 'auto', target: 'spoke' }]);
+  const shape = debugBodies().get('spoke')!;
+  const length = Math.abs(measureVolume(shape)) / a1;
+  check("fan spoke's top pushed in 10: exactly 10 shorter, ends round", !result.errors.length && Math.abs(L0 - length - 10) < 0.02 && shape.faces.filter(face => face.geomType === 'PLANE').every(face => Math.abs(measureArea(face) - a1) < a1 * 1e-3), `${L0.toFixed(3)} → ${length.toFixed(3)}`);
 }
 process.exit(failed ? 1 : 0);

@@ -12,7 +12,7 @@ const sketch: SketchEntity[] = [
   { id: 'k', kind: 'line', a: [0, -5], b: [40, -5], construction: true }
 ];
 const text = sketchToDXF(sketch);
-const count = (t: string) => text.split('\n').filter((l, i, a) => l === t && a[i - 1] === '0').length;
+const count = (t: string) => text.split('\n').filter((line, i, a) => line === t && a[i - 1] === '0').length;
 assert.equal(count('LINE'), 1 + 4 + 1); // line, rect sides, construction line
 assert.equal(count('CIRCLE'), 1);
 assert.equal(count('ARC'), 1);
@@ -20,13 +20,13 @@ assert.equal(count('POLYLINE'), 1);
 assert.ok(text.includes('CONSTRUCTION'));
 assert.ok(text.trimEnd().endsWith('EOF'));
 // The arc: centre (40,10), radius 10, from -90° to 90° (counter-clockwise through (50,10)).
-const i = text.split('\n').findIndex((l, k, a) => l === 'ARC' && a[k - 1] === '0');
+const i = text.split('\n').findIndex((line, index, a) => line === 'ARC' && a[index - 1] === '0');
 const arc = text.split('\n').slice(i, i + 20);
 // Group codes and values come in pairs (code line, value line).
 const pairs = new Map<string, number>();
-for (let k = 1; k + 1 < arc.length && arc[k] !== '0'; k += 2) {
-  if (!pairs.has(arc[k])) {
-    pairs.set(arc[k], Number(arc[k + 1]));
+for (let index = 1; index + 1 < arc.length && arc[index] !== '0'; index += 2) {
+  if (!pairs.has(arc[index])) {
+    pairs.set(arc[index], Number(arc[index + 1]));
   }
 }
 const val = (code: string) => pairs.get(code)!;

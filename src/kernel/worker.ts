@@ -37,7 +37,7 @@ self.onmessage = (e: MessageEvent<Envelope<Request>>) => {
 
 async function handle(e: MessageEvent<Envelope<Request>>): Promise<void> {
   const { id, msg } = e.data;
-  const reply = (r: Response) => (self as DedicatedWorkerGlobalScope).postMessage({ id, msg: r } satisfies Envelope<Response>);
+  const reply = (response: Response) => (self as DedicatedWorkerGlobalScope).postMessage({ id, msg: response } satisfies Envelope<Response>);
   try {
     switch (msg.type) {
       case 'init':

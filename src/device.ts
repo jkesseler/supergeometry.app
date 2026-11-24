@@ -40,11 +40,11 @@ export const isTouchDevice
  */
 export type ScreenClass = 'phone' | 'tablet' | 'desktop';
 
-export function screenClass(w = window.innerWidth, h = window.innerHeight): ScreenClass {
-  if (w <= 720 || h <= 500) {
+export function screenClass(innerWidth = window.innerWidth, innerHeight = window.innerHeight): ScreenClass {
+  if (innerWidth <= 720 || innerHeight <= 500) {
     return 'phone';
   }
-  if (w >= 1600 && h >= 800) {
+  if (innerWidth >= 1600 && innerHeight >= 800) {
     return 'desktop';
   }
 
@@ -54,12 +54,12 @@ export function screenClass(w = window.innerWidth, h = window.innerHeight): Scre
 /** Keeps <html data-screen="…"> up to date (for the stylesheet), and says when it changes. */
 export function watchScreenClass(onChange?: (c: ScreenClass) => void): void {
   const set = () => {
-    const c = screenClass();
-    if (document.documentElement.dataset.screen === c) {
+    const currentClass = screenClass();
+    if (document.documentElement.dataset.screen === currentClass) {
       return;
     }
-    document.documentElement.dataset.screen = c;
-    onChange?.(c);
+    document.documentElement.dataset.screen = currentClass;
+    onChange?.(currentClass);
   };
   set();
   window.addEventListener('resize', set);

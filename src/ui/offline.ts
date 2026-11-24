@@ -42,12 +42,12 @@ export class Offline {
     this.paint(this.progress || (settings.value.offline ? 'On' : 'Off'));
   }
 
-  private onMessage(m: { type?: string; done?: number; total?: number; reason?: string }): void {
-    if (m?.type === 'offline-progress' && m.total) {
-      this.progress = `${Math.round((100 * (m.done ?? 0)) / m.total)}%`;
+  private onMessage(message: { type?: string; done?: number; total?: number; reason?: string }): void {
+    if (message?.type === 'offline-progress' && message.total) {
+      this.progress = `${Math.round((100 * (message.done ?? 0)) / message.total)}%`;
       this.repaint();
-    } else if (m?.type === 'offline-ready' || m?.type === 'offline-failed') {
-      const ok = m.type === 'offline-ready';
+    } else if (message?.type === 'offline-ready' || message?.type === 'offline-failed') {
+      const ok = message.type === 'offline-ready';
       this.progress = '';
       this.repaint();
       if (this.announce) {
@@ -55,10 +55,10 @@ export class Offline {
         if (ok) {
           this.toast('Ready to work offline. The app opens even with no connection.');
         } else {
-          this.toast(m.reason === 'offline' ? "No connection: turn Offline mode on again when you're online." : "The download stopped. It tries again next time you're online.", 'error');
+          this.toast(message.reason === 'offline' ? "No connection: turn Offline mode on again when you're online." : "The download stopped. It tries again next time you're online.", 'error');
         }
       }
-      this.waiters.splice(0).forEach(w => w(ok));
+      this.waiters.splice(0).forEach(waiter => waiter(ok));
     }
   }
 
@@ -104,7 +104,7 @@ export class Offline {
       if (!worker) {
         return false;
       }
-      const done = new Promise<boolean>(r => this.waiters.push(r));
+      const done = new Promise<boolean>(resolve => this.waiters.push(resolve));
       this.progress = '0%';
       this.repaint();
       worker.postMessage({ type: 'download', fresh, keep: loadedBuild() });
@@ -121,12 +121,12 @@ export class Offline {
   /** Remove the stored files and the service worker. */
   private async remove(): Promise<void> {
     try {
-      for (const r of await navigator.serviceWorker.getRegistrations()) {
-        await r.unregister();
+      for (const registration of await navigator.serviceWorker.getRegistrations()) {
+        await registration.unregister();
       }
-      for (const k of await caches.keys()) {
-        if (k.startsWith('sg-offline-')) {
-          await caches.delete(k);
+      for (const cacheName of await caches.keys()) {
+        if (cacheName.startsWith('sg-offline-')) {
+          await caches.delete(cacheName);
         }
       }
     } catch {

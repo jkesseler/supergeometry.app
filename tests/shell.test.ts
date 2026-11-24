@@ -9,19 +9,19 @@ import type { BodyMesh } from '../src/kernel/protocol';
 setOC(await (opencascade as unknown as () => Promise<any>)());
 
 const XY: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] };
-const sketch = (id: string, entities: any[], p = XY): Feature => ({ id, name: id, type: 'sketch', plane: p, entities });
-const extrude = (id: string, sk: string, entities: any[], d: number, mode: 'new' | 'auto' = 'new'): Feature => ({ id, name: id, type: 'extrude', source: { kind: 'profile', sketch: sk, regions: arrangement(entities).regions.map(regionRef) }, distance: d, mode });
+const sketch = (id: string, entities: any[], plane = XY): Feature => ({ id, name: id, type: 'sketch', plane: plane, entities });
+const extrude = (id: string, sk: string, entities: any[], distance: number, mode: 'new' | 'auto' = 'new'): Feature => ({ id, name: id, type: 'extrude', source: { kind: 'profile', sketch: sk, regions: arrangement(entities).regions.map(regionRef) }, distance: distance, mode });
 
 function volume(b: BodyMesh): number {
-  const p = b.positions;
+  const positions = b.positions;
   const ix = b.indices;
-  let v = 0;
+  let volume = 0;
   for (let i = 0; i < ix.length; i += 3) {
-    const [a, c, d] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
-    v += (p[a] * (p[c + 1] * p[d + 2] - p[c + 2] * p[d + 1]) - p[a + 1] * (p[c] * p[d + 2] - p[c + 2] * p[d]) + p[a + 2] * (p[c] * p[d + 1] - p[c + 1] * p[d])) / 6;
+    const [a, offsetB, offsetC] = [ix[i] * 3, ix[i + 1] * 3, ix[i + 2] * 3];
+    volume += (positions[a] * (positions[offsetB + 1] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC + 1]) - positions[a + 1] * (positions[offsetB] * positions[offsetC + 2] - positions[offsetB + 2] * positions[offsetC]) + positions[a + 2] * (positions[offsetB] * positions[offsetC + 1] - positions[offsetB + 1] * positions[offsetC])) / 6;
   }
 
-  return v;
+  return volume;
 }
 
 let failed = 0;
@@ -30,17 +30,17 @@ async function check(name: string, feats: Feature[], body: string, t = 1): Promi
   const r0 = await regenerate(feats);
   const b0 = r0.bodies.find(b => b.id === body)!;
   // The biggest upward face (the lid you'd open).
-  const top = b0.faces.reduce((bi, f, i) => (f.normal[2] > 0.99 && (b0.faces[bi].normal[2] <= 0.99 || f.area > b0.faces[bi].area) ? i : bi), 0);
-  const f = b0.faces[top];
-  const r = await regenerate([...feats, { id: 'sh', name: 'Shell', type: 'shell', body, faces: [{ body, center: f.center, normal: f.normal, area: f.area }], thickness: t }]);
-  const b = r.bodies.find(x => x.id === body);
+  const top = b0.faces.reduce((bi, face, i) => (face.normal[2] > 0.99 && (b0.faces[bi].normal[2] <= 0.99 || face.area > b0.faces[bi].area) ? i : bi), 0);
+  const faceInfo = b0.faces[top];
+  const result = await regenerate([...feats, { id: 'sh', name: 'Shell', type: 'shell', body, faces: [{ body, center: faceInfo.center, normal: faceInfo.normal, area: faceInfo.area }], thickness: t }]);
+  const b = result.bodies.find(bodyMesh => bodyMesh.id === body);
   const v0 = volume(b0);
-  const v = b ? volume(b) : NaN;
-  const ok = !r.errors.length && !!b && v < v0 * 0.8 && v > 0 && b.openEdges.length === 0;
+  const bodyVolume = b ? volume(b) : NaN;
+  const ok = !result.errors.length && !!b && bodyVolume < v0 * 0.8 && bodyVolume > 0 && b.openEdges.length === 0;
   if (!ok) {
     failed++;
   }
-  console.log(ok ? 'ok  ' : 'FAIL', name, `${b0.faces.length} faces, vol ${v0.toFixed(0)} → ${v.toFixed(0)}`, r.errors.map(e => e.message).join('; '));
+  console.log(ok ? 'ok  ' : 'FAIL', name, `${b0.faces.length} faces, vol ${v0.toFixed(0)} → ${bodyVolume.toFixed(0)}`, result.errors.map(e => e.message).join('; '));
 }
 
 const box = [{ id: 'r', kind: 'rect', center: [0, 0], w: 40, h: 30, rotation: 0 }];
@@ -61,9 +61,9 @@ await check('box with 6 ribs joined', [...base, sketch('s2', ribs, { ...XY, orig
 const poly = [{ id: 'p', kind: 'polygon', center: [0, 0], radius: 20, sides: 24, angle: 0 }];
 await check('24-sided prism', [sketch('s', poly), extrude('b', 's', poly, 20)], 'b');
 const star = [{ id: 'st', kind: 'polyline', closed: true, points: Array.from({ length: 20 }, (_, i) => {
-  const a = (i / 20) * Math.PI * 2; const r = i % 2 ? 9 : 20;
+  const a = (i / 20) * Math.PI * 2; const radius = i % 2 ? 9 : 20;
 
-  return [r * Math.cos(a), r * Math.sin(a)]; 
+  return [radius * Math.cos(a), radius * Math.sin(a)]; 
 }) }];
 await check('10-point star prism', [sketch('s', star), extrude('b', 's', star, 15)], 'b', 0.8);
 
@@ -71,18 +71,18 @@ await check('10-point star prism', [sketch('s', star), extrude('b', 's', star, 1
 {
   const XZ: PlaneDef = { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, -1, 0] };
   const es = [{ id: 'c', kind: 'circle', center: [0, 0], radius: 15.8 }, { id: 'l', kind: 'line', a: [-35, 0], b: [35, 0] }];
-  const up = arrangement(es as any).regions.map(regionRef).filter((r: any) => r.c[1] > 0);
+  const up = arrangement(es as any).regions.map(regionRef).filter((region: any) => region.c[1] > 0);
   const ball: Feature[] = [sketch('s', es, XZ), { id: 'b', name: 'b', type: 'revolve', source: { kind: 'profile', sketch: 's', regions: up }, axis: { origin: [0, 0, 0], dir: [1, 0, 0] }, angle: 360, mode: 'new' } as any];
   const r0 = await regenerate(ball);
-  const f = r0.bodies[0].faces[0];
-  const r = await regenerate([...ball, { id: 'sh', name: 'Shell', type: 'shell', body: 'b', faces: [{ body: 'b', center: f.center, normal: f.normal, area: f.area }], thickness: 1 }]);
-  const v = volume(r.bodies[0]);
+  const firstFace = r0.bodies[0].faces[0];
+  const result = await regenerate([...ball, { id: 'sh', name: 'Shell', type: 'shell', body: 'b', faces: [{ body: 'b', center: firstFace.center, normal: firstFace.normal, area: firstFace.area }], thickness: 1 }]);
+  const bodyVolume = volume(result.bodies[0]);
   const want = (4 / 3) * Math.PI * (15.8 ** 3 - 14.8 ** 3);
-  const ok = !r.errors.length && r0.bodies[0].faces.length === 1 && Math.abs(v - want) < want * 0.01 && (r as any).notes?.some((n: any) => n.featureId === 'sh');
+  const ok = !result.errors.length && r0.bodies[0].faces.length === 1 && Math.abs(bodyVolume - want) < want * 0.01 && (result as any).notes?.some((note: any) => note.featureId === 'sh');
   if (!ok) {
     failed++;
   }
-  console.log(ok ? 'ok  ' : 'FAIL', 'ball with its one face picked: hollow, sealed, with a note', `vol ${v.toFixed(0)} (${want.toFixed(0)})`, r.errors.map(e => e.message).join('; '));
+  console.log(ok ? 'ok  ' : 'FAIL', 'ball with its one face picked: hollow, sealed, with a note', `vol ${bodyVolume.toFixed(0)} (${want.toFixed(0)})`, result.errors.map(e => e.message).join('; '));
 }
 
 process.exit(failed ? 1 : 0);

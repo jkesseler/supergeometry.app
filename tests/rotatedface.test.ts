@@ -20,19 +20,19 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 
-const r: any = await regenerate(fs);
-const s = debugBodies().get(BODY)!;
-const rounds = s.faces.filter(f => f.geomType === 'CYLINDRE');
-const notes = (r.notes ?? []).map((n: any) => n.message).join('; ');
-check('every step rebuilds without errors', !r.errors.length, r.errors.map((e: any) => e.message).join('; '));
-check('turning the face a fillet ends on: just the 3 fillets, no stray cylinder pieces', rounds.length === 3 && s.faces.length === 13, `${rounds.length} round faces, ${s.faces.length} faces`);
+const result: any = await regenerate(fs);
+const shape = debugBodies().get(BODY)!;
+const rounds = shape.faces.filter(face => face.geomType === 'CYLINDRE');
+const notes = (result.notes ?? []).map((note: any) => note.message).join('; ');
+check('every step rebuilds without errors', !result.errors.length, result.errors.map((e: any) => e.message).join('; '));
+check('turning the face a fillet ends on: just the 3 fillets, no stray cylinder pieces', rounds.length === 3 && shape.faces.length === 13, `${rounds.length} round faces, ${shape.faces.length} faces`);
 check('…and nothing needed repairing', !/Repaired/.test(notes), notes);
-check('…a clean solid', isHealthy(healthOf(s)));
+check('…a clean solid', isHealthy(healthOf(shape)));
 
-const f1 = s.faces.find(f => f.geomType === 'CYLINDRE' && Math.abs(cylinderOf(f)?.a[0] ?? 0) > 0.99)!;
-const v0 = Math.abs(measureVolume(s));
+const f1 = shape.faces.find(face => face.geomType === 'CYLINDRE' && Math.abs(cylinderOf(face)?.a[0] ?? 0) > 0.99)!;
+const v0 = Math.abs(measureVolume(shape));
 try {
-  const out = deleteFace(s, f1);
+  const out = deleteFace(shape, f1);
   const added = Math.abs(measureVolume(out)) - v0;
   const want = 15 * 25 * (1 - Math.PI / 4);
   check('Fillet 01 deleted: exactly its rounding filled back in', isHealthy(healthOf(out)) && Math.abs(added - want) < 1e-3 && out.faces.length === 12, `+${added.toFixed(3)} (want ${want.toFixed(3)}), ${out.faces.length} faces`);

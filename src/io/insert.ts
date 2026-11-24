@@ -49,8 +49,8 @@ function unreadable(bytes: Uint8Array, format: 'step' | 'stl'): string | null {
   }
   // Binary STL: 80 bytes, a triangle count, 50 bytes per triangle.
   if (bytes.length >= 84) {
-    const n = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(80, true);
-    if (n > 0 && 84 + n * 50 === bytes.length) {
+    const triangleCount = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(80, true);
+    if (triangleCount > 0 && 84 + triangleCount * 50 === bytes.length) {
       return null;
     }
   }
@@ -130,13 +130,13 @@ export async function insertFile(app: AppContext): Promise<void> {
 
 /** Append another project's history (ids are renamed so nothing collides). */
 function insertProject(app: AppContext, features: Feature[], name: string): void {
-  const map = new Map(features.map(f => [f.id, newId(f.type)]));
+  const map = new Map(features.map(feature => [feature.id, newId(feature.type)]));
   let json = JSON.stringify(features);
   for (const [from, to] of map) {
     json = json.split(`"${from}"`).join(`"${to}"`);
   }
   const renamed = JSON.parse(json) as Feature[];
-  app.store.commit(d => d.features.push(...renamed));
+  app.store.commit(draft => draft.features.push(...renamed));
   app.ui.toast(`Inserted ${renamed.length} steps from ${name}`);
 }
 
@@ -146,9 +146,9 @@ export async function insertImage(app: AppContext, plane: PlaneDef = GROUND): Pr
     return null;
   }
   let src = await new Promise<string>((resolve) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.readAsDataURL(file);
+    const fileReader = new FileReader();
+    fileReader.onload = () => resolve(fileReader.result as string);
+    fileReader.readAsDataURL(file);
   });
   const img = new Image();
   img.src = src;
@@ -163,21 +163,21 @@ export async function insertImage(app: AppContext, plane: PlaneDef = GROUND): Pr
   // saved again on every change, and wider than a phone can draw (4096 px):
   // 2048 px across is plenty to trace over.
   const MAX = 2048;
-  const k = Math.min(1, MAX / Math.max(img.width, img.height));
-  if (k < 1 || file.size > 2e6) {
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.width * k);
-    c.height = Math.round(img.height * k);
-    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+  const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+  if (scale < 1 || file.size > 2e6) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
     // PNG keeps see-through parts (a logo); a photo is smaller as JPEG.
-    src = file.type === 'image/png' ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+    src = file.type === 'image/png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
   }
   const width = 100;
-  const f: ImageFeature = { ...app.store.newIdentity('image'), type: 'image', plane, src, width, height: (width * img.height) / img.width, opacity: 0.8 };
-  app.store.add(f);
+  const image: ImageFeature = { ...app.store.newIdentity('image'), type: 'image', plane, src, width, height: (width * img.height) / img.width, opacity: 0.8 };
+  app.store.add(image);
   app.ui.toast('Image placed on the floor, 100 mm wide: stand it up, place and size it here');
 
-  return f;
+  return image;
 }
 
 /**
@@ -190,34 +190,34 @@ export async function createVariable(app: AppContext, value = ''): Promise<strin
   let first: string | null = null;
   let name = '';
   for (;;) {
-    const r = await createOne(app, name, value);
-    first ??= r.made;
+    const one = await createOne(app, name, value);
+    first ??= one.made;
     // A bad name or value: the next window has what was typed, to put right (after OK too: the window closed, and
     // what was typed was gone).
-    const again = !r.made && !!(r.typed.name.trim() || r.typed.expr.trim());
-    if (!r.another && !again) {
+    const again = !one.made && !!(one.typed.name.trim() || one.typed.expr.trim());
+    if (!one.another && !again) {
       return first;
     }
-    [name, value] = r.made ? ['', ''] : [r.typed.name, r.typed.expr];
+    [name, value] = one.made ? ['', ''] : [one.typed.name, one.typed.expr];
   }
 }
 
 async function createOne(app: AppContext, name: string, value: string): Promise<{ made: string | null; another: boolean; typed: { name: string; expr: string } }> {
   const list = app.store.doc.variables;
-  const note = list.length ? `Existing: ${list.map(v => `${v.name} = ${v.expr}`).join(', ')}` : 'Use variables in any field, e.g. width*2 or wall + 1mm.';
-  const v = await app.ui.dialog('Create Variable', [
+  const note = list.length ? `Existing: ${list.map(variable => `${variable.name} = ${variable.expr}`).join(', ')}` : 'Use variables in any field, e.g. width*2 or wall + 1mm.';
+  const answers = await app.ui.dialog('Create Variable', [
     { key: 'name', label: 'Name', value: name, placeholder: 'width' },
     { key: 'expr', label: 'Value', value, placeholder: '40 or 1.5in or depth/2' }
   ], note, { label: 'Add Another', icon: 'variableNew' });
-  if (!v) {
+  if (!answers) {
     return { made: null, another: false, typed: { name: '', expr: '' } };
   }
 
-  return { made: makeVariable(app, list, v), another: !!v[DIALOG_ACTION], typed: { name: v.name, expr: v.expr } };
+  return { made: makeVariable(app, list, answers), another: !!answers[DIALOG_ACTION], typed: { name: answers.name, expr: answers.expr } };
 }
 
-function makeVariable(app: AppContext, list: AppContext['store']['doc']['variables'], v: Record<string, string>): string | null {
-  const name = v.name.trim();
+function makeVariable(app: AppContext, list: AppContext['store']['doc']['variables'], answers: Record<string, string>): string | null {
+  const name = answers.name.trim();
   // (A variable called sin or pi hid the function: sin(30) stopped working.)
   if (!/^[a-z_][a-z0-9_]*$/i.test(name) || RESERVED.test(name)) {
     app.ui.toast('Names use letters, digits and _ (not starting with a digit, and not a unit or a function like sin or pi)', 'error');
@@ -225,33 +225,33 @@ function makeVariable(app: AppContext, list: AppContext['store']['doc']['variabl
     return null;
   }
   // (od and Od would be two variables, and one typed for the other is a wrong size with nothing said.)
-  const twin = list.find(x => x.name !== name && x.name.toLowerCase() === name.toLowerCase());
+  const twin = list.find(variable => variable.name !== name && variable.name.toLowerCase() === name.toLowerCase());
   if (twin) {
     app.ui.toast(`There is a variable ${twin.name} already: ${name} differs only in its capitals`, 'error');
 
     return null;
   }
-  const was = list.find(x => x.name === name);
-  const next = [...list.filter(x => x.name !== name), { name, expr: v.expr.trim() || '0' }];
+  const was = list.find(variable => variable.name === name);
+  const next = [...list.filter(variable => variable.name !== name), { name, expr: answers.expr.trim() || '0' }];
   setVariables(next);
   // (An angle - "30 deg" - is a value too: it was refused here, and taken in the list of them all.)
-  if (evaluate(v.expr || '0') === null && evaluate(v.expr || '0', 'angle') === null) {
+  if (evaluate(answers.expr || '0') === null && evaluate(answers.expr || '0', 'angle') === null) {
     setVariables(list);
-    const unknown = namesIn(v.expr).filter(x => x !== name && !next.some(y => y.name === x) && !RESERVED.test(x));
+    const unknown = namesIn(answers.expr).filter(used => used !== name && !next.some(variable => variable.name === used) && !RESERVED.test(used));
     app.ui.toast(
-      new RegExp(`(^|[^A-Za-z0-9_])${name}($|[^A-Za-z0-9_])`).test(v.expr)
+      new RegExp(`(^|[^A-Za-z0-9_])${name}($|[^A-Za-z0-9_])`).test(answers.expr)
         ? `${name} can't use itself`
         : unknown.length
           ? `${unknown.join(', ')}: no variable has that name`
-          : `"${v.expr}" isn't a valid value`,
+          : `"${answers.expr}" isn't a valid value`,
       'error'
     );
 
     return null;
   }
-  app.store.commit(d => (d.variables = next));
+  app.store.commit(draft => (draft.variables = next));
   // (One there already by that name is changed, and said so.)
-  app.ui.toast(was && was.expr !== v.expr.trim() ? `${name} changed: ${was.expr} → ${v.expr.trim()}` : `${name} = ${v.expr}`);
+  app.ui.toast(was && was.expr !== answers.expr.trim() ? `${name} changed: ${was.expr} → ${answers.expr.trim()}` : `${name} = ${answers.expr}`);
 
   return name;
 }
@@ -264,63 +264,63 @@ function makeVariable(app: AppContext, list: AppContext['store']['doc']['variabl
 export async function editVariables(app: AppContext): Promise<void> {
   for (;;) {
     const list = app.store.doc.variables;
-    const v = await app.ui.dialog(
+    const answers = await app.ui.dialog(
       'Variables',
-      list.map(x => ({ key: x.name, label: x.name, value: bareExpr(x.expr) })),
+      list.map(variable => ({ key: variable.name, label: variable.name, value: bareExpr(variable.expr) })),
       list.length
         ? 'Change a value to update every feature that uses it. Clear a value to delete the variable.'
         : 'No variables yet. Make one, then use it in any field, e.g. width*2 or wall + 1mm.',
       { label: 'New Variable', icon: 'variableNew' }
     );
-    if (!v) {
+    if (!answers) {
       return;
     }
     if (list.length) {
       // Shown without the unit in use ("220"): a plain number keeps the unit it had.
-      const next = list.filter(x => v[x.name]?.trim()).map(x => ({ name: x.name, expr: withUnitOf(v[x.name], x.expr) }));
+      const next = list.filter(variable => answers[variable.name]?.trim()).map(variable => ({ name: variable.name, expr: withUnitOf(answers[variable.name], variable.expr) }));
       setVariables(next);
       // (An angle - "30 deg" - is a value too: it was refused as a length.)
-      const bad = next.find(x => evaluate(x.expr) === null && evaluate(x.expr, 'angle') === null);
+      const bad = next.find(variable => evaluate(variable.expr) === null && evaluate(variable.expr, 'angle') === null);
       if (bad) {
         setVariables(list);
         // (Said as it is: another variable still uses the one being deleted.)
-        const lost = list.filter(x => !next.some(y => y.name === x.name)).find(x => new RegExp(`(^|[^A-Za-z0-9_])${x.name}($|[^A-Za-z0-9_])`).test(bad.expr));
+        const lost = list.filter(variable => !next.some(nextVariable => nextVariable.name === variable.name)).find(variable => new RegExp(`(^|[^A-Za-z0-9_])${variable.name}($|[^A-Za-z0-9_])`).test(bad.expr));
 
         return app.ui.toast(lost ? `${bad.name} uses ${lost.name} (${bad.name} = ${bad.expr}): change ${bad.name} first` : `"${bad.expr}" isn't a valid value for ${bad.name}`, 'error');
       }
       // Deleted while steps still use it: they keep the sizes they have now, as
       // plain numbers (else every rebuild said "can't be evaluated").
-      const gone = list.filter(x => !next.some(y => y.name === x.name)).map(x => x.name);
+      const gone = list.filter(variable => !next.some(nextVariable => nextVariable.name === variable.name)).map(variable => variable.name);
       // (Capitals count: W deleted is not w deleted.)
-      const uses = (expr: string) => gone.some(n => new RegExp(`(^|[^A-Za-z0-9_])${n}($|[^A-Za-z0-9_])`).test(expr));
+      const uses = (expr: string) => gone.some(name => new RegExp(`(^|[^A-Za-z0-9_])${name}($|[^A-Za-z0-9_])`).test(expr));
       let kept = 0;
-      if (next.some((x, i) => x.name !== list[i]?.name || x.expr !== list[i]?.expr) || next.length !== list.length) {
-        app.store.commit((d) => {
-          d.variables = next;
-          for (const f of d.features) {
-            for (const [path, expr] of Object.entries(f.exprs ?? {})) {
+      if (next.some((variable, i) => variable.name !== list[i]?.name || variable.expr !== list[i]?.expr) || next.length !== list.length) {
+        app.store.commit((draft) => {
+          draft.variables = next;
+          for (const feature of draft.features) {
+            for (const [path, expr] of Object.entries(feature.exprs ?? {})) {
               if (uses(expr)) {
-                (delete f.exprs![path], kept++);
+                (delete feature.exprs![path], kept++);
               }
             }
             // (A sketch pattern that followed it: its copies stay as they are, plain curves from now on.)
-            if (f.type === 'sketch' && f.repeats?.some(r => uses(r.countExpr))) {
-              kept += f.repeats.filter(r => uses(r.countExpr)).length;
-              f.repeats = f.repeats.filter(r => !uses(r.countExpr));
-              if (!f.repeats.length) {
-                delete f.repeats;
+            if (feature.type === 'sketch' && feature.repeats?.some(repeat => uses(repeat.countExpr))) {
+              kept += feature.repeats.filter(repeat => uses(repeat.countExpr)).length;
+              feature.repeats = feature.repeats.filter(repeat => !uses(repeat.countExpr));
+              if (!feature.repeats.length) {
+                delete feature.repeats;
               }
             }
-            if (f.type === 'sketch') {
-              for (const c of f.constraints ?? []) {
-                if (c.expr && uses(c.expr)) {
-                  (delete c.expr, kept++);
+            if (feature.type === 'sketch') {
+              for (const sketchConstraint of feature.constraints ?? []) {
+                if (sketchConstraint.expr && uses(sketchConstraint.expr)) {
+                  (delete sketchConstraint.expr, kept++);
                 }
                 // (A point placed by it too: left, every rebuild said it can't be evaluated.)
-                if (c.atExpr?.some(e => e && uses(e))) {
-                  c.atExpr = c.atExpr.map(e => (e && uses(e) ? null : e));
-                  if (!c.atExpr.some(e => e)) {
-                    delete c.atExpr;
+                if (sketchConstraint.atExpr?.some(e => e && uses(e))) {
+                  sketchConstraint.atExpr = sketchConstraint.atExpr.map(e => (e && uses(e) ? null : e));
+                  if (!sketchConstraint.atExpr.some(e => e)) {
+                    delete sketchConstraint.atExpr;
                   }
                   kept++;
                 }
@@ -333,7 +333,7 @@ export async function editVariables(app: AppContext): Promise<void> {
         app.ui.toast(`${gone.join(', ')} deleted - the ${kept === 1 ? 'size' : `${kept} sizes`} that used ${gone.length > 1 ? 'them' : 'it'} ${kept === 1 ? 'keeps its value' : 'keep their values'}`);
       }
     }
-    if (!v[DIALOG_ACTION]) {
+    if (!answers[DIALOG_ACTION]) {
       return;
     }
     await createVariable(app);
@@ -350,32 +350,32 @@ export async function renameVariables(app: AppContext): Promise<void> {
   if (!list.length) {
     return;
   }
-  const v = await app.ui.dialog(
+  const answers = await app.ui.dialog(
     'Rename Variables',
-    list.map(x => ({ key: x.name, label: `${x.name} =  ${bareExpr(x.expr)}`, value: x.name })),
+    list.map(variable => ({ key: variable.name, label: `${variable.name} =  ${bareExpr(variable.expr)}`, value: variable.name })),
     'Type a new name over an old one. Everything that uses it follows, and nothing changes size.'
   );
-  if (!v) {
+  if (!answers) {
     return;
   }
-  const wanted = list.map(x => ({ from: x.name, to: (v[x.name] ?? x.name).trim() || x.name })).filter(x => x.from !== x.to);
+  const wanted = list.map(variable => ({ from: variable.name, to: (answers[variable.name] ?? variable.name).trim() || variable.name })).filter(rename => rename.from !== rename.to);
   if (!wanted.length) {
     return;
   }
   // Tried on a copy first: all of them, or none (two swapping names go by way of a spare one).
   const trial = structuredClone(app.store.doc);
   const spare = (i: number) => `__renaming_${i}__`;
-  wanted.forEach((w, i) => renameVariable(trial, w.from, spare(i)));
-  for (const [i, w] of wanted.entries()) {
-    const problem = nameProblem(trial, spare(i), w.to);
+  wanted.forEach((rename, i) => renameVariable(trial, rename.from, spare(i)));
+  for (const [i, rename] of wanted.entries()) {
+    const problem = nameProblem(trial, spare(i), rename.to);
     if (problem) {
-      return app.ui.toast(`${w.from} → ${w.to}: ${problem}`, 'error');
+      return app.ui.toast(`${rename.from} → ${rename.to}: ${problem}`, 'error');
     }
-    renameVariable(trial, spare(i), w.to);
+    renameVariable(trial, spare(i), rename.to);
   }
-  app.store.commit((d) => {
-    d.variables = trial.variables;
-    d.features = trial.features;
+  app.store.commit((draft) => {
+    draft.variables = trial.variables;
+    draft.features = trial.features;
   });
   app.ui.toast(wanted.length === 1 ? `${wanted[0].from} is ${wanted[0].to} now, everywhere it is used` : `${wanted.length} variables renamed, everywhere they are used`);
 }
@@ -389,13 +389,13 @@ export function parseDXF(text: string): SketchEntity[] {
   for (let i = 0; i + 1 < lines.length; i += 2) {
     pairs.push([parseInt(lines[i].trim(), 10), lines[i + 1].trim()]);
   }
-  const start = pairs.findIndex((p, i) => p[0] === 2 && p[1] === 'ENTITIES' && pairs[i - 1]?.[1] === 'SECTION');
+  const start = pairs.findIndex((pair, i) => pair[0] === 2 && pair[1] === 'ENTITIES' && pairs[i - 1]?.[1] === 'SECTION');
   if (start < 0) {
     return [];
   }
   const out: SketchEntity[] = [];
   let i = start + 1;
-  const num = (codes: [number, string][], c: number, d = 0) => Number(codes.find(x => x[0] === c)?.[1] ?? d);
+  const num = (codes: [number, string][], code: number, fallback = 0) => Number(codes.find(entry => entry[0] === code)?.[1] ?? fallback);
   while (i < pairs.length && !(pairs[i][0] === 0 && pairs[i][1] === 'ENDSEC')) {
     if (pairs[i][0] !== 0) {
       i++;
@@ -412,14 +412,14 @@ export function parseDXF(text: string): SketchEntity[] {
     } else if (type === 'CIRCLE') {
       out.push({ id: uid(), kind: 'circle', center: [num(codes, 10), num(codes, 20)], radius: num(codes, 40) });
     } else if (type === 'ARC') {
-      const c: [number, number] = [num(codes, 10), num(codes, 20)];
-      const r = num(codes, 40);
+      const center: [number, number] = [num(codes, 10), num(codes, 20)];
+      const radius = num(codes, 40);
       const a0 = (num(codes, 50) * Math.PI) / 180;
       let a1 = (num(codes, 51) * Math.PI) / 180;
       if (a1 <= a0) {
         a1 += Math.PI * 2;
       }
-      const at = (t: number): [number, number] => [c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)];
+      const at = (t: number): [number, number] => [center[0] + radius * Math.cos(t), center[1] + radius * Math.sin(t)];
       out.push({ id: uid(), kind: 'arc', a: at(a0), m: at((a0 + a1) / 2), b: at(a1) });
     } else if (type === 'ELLIPSE') {
       const mx = num(codes, 11);
@@ -427,34 +427,34 @@ export function parseDXF(text: string): SketchEntity[] {
       const rx = Math.hypot(mx, my);
       out.push({ id: uid(), kind: 'ellipse', center: [num(codes, 10), num(codes, 20)], rx, ry: rx * num(codes, 40, 1), rotation: Math.atan2(my, mx) });
     } else if (type === 'LWPOLYLINE') {
-      const xs = codes.filter(c => c[0] === 10).map(c => Number(c[1]));
-      const ys = codes.filter(c => c[0] === 20).map(c => Number(c[1]));
+      const xs = codes.filter(code => code[0] === 10).map(code => Number(code[1]));
+      const ys = codes.filter(code => code[0] === 20).map(code => Number(code[1]));
       const closed = (num(codes, 70) & 1) === 1;
-      const pts = xs.map((x, k) => [x, ys[k]] as [number, number]);
+      const pts = xs.map((x, index) => [x, ys[index]] as [number, number]);
       if (pts.length >= 2) {
         out.push({ id: uid(), kind: 'polyline', points: pts, closed });
       }
     } else if (type === 'SPLINE') {
-      const fx = codes.filter(c => c[0] === 11).map(c => Number(c[1]));
-      const fy = codes.filter(c => c[0] === 21).map(c => Number(c[1]));
-      const cx = codes.filter(c => c[0] === 10).map(c => Number(c[1]));
-      const cy = codes.filter(c => c[0] === 20).map(c => Number(c[1]));
+      const fx = codes.filter(code => code[0] === 11).map(code => Number(code[1]));
+      const fy = codes.filter(code => code[0] === 21).map(code => Number(code[1]));
+      const cx = codes.filter(code => code[0] === 10).map(code => Number(code[1]));
+      const cy = codes.filter(code => code[0] === 20).map(code => Number(code[1]));
       const closed = (num(codes, 70) & 1) === 1;
       if (fx.length >= 2) {
-        out.push({ id: uid(), kind: 'spline', points: fx.map((x, k) => [x, fy[k]]), closed, mode: 'fit' });
+        out.push({ id: uid(), kind: 'spline', points: fx.map((x, index) => [x, fy[index]]), closed, mode: 'fit' });
       } else if (cx.length >= 2) {
-        out.push({ id: uid(), kind: 'spline', points: cx.map((x, k) => [x, cy[k]]), closed, mode: 'control' });
+        out.push({ id: uid(), kind: 'spline', points: cx.map((x, index) => [x, cy[index]]), closed, mode: 'control' });
       }
     } else if (type === 'POLYLINE') {
       const closed = (num(codes, 70) & 1) === 1;
       const pts: [number, number][] = [];
       while (i < pairs.length && pairs[i][1] === 'VERTEX') {
         i++;
-        const v: [number, string][] = [];
+        const codes: [number, string][] = [];
         while (i < pairs.length && pairs[i][0] !== 0) {
-          v.push(pairs[i++]);
+          codes.push(pairs[i++]);
         }
-        pts.push([num(v, 10), num(v, 20)]);
+        pts.push([num(codes, 10), num(codes, 20)]);
       }
       if (pts.length >= 2) {
         out.push({ id: uid(), kind: 'polyline', points: pts, closed });
@@ -469,12 +469,12 @@ export function parseDXF(text: string): SketchEntity[] {
 
 function usableCurve(e: SketchEntity): boolean {
   let finite = true;
-  JSON.stringify(e, (_k, v) => {
-    if (typeof v === 'number' && !Number.isFinite(v)) {
+  JSON.stringify(e, (_k, value) => {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
       finite = false;
     }
 
-    return v;
+    return value;
   });
   if (!finite) {
     return false;
@@ -500,28 +500,28 @@ function usableCurve(e: SketchEntity): boolean {
 
 /** OBJ (triangles/polygons) → binary STL, so the kernel can import it. */
 export function objToStl(text: string): Uint8Array {
-  const v: number[][] = [];
+  const vertices: number[][] = [];
   const tris: number[][] = [];
   let skipped = 0;
   for (const line of text.split(/\r?\n/)) {
-    const p = line.trim().split(/\s+/);
-    if (p[0] === 'v') {
-      v.push([Number(p[1]), Number(p[2]), Number(p[3])]);
-    } else if (p[0] === 'f') {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0] === 'v') {
+      vertices.push([Number(parts[1]), Number(parts[2]), Number(parts[3])]);
+    } else if (parts[0] === 'f') {
       // Points by number (from 1), or counted back from the last one (-1).
-      const idx = p.slice(1).map((s) => {
-        const n = parseInt(s.split('/')[0], 10);
+      const idx = parts.slice(1).map((token) => {
+        const vertexNumber = parseInt(token.split('/')[0], 10);
 
-        return n < 0 ? v.length + n : n - 1;
+        return vertexNumber < 0 ? vertices.length + vertexNumber : vertexNumber - 1;
       });
       // A face pointing at points that aren't there (or with broken numbers): skipped.
-      const ok = (k: number) => Number.isInteger(k) && k >= 0 && k < v.length && v[k].every(Number.isFinite);
+      const ok = (index: number) => Number.isInteger(index) && index >= 0 && index < vertices.length && vertices[index].every(Number.isFinite);
       if (idx.length < 3 || !idx.every(ok)) {
         skipped++;
         continue;
       }
-      for (let k = 1; k + 1 < idx.length; k++) {
-        tris.push([idx[0], idx[k], idx[k + 1]]);
+      for (let index = 1; index + 1 < idx.length; index++) {
+        tris.push([idx[0], idx[index], idx[index + 1]]);
       }
     }
   }
@@ -531,26 +531,26 @@ export function objToStl(text: string): Uint8Array {
   const buf = new ArrayBuffer(84 + tris.length * 50);
   const dv = new DataView(buf);
   dv.setUint32(80, tris.length, true);
-  let o = 84;
+  let offset = 84;
   for (const t of tris) {
-    o += 12; // normal left as zero; readers recompute it
-    for (const k of t) {
-      for (let c = 0; c < 3; c++) {
-        dv.setFloat32(o + c * 4, v[k][c], true);
+    offset += 12; // normal left as zero; readers recompute it
+    for (const vertex of t) {
+      for (let axis = 0; axis < 3; axis++) {
+        dv.setFloat32(offset + axis * 4, vertices[vertex][axis], true);
       }
-      o += 12;
+      offset += 12;
     }
-    o += 2;
+    offset += 2;
   }
 
   return new Uint8Array(buf);
 }
 
 function toBase64(bytes: Uint8Array): string {
-  let s = '';
+  let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) {
-    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   }
 
-  return btoa(s);
+  return btoa(binary);
 }

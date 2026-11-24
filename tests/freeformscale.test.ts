@@ -47,11 +47,11 @@ const box = (id: string) => (debugBodies().get(id) as any).boundingBox;
 const size = (b: any) => [b.width, b.height, b.depth];
 
 async function build(cage: Cage, surface: boolean, extra: any[] = []) {
-  const f = { id: 'ff', name: 'ff', type: 'freeform', cage, ...(surface ? { surface: true } : {}) };
+  const feature = { id: 'ff', name: 'ff', type: 'freeform', cage, ...(surface ? { surface: true } : {}) };
   const t0 = Date.now();
-  const r: any = await regenerate([f, ...extra] as any);
+  const result: any = await regenerate([feature, ...extra] as any);
 
-  return { r, ms: Date.now() - t0 };
+  return { r: result, ms: Date.now() - t0 };
 }
 
 let slowest = { ms: 0, what: '' };
@@ -59,20 +59,20 @@ for (const [name, cage0, closed] of cages) {
   const base = await build(cage0, !closed);
   check(`${name}: builds`, !base.r.errors.length, base.r.errors.map((e: any) => e.message).join('; '));
   const s0 = size(box('ff'));
-  const n = cage0.verts.length;
+  const count = cage0.verts.length;
   // Points picked: all, half (by x), one face's corners, one point.
   const picks: [string, number[]][] = [
     ['all points', cage0.verts.map((_, i) => i)],
-    ['half', cage0.verts.flatMap((v, i) => (v[0] > 0 ? [i] : []))],
+    ['half', cage0.verts.flatMap((vertex, i) => (vertex[0] > 0 ? [i] : []))],
     ['one face', [...cage0.faces[0]]],
-    ['one point', [Math.floor(n / 2)]]
+    ['one point', [Math.floor(count / 2)]]
   ];
   for (const [what, ids] of picks) {
-    for (const k of factors) {
-      const moved = moveTurnScale(ids.map(i => cage0.verts[i]), 'scale', k);
-      const cage: Cage = { faces: cage0.faces, verts: cage0.verts.map(v => [...v] as Vec3) };
+    for (const factor of factors) {
+      const moved = moveTurnScale(ids.map(i => cage0.verts[i]), 'scale', factor);
+      const cage: Cage = { faces: cage0.faces, verts: cage0.verts.map(vertex => [...vertex] as Vec3) };
       ids.forEach((i, j) => (cage.verts[i] = moved[j]));
-      const tag = `${name}, ${what}, scale ${k.join('/')}`;
+      const tag = `${name}, ${what}, scale ${factor.join('/')}`;
       let res;
       try {
         res = await build(cage, !closed);
@@ -95,10 +95,10 @@ for (const [name, cage0, closed] of cages) {
       }
       // Every point scaled together: the shape is exactly that much bigger.
       if (what === 'all points') {
-        const s = size(box('ff'));
-        const want = [k[0] * k[3], k[1] * k[3], k[2] * k[3]];
-        const ok = [0, 1, 2].every(a => s0[a] < 1e-6 || Math.abs(s[a] / s0[a] - want[a]) < Math.max(0.02 * want[a], 1e-3 / s0[a]));
-        check(`${tag}: the whole shape scales by the factors`, ok, `${s.map((x: number) => x.toFixed(3))} vs ${s0.map((x: number, a: number) => (x * want[a]).toFixed(3))}`);
+        const boxSize = size(box('ff'));
+        const want = [factor[0] * factor[3], factor[1] * factor[3], factor[2] * factor[3]];
+        const ok = [0, 1, 2].every(a => s0[a] < 1e-6 || Math.abs(boxSize[a] / s0[a] - want[a]) < Math.max(0.02 * want[a], 1e-3 / s0[a]));
+        check(`${tag}: the whole shape scales by the factors`, ok, `${boxSize.map((x: number) => x.toFixed(3))} vs ${s0.map((x: number, a: number) => (x * want[a]).toFixed(3))}`);
       }
     }
   }
@@ -119,14 +119,14 @@ for (const [name, cage0, closed] of cages) {
       }
       const id = copy ? 't:ff:0' : 'ff';
       const b: any = debugBodies().get(id);
-      check(`${tag}: there`, !!b, res.r.bodies.map((x: any) => x.id).join(','));
+      check(`${tag}: there`, !!b, res.r.bodies.map((body: any) => body.id).join(','));
       if (!b) {
         continue;
       }
       check(`${tag}: valid`, shapeValid(b));
-      const s = size(box(id));
+      const boxSize = size(box(id));
       const want = op.kind === 'scale' ? [op.factor, op.factor, op.factor] : op.factors;
-      check(`${tag}: that size`, [0, 1, 2].every(a => s0[a] < 1e-6 || Math.abs(s[a] / s0[a] - want[a]) < 0.02 * want[a] + 1e-6), `${s.map((x: number) => x.toFixed(3))}`);
+      check(`${tag}: that size`, [0, 1, 2].every(a => s0[a] < 1e-6 || Math.abs(boxSize[a] / s0[a] - want[a]) < 0.02 * want[a] + 1e-6), `${boxSize.map((x: number) => x.toFixed(3))}`);
       if (copy) {
         check(`${tag}: the original stays`, debugBodies().has('ff') && Math.abs(size(box('ff'))[0] - s0[0]) < 1e-6);
       }

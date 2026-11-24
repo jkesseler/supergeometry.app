@@ -125,15 +125,15 @@ export class OffsetEdgeOp extends FeatureOp<SketchFeature> {
     if (!this.edge || !this.face) {
       return;
     }
-    const l = offsetLineOnFace(this.face.body, this.face.face, this.face.plane, this.edge.start, this.edge.end, this.distance);
-    if (typeof l === 'string') {
-      this.problem = l;
+    const line = offsetLineOnFace(this.face.body, this.face.face, this.face.plane, this.edge.start, this.edge.end, this.distance);
+    if (typeof line === 'string') {
+      this.problem = line;
       this.feature.entities = [];
 
       return;
     }
-    this.feature.entities = [{ id: 'offset', kind: 'line', a: l.a2, b: l.b2 }];
-    this.line = { a: l.a, b: l.b };
+    this.feature.entities = [{ id: 'offset', kind: 'line', a: line.a2, b: line.b2 }];
+    this.line = { a: line.a, b: line.b };
   }
 
   /**
@@ -144,26 +144,26 @@ export class OffsetEdgeOp extends FeatureOp<SketchFeature> {
     if (!this.edge || !this.face || !this.line) {
       return null;
     }
-    const n = norm(this.face.plane.normal);
-    const flat = (p: Vec3): Vec3 => sub(p, scale(n, dot(sub(p, this.face!.plane.origin), n)));
+    const normal = norm(this.face.plane.normal);
+    const flat = (point: Vec3): Vec3 => sub(point, scale(normal, dot(sub(point, this.face!.plane.origin), normal)));
     const e0 = flat(this.edge.start);
     const along = norm(sub(flat(this.edge.end), e0));
     const mid = scale(add(this.line.a, this.line.b), 0.5);
     const foot = add(e0, scale(along, dot(sub(mid, e0), along)));
-    const w = sub(mid, foot);
-    if (len(w) < 1e-9 || !this.distance) {
+    const offset = sub(mid, foot);
+    if (len(offset) < 1e-9 || !this.distance) {
       return null;
     }
 
-    return { foot, out: scale(norm(w), Math.sign(this.distance)) };
+    return { foot, out: scale(norm(offset), Math.sign(this.distance)) };
   }
 
-  private setDistance(v: number): void {
+  private setDistance(value: number): void {
     this.typed = true;
-    this.distance = v;
+    this.distance = value;
     this.sync();
-    this.app.ui.updatePanelValues([v]);
-    this.dim?.setValue(v);
+    this.app.ui.updatePanelValues([value]);
+    this.dim?.setValue(value);
     this.update();
   }
 
@@ -180,7 +180,7 @@ export class OffsetEdgeOp extends FeatureOp<SketchFeature> {
     }
     if (!this.arrows) {
       this.arrows = [new Handle(this.app.view, 'arrow', 34), new Handle(this.app.view, 'arrow', 34)];
-      this.dim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 96, dir: fr.out, value: this.distance, onInput: v => this.setDistance(v), onCommit: () => this.done() });
+      this.dim = new DimWidget(this.app.view, { boxAt: 'beyond', boxGap: 96, dir: fr.out, value: this.distance, onInput: value => this.setDistance(value), onCommit: () => this.done() });
     }
     const mid = scale(add(this.line.a, this.line.b), 0.5);
     this.arrows[0].set(mid, fr.out);
@@ -190,7 +190,7 @@ export class OffsetEdgeOp extends FeatureOp<SketchFeature> {
   }
 
   private dropGrip(): void {
-    this.arrows?.forEach(h => h.dispose());
+    this.arrows?.forEach(arrow => arrow.dispose());
     this.arrows = null;
     this.dim?.dispose();
     this.dim = null;
@@ -201,44 +201,44 @@ export class OffsetEdgeOp extends FeatureOp<SketchFeature> {
     super.exit();
   }
 
-  hover(p: ToolPointer | null): void {
-    const on = !!p && !!this.arrows && (!!this.dragging || this.arrows.some(h => h.hit(p)));
-    this.arrows?.forEach(h => h.setHot(on));
+  hover(pointer: ToolPointer | null): void {
+    const on = !!pointer && !!this.arrows && (!!this.dragging || this.arrows.some(arrow => arrow.hit(pointer)));
+    this.arrows?.forEach(arrow => arrow.setHot(on));
     if (!on) {
-      super.hover(p);
+      super.hover(pointer);
     }
   }
 
-  down(p: ToolPointer): boolean {
+  down(pointer: ToolPointer): boolean {
     const fr = this.frame();
-    if (!fr || !this.arrows?.some(h => h.hit(p))) {
+    if (!fr || !this.arrows?.some(arrow => arrow.hit(pointer))) {
       return false;
     }
-    this.dragging = { from: p, d0: this.distance, ...fr };
+    this.dragging = { from: pointer, d0: this.distance, ...fr };
 
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     const dr = this.dragging;
     if (!dr) {
       return;
     }
-    this.typing.track(p);
+    this.typing.track(pointer);
     if (this.typing.active) {
       return;
     }
-    const raw = dr.d0 + axisDrag(this.app.view, add(dr.foot, scale(dr.out, dr.d0)), dr.out, dr.from, p);
+    const raw = dr.d0 + axisDrag(this.app.view, add(dr.foot, scale(dr.out, dr.d0)), dr.out, dr.from, pointer);
     const step = niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4);
     this.setDistance(Math.round(raw / step) * step);
-    this.app.ui.setLabel(p.x, p.y, `${fmtLen(this.distance)}  · type a value`);
+    this.app.ui.setLabel(pointer.x, pointer.y, `${fmtLen(this.distance)}  · type a value`);
   }
 
   up(): void {
     this.dragging = null;
     this.typing.reset();
     this.app.ui.setLabel(0, 0, null);
-    this.arrows?.forEach(h => h.setHot(false));
+    this.arrows?.forEach(arrow => arrow.setHot(false));
     this.onDraftChanged();
   }
 
@@ -250,7 +250,7 @@ export class OffsetEdgeOp extends FeatureOp<SketchFeature> {
 
     return this.typing.key(e, {
       kind: 'length',
-      apply: v => this.setDistance(v),
+      apply: value => this.setDistance(value),
       commit: () => ((this.dragging = null), this.done()),
       cancel: () => this.setDistance(dr.d0)
     });
@@ -267,11 +267,11 @@ export class OffsetEdgeOp extends FeatureOp<SketchFeature> {
         label: 'Distance',
         value: this.distance,
         kind: 'length',
-        onInput: (v) => {
+        onInput: (value) => {
           this.typed = true;
-          this.distance = v;
+          this.distance = value;
           this.sync();
-          this.dim?.setValue(v);
+          this.dim?.setValue(value);
           this.update();
         }
       }

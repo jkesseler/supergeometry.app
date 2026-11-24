@@ -18,21 +18,21 @@ check('with its unit beside it', renameIn('bore/2 + 3mm', 'bore', 'hole') === 'h
 const fresh = () => JSON.parse(readFileSync(new URL('./fixtures/flange-variables.json', import.meta.url), 'utf8')) as ProjectDoc;
 const vol = async (doc: ProjectDoc) => {
   const problems = resolveDoc(doc);
-  const r = await after(doc.features as Feature[]);
+  const result = await after(doc.features as Feature[]);
 
-  return { v: [...bodies().values()].reduce((s, b) => s + volume(b as Shape3D), 0), errors: [...r.errors, ...problems] };
+  return { v: [...bodies().values()].reduce((total, b) => total + volume(b as Shape3D), 0), errors: [...result.errors, ...problems] };
 };
 const base = await vol(fresh());
 const doc = fresh();
-const text = () => JSON.stringify({ v: doc.variables, f: doc.features.map(f => [f.exprs, (f as { constraints?: unknown }).constraints]) });
+const text = () => JSON.stringify({ v: doc.variables, f: doc.features.map(feature => [feature.exprs, (feature as { constraints?: unknown }).constraints]) });
 const uses = (name: string) => (text().match(new RegExp(`[^A-Za-z0-9_.]${name}[^A-Za-z0-9_]`, 'g')) ?? []).length;
 const before = { bore: uses('bore'), n: uses('n'), od: uses('od') };
 const changed = [renameVariable(doc, 'bore', 'hole_d'), renameVariable(doc, 'n', 'count'), renameVariable(doc, 'od', 'outer')];
-check('three variables renamed: formulas rewritten for each', changed.every(c => c > 0), changed.join());
+check('three variables renamed: formulas rewritten for each', changed.every(count => count > 0), changed.join());
 check('the old names are nowhere, the new ones as often as the old were', uses('bore') === 0 && uses('n') === 0 && uses('od') === 0 && uses('hole_d') === before.bore && uses('count') === before.n && uses('outer') === before.od, `${JSON.stringify(before)} -> ${uses('hole_d')}, ${uses('count')}, ${uses('outer')}`);
 const now = await vol(doc);
 check('the flange is the same flange', !now.errors.length && near(now.v, base.v, 1e-6), `${now.v.toFixed(3)} for ${base.v.toFixed(3)} ${now.errors.join('; ')}`);
-doc.variables.find(v => v.name === 'outer')!.expr = '220 mm';
+doc.variables.find(variable => variable.name === 'outer')!.expr = '220 mm';
 const big = await vol(doc);
 check('and still follows its variables under their new names (the outer size made 220)', !big.errors.length && big.v > base.v * 1.5, big.v.toFixed(1));
 

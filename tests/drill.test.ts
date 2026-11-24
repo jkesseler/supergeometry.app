@@ -17,7 +17,7 @@
 // axis is at z = 202.
 import { readFileSync, writeFileSync } from 'node:fs';
 import opencascade from 'replicad-opencascadejs';
-import { measureArea, measureVolume, setOC } from 'replicad';
+import { measureVolume, setOC } from 'replicad';
 import opentype from 'opentype.js';
 const { parse } = opentype as any;
 import { debugBodies, regenerate } from '../src/kernel/engine';
@@ -43,52 +43,43 @@ const YZ = (x = 0): PlaneDef => ({ origin: [x, 0, 0], normal: [1, 0, 0], xDir: [
 /** The +y side, read from there: u = -x, v = z (extrudes go +y). */
 const PY = (y: number): PlaneDef => ({ origin: [0, y, 0], normal: [0, 1, 0], xDir: [-1, 0, 0] });
 const all = (es: any[]) => arrangement(es).regions.map(regionRef);
-const where = (es: any[], test: (c: number[], r: any) => boolean) => arrangement(es).regions.filter(r => test(r.centroid, r)).map(regionRef);
+const where = (es: any[], test: (c: number[], r: any) => boolean) => arrangement(es).regions.filter(region => test(region.centroid, region)).map(regionRef);
 const feats: any[] = [];
 const variables = [
   { name: 'wall', expr: '2.5 mm' },
   { name: 'cells', expr: '2' }
 ];
 const doc = () => {
-  const d: any = { format: 'super', version: 2, name: 'Cordless drill', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
-  const problems = resolveDoc(d);
+  const doc: any = { format: 'super', version: 2, name: 'Cordless drill', features: structuredClone(feats), variables, views: [], units: 'mm', hidden: [], pins: [], names: {} };
+  const problems = resolveDoc(doc);
   if (problems.length) {
     console.log('problems:', problems);
   }
 
-  return d;
+  return doc;
 };
 const sections: { name: string; from: number }[] = [];
 const section = (name: string) => sections.push({ name, from: feats.length });
-const nameOf = (fid: string) => feats.find(f => f.id === fid)?.name ?? fid;
+const nameOf = (fid: string) => feats.find(feature => feature.id === fid)?.name ?? fid;
 const build = async (quiet = false) => {
-  const r: any = await regenerate(doc().features);
-  if (r.errors.length && !quiet) {
-    console.log('errors:', r.errors.map((e: any) => `${nameOf(e.featureId)}: ${e.message}`).join('; '));
+  const result: any = await regenerate(doc().features);
+  if (result.errors.length && !quiet) {
+    console.log('errors:', result.errors.map((e: any) => `${nameOf(e.featureId)}: ${e.message}`).join('; '));
   }
 
-  return r;
+  return result;
 };
 const stage = async (label: string) => {
   const t = Date.now();
-  const r = await build();
-  check(`${label} builds`, !r.errors.length, `${r.bodies.length} bodies, ${Date.now() - t} ms`);
+  const result = await build();
+  check(`${label} builds`, !result.errors.length, `${result.bodies.length} bodies, ${Date.now() - t} ms`);
 
-  return r;
+  return result;
 };
-const B = (body: string) => debugBodies().get(body) as any;
-const faceRef = (body: string, f: any) => ({ body, center: f.center.toTuple() as Vec3, normal: f.normalAt().toTuple() as Vec3, area: measureArea(f) });
-const faceBy = (body: string, test: (f: any) => boolean) => {
-  const f = B(body).faces.find(test);
-  if (!f) {
-    throw new Error(`no such face on ${body}`);
-  }
-
-  return faceRef(body, f);
-};
+const bodyShape = (body: string) => debugBodies().get(body) as any;
 const edgeRef = (body: string, e: any) => ({ body, mid: e.pointAt(0.5).toTuple() as Vec3, dir: e.tangentAt(0.5).toTuple() as Vec3, length: e.length as number });
 const edgesWhere = (body: string, test: (p: number[], e: any) => boolean) => {
-  const es = B(body).edges.filter((e: any) => test(e.pointAt(0.5).toTuple(), e));
+  const es = bodyShape(body).edges.filter((e: any) => test(e.pointAt(0.5).toTuple(), e));
   if (!es.length) {
     throw new Error(`no such edge on ${body}`);
   }
@@ -97,15 +88,15 @@ const edgesWhere = (body: string, test: (p: number[], e: any) => boolean) => {
 };
 /** Edges where the faces either side meet at an angle (not the smooth seams between a line and a curve). */
 const sharpEdges = (body: string, minDeg = 20) => {
-  const s = B(body);
+  const shape = bodyShape(body);
   const out: any[] = [];
-  for (const e of s.edges) {
-    const fs = s.faces.filter((f: any) => f.edges.some((x: any) => x.wrapped.IsSame(e.wrapped)));
+  for (const e of shape.edges) {
+    const fs = shape.faces.filter((face: any) => face.edges.some((edge: any) => edge.wrapped.IsSame(e.wrapped)));
     if (fs.length !== 2) {
       continue;
     }
-    const p = e.pointAt(0.5);
-    const [a, b] = fs.map((f: any) => f.normalAt(p).toTuple());
+    const point = e.pointAt(0.5);
+    const [a, b] = fs.map((face: any) => face.normalAt(point).toTuple());
     const cos = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     if (cos < Math.cos(rad(minDeg))) {
       out.push(edgeRef(body, e));
@@ -118,21 +109,21 @@ const sharpEdges = (body: string, minDeg = 20) => {
 const roundSharp = async (id: string, name: string, body: string, radii: number[], keep: (e: any) => boolean = () => true) => {
   await build(true);
   const edges = sharpEdges(body).filter(keep);
-  for (const r of radii) {
-    feats.push({ id, name, type: 'fillet', edges, radius: r });
+  for (const radius of radii) {
+    feats.push({ id, name, type: 'fillet', edges, radius: radius });
     const res = await build(true);
     if (!res.errors.some((e: any) => e.featureId === id)) {
-      return r;
+      return radius;
     }
     feats.pop();
   }
 
   return 0;
 };
-const V = (body: string) => Math.abs(measureVolume(B(body)));
-const box = (body: string) => B(body).boundingBox.bounds as [number[], number[]];
-const rad = (d: number) => (d * Math.PI) / 180;
-const range = (n: number, f: (k: number) => string) => Array.from({ length: n }, (_, k) => f(k));
+const volumeOf = (body: string) => Math.abs(measureVolume(bodyShape(body)));
+const box = (body: string) => bodyShape(body).boundingBox.bounds as [number[], number[]];
+const rad = (degrees: number) => (degrees * Math.PI) / 180;
+const range = (count: number, nameAt: (k: number) => string) => Array.from({ length: count }, (_, index) => nameAt(index));
 /** Make a body (a profile pulled out). */
 const extrude = (id: string, name: string, plane: PlaneDef, entities: any[], distance: number, opts: any = {}) => {
   feats.push({ id: `s_${id}`, name: `${name} sketch`, type: 'sketch', plane, entities });
@@ -149,46 +140,46 @@ const intersect = (id: string, name: string, target: string, tools: string[]) =>
 const roundX = (id: string, name: string, body: string, count: number, z = AX, y = 0) => {
   feats.push({ id, name, type: 'transform', bodies: [body], copy: false, op: { kind: 'circular', axis: { origin: [0, y, z], dir: [1, 0, 0] }, count, angle: 360 } });
 
-  return [body, ...range(count - 1, k => `${id}:${body}:${k}`)];
+  return [body, ...range(count - 1, index => `${id}:${body}:${index}`)];
 };
-const circle = (id: string, c: P2, r: number) => ({ id, kind: 'circle', center: c, radius: r });
-const rect = (id: string, c: P2, w: number, h: number, rotation = 0) => ({ id, kind: 'rect', center: c, w, h, rotation });
+const circle = (id: string, center: P2, radius: number) => ({ id, kind: 'circle', center: center, radius: radius });
+const rect = (id: string, center: P2, width: number, height: number, rotation = 0) => ({ id, kind: 'rect', center: center, w: width, h: height, rotation });
 const poly = (id: string, points: P2[]) => ({ id, kind: 'polyline', closed: true, points });
 
 // An outline: straight lines ("l") and curves through points ("s"), each piece
 // starting where the last ended, the last ending where the first began.
 type Seg = { k: 'l' | 's'; p: P2[] };
 const outline = (pre: string, segs: Seg[]) =>
-  segs.map((s, i) => (s.k === 'l' ? { id: `${pre}${i}`, kind: 'line', a: s.p[0], b: s.p[1] } : { id: `${pre}${i}`, kind: 'spline', closed: false, mode: 'fit', points: s.p }));
-/** The same outline grown by g all round (each point moved out along the corner's bisector). */
-const grow = (segs: Seg[], g: number): Seg[] => {
+  segs.map((segment, i) => (segment.k === 'l' ? { id: `${pre}${i}`, kind: 'line', a: segment.p[0], b: segment.p[1] } : { id: `${pre}${i}`, kind: 'spline', closed: false, mode: 'fit', points: segment.p }));
+/** The same outline grown by `grow` all round (each point moved out along the corner's bisector). */
+const grow = (segs: Seg[], grow: number): Seg[] => {
   const pts: P2[] = [];
-  for (const s of segs) {
-    pts.push(...s.p.slice(0, -1));
+  for (const segment of segs) {
+    pts.push(...segment.p.slice(0, -1));
   }
-  const n = pts.length;
+  const count = pts.length;
   let area = 0;
-  for (let i = 0; i < n; i++) {
-    area += pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1];
+  for (let i = 0; i < count; i++) {
+    area += pts[i][0] * pts[(i + 1) % count][1] - pts[(i + 1) % count][0] * pts[i][1];
   }
   const out = area > 0 ? 1 : -1; // counter-clockwise: the outside is to the right of travel
   const norm = (a: P2, b: P2): P2 => {
-    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const distance = Math.hypot(b[0] - a[0], b[1] - a[1]);
 
-    return [(out * (b[1] - a[1])) / d, (-out * (b[0] - a[0])) / d];
+    return [(out * (b[1] - a[1])) / distance, (-out * (b[0] - a[0])) / distance];
   };
-  const moved = pts.map((p, i) => {
-    const n1 = norm(pts[(i - 1 + n) % n], p), n2 = norm(p, pts[(i + 1) % n]);
-    const m: P2 = [n1[0] + n2[0], n1[1] + n2[1]];
-    const ml = Math.hypot(m[0], m[1]);
-    const c = Math.max(0.5, ml / 2); // cos of the half-angle
+  const moved = pts.map((point, i) => {
+    const n1 = norm(pts[(i - 1 + count) % count], point), n2 = norm(point, pts[(i + 1) % count]);
+    const miter: P2 = [n1[0] + n2[0], n1[1] + n2[1]];
+    const ml = Math.hypot(miter[0], miter[1]);
+    const cosine = Math.max(0.5, ml / 2); // cos of the half-angle
 
-    return [p[0] + (m[0] / ml) * (g / c), p[1] + (m[1] / ml) * (g / c)] as P2;
+    return [point[0] + (miter[0] / ml) * (grow / cosine), point[1] + (miter[1] / ml) * (grow / cosine)] as P2;
   });
-  const key = (p: P2) => `${p[0]},${p[1]}`;
-  const at = new Map(pts.map((p, i) => [key(p), moved[i]]));
+  const key = (point: P2) => `${point[0]},${point[1]}`;
+  const at = new Map(pts.map((point, i) => [key(point), moved[i]]));
 
-  return segs.map(s => ({ k: s.k, p: s.p.map(p => at.get(key(p)) ?? moved[0]) }));
+  return segs.map(segment => ({ k: segment.k, p: segment.p.map(point => at.get(key(point)) ?? moved[0]) }));
 };
 /** A body from two views: the side outline pulled across, the front outline pulled along, kept where they overlap. */
 const twoView = (id: string, name: string, side: Seg[], front: Seg[]) => {
@@ -250,23 +241,23 @@ const GRIP: [number, number, number, number][] = [
 const squircle = (id: string, cx: number, a: number, b: number) => ({
   id, kind: 'spline', closed: true, mode: 'fit',
   points: range(16, t => String(t)).map((_, t) => {
-    const f = (2 * Math.PI * t) / 16, c = Math.cos(f), s = Math.sin(f);
+    const angle = (2 * Math.PI * t) / 16, cos = Math.cos(angle), sin = Math.sin(angle);
 
-    return [cx + a * Math.sign(c) * Math.abs(c) ** (2 / 3.5), b * Math.sign(s) * Math.abs(s) ** (2 / 3.5)] as P2;
+    return [cx + a * Math.sign(cos) * Math.abs(cos) ** (2 / 3.5), b * Math.sign(sin) * Math.abs(sin) ** (2 / 3.5)] as P2;
   })
 });
-const housing = async (pre: string, name: string, g: number, round: boolean) => {
+const housing = async (pre: string, name: string, growth: number, round: boolean) => {
   const top = pre, foot = `${pre}Foot`, grip = `${pre}Grip`;
-  twoView(top, name, g ? grow(HS, g) : HS, g ? grow(HF, g) : HF);
-  twoView(foot, `${name}: foot`, g ? grow(FS, g) : FS, g ? grow(FF, g) : FF);
+  twoView(top, name, growth ? grow(HS, growth) : HS, growth ? grow(HF, growth) : HF);
+  twoView(foot, `${name}: foot`, growth ? grow(FS, growth) : FS, growth ? grow(FF, growth) : FF);
   if (round) {
     const rT = await roundSharp(`${top}Round`, `Round the ${name.toLowerCase()}'s edges`, top, [3, 2.5, 2], e => Math.abs(e.mid[0] - X_FRONT) > 0.01);
     const rF = await roundSharp(`${foot}Round`, "Round the foot's edges", foot, [3, 2.5, 2]);
     check(`${name}: edges round`, rT > 0 && rF > 0, `r ${rT}, ${rF}`);
   }
-  const secs = GRIP.map(([z, cx, a, b], k) => {
-    const sk = `s_${grip}${k}`;
-    const e = [squircle(`${grip}q${k}`, cx, a + g, b + g)];
+  const secs = GRIP.map(([z, cx, a, b], index) => {
+    const sk = `s_${grip}${index}`;
+    const e = [squircle(`${grip}q${index}`, cx, a + growth, b + growth)];
     feats.push({ id: sk, name: `${name}: grip at ${z}`, type: 'sketch', plane: XY(z), entities: e });
 
     return { kind: 'profile', sketch: sk, regions: all(e) };
@@ -276,7 +267,7 @@ const housing = async (pre: string, name: string, g: number, round: boolean) => 
 };
 await housing('barrel', 'Housing', 0, true);
 await stage('stage 1 (housing shape)');
-check('the housing is one solid', healthOf(B('barrel')).solids === 1);
+check('the housing is one solid', healthOf(bodyShape('barrel')).solids === 1);
 feats.push({ id: 'core', name: 'Housing kept whole (for the rubber)', type: 'transform', bodies: ['barrel'], copy: true, op: { kind: 'move', translate: [0, 0, 0] } });
 await build();
 // Hollow: the housing drawn 2.5 smaller inside it, taken away; then the round
@@ -298,7 +289,7 @@ extrude('blade', 'Fan blade', YZ(5.5), [rect('blade', [0, AX + 9], 1.2, 12, rad(
 const blades = roundX('blades', 'Blades round', 'blade', 8);
 union('fanJoin', 'Fan together', 'fan', blades);
 await build();
-feats.push({ id: 'canRound', name: 'Round the can', type: 'fillet', edges: edgesWhere('motor', (p, e) => e.geomType === 'CIRCLE' && Math.abs(e.length - 2 * Math.PI * 18) < 0.1), radius: 2 });
+feats.push({ id: 'canRound', name: 'Round the can', type: 'fillet', edges: edgesWhere('motor', (point, e) => e.geomType === 'CIRCLE' && Math.abs(e.length - 2 * Math.PI * 18) < 0.1), radius: 2 });
 await stage('stage 2 (motor)');
 
 // --- 3. The planetary gearbox in the housing's nose: the ring gear (its 36
@@ -306,7 +297,7 @@ await stage('stage 2 (motor)');
 // with the spindle. Teeth: one tooth, Pattern Circular, Union.
 section('Gearbox');
 const ring = [circle('go', [0, AX], 24), circle('gi', [0, AX], 19)];
-extrude('gearbox', 'Gearbox', YZ(58), ring, 30, { regions: where(ring, (_, r) => r.holes.length > 0) });
+extrude('gearbox', 'Gearbox', YZ(58), ring, 30, { regions: where(ring, (_, region) => region.holes.length > 0) });
 extrude('rtooth', 'Ring tooth', YZ(60), [rect('rt', [0, AX + 18.3], 1.6, 2)], 22);
 union('ringTeeth', 'Ring teeth on', 'gearbox', roundX('rteeth', 'Ring teeth round', 'rtooth', 36));
 extrude('sun', 'Sun gear', YZ(62), [circle('sun', [0, AX], 4)], 18);
@@ -322,7 +313,7 @@ extrude('spindle', 'Spindle', YZ(83), [circle('sp', [0, AX], 5)], 59);
 extrude('pin', 'Planet pin', YZ(60), [circle('pp', [0, PL], 1.5)], 20);
 union('carrierJoin', 'Carrier with spindle and pins', 'carrier', ['spindle', ...roundX('pins', 'Pins round', 'pin', 3)]);
 await stage('stage 3 (gearbox)');
-check('36 ring teeth', B('gearbox').faces.length > 36 * 3, `${B('gearbox').faces.length} faces`);
+check('36 ring teeth', bodyShape('gearbox').faces.length > 36 * 3, `${bodyShape('gearbox').faces.length} faces`);
 
 // --- 4. The front: a silver collar (four notches), the clutch ring (ribs
 // round its front, its numbers round its back - each on a plane touching the
@@ -332,30 +323,30 @@ check('36 ring teeth', B('gearbox').faces.length > 36 * 3, `${B('gearbox').faces
 // cut for them (Subtract, keep the jaws).
 section('Chuck');
 const collar = [circle('co', [0, AX], 25), circle('ci', [0, AX], 16)];
-extrude('collar', 'Collar', YZ(X_FRONT), collar, 9, { regions: where(collar, (_, r) => r.holes.length > 0) });
+extrude('collar', 'Collar', YZ(X_FRONT), collar, 9, { regions: where(collar, (_, region) => region.holes.length > 0) });
 extrude('notch', 'Collar notch', YZ(X_FRONT), [rect('nt', [0, AX + 25], 6, 3)], 9);
 subtract('notches', 'Notch the collar', 'collar', roundX('notchesR', 'Notches round', 'notch', 4));
 const clutch = [circle('clo', [0, AX], 24), circle('cli', [0, AX], 8)];
-extrude('clutch', 'Clutch ring', YZ(97), clutch, 21, { regions: where(clutch, (_, r) => r.holes.length > 0) });
+extrude('clutch', 'Clutch ring', YZ(97), clutch, 21, { regions: where(clutch, (_, region) => region.holes.length > 0) });
 extrude('crib', 'Clutch rib', YZ(106), [rect('cr', [0, AX + 24], 2.4, 2)], 12);
 union('clutchRibs', 'Clutch ribs on', 'clutch', roundX('cribs', 'Clutch ribs round', 'crib', 30));
 const fontFile = readFileSync('node_modules/@fontsource/roboto/files/roboto-latin-400-normal.woff');
 const font = parse(fontFile.buffer.slice(fontFile.byteOffset, fontFile.byteOffset + fontFile.byteLength));
 const fontBoldFile = readFileSync('node_modules/@fontsource/roboto/files/roboto-latin-700-normal.woff');
 const fontBold = parse(fontBoldFile.buffer.slice(fontBoldFile.byteOffset, fontBoldFile.byteOffset + fontBoldFile.byteLength));
-const text = (pre: string, f: any, s: string, at: P2, size: number) => textOutlines(f, s, at, size, 0, 'center').map((e: any, i: number) => ({ ...e, id: `${pre}${i}` }));
+const text = (pre: string, font: any, text: string, at: P2, size: number) => textOutlines(font, text, at, size, 0, 'center').map((e: any, i: number) => ({ ...e, id: `${pre}${i}` }));
 const textRegions = (es: any[]) => materialRegions(arrangement(es)).map(regionRef);
 const NUMS = ['2', '6', '10', '14', '18'];
 const markIds: string[] = [];
-NUMS.forEach((s, k) => {
+NUMS.forEach((number, numberIndex) => {
   // Round the +y side (where it's seen from), the numbers upright towards the chuck.
-  const th = rad(30 + k * 30);
-  const R = 23.6;
-  const r: Vec3 = [0, Math.sin(th), Math.cos(th)];
-  const plane: PlaneDef = { origin: [101.5, R * r[1], AX + R * r[2]], normal: r, xDir: [0, -Math.cos(th), Math.sin(th)] };
-  const es = text(`n${k}_`, fontBold, s, [0, -1.6], 4.2);
-  extrude(`mark${k}`, `Clutch number ${s}`, plane, es, 0.9, { regions: textRegions(es) });
-  markIds.push(`mark${k}`);
+  const th = rad(30 + numberIndex * 30);
+  const RADIUS = 23.6;
+  const radial: Vec3 = [0, Math.sin(th), Math.cos(th)];
+  const plane: PlaneDef = { origin: [101.5, RADIUS * radial[1], AX + RADIUS * radial[2]], normal: radial, xDir: [0, -Math.cos(th), Math.sin(th)] };
+  const es = text(`n${numberIndex}_`, fontBold, number, [0, -1.6], 4.2);
+  extrude(`mark${numberIndex}`, `Clutch number ${number}`, plane, es, 0.9, { regions: textRegions(es) });
+  markIds.push(`mark${numberIndex}`);
 });
 await build();
 const chuckProfile = [
@@ -374,7 +365,7 @@ subtract('jawSlots', 'Jaw channels in the chuck', 'chuck', jaws, true);
 subtract('jawSlotsN', 'Jaw channels in the nose', 'nose', jaws, true);
 await stage('stage 4 (chuck)');
 check('the jaws meet in a point past the nose', box('jaw')[1][0] > 204 && box('jaw')[1][0] < 208, `${box('jaw')[1][0].toFixed(1)}`);
-check('five clutch numbers', markIds.every(m => B(m)));
+check('five clutch numbers', markIds.every(markId => bodyShape(markId)));
 
 // --- 5. Controls and details: the trigger (lines and a curve, Extrude across,
 // its front rounded), the direction switch through the top of the grip, the
@@ -390,20 +381,20 @@ const trigger = [
 ];
 extrude('trigger', 'Trigger', XZ(8), trigger, 16);
 await build();
-feats.push({ id: 'triggerRound', name: 'Round the trigger', type: 'fillet', edges: edgesWhere('trigger', p => Math.abs(Math.abs(p[1]) - 8) < 1e-6 && p[0] > 104), radius: 2 });
+feats.push({ id: 'triggerRound', name: 'Round the trigger', type: 'fillet', edges: edgesWhere('trigger', point => Math.abs(Math.abs(point[1]) - 8) < 1e-6 && point[0] > 104), radius: 2 });
 extrude('dirSwitch', 'Direction switch', XZ(29), [rect('ds', [80, 169.5], 10, 7)], 58);
 extrude('module', 'Switch module', XY(118), [rect('sm', [64, 0], 16, 16)], 22);
 subtract('triggerSlot', 'Trigger slot', 'barrel', ['trigger'], true);
 subtract('switchSlot', 'Switch slot', 'barrel', ['dirSwitch'], true);
 extrude('speedSlot', 'Speed slot', XY(228), [rect('ss', [36, 0], 26, 10)], 4, { mode: 'cut', target: 'barrel' });
 extrude('slider', 'Speed slider', XY(228.5), [rect('sl', [31, 0], 10, 8)], 4.5);
-const vents = [198, 202, 206, 210].map((z, k) => rect(`v${k}`, [30, z], 24, 2));
+const vents = [198, 202, 206, 210].map((z, index) => rect(`v${index}`, [30, z], 24, 2));
 extrude('vents', 'Vent slots', XZ(40), vents, 80, { mode: 'cut', target: 'barrel' });
-const frame = (pre: string, c: P2) => [rect(`${pre}o`, c, 32, 20), rect(`${pre}i`, c, 28, 16)];
+const frame = (pre: string, center: P2) => [rect(`${pre}o`, center, 32, 20), rect(`${pre}i`, center, 28, 16)];
 const frameL = frame('fl', [-30, 204]);
-extrude('frameL', 'Vent frame (left)', PY(27.6), frameL, 1.2, { regions: where(frameL, (_, r) => r.holes.length > 0), mode: 'join', target: 'barrel' });
+extrude('frameL', 'Vent frame (left)', PY(27.6), frameL, 1.2, { regions: where(frameL, (_, region) => region.holes.length > 0), mode: 'join', target: 'barrel' });
 const frameR = frame('fr', [30, 204]);
-extrude('frameR', 'Vent frame (right)', XZ(-27.6), frameR, 1.2, { regions: where(frameR, (_, r) => r.holes.length > 0), mode: 'join', target: 'barrel' });
+extrude('frameR', 'Vent frame (right)', XZ(-27.6), frameR, 1.2, { regions: where(frameR, (_, region) => region.holes.length > 0), mode: 'join', target: 'barrel' });
 extrude('plate', 'Label plate', PY(28), [rect('lp', [-66, 204], 34, 13)], 0.8);
 const plateText = text('pt', fontBold, 'DRILL DRIVER', [-66, 202.4], 4);
 extrude('plateText', 'Label', PY(28.8), plateText, 0.4, { regions: textRegions(plateText) });
@@ -469,14 +460,14 @@ await stage('stage 6 (battery)');
 // --- 7. Wiring: from the switch module down the grip to the terminals, and up
 // to the motor (Sweep along curves drawn on side planes).
 section('Wiring');
-const wire = (id: string, name: string, y: number, pts: P2[], r: number) => {
+const wire = (id: string, name: string, y: number, pts: P2[], radius: number) => {
   const pl = XZ(y);
   feats.push({ id: `p_${id}`, name: `${name} path`, type: 'sketch', plane: pl, entities: [{ id: `pw${id}`, kind: 'spline', closed: false, mode: 'fit', points: pts }] });
   const [a, b] = pts;
-  const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-  const dir: Vec3 = [(b[0] - a[0]) / d, 0, (b[1] - a[1]) / d];
-  feats.push({ id: `g_${id}`, name: `${name} gauge`, type: 'sketch', plane: { origin: [a[0], y, a[1]], normal: dir, xDir: [0, 1, 0] }, entities: [circle(`gw${id}`, [0, 0], r)] });
-  feats.push({ id, name, type: 'sweep', source: { kind: 'profile', sketch: `g_${id}`, regions: all([circle(`gw${id}`, [0, 0], r)]) }, path: { kind: 'sketch', sketch: `p_${id}`, entities: [`pw${id}`] }, mode: 'new' });
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const dir: Vec3 = [(b[0] - a[0]) / length, 0, (b[1] - a[1]) / length];
+  feats.push({ id: `g_${id}`, name: `${name} gauge`, type: 'sketch', plane: { origin: [a[0], y, a[1]], normal: dir, xDir: [0, 1, 0] }, entities: [circle(`gw${id}`, [0, 0], radius)] });
+  feats.push({ id, name, type: 'sweep', source: { kind: 'profile', sketch: `g_${id}`, regions: all([circle(`gw${id}`, [0, 0], radius)]) }, path: { kind: 'sketch', sketch: `p_${id}`, entities: [`pw${id}`] }, mode: 'new' });
 };
 wire('wireRed', 'Red wire', 4, [[62, 118], [60, 96], [64, 76], [74, 66], [80, 63]], 1.1);
 wire('wireBlack', 'Black wire', -4, [[66, 118], [64, 96], [67, 76], [76, 66], [82, 63]], 1.1);
@@ -508,55 +499,55 @@ const bodies = final.bodies.map((b: any) => b.id);
 // The model's own, not the kernel's - the health check reports it now.)
 const pinchOk = new Set(['barrel', 'halves']);
 const unhealthy = bodies.filter((id: string) => {
-  const h = healthOf(B(id));
+  const health = healthOf(bodyShape(id));
 
-  return !isHealthy(pinchOk.has(id) && h.pinched <= 1 ? { ...h, pinched: 0 } : h); 
+  return !isHealthy(pinchOk.has(id) && health.pinched <= 1 ? { ...health, pinched: 0 } : health); 
 });
 check('every body is a clean solid', !unhealthy.length, unhealthy.join(' '));
-check('two housing halves', !!B('barrel') && !!B('halves') && box('barrel')[0][1] > -1e-6 && box('halves')[1][1] < 1e-6, `${box('barrel')[0][1].toFixed(2)} / ${box('halves')[1][1].toFixed(2)}`);
-check('a rear cap', !!B('cap') && box('cap')[1][0] < 12 + 1e-6);
+check('two housing halves', !!bodyShape('barrel') && !!bodyShape('halves') && box('barrel')[0][1] > -1e-6 && box('halves')[1][1] < 1e-6, `${box('barrel')[0][1].toFixed(2)} / ${box('halves')[1][1].toFixed(2)}`);
+check('a rear cap', !!bodyShape('cap') && box('cap')[1][0] < 12 + 1e-6);
 check('~206 long', Math.abs(box('jaw')[1][0] - box('cap')[0][0] - 206) < 2, `${(box('jaw')[1][0] - box('cap')[0][0]).toFixed(1)}`);
 check('~231 tall', Math.abs(box('barrel')[1][2] - box('battery')[0][2] - 231) < 2, `${(box('barrel')[1][2] - box('battery')[0][2]).toFixed(1)}`);
-check('four cells', cellIds.every(c => B(c)));
-check('rubber on the grip, a thin skin', !!B('mold') && V('mold') > 2000 && V('mold') < 12000, `${B('mold') ? V('mold').toFixed(0) : 0} mm³`);
+check('four cells', cellIds.every(cellId => bodyShape(cellId)));
+check('rubber on the grip, a thin skin', !!bodyShape('mold') && volumeOf('mold') > 2000 && volumeOf('mold') < 12000, `${bodyShape('mold') ? volumeOf('mold').toFixed(0) : 0} mm³`);
 // Nothing inside runs into the housing or the battery.
 const inner = ['motor', 'fan', 'module', 'wireRed', 'wireBlack', 'wireMotor', ...cellIds, 'carrier', 'sun', 'gearbox'];
 for (const a of inner) {
   for (const b of ['barrel', 'halves', 'cap', 'battery', 'batTop', 'batNose', 'mold']) {
-    if (!B(b)) {
+    if (!bodyShape(b)) {
       continue;
     }
-    let v = 0;
+    let volume = 0;
     try {
-      v = Math.abs(measureVolume(B(a).intersect(B(b))));
+      volume = Math.abs(measureVolume(bodyShape(a).intersect(bodyShape(b))));
     } catch {
-      v = -1;
+      volume = -1;
     }
-    if (v > 0.5 || v < 0) {
-      check(`${a} clear of ${b}`, false, `${v.toFixed(2)} mm³`);
+    if (volume > 0.5 || volume < 0) {
+      check(`${a} clear of ${b}`, false, `${volume.toFixed(2)} mm³`);
     }
   }
 }
 check('nothing inside runs into the shells (checked above)', true);
-const used = new Set(feats.map(f => f.type));
+const used = new Set(feats.map(feature => feature.type));
 console.log(`${feats.length} steps, ${bodies.length} bodies; tools: ${[...used].sort().join(' ')}`);
 
 if (process.argv[2]) {
-  const d = doc();
+  const project = doc();
   const teal = '#1aa3b8', black = '#1b1d21', rubber = '#26292e', steel = '#b9bdc2', silver = '#d4d8dc', white = '#eef2f4', brass = '#c9a227';
   const colors: Record<string, string> = {
     barrel: teal, halves: teal, cap: black, mold: rubber, trigger: black, dirSwitch: black, module: '#2a2d33', slider: black, plate: black, plateText: white, led: '#f3f0d2',
     motor: '#8f969d', fan: black, gearbox: '#3a3d42', sun: steel, carrier: steel, collar: silver, clutch: black, chuck: black, nose: silver,
     battery: black, batTop: '#25282d', batNose: black, release: '#d6282c', batPlate: teal, batText: white, terms: brass, wireRed: '#d42a2a', wireBlack: '#111111', wireMotor: '#d42a2a'
   };
-  for (const p of planets) {
-    colors[p] = steel;
+  for (const planet of planets) {
+    colors[planet] = steel;
   }
   for (const j of jaws) {
     colors[j] = silver;
   }
-  for (const c of cellIds) {
-    colors[c] = '#2f6fd0';
+  for (const cellId of cellIds) {
+    colors[cellId] = '#2f6fd0';
   }
   const names: Record<string, string> = {
     barrel: 'Housing (left)', halves: 'Housing (right)', cap: 'Rear cap', mold: 'Rubber grip', trigger: 'Trigger', dirSwitch: 'Direction switch', module: 'Switch module',
@@ -565,17 +556,17 @@ if (process.argv[2]) {
     battery: 'Battery (bottom)', batTop: 'Battery (top)', batNose: 'Battery (front)', release: 'Release button', batPlate: 'Battery panel', batText: 'Battery lettering',
     terms: 'Terminals', wireRed: 'Red wire', wireBlack: 'Black wire', wireMotor: 'Motor wire'
   };
-  markIds.forEach((m, k) => ((colors[m] = white), (names[m] = `Clutch number ${NUMS[k]}`)));
-  planets.forEach((p, i) => (names[p] = `Planet gear ${i + 1}`));
-  jaws.forEach((p, i) => (names[p] = `Jaw ${i + 1}`));
-  cellIds.forEach((p, i) => (names[p] = `Cell ${i + 1}`));
+  markIds.forEach((markId, markIdIndex) => ((colors[markId] = white), (names[markId] = `Clutch number ${NUMS[markIdIndex]}`)));
+  planets.forEach((planet, i) => (names[planet] = `Planet gear ${i + 1}`));
+  jaws.forEach((jaw, i) => (names[jaw] = `Jaw ${i + 1}`));
+  cellIds.forEach((cellId, i) => (names[cellId] = `Cell ${i + 1}`));
   const missing = bodies.filter((b: string) => !names[b]);
   check('every body named', !missing.length, missing.join(' '));
-  d.colors = colors;
-  d.names = names;
-  d.hidden = feats.filter(f => f.type === 'sketch').map(f => f.id);
-  d.historyGroups = sections.map((s, k) => ({ id: `g${k}`, name: s.name, steps: feats.slice(s.from, sections[k + 1]?.from ?? feats.length).map(f => f.id) })).filter(g => g.steps.length > 1);
-  writeFileSync(process.argv[2], JSON.stringify(d));
+  project.colors = colors;
+  project.names = names;
+  project.hidden = feats.filter(feature => feature.type === 'sketch').map(feature => feature.id);
+  project.historyGroups = sections.map((section, sectionIndex) => ({ id: `g${sectionIndex}`, name: section.name, steps: feats.slice(section.from, sections[sectionIndex + 1]?.from ?? feats.length).map(feature => feature.id) })).filter(group => group.steps.length > 1);
+  writeFileSync(process.argv[2], JSON.stringify(project));
   console.log('written', process.argv[2]);
 }
 process.exit(failed ? 1 : 0);

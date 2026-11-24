@@ -9,7 +9,7 @@ import type { PanelItem } from '../ui/ui';
 import type { BooleanFeature, Vec3 } from '../doc/types';
 import type { AppContext } from './tool';
 
-const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+const cap = (text: string) => text[0].toUpperCase() + text.slice(1);
 
 export class BooleanOp extends FeatureOp<BooleanFeature> {
   readonly id = 'boolean';
@@ -60,7 +60,7 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
           return false;
         }
         const t = this.feature.tools;
-        this.feature.tools = t.includes(b) ? t.filter(x => x !== b) : [...t, b];
+        this.feature.tools = t.includes(b) ? t.filter(tool => tool !== b) : [...t, b];
         this.feature.whole = undefined;
 
         return true;
@@ -104,34 +104,34 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
     this.update();
   }
 
-  private setClearance(v: number): void {
-    if (!(v >= 0)) {
+  private setClearance(value: number): void {
+    if (!(value >= 0)) {
       return;
     }
-    this.feature.clearance = v || undefined;
-    this.app.ui.updatePanelValues([v]);
-    this.dim?.setValue(v);
+    this.feature.clearance = value || undefined;
+    this.app.ui.updatePanelValues([value]);
+    this.dim?.setValue(value);
     this.update();
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
-    const sub = f.op === 'subtract';
+    const feature = this.feature;
+    const sub = feature.op === 'subtract';
     const gap: PanelItem[] = sub
       ? [
-        { ...this.num('Clearance', 'clearance', 'length', { min: 0, onInput: v => this.setClearance(v), inBox: true }), value: f.clearance ?? 0 } as PanelItem,
-        { type: 'choice', label: 'Cut from', options: this.sides(), value: f.cutFrom ?? 'body', onChange: id => this.setSide(id) }
+        { ...this.num('Clearance', 'clearance', 'length', { min: 0, onInput: value => this.setClearance(value), inBox: true }), value: feature.clearance ?? 0 } as PanelItem,
+        { type: 'choice', label: 'Cut from', options: this.sides(), value: feature.cutFrom ?? 'body', onChange: id => this.setSide(id) }
       ]
       : [];
     // The others give way (or all do): every body stays, changed.
-    if (sub && f.cutFrom) {
+    if (sub && feature.cutFrom) {
       return gap;
     }
 
     return [
       ...gap,
-      { type: 'toggle', label: 'Keep modified body', value: !!f.keepTarget, onChange: v => ((f.keepTarget = v || undefined), this.render(), this.update()) },
-      { type: 'toggle', label: sub ? 'Keep subtracted bodies' : 'Keep intersecting bodies', value: !!f.keepTools, onChange: v => ((f.keepTools = v || undefined), this.render(), this.update()) }
+      { type: 'toggle', label: 'Keep modified body', value: !!feature.keepTarget, onChange: isOn => ((feature.keepTarget = isOn || undefined), this.render(), this.update()) },
+      { type: 'toggle', label: sub ? 'Keep subtracted bodies' : 'Keep intersecting bodies', value: !!feature.keepTools, onChange: isOn => ((feature.keepTools = isOn || undefined), this.render(), this.update()) }
     ];
   }
 
@@ -145,8 +145,8 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
     this.dim?.dispose();
     this.dim = null;
     this.app.view.frameHooks.delete(this.hook);
-    for (const m of this.marks) {
-      m.remove();
+    for (const mark of this.marks) {
+      mark.remove();
     }
     this.marks = [];
     super.exit();
@@ -159,38 +159,38 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
 
   protected onDraftChanged(): void {
     this.placeMarks();
-    const f = this.feature;
-    const a = this.centers.get(f.target), b = f.tools[0] ? this.centers.get(f.tools[0]) : undefined;
+    const feature = this.feature;
+    const a = this.centers.get(feature.target), b = feature.tools[0] ? this.centers.get(feature.tools[0]) : undefined;
     const sides = this.sides();
     const key = JSON.stringify(sides);
-    if (f.op !== 'subtract' || !a || !b || key !== this.dimSides) {
+    if (feature.op !== 'subtract' || !a || !b || key !== this.dimSides) {
       this.dim?.dispose();
       this.dim = null;
     }
-    if (f.op !== 'subtract' || !a || !b) {
+    if (feature.op !== 'subtract' || !a || !b) {
       return;
     }
     this.dimSides = key;
     this.dim ??= new DimWidget(this.app.view, {
       noLine: true,
-      value: f.clearance ?? 0,
+      value: feature.clearance ?? 0,
       modes: sides,
-      mode: f.cutFrom ?? 'body',
+      mode: feature.cutFrom ?? 'body',
       onMode: id => this.setSide(id),
-      onInput: (v, text) => {
-        if (!(v >= 0)) {
+      onInput: (value, text) => {
+        if (!(value >= 0)) {
           return;
         }
         this.typedInto('clearance', text);
-        this.setClearance(v);
+        this.setClearance(value);
       },
       onCommit: () => this.done()
     });
-    const [p, q] = this.boxAt(scale(add(a, b), 0.5));
-    this.boxPoint = p;
-    this.dim.set(p, q);
-    this.dim.setMode(f.cutFrom ?? 'body');
-    this.dim.setValue(f.clearance ?? 0);
+    const [boxPoint, q] = this.boxAt(scale(add(a, b), 0.5));
+    this.boxPoint = boxPoint;
+    this.dim.set(boxPoint, q);
+    this.dim.setMode(feature.cutFrom ?? 'body');
+    this.dim.setValue(feature.clearance ?? 0);
     // (The signs again, clear of the box just made.)
     this.placeMarks();
   }
@@ -201,17 +201,17 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
    * swaps with the first of the others.
    */
   private swap(body: string): void {
-    const f = this.feature;
-    if (!f.target || !f.tools.length) {
+    const feature = this.feature;
+    if (!feature.target || !feature.tools.length) {
       return;
     }
-    const other = body === f.target ? f.tools[0] : body;
-    if (!f.tools.includes(other)) {
+    const other = body === feature.target ? feature.tools[0] : body;
+    if (!feature.tools.includes(other)) {
       return;
     }
-    f.tools = f.tools.map(t => (t === other ? f.target : t));
-    f.target = other;
-    f.whole = undefined;
+    feature.tools = feature.tools.map(t => (t === other ? feature.target : t));
+    feature.target = other;
+    feature.whole = undefined;
     this.render();
     this.update();
     this.placeMarks();
@@ -228,24 +228,24 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
 
   private boxAt(mid: Vec3): [Vec3, Vec3] {
     const view = this.app.view;
-    const s = view.toScreen(mid);
-    if (!s) {
+    const screenPoint = view.toScreen(mid);
+    if (!screenPoint) {
       return [mid, mid];
     }
-    const over = (y: number) => [-90, 0, 90].some(dx => view.pick(s[0] + dx, y, { edgeTolPx: 24, planes: false }));
-    if (!over(s[1])) {
+    const over = (y: number) => [-90, 0, 90].some(dx => view.pick(screenPoint[0] + dx, y, { edgeTolPx: 24, planes: false }));
+    if (!over(screenPoint[1])) {
       return [mid, mid];
     }
-    let y = s[1];
+    let y = screenPoint[1];
     while (y < view.height - 160 && over(y)) {
       y += 20;
     }
     if (over(y)) {
       return [mid, mid];
     }
-    const w = view.worldUnder(s[0], y).toArray() as Vec3;
+    const worldPoint = view.worldUnder(screenPoint[0], y).toArray() as Vec3;
 
-    return [w, w];
+    return [worldPoint, worldPoint];
   }
 
   private placeMarks(): void {
@@ -263,41 +263,41 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
       this.marks.pop()!.remove();
     }
     while (this.marks.length < want.length) {
-      const m = document.createElement('div');
-      m.className = 'bool-mark';
+      const element = document.createElement('div');
+      element.className = 'bool-mark';
       // A tap on a sign turns it the other way round: picked in the wrong order, fixed in one tap.
-      m.addEventListener('pointerdown', e => e.stopPropagation());
-      m.addEventListener('click', (e) => {
+      element.addEventListener('pointerdown', e => e.stopPropagation());
+      element.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (m.dataset.body) {
-          this.swap(m.dataset.body);
+        if (element.dataset.body) {
+          this.swap(element.dataset.body);
         }
       });
-      document.body.append(m);
-      this.marks.push(m);
+      document.body.append(element);
+      this.marks.push(element);
     }
-    const r = this.app.view.canvas.getBoundingClientRect();
+    const rect = this.app.view.canvas.getBoundingClientRect();
     // (Bodies sharing a middle - a peg through a plate - get their signs side by side, each one tappable.)
     const placed: [number, number][] = [];
     // (And clear of the clearance's box, which sits between the first two bodies.)
     const a = this.centers.get(this.feature.target), b = this.feature.tools[0] ? this.centers.get(this.feature.tools[0]) : undefined;
     const box = this.dim && a && b ? this.app.view.toScreen(this.boxPoint ?? scale(add(a, b), 0.5)) : null;
     want.forEach(([body, sign], i) => {
-      const m = this.marks[i];
-      m.dataset.body = body;
-      m.title = sign === '+' ? 'Changed - tap to change it with this one instead' : 'Changed with - tap to change this one instead';
-      m.classList.toggle('minus', sign !== '+');
+      const mark = this.marks[i];
+      mark.dataset.body = body;
+      mark.title = sign === '+' ? 'Changed - tap to change it with this one instead' : 'Changed with - tap to change this one instead';
+      mark.classList.toggle('minus', sign !== '+');
       // (Where the body was: in the preview a subtracted body is used up.)
       if (this.app.view.bodyList.some(b => b.id === body)) {
         this.centers.set(body, bodyCenter(this.app, [body]));
       }
       const at = this.centers.get(body);
-      const c = at ? this.app.view.toScreen(at) : null;
-      m.hidden = !c;
-      if (!c) {
+      const screenPoint = at ? this.app.view.toScreen(at) : null;
+      mark.hidden = !screenPoint;
+      if (!screenPoint) {
         return;
       }
-      let x = c[0], y = c[1];
+      let x = screenPoint[0], y = screenPoint[1];
       if (box && Math.abs(box[0] - x) < 100 && Math.abs(box[1] - y) < 36) {
         y = box[1] - 36;
       }
@@ -305,7 +305,7 @@ export class BooleanOp extends FeatureOp<BooleanFeature> {
         x += 32;
       }
       placed.push([x, y]);
-      m.style.transform = `translate(${Math.round(r.left + x - 14)}px, ${Math.round(r.top + y - 14)}px)`;
+      mark.style.transform = `translate(${Math.round(rect.left + x - 14)}px, ${Math.round(rect.top + y - 14)}px)`;
     });
   }
 }

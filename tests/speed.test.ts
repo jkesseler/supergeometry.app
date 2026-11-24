@@ -21,10 +21,10 @@ const check = (name: string, ok: boolean, info = '') => {
 function slowEnds(edges: { start: number[]; end: number[] }[]): Vector3[] {
   const out: Vector3[] = [];
   for (const e of edges) {
-    for (const p of [e.start, e.end]) {
-      const v = new Vector3(p[0], p[1], p[2]);
-      if (!out.some(q => q.distanceToSquared(v) < 1e-12)) {
-        out.push(v);
+    for (const point of [e.start, e.end]) {
+      const vector = new Vector3(point[0], point[1], point[2]);
+      if (!out.some(q => q.distanceToSquared(vector) < 1e-12)) {
+        out.push(vector);
       }
     }
   }
@@ -40,30 +40,30 @@ const fixtures: [string, any[]][] = [
 {
   const { execFileSync } = await import('node:child_process');
   const { tmpdir } = await import('node:os');
-  const f = `${tmpdir()}/speed-ruler-${process.pid}.json`;
-  execFileSync(process.execPath, ['--import', 'tsx', new URL('./ruler.test.ts', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'), f], { stdio: 'ignore' });
-  fixtures.push(['ruler', JSON.parse(readFileSync(f, 'utf8')).features]);
+  const fileName = `${tmpdir()}/speed-ruler-${process.pid}.json`;
+  execFileSync(process.execPath, ['--import', 'tsx', new URL('./ruler.test.ts', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'), fileName], { stdio: 'ignore' });
+  fixtures.push(['ruler', JSON.parse(readFileSync(fileName, 'utf8')).features]);
 }
 
 for (const [name, feats] of fixtures) {
-  const r: any = await regenerate(feats);
+  const result: any = await regenerate(feats);
   let same = true;
-  let n = 0;
+  let count = 0;
   let tFast = 0;
   let tSlow = 0;
-  for (const b of r.bodies) {
+  for (const b of result.bodies) {
     let t = performance.now();
     const fast = uniqueEnds(b.edges);
     tFast += performance.now() - t;
     t = performance.now();
     const slow = slowEnds(b.edges);
     tSlow += performance.now() - t;
-    n += fast.length;
-    if (fast.length !== slow.length || fast.some((v, i) => !v.equals(slow[i]))) {
+    count += fast.length;
+    if (fast.length !== slow.length || fast.some((vector, i) => !vector.equals(slow[i]))) {
       same = false;
     }
   }
-  check(`corners: same points in the same order - ${name}`, same, `${n} corners, ${tFast.toFixed(1)} ms (was ${tSlow.toFixed(1)} ms)`);
+  check(`corners: same points in the same order - ${name}`, same, `${count} corners, ${tFast.toFixed(1)} ms (was ${tSlow.toFixed(1)} ms)`);
   if (name === 'ruler') {
     check("  …the ruler's corners in well under 50 ms", tFast < 50, `${tFast.toFixed(1)} ms`);
   }

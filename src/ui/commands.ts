@@ -29,7 +29,7 @@ export function findAction(offered: ToolItem[], main: ToolItem[], labels: string
   const lists = [flatten(offered), flatten(main)];
   for (const label of labels) {
     for (const list of lists) {
-      const hit = list.find(x => same(x.label, label) && x.item.run && !x.item.disabled);
+      const hit = list.find(listed => same(listed.label, label) && listed.item.run && !listed.item.disabled);
       if (hit) {
         return hit;
       }
@@ -81,7 +81,7 @@ function recent(): string[] {
 }
 function remember(path: string): void {
   try {
-    localStorage.setItem(RECENT, JSON.stringify([path, ...recent().filter(p => p !== path)].slice(0, 8)));
+    localStorage.setItem(RECENT, JSON.stringify([path, ...recent().filter(recentPath => recentPath !== path)].slice(0, 8)));
   } catch {
     // (No storage here: nothing remembered.)
   }
@@ -112,11 +112,11 @@ export function openCommandSearch(offered: () => ToolItem[], main: () => ToolIte
   const all = (): Listed[] => {
     const seen = new Set<string>();
 
-    return [...flatten(offered()), ...flatten(main())].filter((x) => {
-      if (!x.item.run || seen.has(x.path)) {
+    return [...flatten(offered()), ...flatten(main())].filter((listed) => {
+      if (!listed.item.run || seen.has(listed.path)) {
         return false;
       }
-      seen.add(x.path);
+      seen.add(listed.path);
 
       return true;
     });
@@ -129,20 +129,20 @@ export function openCommandSearch(offered: () => ToolItem[], main: () => ToolIte
     if (!shown.length) {
       list.append(el('div', 'cmd-empty', input.value.trim() ? 'No command by that name' : "Type a command's name"));
     }
-    shown.forEach((x, i) => {
-      const row = el('button', `cmd-row${i === at ? ' on' : ''}${x.item.disabled ? ' off' : ''}`);
+    shown.forEach((listed, i) => {
+      const row = el('button', `cmd-row${i === at ? ' on' : ''}${listed.item.disabled ? ' off' : ''}`);
       row.type = 'button';
       row.setAttribute('role', 'option');
-      row.innerHTML = icons[x.item.icon] ?? '';
+      row.innerHTML = icons[listed.item.icon] ?? '';
       const words = el('span', 'cmd-words');
-      words.append(el('span', 'cmd-label', x.label));
-      const where = x.path.split(' › ').slice(0, -1).join(' › ');
-      if (where || x.item.disabled) {
-        words.append(el('span', 'cmd-where', x.item.disabled ? (x.item.why ?? 'Not now') : where));
+      words.append(el('span', 'cmd-label', listed.label));
+      const where = listed.path.split(' › ').slice(0, -1).join(' › ');
+      if (where || listed.item.disabled) {
+        words.append(el('span', 'cmd-where', listed.item.disabled ? (listed.item.why ?? 'Not now') : where));
       }
       row.append(words);
-      if (x.item.shortcut) {
-        row.append(el('kbd', 'cmd-key', x.item.shortcut));
+      if (listed.item.shortcut) {
+        row.append(el('kbd', 'cmd-key', listed.item.shortcut));
       }
       row.addEventListener('pointerdown', e => e.preventDefault());
       row.addEventListener('click', () => run(i));
@@ -156,19 +156,19 @@ export function openCommandSearch(offered: () => ToolItem[], main: () => ToolIte
     const items = all();
     if (!q) {
       // Nothing typed: the ones used last, then what the picked thing offers.
-      const byPath = new Map(items.map(x => [x.path, x]));
-      const last = recent().flatMap(p => (byPath.has(p) ? [byPath.get(p)!] : []));
-      const here = flatten(offered()).filter(x => x.item.run && !last.some(l => l.path === x.path));
+      const byPath = new Map(items.map(item => [item.path, item]));
+      const last = recent().flatMap(path => (byPath.has(path) ? [byPath.get(path)!] : []));
+      const here = flatten(offered()).filter(entry => entry.item.run && !last.some(listed => listed.path === entry.path));
       shown = [...last, ...here].slice(0, 12);
     } else {
       shown = items
-        .map(x => ({ x, s: Math.max(score(q, x.label) ?? -Infinity, (score(q, x.path) ?? -Infinity) - 2) }))
-        .filter(r => r.s > -Infinity)
+        .map(item => ({ x: item, s: Math.max(score(q, item.label) ?? -Infinity, (score(q, item.path) ?? -Infinity) - 2) }))
+        .filter(scored => scored.s > -Infinity)
         .sort((a, b) => Number(!!a.x.item.disabled) - Number(!!b.x.item.disabled) || b.s - a.s || a.x.path.length - b.x.path.length)
         .slice(0, 12)
-        .map(r => r.x);
+        .map(scored => scored.x);
     }
-    at = Math.max(0, shown.findIndex(x => !x.item.disabled));
+    at = Math.max(0, shown.findIndex(listed => !listed.item.disabled));
     paint();
   };
 

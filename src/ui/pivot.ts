@@ -37,8 +37,8 @@ export class PivotButton {
         }
         e.stopImmediatePropagation();
         e.preventDefault();
-        const r = view.canvas.getBoundingClientRect();
-        this.pick(e.clientX - r.left, e.clientY - r.top);
+        const rect = view.canvas.getBoundingClientRect();
+        this.pick(e.clientX - rect.left, e.clientY - rect.top);
       },
       true
     );
@@ -75,11 +75,11 @@ export class PivotButton {
   }
 
   private layout(): void {
-    const p = this.view.cam.pivot;
-    this.marker.visible = !!p;
-    this.el.classList.toggle('on', this.choosing || !!p);
-    if (p) {
-      this.marker.position.copy(p);
+    const pivot = this.view.cam.pivot;
+    this.marker.visible = !!pivot;
+    this.el.classList.toggle('on', this.choosing || !!pivot);
+    if (pivot) {
+      this.marker.position.copy(pivot);
       this.marker.updateMatrixWorld();
     }
   }

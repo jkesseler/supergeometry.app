@@ -13,7 +13,7 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 let seed = 3;
-const R = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const random = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
 // ------------------------------------------ undo / redo against a record
 {
@@ -24,24 +24,24 @@ const R = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
   const now = () => JSON.stringify(store.doc);
   let bad = '';
   for (let i = 0; i < 3000 && !bad; i++) {
-    const r = R();
+    const roll = random();
     const before = now();
-    if (r < 0.3) {
-      const f: Feature = { ...store.newIdentity('extrude'), type: 'extrude', source: { kind: 'profile', sketch: 's', regions: [] }, distance: Math.round(R() * 50), mode: 'new' } as Feature;
-      store.add(f);
-    } else if (r < 0.45 && store.features.length) {
-      const f = store.features[Math.floor(R() * store.features.length)];
-      store.update(f.id, { distance: Math.round(R() * 99) } as Partial<Feature>);
-    } else if (r < 0.52 && store.features.length) {
-      store.remove(store.features[Math.floor(R() * store.features.length)].id);
-    } else if (r < 0.6 && store.features.length) {
+    if (roll < 0.3) {
+      const feature: Feature = { ...store.newIdentity('extrude'), type: 'extrude', source: { kind: 'profile', sketch: 's', regions: [] }, distance: Math.round(random() * 50), mode: 'new' } as Feature;
+      store.add(feature);
+    } else if (roll < 0.45 && store.features.length) {
+      const feature = store.features[Math.floor(random() * store.features.length)];
+      store.update(feature.id, { distance: Math.round(random() * 99) } as Partial<Feature>);
+    } else if (roll < 0.52 && store.features.length) {
+      store.remove(store.features[Math.floor(random() * store.features.length)].id);
+    } else if (roll < 0.6 && store.features.length) {
       // A drag: many live changes, then one commit - one undo step.
-      const f = store.features[Math.floor(R() * store.features.length)];
-      for (let k = 0; k < 5; k++) {
-        store.transient(d => ((d.features.find(x => x.id === f.id) as any).distance = k));
+      const feature = store.features[Math.floor(random() * store.features.length)];
+      for (let attempt = 0; attempt < 5; attempt++) {
+        store.transient(draft => ((draft.features.find(other => other.id === feature.id) as any).distance = attempt));
       }
-      store.update(f.id, { distance: 7 } as Partial<Feature>);
-    } else if (r < 0.8) {
+      store.update(feature.id, { distance: 7 } as Partial<Feature>);
+    } else if (roll < 0.8) {
       const could = store.canUndo;
       store.undo();
       if (could) {
@@ -83,8 +83,8 @@ const R = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
 {
   const store = new DocStore();
   store.add({ id: 'e', name: 'Extrude 01', type: 'extrude', source: { kind: 'profile', sketch: 's', regions: [] }, distance: 10, mode: 'new' } as Feature);
-  for (const d of [12, 15, 11]) {
-    store.transient(doc => ((doc.features[0] as any).distance = d));
+  for (const distance of [12, 15, 11]) {
+    store.transient(doc => ((doc.features[0] as any).distance = distance));
   }
   store.update('e', { distance: 10 } as Partial<Feature>);
   check('drag away and back to the start: the document is where it began (not at the last frame)', (store.features[0] as any).distance === 10, `distance ${(store.features[0] as any).distance}`);

@@ -21,33 +21,33 @@ const check = (name: string, ok: boolean, info = '') => {
   console.log(ok ? 'ok  ' : 'FAIL', name, info);
 };
 
-let n = 0;
-const id = () => `e${n++}`;
+let count = 0;
+const id = () => `e${count++}`;
 const XZ = { origin: [0, 0, 0] as Vec3, normal: [0, -1, 0] as Vec3, xDir: [1, 0, 0] as Vec3 }; // u = x, v = z
 const XY = (z = 0) => ({ origin: [0, 0, z] as Vec3, normal: [0, 0, 1] as Vec3, xDir: [1, 0, 0] as Vec3 });
 const poly = (pts: number[][]) => ({ id: id(), kind: 'polyline', closed: true, points: pts });
 const all = (es: any[]) => arrangement(es).regions.map(regionRef);
-const Z: Vec3 = [0, 0, 1];
+const Z_AXIS: Vec3 = [0, 0, 1];
 
 const feats: any[] = [];
-const errs = (r: any) => r.errors.map((e: any) => `${feats.find(f => f.id === e.featureId)?.name ?? e.featureId}: ${e.message}`).join('; ');
+const errs = (result: any) => result.errors.map((e: any) => `${feats.find(feature => feature.id === e.featureId)?.name ?? e.featureId}: ${e.message}`).join('; ');
 
 // 1. The base: a profile turned about Z (Revolve).
 const baseProfile = [poly([[0, 0], [60, 0], [60, 10], [50, 22], [14, 26], [0, 26]])];
 feats.push({ id: 'sBase', name: 'Base profile', type: 'sketch', plane: XZ, entities: baseProfile });
-feats.push({ id: 'lamp', name: 'Base', type: 'revolve', source: { kind: 'profile', sketch: 'sBase', regions: all(baseProfile) }, axis: { origin: [0, 0, 0], dir: Z }, angle: 360, mode: 'new' });
+feats.push({ id: 'lamp', name: 'Base', type: 'revolve', source: { kind: 'profile', sketch: 'sBase', regions: all(baseProfile) }, axis: { origin: [0, 0, 0], dir: Z_AXIS }, angle: 360, mode: 'new' });
 
 // 2. Its rims: the edge where the side meets the top slope rounded (Fillet 4),
 //    the foot's edge bevelled (Chamfer 1.5). Edges are named by where they are.
 await regenerate(feats);
-const edgeAt = (body: string, r: number, z: number) => {
+const edgeAt = (body: string, radius: number, z: number) => {
   const e = (debugBodies().get(body) as any).edges.find((e: any) => {
-    const p = e.pointAt(0.5).toTuple();
+    const point = e.pointAt(0.5).toTuple();
 
-    return Math.abs(Math.hypot(p[0], p[1]) - r) < 1e-3 && Math.abs(p[2] - z) < 1e-3;
+    return Math.abs(Math.hypot(point[0], point[1]) - radius) < 1e-3 && Math.abs(point[2] - z) < 1e-3;
   });
   if (!e) {
-    throw new Error(`no edge at r ${r}, z ${z}`);
+    throw new Error(`no edge at r ${radius}, z ${z}`);
   }
 
   return { body, mid: e.pointAt(0.5).toTuple(), dir: e.tangentAt(0.5).toTuple(), length: e.length };
@@ -72,11 +72,11 @@ feats.push({ id: 'stem', name: 'Stem', type: 'sweep', source: { kind: 'profile',
 //    2 mm, open at the bottom (Shell). A socket inside holds the bulb.
 const shadeProfile = [poly([[80, 165], [92, 165], [125, 110], [80, 110]])];
 feats.push({ id: 'sShade', name: 'Shade profile', type: 'sketch', plane: XZ, entities: shadeProfile });
-const hang = { origin: [80, 0, 0] as Vec3, dir: Z };
+const hang = { origin: [80, 0, 0] as Vec3, dir: Z_AXIS };
 feats.push({ id: 'shade', name: 'Shade', type: 'revolve', source: { kind: 'profile', sketch: 'sShade', regions: all(shadeProfile) }, axis: hang, angle: 360, mode: 'new' });
 await regenerate(feats);
 const vCone = Math.abs(measureVolume(debugBodies().get('shade')!));
-const bottom = (debugBodies().get('shade') as any).faces.find((f: any) => f.normalAt().z < -0.99);
+const bottom = (debugBodies().get('shade') as any).faces.find((face: any) => face.normalAt().z < -0.99);
 feats.push({ id: 'hollow', name: 'Hollow the shade', type: 'shell', body: 'shade', faces: [{ body: 'shade', center: bottom.center.toTuple(), normal: [0, 0, -1], area: Math.PI * 45 * 45 }], thickness: 2 });
 const socket = [{ id: id(), kind: 'circle', center: [80, 0], radius: 9 }];
 feats.push({ id: 'sSock', name: 'Socket', type: 'sketch', plane: XY(147), entities: socket });
@@ -89,7 +89,7 @@ const vent = [{ id: id(), kind: 'circle', center: [0, 152], radius: 2.5 }];
 feats.push({ id: 'sVent', name: 'Vent', type: 'sketch', plane: { origin: [92, 0, 0], normal: [1, 0, 0], xDir: [0, 1, 0] }, entities: vent });
 feats.push({ id: 'vent', name: 'Vent', type: 'extrude', source: { kind: 'profile', sketch: 'sVent', regions: all(vent) }, distance: 30, mode: 'new' });
 feats.push({ id: 'pat', name: 'Vents round', type: 'transform', bodies: ['vent'], copy: true, op: { kind: 'circular', axis: hang, count: 8, angle: 360 } });
-feats.push({ id: 'cutVents', name: 'Cut the vents', type: 'boolean', op: 'subtract', target: 'shade', tools: ['vent', ...Array.from({ length: 7 }, (_, k) => `pat:vent:${k}`)] });
+feats.push({ id: 'cutVents', name: 'Cut the vents', type: 'boolean', op: 'subtract', target: 'shade', tools: ['vent', ...Array.from({ length: 7 }, (_, index) => `pat:vent:${index}`)] });
 
 // 6. The bulb: a half disc turned about the hanging line (Revolve).
 const bulb = [{ id: 'b1', kind: 'arc', a: [80, 112], m: [94, 126], b: [80, 140] }, { id: 'b2', kind: 'line', a: [80, 140], b: [80, 112] }];
@@ -98,20 +98,20 @@ feats.push({ id: 'bulb', name: 'Bulb', type: 'revolve', source: { kind: 'profile
 
 const code: Record<string, number> = {};
 const t0 = Date.now();
-const r: any = await regenerate(feats);
+const built: any = await regenerate(feats);
 const ms = Date.now() - t0;
-check('every step builds', !r.errors.length, errs(r));
+check('every step builds', !built.errors.length, errs(built));
 const lamp = debugBodies().get('lamp'), shade = debugBodies().get('shade'), bulbS = debugBodies().get('bulb');
-check('three clean solids: lamp (base + stem), shade, bulb', r.bodies.length === 3 && [lamp, shade, bulbS].every(s => !!s && isHealthy(healthOf(s!))), `${r.bodies.map((b: any) => b.id).join(', ')} in ${ms} ms`);
+check('three clean solids: lamp (base + stem), shade, bulb', built.bodies.length === 3 && [lamp, shade, bulbS].every(shape => !!shape && isHealthy(healthOf(shape!))), `${built.bodies.map((b: any) => b.id).join(', ')} in ${ms} ms`);
 if (lamp && shade && bulbS) {
-  const bb = [lamp, shade, bulbS].map(s => s.boundingBox.bounds);
-  const lo = [0, 1, 2].map(k => Math.min(...bb.map(b => b[0][k])));
-  const hi = [0, 1, 2].map(k => Math.max(...bb.map(b => b[1][k])));
-  check("stands on the ground, 226 tall (the arch's top), 185 across (base to shade)", Math.abs(lo[2]) < 1e-6 && Math.abs(hi[2] - 226) < 0.5 && Math.abs(hi[0] - lo[0] - 185) < 0.5, [0, 1, 2].map(k => (hi[k] - lo[k]).toFixed(1)).join(' × '));
+  const bb = [lamp, shade, bulbS].map(shape => shape.boundingBox.bounds);
+  const lo = [0, 1, 2].map(axis => Math.min(...bb.map(b => b[0][axis])));
+  const hi = [0, 1, 2].map(axis => Math.max(...bb.map(b => b[1][axis])));
+  check("stands on the ground, 226 tall (the arch's top), 185 across (base to shade)", Math.abs(lo[2]) < 1e-6 && Math.abs(hi[2] - 226) < 0.5 && Math.abs(hi[0] - lo[0] - 185) < 0.5, [0, 1, 2].map(axis => (hi[axis] - lo[axis]).toFixed(1)).join(' × '));
   const vs = Math.abs(measureVolume(shade));
   check('the shade is hollow (a thin cone, not a solid one)', vs < vCone * 0.25, `${(vs / 1000).toFixed(1)} cm³ of a ${(vCone / 1000).toFixed(1)} cm³ cone`);
   // The vents: the shade with and without the Subtract.
-  await regenerate(feats.filter(f => f.id !== 'cutVents'));
+  await regenerate(feats.filter(feature => feature.id !== 'cutVents'));
   const before = Math.abs(measureVolume(debugBodies().get('shade')!));
   await regenerate(feats);
   const holes = before - vs;
@@ -137,16 +137,16 @@ if (lamp && shade && bulbS) {
 {
   const hand = JSON.parse(readFileSync(new URL('./fixtures/lamp-hand.json', import.meta.url), 'utf8')).features;
   const rh: any = await regenerate(hand);
-  check('by hand: every step builds', !rh.errors.length, rh.errors.map((e: any) => `${hand.find((f: any) => f.id === e.featureId)?.name}: ${e.message}`).join('; '));
+  check('by hand: every step builds', !rh.errors.length, rh.errors.map((e: any) => `${hand.find((feature: any) => feature.id === e.featureId)?.name}: ${e.message}`).join('; '));
   const hs = rh.bodies.map((b: any) => debugBodies().get(b.id)!);
-  check('by hand: three clean solids (lamp, shade, bulb)', hs.length === 3 && hs.every((x: any) => isHealthy(healthOf(x))), `${hs.length} bodies`);
-  const bb = hs.map((s: any) => s.boundingBox.bounds);
-  const lo = [0, 1, 2].map(k => Math.min(...bb.map((b: any) => b[0][k])));
-  const hi = [0, 1, 2].map(k => Math.max(...bb.map((b: any) => b[1][k])));
-  check('by hand: the same size as by code (226 tall, 185 across)', Math.abs(lo[2]) < 1e-6 && Math.abs(hi[2] - 226) < 0.5 && Math.abs(hi[0] - lo[0] - 185) < 0.5, [0, 1, 2].map(k => (hi[k] - lo[k]).toFixed(1)).join(' × '));
+  check('by hand: three clean solids (lamp, shade, bulb)', hs.length === 3 && hs.every((shape: any) => isHealthy(healthOf(shape))), `${hs.length} bodies`);
+  const bb = hs.map((shape: any) => shape.boundingBox.bounds);
+  const lo = [0, 1, 2].map(axis => Math.min(...bb.map((b: any) => b[0][axis])));
+  const hi = [0, 1, 2].map(axis => Math.max(...bb.map((b: any) => b[1][axis])));
+  check('by hand: the same size as by code (226 tall, 185 across)', Math.abs(lo[2]) < 1e-6 && Math.abs(hi[2] - 226) < 0.5 && Math.abs(hi[0] - lo[0] - 185) < 0.5, [0, 1, 2].map(axis => (hi[axis] - lo[axis]).toFixed(1)).join(' × '));
   const [hLamp, hShade, hBulb] = ['revolve-mw5m45n0-klet', 'revolve-mw5m6fdt-i3k2', 'revolve-mw5maqal-2i3i'].map(id => debugBodies().get(id)!);
   const vs = Math.abs(measureVolume(hShade));
-  const cutAt = hand.findIndex((f: any) => f.type === 'boolean');
+  const cutAt = hand.findIndex((feature: any) => feature.type === 'boolean');
   await regenerate(hand.slice(0, cutAt));
   const holes = Math.abs(measureVolume(debugBodies().get('revolve-mw5m6fdt-i3k2')!)) - vs;
   await regenerate(hand);
@@ -155,13 +155,13 @@ if (lamp && shade && bulbS) {
   check("by hand: the bulb a 28 mm ball hanging free on the shade's axis", Math.abs(vb - (4 / 3) * Math.PI * 14 ** 3) < 1 && Math.abs(measureVolume((hBulb as any).intersect(hShade))) < 1e-6 && Math.abs(hBulb.boundingBox.center[0] - 80) < 1e-6, `${vb.toFixed(1)} mm³`);
   const vLampHand = Math.abs(measureVolume(hLamp));
   const touchShade = Math.abs(measureVolume((hLamp as any).intersect(hShade)));
-  await regenerate(hand.slice(0, hand.findIndex((f: any) => f.type === 'sweep')));
+  await regenerate(hand.slice(0, hand.findIndex((feature: any) => feature.type === 'sweep')));
   const vBaseHand = Math.abs(measureVolume(debugBodies().get('revolve-mw5m45n0-klet')!));
   await regenerate(hand);
   check('by hand: stem joined to the base, clear of the shade', vLampHand > vBaseHand + 15000 && touchShade < 1, `${(vLampHand / 1000).toFixed(1)} cm³ (base alone ${(vBaseHand / 1000).toFixed(1)})`);
   // The same as by code, part by part (volumes to 0.1 %) and colour by colour.
-  const same = [['lamp', vLampHand], ['shade', vs], ['bulb', vb]].map(([k, v]) => [k, v, code[k as string]] as [string, number, number]);
-  check('by hand: each part the same as by code', same.every(([, h, c]) => Math.abs(h - c) < c * 1e-3), same.map(([k, h, c]) => `${k} ${(h / 1000).toFixed(2)} / ${(c / 1000).toFixed(2)} cm³`).join(', '));
+  const same = [['lamp', vLampHand], ['shade', vs], ['bulb', vb]].map(([key, volume]) => [key, volume, code[key as string]] as [string, number, number]);
+  check('by hand: each part the same as by code', same.every(([, handVolume, codeVolume]) => Math.abs(handVolume - codeVolume) < codeVolume * 1e-3), same.map(([key, handVolume, codeVolume]) => `${key} ${(handVolume / 1000).toFixed(2)} / ${(codeVolume / 1000).toFixed(2)} cm³`).join(', '));
   const hc = JSON.parse(readFileSync(new URL('./fixtures/lamp-hand.json', import.meta.url), 'utf8')).colors;
   check('by hand: the same colours', hc['revolve-mw5m45n0-klet'] === '#2f3a45' && hc['revolve-mw5m6fdt-i3k2'] === '#d9a441' && hc['revolve-mw5maqal-2i3i'] === '#fff4c8');
 }
@@ -179,6 +179,6 @@ if (lamp && shade && bulbS) {
 }
 
 if (process.argv[2]) {
-  writeFileSync(process.argv[2], JSON.stringify({ format: 'super', version: 2, name: 'Arc lamp', features: feats, variables: [], views: [], units: 'mm', hidden: feats.filter(f => f.type === 'sketch').map(f => f.id), pins: [], names: { lamp: 'Lamp', shade: 'Shade', bulb: 'Bulb' }, colors: { lamp: '#2f3a45', shade: '#d9a441', bulb: '#fff4c8' } }));
+  writeFileSync(process.argv[2], JSON.stringify({ format: 'super', version: 2, name: 'Arc lamp', features: feats, variables: [], views: [], units: 'mm', hidden: feats.filter(feature => feature.type === 'sketch').map(feature => feature.id), pins: [], names: { lamp: 'Lamp', shade: 'Shade', bulb: 'Bulb' }, colors: { lamp: '#2f3a45', shade: '#d9a441', bulb: '#fff4c8' } }));
 }
 process.exit(failed ? 1 : 0);

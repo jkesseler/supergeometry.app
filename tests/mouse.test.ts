@@ -10,7 +10,7 @@
 import { meshVolume } from '../src/kernel/health';
 import { measureArea as trueArea, measureVolume as trueVolume } from '../src/kernel/ocFree';
 import { check, done, sketch, profile, XY, YZ, plane, rect, poly, after, bodies, health } from './kit';
-import { near, faceRef, edgeRefs } from './grid';
+import { faceRef, edgeRefs } from './grid';
 import type { Feature, SketchEntity } from '../src/doc/types';
 
 const fs: Feature[] = [];
@@ -26,9 +26,9 @@ const prof = (id: string, es: SketchEntity[]) => profile(id, es);
 async function stage(name: string, want: Record<string, number> = {}) {
   const { errors } = await after(fs);
   const info: Record<string, { v: number; ok: boolean; solids: number; faces: number }> = {};
-  for (const [id, s] of bodies()) {
-    const h = health(s);
-    info[id] = { v: Math.round(h.volume * 10) / 10, ok: h.valid && !h.openEdges && !h.thin, solids: h.solids, faces: h.faces };
+  for (const [id, body] of bodies()) {
+    const bodyHealth = health(body);
+    info[id] = { v: Math.round(bodyHealth.volume * 10) / 10, ok: bodyHealth.valid && !bodyHealth.openEdges && !bodyHealth.thin, solids: bodyHealth.solids, faces: bodyHealth.faces };
   }
   const bad = Object.entries(info).filter(([id, i]) => !i.ok || i.solids !== (want[id] ?? 1));
   check(`${name}: builds`, !errors.length, errors.join('; '));
@@ -50,8 +50,8 @@ check('outline block volume is plausible (about 6000 mm2 x 45)', s1.mouse?.v > 4
 // 1.7 % over, integrating the spline's extruded side in one piece.
 {
   const b = bodies().get('mouse')!;
-  const cap = trueArea(b.faces.find(f => f.geomType === 'PLANE')!);
-  const sideFace = b.faces.find(f => f.geomType !== 'PLANE')!;
+  const cap = trueArea(b.faces.find(face => face.geomType === 'PLANE')!);
+  const sideFace = b.faces.find(face => face.geomType !== 'PLANE')!;
   const rim = b.edges.filter(e => Math.abs(e.startPoint.z) < 1e-6 && Math.abs(e.endPoint.z) < 1e-6).reduce((a, e) => a + e.length, 0);
   check("the block's volume is its end x 45 (to a millionth)", Math.abs(trueVolume(b) - cap * 45) < cap * 45 * 1e-6, [trueVolume(b), cap * 45]);
   check("the block's side is its outline x 45 (to a millionth)", Math.abs(trueArea(sideFace) - rim * 45) < rim * 45 * 1e-6, [trueArea(sideFace), rim * 45]);
@@ -72,19 +72,19 @@ const s2 = await stage('side profile intersected');
 check('intersect took a good part away', s2.mouse && s2.mouse.v < s1.mouse.v * 0.75 && s2.mouse.v > s1.mouse.v * 0.4, [s1.mouse?.v, s2.mouse?.v]);
 
 // --- 3. Round the top rim (the spline-on-spline edge), 6 mm.
-const rim = edgeRefs('mouse', m => m[2] > 2);
+const rim = edgeRefs('mouse', midpoint => midpoint[2] > 2);
 check('the top rim has edges', rim.length > 0, rim.length);
 fs.push({ id: 'rimRound', name: 'Round the top', type: 'fillet', edges: rim, radius: 6 } as Feature);
 const s3 = await stage('top rim rounded 6');
 check('the round took a little away', s3.mouse && s3.mouse.v < s2.mouse.v && s3.mouse.v > s2.mouse.v * 0.9, [s2.mouse?.v, s3.mouse?.v]);
 
 // Bottom edge: a small 1 mm round as well.
-const foot = edgeRefs('mouse', m => Math.abs(m[2]) < 1e-6);
+const foot = edgeRefs('mouse', midpoint => Math.abs(midpoint[2]) < 1e-6);
 fs.push({ id: 'footRound', name: 'Round the foot', type: 'fillet', edges: foot, radius: 1 } as Feature);
 const s3b = await stage('foot rounded 1');
 
 // --- 4. Hollow it from underneath, walls 1.6.
-const under = faceRef('mouse', (n, c) => n[2] < -0.99 && Math.abs(c[2]) < 1e-6);
+const under = faceRef('mouse', (normal, center) => normal[2] < -0.99 && Math.abs(center[2]) < 1e-6);
 fs.push({ id: 'hollow', name: 'Hollow', type: 'shell', body: 'mouse', faces: [under], thickness: 1.6 } as Feature);
 t0 = Date.now();
 const s4 = await stage('shelled 1.6 from below');
@@ -106,7 +106,6 @@ const lines = sk('sLines', XY(60), [
   rect('across', -40, 52, 40, 52.8),
   rect('slot', -4.5, 14, 4.5, 36)
 ]);
-const across = lines.slice(2, 3);
 fs.push({ id: 'splitLines', name: 'Button lines', type: 'extrude', source: prof('sLines', lines), distance: -42, mode: 'cut', target: 'mouse' } as Feature);
 t0 = Date.now();
 const s5 = await stage('button lines cut');
@@ -122,7 +121,7 @@ const knurl = sk('sKnurl', YZ(-3.5), [rect('kn', 24.5, 32.6, 25.5, 33.8)]);
 fs.push({ id: 'knurl', name: 'Knurl', type: 'extrude', source: prof('sKnurl', knurl), distance: 7, mode: 'new' } as Feature);
 const axis = { origin: [0, 25, 24] as [number, number, number], dir: [1, 0, 0] as [number, number, number] };
 fs.push({ id: 'knurls', name: 'Knurls', type: 'transform', bodies: ['knurl'], copy: true, op: { kind: 'circular', axis, count: 24, angle: 360 } } as Feature);
-fs.push({ id: 'wheelJoin', name: 'Knurls on the wheel', type: 'boolean', op: 'union', target: 'wheel', tools: ['knurl', ...Array.from({ length: 23 }, (_, k) => `knurls:knurl:${k}`)] } as Feature);
+fs.push({ id: 'wheelJoin', name: 'Knurls on the wheel', type: 'boolean', op: 'union', target: 'wheel', tools: ['knurl', ...Array.from({ length: 23 }, (_, index) => `knurls:knurl:${index}`)] } as Feature);
 // An axle hole through it.
 const axle = sk('sAxle', YZ(-3.5), [{ id: 'ax', kind: 'circle', center: [25, 24], radius: 1.5 } as SketchEntity]);
 fs.push({ id: 'axleHole', name: 'Axle hole', type: 'extrude', source: prof('sAxle', axle), distance: 7, mode: 'cut', target: 'wheel' } as Feature);
@@ -135,8 +134,8 @@ check('only the mouse and the wheel are left', Object.keys(s6).sort().join() ===
 // The wheel sits in its slot: clear of the shell.
 fs.push({ id: 'clear', name: 'Clearance check', type: 'boolean', op: 'intersect', target: 'mouse', tools: ['wheel'], keepTarget: true, keepTools: true } as Feature);
 const { errors: ce } = await after(fs);
-const touching = [...bodies().keys()].filter(k => !['mouse', 'wheel'].includes(k));
-const overlap = touching.reduce((a, k) => a + health(bodies().get(k)!).volume, 0);
+const touching = [...bodies().keys()].filter(key => !['mouse', 'wheel'].includes(key));
+const overlap = touching.reduce((a, key) => a + health(bodies().get(key)!).volume, 0);
 check("the wheel doesn't run into the shell", overlap < 1e-3, { ce, touching, overlap });
 fs.pop();
 
@@ -146,7 +145,7 @@ fs.pop();
 const wrong = sk('sThumbWrong', plane([-40, 0, 0], [-1, 0, 0], [0, 1, 0]), [rect('tw', 60, 12, 74, 18)]);
 fs.push({ id: 'thumbWrong', name: 'Thumb (missed)', type: 'extrude', source: prof('sThumbWrong', wrong), distance: -15, mode: 'cut', target: 'mouse' } as Feature);
 const { r: rw } = await after(fs);
-check('a cut that misses says so', (rw.notes ?? []).some(n => n.featureId === 'thumbWrong' && /doesn't reach/.test(n.message)), rw.notes);
+check('a cut that misses says so', (rw.notes ?? []).some(featureError => featureError.featureId === 'thumbWrong' && /doesn't reach/.test(featureError.message)), rw.notes);
 fs.pop();
 fs.pop();
 // (Plane x = -40 facing -x, its x along -y: v is up. u = -y.)
@@ -162,25 +161,25 @@ check('the holes took a little, and no note', s7.mouse && s7.mouse.v < s6.mouse.
 // --- 8. A sensor hole in the bottom plate. The plate is the other part:
 // the outline again, 1.6 thick, inset by the shell, a Ø6 hole.
 const olPts = (outline[0] as any).points as [number, number][];
-const inset = (d: number) => olPts.map((p, i) => {
+const inset = (distance: number) => olPts.map((olPoint, i) => {
   const a = olPts[(i + olPts.length - 1) % olPts.length], b = olPts[(i + 1) % olPts.length];
-  const tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty);
+  const tx = b[0] - a[0], ty = b[1] - a[1], length = Math.hypot(tx, ty);
 
   // (Counter-clockwise outline: inward is the tangent turned left.)
-  return [p[0] - (ty / l) * d, p[1] + (tx / l) * d] as [number, number];
+  return [olPoint[0] - (ty / length) * distance, olPoint[1] + (tx / length) * distance] as [number, number];
 });
 const plate = sk('sPlate', XY(), [
   { id: 'pl', kind: 'spline', closed: true, mode: 'fit', points: inset(2.2) } as SketchEntity,
   { id: 'eye', kind: 'circle', center: [0, 45], radius: 3 } as SketchEntity
 ]);
-fs.push({ id: 'base', name: 'Base plate', type: 'extrude', source: profile('sPlate', plate, rs => rs.filter((r: any) => !String(JSON.stringify(r)).includes('"eye"') || String(JSON.stringify(r)).includes('"pl"'))), distance: 1.6, mode: 'new' } as Feature);
+fs.push({ id: 'base', name: 'Base plate', type: 'extrude', source: profile('sPlate', plate, rs => rs.filter((region: any) => !String(JSON.stringify(region)).includes('"eye"') || String(JSON.stringify(region)).includes('"pl"'))), distance: 1.6, mode: 'new' } as Feature);
 const s8 = await stage('base plate');
 check("the base plate has its hole (under the full outline's area x 1.6)", !!s8.base, s8.base);
 
 // The plate fits inside the shell's foot.
 fs.push({ id: 'clear2', name: 'Clearance check', type: 'boolean', op: 'intersect', target: 'mouse', tools: ['base'], keepTarget: true, keepTools: true } as Feature);
 await after(fs);
-const ov2 = [...bodies().keys()].filter(k => !['mouse', 'wheel', 'base'].includes(k)).reduce((a, k) => a + health(bodies().get(k)!).volume, 0);
+const ov2 = [...bodies().keys()].filter(key => !['mouse', 'wheel', 'base'].includes(key)).reduce((a, key) => a + health(bodies().get(key)!).volume, 0);
 check('the plate is clear of the shell (under 1 mm3 touching)', ov2 < 1, ov2);
 fs.pop();
 

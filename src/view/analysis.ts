@@ -14,8 +14,8 @@ export type Analysis = 'none' | 'zebra' | 'curvature';
  * Faces are meshed apart, so a sharp edge between two faces doesn't count.
  */
 export function curvatureOf(positions: ArrayLike<number>, normals: ArrayLike<number>, indices: ArrayLike<number>): Float32Array {
-  const n = positions.length / 3;
-  const out = new Float32Array(n);
+  const count = positions.length / 3;
+  const out = new Float32Array(count);
   const add = (i: number, j: number) => {
     const dx = positions[3 * i] - positions[3 * j];
     const dy = positions[3 * i + 1] - positions[3 * j + 1];
@@ -24,19 +24,19 @@ export function curvatureOf(positions: ArrayLike<number>, normals: ArrayLike<num
     if (len2 < 1e-12) {
       return;
     }
-    const k = ((normals[3 * i] - normals[3 * j]) * dx + (normals[3 * i + 1] - normals[3 * j + 1]) * dy + (normals[3 * i + 2] - normals[3 * j + 2]) * dz) / len2;
-    if (Math.abs(k) > Math.abs(out[i])) {
-      out[i] = k;
+    const curvature = ((normals[3 * i] - normals[3 * j]) * dx + (normals[3 * i + 1] - normals[3 * j + 1]) * dy + (normals[3 * i + 2] - normals[3 * j + 2]) * dz) / len2;
+    if (Math.abs(curvature) > Math.abs(out[i])) {
+      out[i] = curvature;
     }
-    if (Math.abs(k) > Math.abs(out[j])) {
-      out[j] = k;
+    if (Math.abs(curvature) > Math.abs(out[j])) {
+      out[j] = curvature;
     }
   };
   for (let t = 0; t + 2 < indices.length; t += 3) {
-    const a = indices[t], b = indices[t + 1], c = indices[t + 2];
+    const a = indices[t], b = indices[t + 1], index = indices[t + 2];
     add(a, b);
-    add(b, c);
-    add(c, a);
+    add(b, index);
+    add(index, a);
   }
 
   return out;

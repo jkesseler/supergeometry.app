@@ -27,16 +27,16 @@ export class VariablesTool implements Tool {
   }
 
   private showCard(): void {
-    const n = this.app.store.doc.variables.length;
-    this.app.ui.setHint(n ? 'Tap a variable to change its value. Everything that uses it updates.' : 'No variables yet. Make one, then use it in any value box (ƒx).');
+    const count = this.app.store.doc.variables.length;
+    this.app.ui.setHint(count ? 'Tap a variable to change its value. Everything that uses it updates.' : 'No variables yet. Make one, then use it in any value box (ƒx).');
     this.app.ui.showPanel({
       title: 'Variables',
       items: [
-        { type: 'button', label: 'New Variable', icon: 'variableNew', primary: !n, onClick: () => void createVariable(this.app).then(() => this.showCard()) },
-        ...(n ? [{ type: 'button' as const, label: `All Variables (${n})`, icon: 'variable' as const, onClick: () => void editVariables(this.app).then(() => this.showCard()) }] : []),
-        ...(n ? [{ type: 'button' as const, label: 'Rename', icon: 'variable' as const, onClick: () => void renameVariables(this.app).then(() => this.showCard()) }] : []),
+        { type: 'button', label: 'New Variable', icon: 'variableNew', primary: !count, onClick: () => void createVariable(this.app).then(() => this.showCard()) },
+        ...(count ? [{ type: 'button' as const, label: `All Variables (${count})`, icon: 'variable' as const, onClick: () => void editVariables(this.app).then(() => this.showCard()) }] : []),
+        ...(count ? [{ type: 'button' as const, label: 'Rename', icon: 'variable' as const, onClick: () => void renameVariables(this.app).then(() => this.showCard()) }] : []),
         // On / off a tap each way: the tags on the model go and come back, the card stays.
-        { type: 'toggle', label: 'Variables', value: this.app.varsOn, onChange: v => (this.app.showVariables(v), this.showCard()) }
+        { type: 'toggle', label: 'Variables', value: this.app.varsOn, onChange: isOn => (this.app.showVariables(isOn), this.showCard()) }
       ],
       actions: [],
       onDone: () => this.leave()

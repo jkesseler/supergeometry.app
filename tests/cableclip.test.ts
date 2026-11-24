@@ -8,52 +8,52 @@ import { measureVolume } from '../src/kernel/ocFree';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import { after, bodies, check, circle, done, health, line, near, rect, sketch, XY } from './kit';
 import type { Shape3D } from 'replicad';
-import type { Feature, PlaneDef, SketchEntity, Vec3 } from '../src/doc/types';
+import type { Feature, PlaneDef, SketchEntity } from '../src/doc/types';
 
-const vol = (s: Shape3D) => Math.abs(measureVolume(s));
+const vol = (shape: Shape3D) => Math.abs(measureVolume(shape));
 const body = (id: string) => bodies().get(id) as Shape3D;
 const profileOf = (sk: string, es: SketchEntity[]) => ({ kind: 'profile' as const, sketch: sk, regions: arrangement(es).regions.map(regionRef) });
 const PI = Math.PI;
 
 const RI = 6, RO = 8; // the ring: 12 across inside, 16 outside
-const G = 3; // the opening: 6 wide (3 either side of the middle)
+const GAP = 3; // the opening: 6 wide (3 either side of the middle)
 const TW = 14, T0 = -8.5, T1 = -6.5; // the tab: 28 wide, from 8.5 to 6.5 below the middle
-const H = 8; // all of it 8 tall
+const HEIGHT = 8; // all of it 8 tall
 const HX = 10, HR = 1.5; // the screw holes: 10 either side, 3 across
 
-// Areas: the strip |x| < a of a circle's upper half; a circle's segment below y = -d.
-const strip = (r: number, a: number) => a * Math.sqrt(r * r - a * a) + r * r * Math.asin(a / r);
-const segment = (r: number, d: number) => r * r * Math.acos(d / r) - d * Math.sqrt(r * r - d * d);
-const area = PI * (RO * RO - RI * RI) - (strip(RO, G) - strip(RI, G)) + 2 * TW * (T1 - T0) - segment(RO, -T1);
+// Areas: the strip |x| < a of a circle's upper half; a circle's segment below y = -distance.
+const strip = (radius: number, a: number) => a * Math.sqrt(radius * radius - a * a) + radius * radius * Math.asin(a / radius);
+const segment = (radius: number, distance: number) => radius * radius * Math.acos(distance / radius) - distance * Math.sqrt(radius * radius - distance * distance);
+const area = PI * (RO * RO - RI * RI) - (strip(RO, GAP) - strip(RI, GAP)) + 2 * TW * (T1 - T0) - segment(RO, -T1);
 
 // ---------------------------------------------------------------- the clip
 // The ring's ends where the opening's sides cut it, the arcs round the bottom.
-const yo = Math.sqrt(RO * RO - G * G), yi = Math.sqrt(RI * RI - G * G);
+const yo = Math.sqrt(RO * RO - GAP * GAP), yi = Math.sqrt(RI * RI - GAP * GAP);
 const clipEs: SketchEntity[] = [
-  { id: 'out', kind: 'arc', a: [-G, yo], m: [0, -RO], b: [G, yo] } as SketchEntity,
-  { id: 'in', kind: 'arc', a: [-G, yi], m: [0, -RI], b: [G, yi] } as SketchEntity,
-  line('l', [-G, yi], [-G, yo]),
-  line('r', [G, yi], [G, yo]),
+  { id: 'out', kind: 'arc', a: [-GAP, yo], m: [0, -RO], b: [GAP, yo] } as SketchEntity,
+  { id: 'in', kind: 'arc', a: [-GAP, yi], m: [0, -RI], b: [GAP, yi] } as SketchEntity,
+  line('l', [-GAP, yi], [-GAP, yo]),
+  line('r', [GAP, yi], [GAP, yo]),
   rect('tab', -TW, T0, TW, T1)
 ];
-const steps: Feature[] = [sketch('Clip', XY(), clipEs), { id: 'Clip', name: 'Extrude', type: 'extrude', source: profileOf('Clip', clipEs), distance: H, mode: 'new' } as Feature];
+const steps: Feature[] = [sketch('Clip', XY(), clipEs), { id: 'Clip', name: 'Extrude', type: 'extrude', source: profileOf('Clip', clipEs), distance: HEIGHT, mode: 'new' } as Feature];
 let { errors } = await after(steps);
 const vClip = vol(body('Clip'));
-check('the clip: the opened ring on its tab, 8 tall', !errors.length && bodies().size === 1 && near(vClip, area * H, 1e-6 * area * H), [errors, bodies().size, vClip, area * H]);
+check('the clip: the opened ring on its tab, 8 tall', !errors.length && bodies().size === 1 && near(vClip, area * HEIGHT, 1e-6 * area * HEIGHT), [errors, bodies().size, vClip, area * HEIGHT]);
 const [[x0, y0, z0], [x1, y1, z1]] = body('Clip').boundingBox.bounds;
-check("the clip: 28 wide, from the tab's underside to the ring's top", near(x1 - x0, 2 * TW, 1e-4) && near(y0, T0, 1e-4) && near(y1, yo, 1e-4) && near(z1 - z0, H, 1e-6), body('Clip').boundingBox.bounds);
+check("the clip: 28 wide, from the tab's underside to the ring's top", near(x1 - x0, 2 * TW, 1e-4) && near(y0, T0, 1e-4) && near(y1, yo, 1e-4) && near(z1 - z0, HEIGHT, 1e-6), body('Clip').boundingBox.bounds);
 
 // ---------------------------------------------------------------- the holes
 // Drawn on the tab's underside (facing down Y), 4 up, cut through the tab.
 const under: PlaneDef = { origin: [0, T0, 0], xDir: [1, 0, 0], normal: [0, -1, 0] };
-const holeEs = [circle('h1', HX, H / 2, HR), circle('h2', -HX, H / 2, HR)];
+const holeEs = [circle('h1', HX, HEIGHT / 2, HR), circle('h2', -HX, HEIGHT / 2, HR)];
 steps.push(sketch('Screws', under, holeEs), { id: 'Holes', name: 'Extrude', type: 'extrude', source: profileOf('Screws', holeEs), distance: -1, extent: 'through', mode: 'cut', target: 'Clip' } as Feature);
 ({ errors } = await after(steps));
 const vHoles = vol(body('Clip'));
 check('the holes: two, 3 across, through the tab', !errors.length && near(vClip - vHoles, 2 * PI * HR * HR * (T1 - T0), 1e-4), [errors, vClip - vHoles, 2 * PI * HR * HR * (T1 - T0)]);
 
-const h = health(body('Clip'), 'Clip');
-check('the clip: sound, one body', h.healthy && bodies().size === 1, h.healthy ? `${Math.round(h.volume)} mm³` : h);
+const bodyHealth = health(body('Clip'), 'Clip');
+check('the clip: sound, one body', bodyHealth.healthy && bodies().size === 1, bodyHealth.healthy ? `${Math.round(bodyHealth.volume)} mm³` : bodyHealth);
 const codeVol = vol(body('Clip'));
 const codeFaces = body('Clip').faces.length;
 const codeBox = body('Clip').boundingBox.bounds;
@@ -72,10 +72,10 @@ console.log('clip', vClip.toFixed(1), 'final', codeVol.toFixed(1), 'faces', code
   const hand = JSON.parse(readFileSync(new URL('./fixtures/cableclip-hand.json', import.meta.url), 'utf8')).features as Feature[];
   const { errors } = await after(hand);
   check('by hand: no errors', errors.length === 0, errors);
-  const B = [...bodies().values()].map(s => s as Shape3D);
-  check('by hand: one body, sound', B.length === 1 && health(B[0], 'hand').healthy, B.length);
-  check('by hand: the same clip (to 0.1 %)', B.length === 1 && Math.abs(vol(B[0]) - codeVol) < codeVol * 1e-3, `${B[0] ? vol(B[0]).toFixed(1) : '-'} / ${codeVol.toFixed(1)}`);
-  check('by hand: as many faces, the same box', B[0]?.faces.length === codeFaces && B[0].boundingBox.bounds.flat().every((x, i) => near(x, codeBox.flat()[i], 1e-3)), [B[0]?.faces.length, codeFaces, B[0]?.boundingBox.bounds]);
+  const shapesB = [...bodies().values()].map(body => body as Shape3D);
+  check('by hand: one body, sound', shapesB.length === 1 && health(shapesB[0], 'hand').healthy, shapesB.length);
+  check('by hand: the same clip (to 0.1 %)', shapesB.length === 1 && Math.abs(vol(shapesB[0]) - codeVol) < codeVol * 1e-3, `${shapesB[0] ? vol(shapesB[0]).toFixed(1) : '-'} / ${codeVol.toFixed(1)}`);
+  check('by hand: as many faces, the same box', shapesB[0]?.faces.length === codeFaces && shapesB[0].boundingBox.bounds.flat().every((x, i) => near(x, codeBox.flat()[i], 1e-3)), [shapesB[0]?.faces.length, codeFaces, shapesB[0]?.boundingBox.bounds]);
 }
 
 if (process.argv[2]) {

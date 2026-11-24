@@ -27,68 +27,68 @@ const check = (name: string, ok: boolean, info = '') => {
 
 type Path = (string | number)[];
 /** A size of the step to nudge: its first number that isn't a count or part of a reference. */
-function size(v: unknown, path: Path): Path | null {
-  if (typeof v === 'number') {
-    const k = String(path[path.length - 1]);
+function size(value: unknown, path: Path): Path | null {
+  if (typeof value === 'number') {
+    const key = String(path[path.length - 1]);
     const top = String(path[0]);
     if (['face', 'faces', 'edges', 'edge', 'source', 'axis', 'plane', 'vertex', 'guide', 'path', 'cage'].includes(top)) {
       return null;
     }
-    if (/count|sides|grid|segments|steps/i.test(k) || Math.abs(v) < 1e-6) {
+    if (/count|sides|grid|segments|steps/i.test(key) || Math.abs(value) < 1e-6) {
       return null;
     }
 
     return path;
   }
-  if (Array.isArray(v)) {
-    for (let i = 0; i < Math.min(v.length, 40); i++) {
-      const p = size(v[i], [...path, i]);
-      if (p) {
-        return p;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < Math.min(value.length, 40); i++) {
+      const found = size(value[i], [...path, i]);
+      if (found) {
+        return found;
       }
     }
 
     return null;
   }
-  if (v && typeof v === 'object') {
-    for (const [k, x] of Object.entries(v)) {
-      if (path.length === 0 && ['id', 'name', 'type', 'suppressed', 'data', 'log', 'exprs', 'color'].includes(k)) {
+  if (value && typeof value === 'object') {
+    for (const [key, x] of Object.entries(value)) {
+      if (path.length === 0 && ['id', 'name', 'type', 'suppressed', 'data', 'log', 'exprs', 'color'].includes(key)) {
         continue;
       }
-      const p = size(x, [...path, k]);
-      if (p) {
-        return p;
+      const found = size(x, [...path, key]);
+      if (found) {
+        return found;
       }
     }
   }
 
   return null;
 }
-const nudged = (f: Feature, path: Path, k: number): Feature => {
-  const c = structuredClone(f) as any;
-  let o = c;
+const nudged = (feature: Feature, path: Path, factor: number): Feature => {
+  const copy = structuredClone(feature) as any;
+  let target = copy;
   for (const key of path.slice(0, -1)) {
-    o = o[key];
+    target = target[key];
   }
-  o[path[path.length - 1]] *= k;
+  target[path[path.length - 1]] *= factor;
 
-  return c;
+  return copy;
 };
 /** A rebuild's result as something to compare: each body's volume, faces and edges, and what failed. */
-function told(r: any): string {
-  const bodies = [...debugBodies()].map(([id, s]) => {
-    let v = 0;
+function told(result: any): string {
+  const bodies = [...debugBodies()].map(([id, shape]) => {
+    let volume = 0;
     try {
-      v = measureVolume(s as Shape3D);
+      volume = measureVolume(shape as Shape3D);
     } catch {
-      v = NaN;
+      volume = NaN;
     }
-    const mesh = r.bodies.find((b: any) => b.id === id);
+    const mesh = result.bodies.find((b: any) => b.id === id);
 
-    return `${id} ${v.toPrecision(9)} ${mesh?.faces.length}f ${mesh?.edges.length}e ${mesh?.name}`;
+    return `${id} ${volume.toPrecision(9)} ${mesh?.faces.length}f ${mesh?.edges.length}e ${mesh?.name}`;
   });
 
-  return [...bodies.sort(), ...r.errors.map((e: any) => `${e.featureId}: ${e.message}`).sort(), ...(r.notes ?? []).map((e: any) => `note ${e.featureId}: ${e.message}`).sort()].join('\n');
+  return [...bodies.sort(), ...result.errors.map((e: any) => `${e.featureId}: ${e.message}`).sort(), ...(result.notes ?? []).map((e: any) => `note ${e.featureId}: ${e.message}`).sort()].join('\n');
 }
 
 const fixtures = process.argv[2] ? [process.argv[2]] : ['lamp-hand', 'desklamp-hand', 'valve', 'fan-hand'];
@@ -105,13 +105,13 @@ for (const fixture of fixtures) {
   let tFull = 0;
   for (let i = 0; i < features.length; i += EVERY) {
     // The next step from here with a size to nudge.
-    let k = i;
+    let index = i;
     let path: Path | null = null;
-    for (; k < features.length && k < i + EVERY; k++) {
-      if (features[k].suppressed || features[k].type === 'image') {
+    for (; index < features.length && index < i + EVERY; index++) {
+      if (features[index].suppressed || features[index].type === 'image') {
         continue;
       }
-      path = size(features[k], []);
+      path = size(features[index], []);
       if (path) {
         break;
       }
@@ -119,7 +119,7 @@ for (const fixture of fixtures) {
     if (!path) {
       continue;
     }
-    const changed = features.map((f, j) => (j === k ? nudged(f, path!, 1.03) : f));
+    const changed = features.map((feature, j) => (j === index ? nudged(feature, path!, 1.03) : feature));
     // As the app does it: the project as saved is in the engine, one step of it changes.
     if (tried % 3 === 0) {
       await fresh();
@@ -128,7 +128,7 @@ for (const fixture of fixtures) {
     let t0 = performance.now();
     const quick: any = await regenerate(changed);
     t += performance.now() - t0;
-    const after = features.length - k - 1;
+    const after = features.length - index - 1;
     put += rebuildStats.reused;
     ran += rebuildStats.ran;
     const a = told(quick);
@@ -141,8 +141,8 @@ for (const fixture of fixtures) {
     tried++;
     if (a !== b) {
       const [la, lb] = [a.split('\n'), b.split('\n')];
-      const d = la.find((x, n) => x !== lb[n]) ?? '(fewer lines)';
-      wrong.push(`[${k}] ${features[k].type} "${features[k].name}" ${path.join('.')}: ${d.slice(0, 140)} | from nothing: ${(lb[la.indexOf(d)] ?? '').slice(0, 140)} (${after} steps after it)`);
+      const difference = la.find((line, lineIndex) => line !== lb[lineIndex]) ?? '(fewer lines)';
+      wrong.push(`[${index}] ${features[index].type} "${features[index].name}" ${path.join('.')}: ${difference.slice(0, 140)} | from nothing: ${(lb[la.indexOf(difference)] ?? '').slice(0, 140)} (${after} steps after it)`);
     }
   }
   check(`${fixture}: ${tried} steps changed one at a time, each rebuild the same as from nothing`, tried > 0 && !wrong.length, wrong.slice(0, 6).join('\n     '));
