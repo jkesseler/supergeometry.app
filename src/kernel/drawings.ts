@@ -1,12 +1,13 @@
 import { ProjectionCamera, cast, getOC } from 'replicad';
 import { add, cross, dist, dot, norm, scale, sub, xDirFor } from '../geom';
-import { drawingMesh, run, runWithPlainThreads } from './engine';
+import { run, runWithPlainThreads } from './engine';
 import { halfSpace } from './booleans';
 import { isEmpty } from './bodies';
 import { cylinderOf, planeOf } from './faceEdit';
 import { anchorOf, freeformFaces, meshViews, viewEdge } from './viewLines';
 import { threadTarget } from './steps/thread';
 import { threadDepth } from './threads';
+import { drawingMesh, smoothStepsOf } from './viewMesh';
 import type { AnyShape, Edge, Shape3D } from 'replicad';
 import type { Feature, Vec3 } from '../doc/types';
 import type { ProjectedView, ViewBody, ViewEdge, ViewSpec } from './protocol';
@@ -29,6 +30,7 @@ export async function projectViews(features: Feature[], views: ViewSpec[], only?
     ctx = await runWithPlainThreads(features);
   }
   const bodies = [...ctx.bodies.entries()].filter(([id]) => !only || only.includes(id));
+  const smoothSteps = smoothStepsOf(features);
   const marks = threadMarks(threads, ctx);
   const withMarks = (out: ProjectedView[], views: ViewSpec[]) => {
     out.forEach((pv, viewIndex) =>
@@ -53,11 +55,11 @@ export async function projectViews(features: Feature[], views: ViewSpec[], only?
   const plain = views.filter(view => !view.cut);
   const drawn = new Map<ViewSpec, ProjectedView>();
   if (plain.length) {
-    withMarks(drawViews(bodies, plain, method), plain).forEach((pv, withMarkIndex) => drawn.set(plain[withMarkIndex], pv));
+    withMarks(drawViews(bodies, plain, method, smoothSteps), plain).forEach((pv, withMarkIndex) => drawn.set(plain[withMarkIndex], pv));
   }
   for (const view of views) {
     if (view.cut) {
-      drawn.set(view, sectionView(bodies, view, method));
+      drawn.set(view, sectionView(bodies, view, method, smoothSteps));
     }
   }
 
@@ -70,7 +72,7 @@ export async function projectViews(features: Feature[], views: ViewSpec[], only?
  * makes come back as closed outlines, to hatch; hidden lines aren't drawn in
  * a section (ISO 128-40).
  */
-function sectionView(bodies: [string, Shape3D][], viewSpec: ViewSpec, method: 'auto' | 'exact' | 'mesh'): ProjectedView {
+function sectionView(bodies: [string, Shape3D][], viewSpec: ViewSpec, method: 'auto' | 'exact' | 'mesh', smoothSteps: Set<string>): ProjectedView {
   const direction = norm(viewSpec.dir as Vec3);
   const look = scale(direction, -1);
   const xAxis = norm(viewSpec.xAxis as Vec3);
@@ -108,7 +110,7 @@ function sectionView(bodies: [string, Shape3D][], viewSpec: ViewSpec, method: 'a
   if (!cut.length) {
     return { id: viewSpec.id, bodies: [], box: null };
   }
-  const [pv] = drawViews(cut, [{ ...viewSpec, cut: undefined }], method);
+  const [pv] = drawViews(cut, [{ ...viewSpec, cut: undefined }], method, smoothSteps);
   for (const b of pv.bodies) {
     b.hidden = '';
     delete b.under;
@@ -175,10 +177,10 @@ export function closedLoops(runs: [number, number][][]): string {
 }
 
 /** Views drawn the usual way: exact hidden line removal, or from the meshes for freeform or very big models. */
-function drawViews(bodies: [string, Shape3D][], views: ViewSpec[], method: 'auto' | 'exact' | 'mesh'): ProjectedView[] {
+function drawViews(bodies: [string, Shape3D][], views: ViewSpec[], method: 'auto' | 'exact' | 'mesh', smoothSteps: Set<string>): ProjectedView[] {
   // Freeform faces (or a great many faces) take the exact hidden line removal
   // seconds to minutes a view: those models are drawn from their meshes.
-  const meshes = bodies.map(([id, shape]) => ({ id, shape: shape, mesh: drawingMesh(id, shape) }));
+  const meshes = bodies.map(([id, shape]) => ({ id, shape: shape, mesh: drawingMesh(id, shape, smoothSteps) }));
   const faces = meshes.reduce((total, mesh) => total + mesh.mesh.faces.length, 0);
   const free = meshes.reduce((total, mesh) => total + freeformFaces(mesh.mesh), 0);
   const how = method === 'auto' ? (free > 0 || faces > 600 ? 'mesh' : 'exact') : method;

@@ -10,16 +10,15 @@ import {
   type Shape3D
 } from 'replicad';
 import { applyFreeformEdits } from '../doc/freeformEdits';
-import { deepCopy, openEdges, subShapes } from './health';
+import { deepCopy, subShapes } from './health';
 import { healthOf, isHealthy } from './repair';
 import {
   editNotes,
   sameSizesAgain,
-  looseBox,
-  sizeOf
+  looseBox
 } from './faceEdit';
-import { edgeOrigins, edgeSteps, faceAliases, faceOrigins, faceSteps, inheritTags, oldEdgeSteps, seamEdges, setOrigins, tagBody, type OriginOf } from './provenance';
-import { binarySTL, meshEdgeLines, meshFaces, meshOff, type FaceMesh } from './meshing';
+import { inheritTags, setOrigins, tagBody, type OriginOf } from './provenance';
+import { binarySTL, meshFaces, type FaceMesh } from './meshing';
 import { measureArea as trueArea, volumeProperties } from './ocFree';
 import { useReleases } from './release';
 import { useSafeBooleans } from './safeBooleans';
@@ -27,7 +26,6 @@ import { isFault, blame, KernelFault, crashed, errorText } from './faults';
 import { rebuild } from './rebuildState';
 import { DAMAGED_TEXT, MAX_REACH, damaged } from './damaged';
 import { baseId, bodyNames, wholeOf, touchedBodies } from './bodies';
-import { edgeInfo } from './references';
 import { volumes } from './booleans';
 import { EDGES_CLASH, guardEdit } from './editGuard';
 import { applyConnect } from './steps/connect';
@@ -45,7 +43,7 @@ import { applyRevolve } from './steps/revolve';
 import { applySweep } from './steps/sweep';
 import { applyLoft } from './steps/loft';
 import { applyFilletOrChamfer } from './steps/fillet';
-import { movedFrom, transform } from './steps/transform';
+import { transform } from './steps/transform';
 import { applySplit } from './steps/split';
 import { applyImport, importCache } from './steps/import';
 import { applyHole } from './steps/hole';
@@ -55,14 +53,15 @@ import { chainKey, hash53, shortBig } from './stepKey';
 import { originsOf } from './originsOf';
 import { rawEntries, rawGet, rawHas } from './readTracking';
 import { followLinks } from './links';
-import { getFaceInfo, resetFaceInfos } from './faceInfoCache';
+import { resetFaceInfos } from './faceInfoCache';
+import { meshBody, smoothStepsOf } from './viewMesh';
 import type {
   Feature,
   PlaneDef,
   SketchEntity,
   Vec3
 } from '../doc/types';
-import type { BodyHealth, BodyMesh, BodyProps, EdgeInfo, ExportFormat, FaceInfo, FeatureError, RegenResult } from './protocol';
+import type { BodyHealth, BodyMesh, BodyProps, ExportFormat, FeatureError, RegenResult } from './protocol';
 import type { Ctx } from './types';
 
 export { shapeValid } from './health';
@@ -191,11 +190,6 @@ interface CacheEntry {
   origin?: OriginOf;
 }
 
-const meshCache = new WeakMap<Shape3D, BodyMesh>();
-/** The Freeform Face steps of the project being rebuilt (their faces are patches of one smooth surface). */
-let smoothSteps = new Set<string>();
-/** The next mesh's key (see BodyMesh.key). */
-let meshKey = 1;
 let cache: CacheEntry[] = [];
 /**
  * The saved project's steps, kept while a step is being changed (its previews
@@ -382,10 +376,11 @@ export async function regenerate(features: Feature[], saved = false): Promise<Re
   const t0 = performance.now();
   const { ctx, errors, numbers, notes, whole } = await run(features, saved);
   const names = bodyNames(features, [...ctx.bodies.keys()], numbers);
+  const smoothSteps = smoothStepsOf(features);
   const meshes: BodyMesh[] = [];
   for (const [id, shape] of ctx.bodies) {
     try {
-      meshes.push(meshBody(id, names.get(id)!, shape));
+      meshes.push(meshBody(id, names.get(id)!, shape, smoothSteps));
     } catch (err) {
       if (isFault(err)) {
         // The last step that changed this body is the one whose result can't be shown.
@@ -462,7 +457,6 @@ export async function run(features: Feature[], saved = false) {
     }
   }
   rebuildStats.ran = rebuildStats.kept = rebuildStats.reused = 0;
-  smoothSteps = new Set(features.filter(feature => feature.type === 'faceFreeform').map(feature => feature.id));
   let key = '';
   const next: CacheEntry[] = [];
   let hit = true;
@@ -817,131 +811,6 @@ async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise
 
 // ------------------------------------------------------------------- meshing
 
-function movedMesh(shape: Shape3D) {
-  const mv = movedFrom.get(shape);
-  const was = mv?.from.deref();
-  const src = was && (meshCache.get(was) ?? drawMeshes.get(was));
-  if (!mv || !src) {
-    return null;
-  }
-  const { m, flip } = mv;
-  const at = (a: Float32Array, normal: boolean) => {
-    const out = new Float32Array(a.length);
-    for (let i = 0; i < a.length; i += 3) {
-      const [x, y, z] = [a[i], a[i + 1], a[i + 2]];
-      for (let row = 0; row < 3; row++) {
-        out[i + row] = m[row * 4] * x + m[row * 4 + 1] * y + m[row * 4 + 2] * z + (normal ? 0 : m[row * 4 + 3]);
-      }
-    }
-
-    return out;
-  };
-  let triangles = src.indices;
-  if (flip) {
-    // Mirrored: each triangle the other way round, or it faces inward.
-    triangles = new Uint32Array(src.indices);
-    for (let i = 0; i < triangles.length; i += 3) {
-      [triangles[i + 1], triangles[i + 2]] = [triangles[i + 2], triangles[i + 1]];
-    }
-  }
-
-  return {
-    m: { vertices: at(src.positions, false), normals: at(src.normals, true), triangles, faceGroups: src.faceGroups },
-    e: { lines: at(src.edgePositions, false), edgeGroups: src.edgeGroups }
-  };
-}
-
-/** The triangles and edge lines of a body, as the view shows them. */
-function meshLines(shape: Shape3D) {
-  const moved = movedMesh(shape);
-  if (moved) {
-    return moved;
-  }
-  // (About its size is enough for how fine to draw it: the exact box of a curved body takes up to a second.)
-  const diag = sizeOf(shape);
-  // (Never finer than 1/50 000 of its size: a 100 m arc at 0.1 mm is millions of triangles.)
-  const tolerance = Math.max(Math.min(0.1, Math.max(0.001, diag * 0.0008)), diag * 2e-5);
-  const angularTolerance = 0.25;
-  const faceMesh = meshFaces(shape, tolerance, angularTolerance);
-  const e = meshEdgeLines(shape, tolerance, angularTolerance);
-  meshOff(shape);
-  // A face made freeform is many patches, smooth across the lines between
-  // them: those lines aren't edges to show or pick (drawn as nothing).
-  const made = edgeSteps(shape);
-  if (made && smoothSteps.size && e.edgeGroups.reduce((total, edgeGroup) => total + edgeGroup.count, 0) * 3 === e.lines.length) {
-    const seams = seamEdges(shape);
-    e.edgeGroups.forEach((edgeGroup, i) => {
-      if (made[i]?.length !== 1 || !smoothSteps.has(made[i][0]) || seams[i]) {
-        return;
-      }
-      for (let vertexIndex = 1; vertexIndex < edgeGroup.count; vertexIndex++) {
-        for (let axis = 0; axis < 3; axis++) {
-          e.lines[(edgeGroup.start + vertexIndex) * 3 + axis] = e.lines[edgeGroup.start * 3 + axis];
-        }
-      }
-    });
-  }
-
-  return { m: faceMesh, e };
-}
-
-/**
- * For a drawing: the mesh with only what the drawing reads (the faces' and
- * edges' kinds) - the view's own when it has it. The model drawn without its
- * threads is bodies the view never showed: its full mesh took seconds more.
- */
-const drawMeshes = new WeakMap<Shape3D, BodyMesh>();
-export function drawingMesh(id: string, shape: Shape3D): BodyMesh {
-  const have = meshCache.get(shape) ?? drawMeshes.get(shape);
-  if (have) {
-    return { ...have, id, name: id };
-  }
-  const { m, e } = meshLines(shape);
-  const mesh: BodyMesh = {
-    id,
-    name: id,
-    key: meshKey++,
-    positions: new Float32Array(m.vertices),
-    normals: new Float32Array(m.normals),
-    indices: new Uint32Array(m.triangles),
-    faceGroups: m.faceGroups.map((faceGroup, i) => ({ start: faceGroup.start, count: faceGroup.count, face: i })),
-    edgePositions: new Float32Array(e.lines),
-    edgeGroups: e.edgeGroups.map((edgeGroup, i) => ({ start: edgeGroup.start, count: edgeGroup.count, edge: i })),
-    faces: shape.faces.map(face => ({ type: face.geomType }) as FaceInfo),
-    edges: shape.edges.map(edge => ({ type: edge.geomType }) as EdgeInfo),
-    openEdges: []
-  };
-  drawMeshes.set(shape, mesh);
-
-  return mesh;
-}
-
-function meshBody(id: string, name: string, shape: Shape3D): BodyMesh {
-  const cached = meshCache.get(shape);
-  if (cached) {
-    return { ...cached, id, name };
-  }
-  const { m, e } = meshLines(shape);
-  // Group order matches shape.faces / shape.edges order (verified); ids are hashes.
-  const mesh: BodyMesh = {
-    id,
-    name,
-    key: meshKey++,
-    positions: new Float32Array(m.vertices),
-    normals: new Float32Array(m.normals),
-    indices: new Uint32Array(m.triangles),
-    faceGroups: m.faceGroups.map((faceGroup, i) => ({ start: faceGroup.start, count: faceGroup.count, face: i })),
-    edgePositions: new Float32Array(e.lines),
-    edgeGroups: e.edgeGroups.map((edgeGroup, i) => ({ start: edgeGroup.start, count: edgeGroup.count, edge: i })),
-    faces: shape.faces.map((face, i) => ({ ...getFaceInfo(face), step: faceSteps(shape)?.[i], curve: faceOrigins(shape)?.[i], ...(faceAliases(shape)?.[i] ? { was: faceAliases(shape)![i] } : {}) })),
-    edges: shape.edges.map((e, i) => ({ ...edgeInfo(e), steps: edgeSteps(shape)?.[i], curves: edgeOrigins(shape)?.[i], ...(oldEdgeSteps(shape) ? { was: oldEdgeSteps(shape)![i] } : {}), ...(seamEdges(shape)[i] ? { seam: true } : {}) })),
-
-    openEdges: openEdges(shape)
-  };
-  meshCache.set(shape, mesh);
-
-  return mesh;
-}
 
 // ------------------------------------------------------------------- helpers
 
