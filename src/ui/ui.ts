@@ -3,9 +3,9 @@ import { ungroupedSteps } from '../doc/historyGroups';
 import { screenClass, watchScreenClass } from '../device';
 import { evaluate, toDisplay, trim, UNIT_LABEL, units } from '../units';
 import { settings } from '../settings';
-import { selectAll, textField } from './textField';
+import { selectAll } from './textField';
 import { numpadInput, typingInto } from './numpad';
-import { DIALOG_ACTION } from './dialogAction';
+import { askDialog, formDialog, showContextMenu, type Choice, type DialogField } from './dialogs';
 import { icons, type IconName } from './icons';
 import type { FeatureError } from '../kernel/protocol';
 import type { Feature, HistoryGroup } from '../doc/types';
@@ -809,63 +809,10 @@ export class UI {
    */
   menu(x: number, y: number, rows: (MenuRow | '-')[]): void {
     this.closeMenu();
-    const element = el('div', 'ctx-menu');
-    element.id = 'ctx-menu';
-    element.setAttribute('role', 'menu');
-    for (const row of rows) {
-      if (row === '-') {
-        element.append(el('div', 'ctx-sep'));
-        continue;
-      }
-      const b = el('button', 'ctx-row');
-      b.setAttribute('role', row.checked === undefined ? 'menuitem' : 'menuitemcheckbox');
-      if (row.checked !== undefined) {
-        b.setAttribute('aria-checked', String(row.checked));
-      }
-      b.disabled = !!row.disabled;
-      b.append(el('span', 'ctx-tick', row.checked ? '✓' : ''), el('span', 'ctx-label', row.label), el('span', 'ctx-key', row.shortcut ?? ''));
-      b.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.closeMenu();
-        row.run();
-      });
-      element.append(b);
-    }
-    document.body.append(element);
-    const offsetWidth = element.offsetWidth;
-    const offsetHeight = element.offsetHeight;
-    element.style.left = `${Math.max(8, Math.min(x, innerWidth - offsetWidth - 8))}px`;
-    element.style.top = `${Math.max(8, Math.min(y, innerHeight - offsetHeight - 8))}px`;
-    const away = (e: Event) => {
-      if (e.type === 'keydown' && (e as KeyboardEvent).key !== 'Escape') {
-        return;
-      }
-      if (e.type === 'pointerdown' && element.contains(e.target as Node)) {
-        return;
-      }
-      if (e.type === 'keydown') {
-        e.stopPropagation();
-      }
-      this.closeMenu();
-    };
-    // (Next tick: the right-click that opened it doesn't close it.)
-    setTimeout(() => {
-      if (!element.isConnected) {
-        return;
-      }
-      addEventListener('pointerdown', away, true);
-      addEventListener('keydown', away, true);
-      addEventListener('wheel', away, true);
-      this.menuOff = () => {
-        removeEventListener('pointerdown', away, true);
-        removeEventListener('keydown', away, true);
-        removeEventListener('wheel', away, true);
-      };
-    });
-    (element.querySelector('button:not(:disabled)') as HTMLButtonElement | null)?.focus({ preventScroll: true });
+    this.menuClose = showContextMenu(x, y, rows);
   }
 
-  private menuOff: (() => void) | null = null;
+  private menuClose: (() => void) | null = null;
 
   private panelWarning: string | null = null;
 
@@ -885,9 +832,8 @@ export class UI {
   }
 
   closeMenu(): void {
-    this.menuOff?.();
-    this.menuOff = null;
-    document.getElementById('ctx-menu')?.remove();
+    this.menuClose?.();
+    this.menuClose = null;
   }
 
   /** The last few toasts (the console's sg.state() shows them: they fade before you can read them). */
@@ -967,134 +913,17 @@ export class UI {
     }
   }
 
-  /** Small modal form; resolves with the values, or null if cancelled. */
   /**
    * A window of fields; resolves with their values, or null (Cancel / Esc / X).
    * `action`: a button at the top (e.g. New Variable); it resolves with the values too, and ACTION set.
    */
-  dialog(title: string, fields: { key: string; label: string; value: string; placeholder?: string; /** A tick box: value "1" ticked, "" not. */ check?: boolean }[], note?: string, action?: { label: string; icon: IconName }): Promise<Record<string, string> | null> {
-    return new Promise((resolve) => {
-      const back = el('div', 'dialog-back');
-      const box = el('form', 'dialog');
-      // The title with a close X (a long list can push Cancel off a phone's screen).
-      const head = el('div', 'library-head');
-      head.append(el('div', 'panel-title', title));
-      const x = el('button', 'icon-btn library-close');
-      x.type = 'button';
-      x.title = 'Close';
-      x.innerHTML = icons.close;
-      x.addEventListener('click', () => close(null));
-      head.append(x);
-      box.append(head);
-      const values = () => Object.fromEntries(fields.map((field, i) => [field.key, field.check ? ((inputs[i] as HTMLInputElement).checked ? '1' : '') : inputs[i].value]));
-      if (action) {
-        const a = el('button', 'text-btn dialog-action');
-        a.type = 'button';
-        a.innerHTML = icons[action.icon];
-        a.append(action.label);
-        a.addEventListener('click', () => close({ ...values(), [DIALOG_ACTION]: '1' }));
-        box.append(a);
-      }
-      if (note) {
-        box.append(el('div', 'dialog-note', note));
-      }
-      // The fields scroll inside the window; the title and the buttons stay in sight.
-      const list = el('div', 'dialog-list');
-      box.append(list);
-      const inputs = fields.map((field) => {
-        if (field.check) {
-          const label = el('label', 'dialog-check');
-          const i = document.createElement('input');
-          i.type = 'checkbox';
-          i.checked = !!field.value;
-          label.append(i, el('span', '', field.label));
-          list.append(label);
-
-          return i;
-        }
-        const fieldLabel = el('label', 'dialog-field');
-        fieldLabel.append(el('span', 'field-label', field.label));
-        const i = textField();
-        i.value = field.value;
-        i.placeholder = field.placeholder ?? '';
-        fieldLabel.append(i);
-        list.append(fieldLabel);
-
-        return i;
-      });
-      const row = el('div', 'panel-buttons');
-      const close = (values: Record<string, string> | null) => {
-        back.remove();
-        resolve(values);
-      };
-      row.append(textButton('Cancel', 'Esc', () => close(null)));
-      const ok = textButton('OK', 'Enter', () => close(values()), true);
-      row.append(ok);
-      box.append(row);
-      box.addEventListener('submit', e => (e.preventDefault(), ok.click()));
-      // Enter is OK (left to the browser it would "click" the first button: Cancel).
-      for (const b of row.querySelectorAll('button')) {
-        b.type = 'button';
-      }
-      box.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          close(null);
-        }
-        if (e.key === 'Enter') {
-          (e.preventDefault(), ok.click());
-        }
-        e.stopPropagation();
-      });
-      back.append(box);
-      back.addEventListener('pointerdown', e => e.target === back && close(null));
-      document.body.append(back);
-      (inputs.find(i => !(i instanceof HTMLInputElement)) ?? ok).focus();
-    });
+  dialog(title: string, fields: DialogField[], note?: string, action?: { label: string; icon: IconName }): Promise<Record<string, string> | null> {
+    return formDialog(title, fields, note, action);
   }
 
   /** A question with a few answers (buttons); resolves with the chosen id, or null (Esc / Cancel). */
-  ask(title: string, note: string, choices: { id: string; label: string; primary?: boolean; /** Runs inside the tap itself (for things a browser only allows on a tap, like sharing). */ run?: () => void }[]): Promise<string | null> {
-    return new Promise((resolve) => {
-      const back = el('div', 'dialog-back');
-      const box = el('div', 'dialog');
-      box.append(el('div', 'panel-title', title));
-      if (note) {
-        box.append(el('div', 'dialog-note', note));
-      }
-      const row = el('div', 'panel-buttons');
-      const close = (value: string | null) => {
-        back.remove();
-        window.removeEventListener('keydown', onKey, true);
-        resolve(value);
-      };
-      row.append(textButton('Cancel', 'Esc', () => close(null)));
-      let primary: HTMLButtonElement | null = null;
-      for (const choice of choices) {
-        const b = textButton(choice.label, choice.primary ? 'Enter' : '', () => (choice.run?.(), close(choice.id)), !!choice.primary);
-        if (choice.primary) {
-          primary = b;
-        }
-        row.append(b);
-      }
-      for (const b of row.querySelectorAll('button')) {
-        b.type = 'button';
-      }
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          (e.preventDefault(), close(null));
-        }
-        if (e.key === 'Enter' && primary) {
-          (e.preventDefault(), primary.click());
-        }
-        e.stopPropagation();
-      };
-      window.addEventListener('keydown', onKey, true);
-      box.append(row);
-      back.append(box);
-      back.addEventListener('pointerdown', e => e.target === back && close(null));
-      document.body.append(back);
-      primary?.focus();
-    });
+  ask(title: string, note: string, choices: Choice[]): Promise<string | null> {
+    return askDialog(title, note, choices);
   }
 
   // ------------------------------------------------------------------- panel

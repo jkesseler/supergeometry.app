@@ -2065,7 +2065,8 @@ body.items-open #bottom-left {
   flex: none;
 }
 /* The fields: as tall as the screen allows, then they scroll (with a bar always shown). */
-form.dialog {
+form.dialog,
+.dialog.form-dialog {
   max-height: calc(100dvh - 24px - var(--safe-t) - var(--safe-b));
 }
 .dialog-list {
