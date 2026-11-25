@@ -4,6 +4,11 @@ import type { AnyShape, Shape3D } from 'replicad';
 import type { Bodies } from './types';
 import type { Feature } from '../doc/types';
 
+/**
+ * A face/edge/corner edit must not tear the body open: when the result has
+ * gaps the body didn't have, the step stops with a message instead of
+ * leaving a body with holes for the next steps to build on.
+ */
 export function staysClosed(before: Shape3D, after: Shape3D): Shape3D {
   if (openEdges(after).length > openEdges(before).length) {
     throw new Error('That would tear the body open - try a smaller value, or another face');

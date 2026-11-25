@@ -72,7 +72,6 @@ function sizeOf(shape: Shape3D): number {
 
 type Fix = { label: string; run: (s: Shape3D, size: number) => Shape3D | null };
 
-/** Faces → shell(s) by sewing at `tol`; every closed shell → a solid (turned outward). */
 /**
  * Flat faces with an edge next to nothing in length (the end of a sliver
  * that was closed: two roundings that meet, 4 mm each side of an 8 mm
@@ -168,6 +167,7 @@ function merged(shape: Shape3D, tol: number): Shape3D | null {
   }
 }
 
+/** Faces → shell(s) by sewing at `tol`; every closed shell → a solid (turned outward). */
 function sewToSolid(faces: unknown[], tol: number): Shape3D | null {
   const oc = getOC();
   const sw = new oc.BRepBuilderAPI_Sewing(tol, true, true, true, false);

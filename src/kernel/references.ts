@@ -142,7 +142,6 @@ export function resolveFace(body: Shape3D, ref: FaceRef, only?: (f: Face) => boo
 const FACE_GONE = 'The face it was built on is gone (something before it changed). Tap this step and pick the face again.';
 export const EDGE_GONE = 'An edge it was built on is gone (something before it changed). Tap this step and pick the edges again.';
 
-/** `rounding`: for a fillet or chamfer - a seam (nothing to round) is never it. */
 /** How far a point is from an edge (its curve, between its ends). */
 function pointToEdge(point: Vec3, edge: Edge): number {
   const vertex = makeVertex(point);
@@ -216,6 +215,7 @@ function otherEnd(curve: string): string | null {
   return match ? `${match[1] ?? ''}cap:${match[2] === '1' ? 2 : 1}@${curve.slice(match[0].length)}` : null;
 }
 
+/** `rounding`: for a fillet or chamfer - a seam (nothing to round) is never it. */
 export function resolveEdge(body: Shape3D, ref: EdgeRef, rounding = false): Edge {
   const size = ref.length || 1;
   // (Saved directions are of unit length; one that isn't - written by hand, or by a

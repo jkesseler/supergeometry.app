@@ -868,16 +868,16 @@ export async function regenerate(features: Feature[], saved = false): Promise<Re
   return { bodies: meshes, errors, notes, sketchPlanes, sketchBoundaries, ...(sketchEntities ? { sketchEntities } : {}), ...(whole ? { whole } : {}), planes: [...ctx.planes.values()], axes: [...ctx.axes.values()], ms: performance.now() - t0 };
 }
 
-/**
- * Replay features in order. Results are cached per feature, keyed by the JSON
- * of every feature up to it, so editing feature k only rebuilds k onwards.
- */
 /** The solids of the last rebuild (for tests that check the real geometry, not just its mesh). */
 let lastBodies: Map<string, Shape3D> = new Map();
 export function debugBodies(): Map<string, Shape3D> {
   return lastBodies;
 }
 
+/**
+ * Replay features in order. Results are cached per feature, keyed by the JSON
+ * of every feature up to it, so editing feature k only rebuilds k onwards.
+ */
 async function run(features: Feature[], saved = false) {
   rebuild.stepsNow = new Set(features.map(feature => feature.id));
   useSafeBooleans();
@@ -3495,6 +3495,9 @@ function threadTarget(body: Shape3D, thread: Extract<Feature, { type: 'thread' }
   }
 }
 
+/** A thread's starts as a whole number from 1 to 8 (missing, or nonsense: 1). */
+const threadStarts = (count: number | undefined): number => (Number.isFinite(count) ? Math.max(1, Math.min(8, Math.round(count!))) : 1);
+
 /**
  * Cut an ISO 60° thread into a round face: a V groove swept along a helix
  * round the face's axis (deepest at the minor diameter of a shank, the major
@@ -3502,9 +3505,6 @@ function threadTarget(body: Shape3D, thread: Extract<Feature, { type: 'thread' }
  * a ridge) is the reliable way: a ridge only just overlapping its core can
  * come out of OpenCascade wrong without a word.
  */
-/** A thread's starts as a whole number from 1 to 8 (missing, or nonsense: 1). */
-const threadStarts = (count: number | undefined): number => (Number.isFinite(count) ? Math.max(1, Math.min(8, Math.round(count!))) : 1);
-
 export function threadFace(body: Shape3D, face: Face, pitch: number, left = false, like?: { t0: number; t1: number; anchor?: number; phase?: number; shallow?: number; c?: Vec3; a?: Vec3 }, used?: { phase?: number }, starts = 1): Shape3D {
   if (face.geomType !== 'CYLINDRE') {
     throw new Error('Threads go on round faces (a shank or a hole)');
@@ -4695,15 +4695,15 @@ function trimSweepEnd(body: Shape3D, face: Face, by: number, ctx: Ctx): Shape3D 
   return null;
 }
 
-/** Put a new solid into the model: new body, or join/cut a target. */
 /** A join that only touches along an edge. */
 const PINCHED = 'This only touches the body along an edge, so the two hang together by nothing - let them overlap a little (start it inside the body).';
 
-/** A cut that took nothing away: said (a pocket drawn on the wrong side did nothing, without a word). */
 /** Auto, drawn inside a body and reaching out of it: cut, not added. */
 export const AUTO_CUT_INSIDE = "Auto cut this out of the body it starts inside - what reaches past that body isn't added. To add it (a branch, a boss), pick Add.";
+/** A cut that took nothing away: said (a pocket drawn on the wrong side did nothing, without a word). */
 const MISSED_CUT = "This cut doesn't reach the body, so nothing was cut - check which way it goes (Flip), or make it longer.";
 
+/** Put a new solid into the model: new body, or join/cut a target. */
 function combine(id: string, mode: string, target: string | undefined, solid: Shape3D, negative: boolean, ctx: Ctx): void {
   // (A mode that isn't one - a damaged file: the body was left as it was, and nothing said so.)
   if (typeof mode === 'string' && !['auto', 'new', 'join', 'cut', 'intersect'].includes(mode)) {
@@ -5445,7 +5445,6 @@ function transform(transformFeature: Extract<Feature, { type: 'transform' }>, ct
   }
 }
 
-/** Solid filling the positive side of a plane, big enough to contain `body`. */
 /** A body cut by planes and other bodies' surfaces at once (OpenCascade's Splitter): the pieces, biggest first. */
 function splitAll(body: Shape3D, planes: PlaneDef[], tools: Shape3D[]): Shape3D[] {
   const oc = getOC();
@@ -5486,6 +5485,7 @@ function splitAll(body: Shape3D, planes: PlaneDef[], tools: Shape3D[]): Shape3D[
   }
 }
 
+/** Solid filling the positive side of a plane, big enough to contain `body`. */
 function halfSpace(plane: PlaneDef, body: Shape3D): Shape3D {
   const bb = body.boundingBox;
   const length = (Math.hypot(bb.width, bb.height, bb.depth) + dist(bb.center as Vec3, plane.origin)) * 2 + 10;
@@ -5746,7 +5746,6 @@ function faceBoundary(ref: FaceRef, plane: PlaneDef, bodies: Bodies): SketchEnti
   });
 }
 
-/** A sketch drawn on a face moves with that face when earlier features change. */
 /** A sketch drawn on a construction plane: where that plane is now (moved along it, or turned with it). */
 function followPlane(sketch: SketchFeature, ctx: Ctx): PlaneDef {
   const plane = ctx.planes.get(sketch.onPlane!)?.plane;
@@ -5762,6 +5761,7 @@ function followPlane(sketch: SketchFeature, ctx: Ctx): PlaneDef {
   return { ...sketch.plane, origin: add(sketch.plane.origin, scale(normal, dot(normal, sub(plane.origin, sketch.plane.origin)))) };
 }
 
+/** A sketch drawn on a face moves with that face when earlier features change. */
 function followFace(sketch: SketchFeature, bodies: Bodies): PlaneDef {
   const ref = sketch.attachedTo!;
   const body = bodies.get(ref.body);
@@ -5789,12 +5789,6 @@ function followFace(sketch: SketchFeature, bodies: Bodies): PlaneDef {
 
 // ----------------------------------------------------- geometric references
 
-/**
- * One end of a Connect bridge: the face's outer edge as points in order, its
- * middle and outward normal, and how far the bridge may go into the body
- * behind it (a third of the face's size, less than half the body's depth
- * there - a 3 mm plate's end doesn't poke out of its back).
- */
 /** `count` points along a wire (end to end; a closed one's start not repeated). */
 function curvePoints(wire: any, count: number, closed = false): Vec3[] {
   const oc = getOC();
@@ -5815,6 +5809,12 @@ function curvePoints(wire: any, count: number, closed = false): Vec3[] {
   return out;
 }
 
+/**
+ * One end of a Connect bridge: the face's outer edge as points in order, its
+ * middle and outward normal, and how far the bridge may go into the body
+ * behind it (a third of the face's size, less than half the body's depth
+ * there - a 3 mm plate's end doesn't poke out of its back).
+ */
 interface BridgeEnd {
   center: Vec3;
   /** The way the bridge leaves the face: out of it (into it, for a tunnel). */
@@ -5834,12 +5834,6 @@ interface BridgeEnd {
   area: number;
 }
 
-/**
- * One end of Connect's bridge: the face's outline (`size` of it, about its
- * middle), and the same moved a little way into its body when it's to be
- * joined or cut (so the bodies overlap it, not only touch) - never out of the
- * far side.
- */
 /**
  * A patch on a round face that crosses the seam of its surface (where a
  * revolved body's surface starts and ends) comes in two faces, one each side:
@@ -5891,6 +5885,12 @@ function acrossSeam(body: Shape3D, face: Face): { other: Face; wire: any } | nul
   return null;
 }
 
+/**
+ * One end of Connect's bridge: the face's outline (`size` of it, about its
+ * middle), and the same moved a little way into its body when it's to be
+ * joined or cut (so the bodies overlap it, not only touch) - never out of the
+ * far side.
+ */
 function bridgeEnd(body: Shape3D, face: Face, size: number, inward: boolean, sink: boolean): BridgeEnd {
   const oc = getOC();
   const joined = acrossSeam(body, face);
@@ -5941,18 +5941,18 @@ function bridgeEnd(body: Shape3D, face: Face, size: number, inward: boolean, sin
   return { center: info.center, dir, outline, rim, depth, reach, ring: around, area: info.area * size * size, joined: !!joined };
 }
 
-/**
- * Connect's bridge: face A's outline swept along `along` (0..1, from A's
- * middle to B's) turning into face B's - it starts and ends exactly on the
- * faces' edges (as sized by bridgeEnd), and goes on, straight, as far into
- * the bodies as bridgeEnd set it back.
- */
 /** Why a bridge couldn't be made (its curve too tight for its width: the usual reason). */
 const bridgeFailed = (guided: boolean) =>
   guided
     ? "The bridge can't be made along this curve (it turns too tightly for its width, or twists through itself) - try a gentler curve, or a smaller Size"
     : "The bridge can't be made between these two faces as they are (too close for its width, or outlines too unlike each other) - try a smaller Size or another Bend, or draw a curve for it to follow";
 
+/**
+ * Connect's bridge: face A's outline swept along `along` (0..1, from A's
+ * middle to B's) turning into face B's - it starts and ends exactly on the
+ * faces' edges (as sized by bridgeEnd), and goes on, straight, as far into
+ * the bodies as bridgeEnd set it back.
+ */
 function sweepBridge(a: BridgeEnd, b: BridgeEnd, along: (t: number) => Vec3, how: { guided: boolean; exact: boolean; slide?: Vec3; samples: number }): { shape: Shape3D; exact: boolean } {
   const oc = getOC();
   const { guided, exact, slide, samples } = how;
@@ -6130,11 +6130,6 @@ function sweepBridge(a: BridgeEnd, b: BridgeEnd, along: (t: number) => Vec3, how
 }
 
 /**
- * Points on the smooth surface a Freeform Face cage makes (its border left
- * out: the face's own edges are kept), for the face to be filled through; null
- * when every inside point is still on the face (nothing to do).
- */
-/**
  * Those of `pts` that lie over the flat face itself (seen along its normal),
  * clear of its edge. A cage's smooth surface cuts an inward corner of the
  * face's outline (an L's) a little short: the points it has out there, past
@@ -6177,6 +6172,11 @@ function onFace(face: Face, pts: Vec3[]): Vec3[] {
   return kept.length ? kept : pts;
 }
 
+/**
+ * Points on the smooth surface a Freeform Face cage makes (its border left
+ * out: the face's own edges are kept), for the face to be filled through; null
+ * when every inside point is still on the face (nothing to do).
+ */
 function faceCagePoints(cage: { verts: Vec3[]; faces: [number, number, number, number][] }, normal: Vec3, fine = true): Vec3[] | null {
   const border = new Set(boundaryEdges(cage).flat());
   const inside = cage.verts.map((_, i) => i).filter(i => !border.has(i));
@@ -6360,7 +6360,6 @@ function smoothEdge(body: Shape3D, edge: Edge): boolean {
 
 // ------------------------------------------------------------------- meshing
 
-/** The triangles and edge lines of a body, as the view shows them. */
 /**
  * Bodies that are another body moved, turned or mirrored (a Move step, a
  * pattern's copies): their mesh is that body's, moved the same way - meshed
@@ -6403,6 +6402,7 @@ function movedMesh(shape: Shape3D) {
   };
 }
 
+/** The triangles and edge lines of a body, as the view shows them. */
 function meshLines(shape: Shape3D) {
   const moved = movedMesh(shape);
   if (moved) {
@@ -6494,17 +6494,8 @@ function meshBody(id: string, name: string, shape: Shape3D): BodyMesh {
   return mesh;
 }
 
-/**
- * Edges used by fewer than two faces: the body is not closed (watertight)
- * there. Imported meshes and failed operations are the usual cause.
- */
 // ------------------------------------------------------------------- helpers
 
-/**
- * A face/edge/corner edit must not tear the body open: when the result has
- * gaps the body didn't have, the step stops with a message instead of
- * leaving a body with holes for the next steps to build on.
- */
 /** How many faces are next to nothing in area (leftovers of an edit, not real faces). */
 function slivers(shape: Shape3D): number {
   const areas = shape.faces.map(face => measureArea(face));

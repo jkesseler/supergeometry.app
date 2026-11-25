@@ -369,7 +369,6 @@ export function seamEdges(shape: Shape3D): boolean[] {
 }
 
 /** Same steps, as stored in a reference. */
-
 export function sameSteps(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((item, i) => item === b[i]);
 }

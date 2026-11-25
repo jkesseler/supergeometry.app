@@ -443,12 +443,6 @@ function regionAround(body: Shape3D, face: Face, nb: Face[], q: Vec3, extent: nu
 }
 
 /**
- * Replace flat face F's plane with `to` (move/tilt); neighbours extend or trim.
- * Round blends (fillets) on F are taken off first and put back at the same
- * radius afterwards - extending a fillet's cylinder through the body would
- * carve a tunnel into it.
- */
-/**
  * The face made a smooth surface through `points` (absolute), its own edges
  * kept: the rest of the body is untouched and closes round it again.
  */
@@ -762,6 +756,12 @@ function filledFace(body: Shape3D, face: Face, points: Vec3[], degree: number): 
   }
 }
 
+/**
+ * Replace flat face F's plane with `to` (move/tilt); neighbours extend or trim.
+ * Round blends (fillets) on F are taken off first and put back at the same
+ * radius afterwards - extending a fillet's cylinder through the body would
+ * carve a tunnel into it.
+ */
 export function replaceFacePlane(body: Shape3D, face: Face, to: PlaneDef): Shape3D {
   if (face.geomType !== 'PLANE') {
     throw new Error('Only flat faces can be moved or tilted');
@@ -1174,15 +1174,15 @@ function needsContinuation(body: Shape3D, face: Face): boolean {
   });
 }
 
+/** A face pulled past where its sides meet (a cone's end pulled past its point). */
+export const SIDES_MEET = 'Pulled this far, its sides would meet in a point (they lean in) - pull it less, or draw the shape on the face and extrude that for straight sides';
+
 /**
  * Offset flat face F by d when its neighbours are curved: each point of F's
  * outline carries on along its neighbour surface (the way that surface is
  * heading there) until it is d further out; the slab between the old and the
  * new outline is added (d > 0) or taken away (d < 0).
  */
-/** A face pulled past where its sides meet (a cone's end pulled past its point). */
-export const SIDES_MEET = 'Pulled this far, its sides would meet in a point (they lean in) - pull it less, or draw the shape on the face and extrude that for straight sides';
-
 function offsetByContinuation(body: Shape3D, face: Face, distance: number): Shape3D {
   const fp = planeOf(face);
   const normal = fp.normal;
@@ -1457,7 +1457,6 @@ export function offsetFace(body: Shape3D, face: Face, distance: number): Shape3D
   return sanity(body, out);
 }
 
-/** Remove a face; its neighbours extend to close the gap (fillets, chamfers, holes). */
 /**
  * Delete a face as if it had never been there: its neighbours carry on along
  * their own surfaces until they meet. A face that's part of a fillet (or any
