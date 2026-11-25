@@ -1,8 +1,8 @@
 import { openEdges } from './health';
 import { editNotes } from './faceEdit';
 import type { AnyShape, Shape3D } from 'replicad';
-import type { Bodies } from './types';
 import type { Feature } from '../doc/types';
+import type { Bodies, Ctx } from './types';
 
 /**
  * A face/edge/corner edit must not tear the body open: when the result has
@@ -136,4 +136,36 @@ export function bodyNames(features: Feature[], ids: string[], numbers: Map<strin
   }
 
   return out;
+}
+
+/**
+ * The bodies an edit may change: the ones it names - and, for a solid made
+ * from a sketch or face that joins/cuts whatever it runs into, all of them.
+ */
+export function touchedBodies(feature: Feature, ctx: Ctx, all = true): string[] {
+  const named = new Set<string>();
+  const walk = (value: unknown, key = ''): void => {
+    if (Array.isArray(value)) {
+      return value.forEach(item => walk(item, key));
+    }
+    if (value && typeof value === 'object') {
+      for (const [key, x] of Object.entries(value as Record<string, unknown>)) {
+        walk(x, key);
+      }
+
+      return;
+    }
+    if (typeof value === 'string' && (key === 'body' || key === 'bodies' || key === 'target' || key === 'tools')) {
+      named.add(value);
+    }
+  };
+  walk(feature);
+  const mode = (feature as { mode?: string }).mode;
+  if (all && (feature.type === 'extrude' || feature.type === 'revolve' || feature.type === 'sweep' || feature.type === 'loft') && mode && mode !== 'new') {
+    for (const id of ctx.bodies.keys()) {
+      named.add(id);
+    }
+  }
+
+  return [...named].filter(id => ctx.bodies.has(id));
 }
