@@ -13,7 +13,9 @@
     "lint": "eslint .",
     "check": "tsx scripts/check.ts",
     "render": "tsx scripts/render.ts",
-    "live": "tsx scripts/live.ts"
+    "live": "tsx scripts/live.ts",
+    "test": "tsx scripts/test.ts",
+    "test:all": "tsx scripts/test.ts --all"
   },
   "dependencies": {
     "@fontsource/bebas-neue": "^5.3.0",

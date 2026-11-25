@@ -1,4 +1,4 @@
-// Run: npx tsx tests/threadclearance.test.ts
+// Run: npx tsx tests/threadclearance.slow.test.ts
 // A threaded bolt subtracted from a block with a clearance: a threaded hole a little bigger than the bolt all
 // round, so the printed bolt turns in it. (It failed every time: "Couldn't keep 0.2 mm clear ...".)
 import { getOC, type Shape3D } from 'replicad';

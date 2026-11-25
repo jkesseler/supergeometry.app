@@ -182,8 +182,10 @@ The rest is **[Convention]**.
   `index.tsx`.
 - Role folders — `components`, `services`, `utilities`, `collections`, `jobs` —
   are lowercase.
-- Tests are `tests/<name>.test.ts`, each a standalone script run with
-  `npx tsx tests/<name>.test.ts`. There is no test runner.
+- Tests are `tests/<name>.test.ts`, each a standalone script that exits non-zero
+  on failure: `npx tsx tests/<name>.test.ts` runs one. `npm test` runs them all,
+  several at once, except the slow ones (over ~20 s), named
+  `tests/<name>.slow.test.ts`; `npm run test:all` runs those too.
 
 ---
 
@@ -533,6 +535,6 @@ than advisory — nobody is hand-correcting the drift afterwards.
 - **Keep types quiet.** Do not add return-type annotations inference already
   provides, do not reach for `unknown`, and do not generate narrowing guards for
   values whose shape you already know. Write an `interface` and move on.
-- **Verify before reporting done.** Run `npm run typecheck`, `npm run lint` and
-  the relevant `npx tsx tests/<name>.test.ts`. Say what you actually ran. Type-checking alone is not evidence that
+- **Verify before reporting done.** Run `npm run typecheck`, `npm run lint`,
+  `npm test` and the relevant slow tests. Say what you actually ran. Type-checking alone is not evidence that
   a change works.

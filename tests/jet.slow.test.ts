@@ -1,4 +1,4 @@
-// Run: npx tsx tests/jet.test.ts [out.json] - a turbofan jet engine on a
+// Run: npx tsx tests/jet.slow.test.ts [out.json] - a turbofan jet engine on a
 // display stand, cut away to show what's inside, made with every tool: the
 // ones the fan used and the ones no build had used yet - a reference Image to
 // trace, Import (an STL sensor pod) and Repair, Delete Face, Delete (a body),

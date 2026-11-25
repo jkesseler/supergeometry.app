@@ -1,4 +1,4 @@
-// Run: npx tsx tests/mutate.test.ts [fixture] [perStep] [seed] [from] [to]
+// Run: npx tsx tests/mutate.slow.test.ts [fixture] [perStep] [seed] [from] [to]
 //
 // Mutation sweep of the geometry engine. Real projects (tests/fixtures) are
 // replayed with one value of one step changed at a time to what people type

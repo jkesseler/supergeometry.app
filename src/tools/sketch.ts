@@ -1452,17 +1452,19 @@ export class SketchTool implements Tool {
     const mixed = sel.length > 0 && !isCons && sel.some(e => e.construction);
     app.ui.setBottom([
       // (Curves picked: their own Construction switch is with them - not a second one here.)
-      ...(sel.length ? [] : [{
-        id: 'construction',
-        // (Named for what it switches, lit while on: "Regular" alone said nothing on the wheel.)
-        label: 'Construction',
-        // The icon is the line type it is now; ⟲ + the type a tap switches to follow the text.
-        icon: isCons ? 'lineDashed' : 'line',
-        trailing: ['swap', isCons ? 'line' : 'lineDashed'],
-        sub: sel.length ? (mixed ? 'Mixed · tap to switch' : 'Tap to switch') : 'New lines · tap to switch',
-        active: isCons,
-        run: () => this.toggleConstruction()
-      } as ToolItem]),
+      ...(sel.length
+        ? []
+        : [{
+          id: 'construction',
+          // (Named for what it switches, lit while on: "Regular" alone said nothing on the wheel.)
+          label: 'Construction',
+          // The icon is the line type it is now; ⟲ + the type a tap switches to follow the text.
+          icon: isCons ? 'lineDashed' : 'line',
+          trailing: ['swap', isCons ? 'line' : 'lineDashed'],
+          sub: sel.length ? (mixed ? 'Mixed · tap to switch' : 'Tap to switch') : 'New lines · tap to switch',
+          active: isCons,
+          run: () => this.toggleConstruction()
+        } as ToolItem]),
       { id: 'look', label: 'Normal to Sketch', icon: 'normal', run: () => this.plane && app.view.cam.lookAlong(this.plane.normal, this.plane.xDir) }
     ]);
   }
@@ -1741,12 +1743,11 @@ export class SketchTool implements Tool {
         // (Already in the box on the line: not repeated in the list beside it.)
         if (this.pts.length && !settings.value.numpad && !isTouchDevice) {
           items.push({ ...lock('len', 'Length'), inBox: true } as PanelItem);
-        }
-        // A finger can't hover: after the first tap there's no line to type a
-        // length on (and the next point is often off the screen) - so the card
-        // takes the length and the direction (0° right, 90° up), Done places it.
-        // Or how far across and up it goes: a slope ("in 10, up 12") with no angle to work out.
-        else if (this.pts.length && isTouchDevice) {
+        } else if (this.pts.length && isTouchDevice) {
+          // A finger can't hover: after the first tap there's no line to type a
+          // length on (and the next point is often off the screen) - so the card
+          // takes the length and the direction (0° right, 90° up), Done places it.
+          // Or how far across and up it goes: a slope ("in 10, up 12") with no angle to work out.
           items.push(...firstAt(), lock('len', 'Length'), lock('ang', 'Angle', 'angle'), lock('dx', 'Across'), lock('dy', 'Up'));
         }
         break;

@@ -1,4 +1,4 @@
-// Run: npx tsx tests/threadstarts.test.ts
+// Run: npx tsx tests/threadstarts.slow.test.ts
 // Threads with several starts (a jar's neck and its lid): that many grooves side by side, the crests still a pitch
 // apart, one turn taking a lid `starts` pitches along. Cut right, sound, and a lid cut from the neck with a
 // clearance stands that far off it.

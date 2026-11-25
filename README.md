@@ -586,7 +586,8 @@ and `supergeometry.result` holds the last rebuild (`bodies`, `errors`).
 npm install
 npm run dev      # local dev server (add --host to open it from a tablet)
 npm run build    # static site in dist/ - host it anywhere
-npx tsx tests/engine.test.ts   # one of the test suites in tests/
+npm test         # the quick tests (about a minute); npm run test:all adds the slow ones
+npx tsx tests/engine.test.ts   # one test file
 ```
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it's built and why

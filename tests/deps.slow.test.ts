@@ -1,4 +1,4 @@
-// Run: npx tsx tests/deps.test.ts [fixture] [every]
+// Run: npx tsx tests/deps.slow.test.ts [fixture] [every]
 //
 // A step is rebuilt only when something it read of the model changed. Real
 // projects have one size of one step nudged (every few steps in turn); the

@@ -371,9 +371,8 @@ export class AssemblyTool implements Tool {
       }
     } else if (faceInfo?.plane) {
       line = { origin: this.centroid(body, face) ?? faceInfo.center, dir: faceInfo.normal, round: false };
-    }
-    // Any other face that is turned round a line - a thread's flank, a cone: that line, found from its points.
-    else if (faceInfo) {
+    } else if (faceInfo) {
+      // Any other face that is turned round a line - a thread's flank, a cone: that line, found from its points.
       const b = this.app.view.body(body)!;
       const faceGroup = b.faceGroups.find(faceGroup => faceGroup.face === face);
       if (faceGroup) {

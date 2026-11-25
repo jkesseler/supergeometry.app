@@ -1025,13 +1025,16 @@ export class SelectTool implements Tool {
     const axis = info?.round && one ? roundAxis(app, facePick.body, facePick.face) : null;
     // A face a Freeform Face step made: that step opens again to reshape it.
     const shaped = info?.step ? app.store.find(info.step) : undefined;
-    const editFree: ToolItem[] = shaped?.type === 'faceFreeform' && one ? [{ id: 'editFreeform', label: 'Edit Freeform', icon: 'editFreeform', active: true, beta: true, run: () => {
-      // (A new Edit Freeform step in History, from the shape as its edits have left it.)
-      const t = faceFreeformTool(app, null, editedStep<FaceFreeformFeature>(app.store.features, shaped.id));
-      if (t) {
-        app.setTool(t);
-      }
-    } }] : [];
+    const editFree: ToolItem[] = [];
+    if (shaped?.type === 'faceFreeform' && one) {
+      editFree.push({ id: 'editFreeform', label: 'Edit Freeform', icon: 'editFreeform', active: true, beta: true, run: () => {
+        // (A new Edit Freeform step in History, from the shape as its edits have left it.)
+        const t = faceFreeformTool(app, null, editedStep<FaceFreeformFeature>(app.store.features, shaped.id));
+        if (t) {
+          app.setTool(t);
+        }
+      } });
+    }
     // What only a flat face can take (a sketch, an extrude, a plane on it) isn't
     // offered for a round or curved one at all, the way the body's tools aren't
     // offered for an edge: only what the face can do is listed.

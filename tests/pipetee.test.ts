@@ -55,7 +55,9 @@ const steps: Feature[] = [
   sketch('BranchFoot', XY(), brEs),
   { id: 'Branch', name: 'Extrude', type: 'extrude', source: profileOf('BranchFoot', brEs), distance: BRANCH, mode: 'join', target: 'Run' } as Feature
 ];
-let { errors, r: rTee } = await after(steps);
+const teeResult = await after(steps);
+let errors = teeResult.errors;
+const rTee = teeResult.r;
 // The round faces' seams: lines drawn on the body, marked as seams (Fillet
 // and Chamfer turn a tap on one away: nothing to round there).
 const seams = rTee.bodies.flatMap(b => b.edges.filter(e => e.seam));

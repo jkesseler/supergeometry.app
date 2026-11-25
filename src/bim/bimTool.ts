@@ -5,19 +5,19 @@
 // Tap a body (or its row in the card), then a material: it is that material
 // from then on - its colour on the model, its mass in the sheet.
 
-import type { MaterialDef } from '../doc/types';
-import type { BodyProps } from '../kernel/protocol';
 import { el } from '../ui/ui';
 import { caretToEnd, textField } from '../ui/textField';
 import { icons } from '../ui/icons';
-import type { ToolPointer } from '../view/input';
 import { hitToSel, type AppContext, type Sel, type Tool } from '../tools/tool';
-import { allMaterials, assignMaterial, fmtMass, fmtVolume, massOf, MATERIAL_CLASSES, materialOf, materialRows } from './materials';
-
-export { fmtArea, fmtMass, fmtVolume } from './materials';
 import { AssemblyTool } from '../assembly/assemblyTool';
+import { allMaterials, assignMaterial, fmtMass, fmtVolume, massOf, MATERIAL_CLASSES, materialOf, materialRows } from './materials';
 import { openDrawing } from './drawing';
 import { openSheet } from './sheet';
+import type { MaterialDef } from '../doc/types';
+import type { BodyProps } from '../kernel/protocol';
+import type { ToolPointer } from '../view/input';
+
+export { fmtArea, fmtMass, fmtVolume } from './materials';
 
 /** Each body's properties, measured on the solids (kept until the project changes). */
 export async function measureBodies(app: AppContext): Promise<Map<string, BodyProps>> {

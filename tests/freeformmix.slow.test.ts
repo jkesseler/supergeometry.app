@@ -1,4 +1,4 @@
-// Run: npx tsx tests/freeformmix.test.ts [quick]
+// Run: npx tsx tests/freeformmix.slow.test.ts [quick]
 //
 // Bodies made from sketches together with freeform bodies, every way they can
 // meet: union, subtract (either way round) and intersect, with the freeform

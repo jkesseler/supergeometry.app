@@ -1,4 +1,4 @@
-// Run: npx tsx tests/wateringcan.test.ts [out.json] - a watering can made as one
+// Run: npx tsx tests/wateringcan.slow.test.ts [out.json] - a watering can made as one
 // freeform: a cylinder cage with its top taken off (the opening), a spout
 // pulled out of an inset face low on the front (rising past the rim, flared at
 // the tip, left open), a handle on the back (an inset face arched round and

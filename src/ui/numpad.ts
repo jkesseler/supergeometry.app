@@ -203,10 +203,9 @@ class Numpad {
         const t = e.target as HTMLElement;
         if (t instanceof HTMLInputElement && t.dataset.numpad === '1' && settings.value.numpad && !t.dataset.scrubbed && t !== this.target) {
           this.open(t, !this.el.hidden);
-        }
-        // A tap in the box it's open on: the caret goes where it was tapped (or
-        // what's selected by hand) - keys add there instead of replacing it all.
-        else if (t instanceof HTMLInputElement && t === this.target && !t.dataset.scrubbed) {
+        } else if (t instanceof HTMLInputElement && t === this.target && !t.dataset.scrubbed) {
+          // A tap in the box it's open on: the caret goes where it was tapped (or
+          // what's selected by hand) - keys add there instead of replacing it all.
           requestAnimationFrame(() => this.takeCaret(t));
         }
       },

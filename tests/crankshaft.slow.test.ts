@@ -1,4 +1,4 @@
-// Run: npx tsx tests/crankshaft.test.ts [out.json] - a four-cylinder crankshaft,
+// Run: npx tsx tests/crankshaft.slow.test.ts [out.json] - a four-cylinder crankshaft,
 // built the way a person would, to push the geometry engine:
 //   - one throw (two shaped webs with counterweights, the crank pin, the next
 //     main journal) made once, then copied turned half round and along (180°

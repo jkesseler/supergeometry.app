@@ -1,4 +1,4 @@
-// Run: npx tsx tests/valve.test.ts [out.json] - a 1" brass ball valve at full
+// Run: npx tsx tests/valve.slow.test.ts [out.json] - a 1" brass ball valve at full
 // size, the geometry engine's stress test. Chosen for what's hard to model:
 //   Body: a ball-shaped middle on two round ends (a sphere meeting cylinders,
 //     the creases rounded), hex flats cut into the ends, a stem boss on top

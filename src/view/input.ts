@@ -1,7 +1,6 @@
+// One input model for mouse, touch and pen.
 import { mouseChord, mouseDrag, settings } from '../settings';
 import { isHeadset, pickTolerance } from '../device';
-// One input model for mouse, touch and pen (see docs/ARCHITECTURE.md §5).
-
 import type { Viewport } from './viewport';
 
 export interface ToolPointer {

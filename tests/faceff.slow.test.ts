@@ -1,4 +1,4 @@
-// Run: npx tsx tests/faceff.test.ts
+// Run: npx tsx tests/faceff.slow.test.ts
 // Freeform Face: a flat face of a body made a smooth surface by a cage laid
 // over it, its edges kept - raised, pushed in, on a round face, on an
 // L-shaped face, after fillets, followed when an earlier step moves the face,

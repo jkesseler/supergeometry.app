@@ -1,4 +1,4 @@
-// Run: npx tsx tests/mug.test.ts [out.json] - a mug, with the tools the other
+// Run: npx tsx tests/mug.slow.test.ts [out.json] - a mug, with the tools the other
 // build tests leave out: a body revolved from its profile and shelled open at
 // the top; its floor made thicker (Move Face); two patches projected onto its
 // side (Project as Edge) and a handle bridged between them along a curve drawn

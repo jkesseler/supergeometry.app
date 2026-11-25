@@ -1,4 +1,4 @@
-// Run: npx tsx tests/projectfuzz.test.ts [projects] [steps] [seed]
+// Run: npx tsx tests/projectfuzz.slow.test.ts [projects] [steps] [seed]
 //
 // Whole projects built at random from everything there is - sketches (with
 // constraints) on the ground and on faces, extrudes joined / cut / new,

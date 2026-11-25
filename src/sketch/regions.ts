@@ -5,7 +5,7 @@
 // inside it). This is what lets overlapping shapes be extruded piece by piece.
 
 import { closestOnPrim, entityPrims, evalPrim, isClosedPrim, pointInPoly, polyArea, polyCentroid, primSegments, samplePrim, type Prim } from './curves';
-import type { SketchEntity, Vec2 } from '../doc/types';
+import type { RegionRef, SketchEntity, Vec2 } from '../doc/types';
 
 export interface Piece {
   prim: number;
@@ -47,7 +47,6 @@ export interface Arrangement {
 }
 
 export type { RegionRef } from '../doc/types';
-import type { RegionRef } from '../doc/types';
 
 const cache = new Map<string, Arrangement>();
 

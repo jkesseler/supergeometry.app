@@ -27,8 +27,7 @@ import type { Feature, PlaneDef, SketchEntity, Vec3 } from '../src/doc/types';
   ];
   for (const [name, es, ar, rc] of shapes) {
     const feature = sketch('s', XZ(), es);
-    let src: ReturnType<typeof profile>;
-    src = profile('s', es);
+    const src = profile('s', es);
     for (const angle of [360, 180, 90, 270, -90, 45, 359]) {
       const got = await build([feature, { id: 'R', name: 'R', type: 'revolve', source: src, axis: zAxis, angle, mode: 'new' } as Feature]);
       const volume = (ar * 2 * Math.PI * rc * Math.abs(angle)) / 360;

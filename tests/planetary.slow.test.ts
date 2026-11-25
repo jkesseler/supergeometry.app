@@ -1,4 +1,4 @@
-// Run: npx tsx tests/planetary.test.ts - a print-in-place planetary gearbox,
+// Run: npx tsx tests/planetary.slow.test.ts - a print-in-place planetary gearbox,
 // built the way a person would, to push the engine on tolerances between
 // moving parts:
 //   - a housing with an internal ring gear (48 teeth cut into it: involute

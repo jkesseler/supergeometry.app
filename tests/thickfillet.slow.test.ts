@@ -1,4 +1,4 @@
-// Run: npx tsx tests/thickfillet.test.ts
+// Run: npx tsx tests/thickfillet.slow.test.ts
 // A freeform sheet given a thickness is a body like any other: the edges of its rim can be rounded and chamfered.
 // Reported: every such rounding was refused with "That edit would turn the body inside out" - the solid's faces
 // looked inwards. And an edge between two of its patches, with no corner along it, says so (not "radius too big").

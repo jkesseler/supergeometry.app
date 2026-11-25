@@ -1,4 +1,4 @@
-// Run: npx tsx tests/shoe.test.ts [out.json] - a sneaker made of freeforms, the
+// Run: npx tsx tests/shoe.slow.test.ts [out.json] - a sneaker made of freeforms, the
 // way the Freeform tool makes them (box / surface / cylinder shapes, slices of
 // points picked and moved or scaled by typed values, faces deleted, a
 // thickness): a foam sole with a toe spring and a higher heel, a hollow upper

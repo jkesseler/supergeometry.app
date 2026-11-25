@@ -1,4 +1,4 @@
-// Run: npx tsx tests/drill.test.ts [out.json] - a compact cordless drill-driver
+// Run: npx tsx tests/drill.slow.test.ts [out.json] - a compact cordless drill-driver
 // at full size (~206 long, ~231 tall with its battery), shaped after a photo of
 // a teal and black one, outside and in:
 //   Housing: sculpted from a side outline and a front outline (Intersect), its

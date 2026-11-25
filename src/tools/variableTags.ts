@@ -297,7 +297,8 @@ export class VariableTags {
       if (!screenPoint) {
         continue;
       }
-      let [x, y] = screenPoint;
+      const x = screenPoint[0];
+      let y = screenPoint[1];
       while (taken.some(([a, b]) => Math.abs(a - x) < 30 && Math.abs(b - y) < 18)) {
         y += 20;
       }

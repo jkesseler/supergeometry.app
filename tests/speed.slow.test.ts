@@ -1,4 +1,4 @@
-// Run: npx tsx tests/speed.test.ts - the faster ways give exactly what the
+// Run: npx tsx tests/speed.slow.test.ts - the faster ways give exactly what the
 // slow ones did, and stay fast: a body's corners (found by position, not by
 // comparing every pair), on a ruler with 11 000 edges and on smaller bodies.
 import { readFileSync } from 'node:fs';

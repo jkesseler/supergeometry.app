@@ -125,13 +125,11 @@ for (const [name, extra, right] of close) {
     if (name.startsWith('a hole 1.7')) {
       if (t === 0.5) {
         say(sound(got) && near(got.vol.A, 2368.2, 2e-4), `${name}, shelled ${t}: walls round both`, `${told(got)} want 2368.2`);
-      }
-      // (Between one wall and two apart: the whole part offset inward fails there - it is put together from the hole and the pocket, each grown on its own.)
-      else if (t < 2.5) {
+      } else if (t < 2.5) {
+        // (Between one wall and two apart: the whole part offset inward fails there - it is put together from the hole and the pocket, each grown on its own.)
         say(sound(got) && near(got.vol.A, want!, 1e-4), `${name}, shelled ${t}: the hole's tube and the pocket's walls run into each other`, `${told(got)} want ${want?.toFixed(2)}`);
-      }
-      // (At 2.5 the two walls are one lump, and it builds again.)
-      else {
+      } else {
+        // (At 2.5 the two walls are one lump, and it builds again.)
         say(sound(got) && near(got.vol.A, 10804, 2e-3), `${name}, shelled ${t}: their walls one lump`, `${told(got)} want about 10804`);
       }
       continue;

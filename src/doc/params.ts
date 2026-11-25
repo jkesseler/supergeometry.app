@@ -27,14 +27,14 @@ export function kindOfPath(path: string): 'length' | 'angle' | 'number' {
 }
 
 export function getPath(obj: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((current, key) => (current == null ? undefined : (current as Record<string, unknown>)[key]), obj);
+  return path.split('.').reduce<unknown>((current, key) => (current === null || current === undefined ? undefined : (current as Record<string, unknown>)[key]), obj);
 }
 
 export function setPath(obj: unknown, path: string, value: unknown): void {
   const keys = path.split('.');
   let current = obj as Record<string, unknown>;
   for (const key of keys.slice(0, -1)) {
-    if (current[key] == null) {
+    if (current[key] === null || current[key] === undefined) {
       return;
     }
     current = current[key] as Record<string, unknown>;

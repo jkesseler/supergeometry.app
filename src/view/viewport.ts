@@ -795,9 +795,8 @@ export class Viewport {
       }
       if (tall && !wide) {
         cols.push(rect);
-      }
-      // Bars: wide along the top or bottom (a phone's tool card can be tall as well as wide).
-      else if (t < height * 0.2 && (wide || rect.height < height * 0.12)) {
+      } else if (t < height * 0.2 && (wide || rect.height < height * 0.12)) {
+        // Bars: wide along the top or bottom (a phone's tool card can be tall as well as wide).
         ins.top = Math.max(ins.top, (rect.bottom - cv.top) / height);
       } else if (b < height * 0.2 && wide) {
         ins.bottom = Math.max(ins.bottom, (cv.bottom - rect.top) / height);
@@ -1663,7 +1662,7 @@ export class Viewport {
         break;
       }
       const body = hit.object.userData.body as string;
-      if (hit.faceIndex == null || out.some(pickHit => pickHit.kind === 'face' && pickHit.body === body)) {
+      if (typeof hit.faceIndex !== 'number' || out.some(pickHit => pickHit.kind === 'face' && pickHit.body === body)) {
         continue;
       }
       const tri = hit.faceIndex * 3;
@@ -1790,7 +1789,7 @@ export class Viewport {
         return edge;
       }
     }
-    if (faceHit && faceHit.faceIndex != null) {
+    if (typeof faceHit?.faceIndex === 'number') {
       const body = faceHit.object.userData.body as string;
       const data = this.bodies.get(body)!.data;
       const tri = faceHit.faceIndex * 3;

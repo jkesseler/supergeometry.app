@@ -1,4 +1,4 @@
-// Run: npx tsx tests/propeller.test.ts [out.json] - a three-bladed boat
+// Run: npx tsx tests/propeller.slow.test.ts [out.json] - a three-bladed boat
 // propeller, 240 across, built the way a person would, to push the geometry
 // engine where it bends:
 //   - the hub revolved from a profile (a rounded nose, a straight barrel);

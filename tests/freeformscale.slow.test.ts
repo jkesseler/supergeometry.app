@@ -1,4 +1,4 @@
-// Run: npx tsx tests/freeformscale.test.ts
+// Run: npx tsx tests/freeformscale.slow.test.ts
 //
 // Scaling freeforms pushed hard: cage points scaled in the card (all of them,
 // half, one face's, one point) by tiny, huge and lopsided factors, and whole

@@ -42,18 +42,6 @@ import {
   type Shape3D,
   type Wire
 } from 'replicad';
-import type {
-  AxisRef,
-  EdgeRef,
-  ExtrudeSource,
-  FaceRef,
-  Feature,
-  PathRef,
-  PlaneDef,
-  SketchEntity,
-  SketchFeature,
-  Vec3
-} from '../doc/types';
 import { fillEdgeKey } from '../doc/types';
 import { applyFreeformEdits } from '../doc/freeformEdits';
 import { facesNormal } from '../freeform/faceGrid';
@@ -61,14 +49,13 @@ import { add, cross, dist, dot, len, norm, scale, sub, toWorld, xDirFor } from '
 import { outlineOffsetCurves, projectPolyline } from '../sketch/edit';
 import { solveFine } from '../sketch/constraints';
 import { carried } from '../sketch/follow';
-import { cageToShape } from './freeform';
 import { arcSpine, carriedFrames, evenly, gentle, guideCurve, oriented, plainSpine, slideAxis, slidingSpine, smoothed } from '../freeform/connect';
-import { deepCopy, hairThin, meshVolume, openEdges, pinchedEdges, shapeValid, subShapes } from './health';
-import { healthOf, isHealthy, repairShape } from './repair';
-export { shapeValid } from './health';
 import { applyPlan, boundaryEdges, cachedPlan, deleteFaces, isClosed, selfCrossings, subdivide } from '../freeform/cage';
 import { closestOnEntity } from '../sketch/regions';
 import { holeFromLines } from '../doc/holeSizes';
+import { cageToShape } from './freeform';
+import { deepCopy, hairThin, meshVolume, openEdges, pinchedEdges, shapeValid, subShapes } from './health';
+import { healthOf, isHealthy, repairShape } from './repair';
 import { meshFlatFaces, meshModel, meshParts, stlTriangles, type MeshModel, type MeshCylinder, type MeshFace, type MeshStandIn } from './meshRound';
 import { faceMiddle, holeCutter, holeFault, roundCentre } from './hole';
 import { threadDepth } from './threads';
@@ -86,7 +73,21 @@ import { entitiesWire, pathOf, regionFaces, regionHoleWires, regionWire, withFit
 import { stretchShape } from './stretch';
 import { imprint, onFace as linesOnFace, seenFrom, wrapOnto } from './wrap';
 import { MESH_MAX, TooBig } from './protocol';
+import type {
+  AxisRef,
+  EdgeRef,
+  ExtrudeSource,
+  FaceRef,
+  Feature,
+  PathRef,
+  PlaneDef,
+  SketchEntity,
+  SketchFeature,
+  Vec3
+} from '../doc/types';
 import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewBody, ViewEdge, ViewSpec, ConstructionInfo, EdgeInfo, ExportFormat, FaceInfo, FeatureError, RegenResult } from './protocol';
+
+export { shapeValid } from './health';
 
 type Bodies = Map<string, Shape3D>;
 type SketchState = SketchFeature & { boundary: SketchEntity[] };
@@ -4038,9 +4039,8 @@ function insideAlong(shape: Shape3D, from: Vec3[], to: Vec3[], sound = false): b
             // On an end: the point itself on the boundary, or the outside point not outside.
             if (fraction * segs[i].l < tol * 10 || (1 - fraction) * segs[i].l < tol * 10) {
               bad[i] = true;
-            }
-            // (The same crossing twice: two faces meeting there.)
-            else if (!hits[i].some(found => Math.abs(found - fraction) * segs[i].l < tol * 10)) {
+            } else if (!hits[i].some(found => Math.abs(found - fraction) * segs[i].l < tol * 10)) {
+              // (The same crossing twice: two faces meeting there.)
               hits[i].push(fraction);
             }
           }
@@ -4969,10 +4969,9 @@ function cutAway(target: Shape3D, tools: Shape3D[]): Shape3D {
     } else {
       throw new Error("Subtracting these didn't work out - the geometry engine lost the shape. Try the tools one or two at a time");
     }
-  }
-  // The tolerant cut can leave faces that don't meet up where the plain one
-  // is clean (a direction switch's slot through the housing's shelled top).
-  else if (!shapeValid(out) && shapeValid(target)) {
+  } else if (!shapeValid(out) && shapeValid(target)) {
+    // The tolerant cut can leave faces that don't meet up where the plain one
+    // is clean (a direction switch's slot through the housing's shelled top).
     try {
       const plain = target.cut(all);
       if (solidsIn(plain) && shapeValid(plain) && booleanVolumeOk('cut', target, all, plain)) {

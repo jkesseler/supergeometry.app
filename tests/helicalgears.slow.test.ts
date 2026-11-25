@@ -1,4 +1,4 @@
-// Run: npx tsx tests/helicalgears.test.ts [out.json] - a pair of helical gears
+// Run: npx tsx tests/helicalgears.slow.test.ts [out.json] - a pair of helical gears
 // that mesh, built the way a person would, to push the geometry engine:
 //   - each gear's outline drawn tooth by tooth (involute flanks as splines,
 //     round tips and roots: 108 and 180 curves), swept up its axis with a

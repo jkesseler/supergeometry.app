@@ -1,4 +1,4 @@
-// Run: npx tsx tests/freeformstress.test.ts [rounds] [seed]
+// Run: npx tsx tests/freeformstress.slow.test.ts [rounds] [seed]
 //
 // Pushes freeforms to the limit: random cage pulls (small, huge, through the
 // body, onto each other), refined cages, holes filled, sheets thickened - and

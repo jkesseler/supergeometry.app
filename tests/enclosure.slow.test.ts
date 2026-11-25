@@ -1,4 +1,4 @@
-// Run: npx tsx tests/enclosure.test.ts
+// Run: npx tsx tests/enclosure.slow.test.ts
 // An electronics box the usual way (rounded box, shelled, screw bosses with
 // threaded holes, vents patterned and subtracted), and what people then do to
 // it: sizes made to fit exactly, a pattern's count changed, a step switched off.

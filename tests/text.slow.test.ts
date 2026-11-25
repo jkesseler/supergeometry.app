@@ -1,4 +1,4 @@
-// Run: npx tsx tests/text.test.ts - text outlines are few curves, and true to the font.
+// Run: npx tsx tests/text.slow.test.ts - text outlines are few curves, and true to the font.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import opentype, { type Font } from 'opentype.js';

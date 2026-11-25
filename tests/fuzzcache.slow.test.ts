@@ -1,4 +1,4 @@
-// Run: npx tsx tests/fuzzcache.test.ts [seeds] [steps] [first seed] - random step lists,
+// Run: npx tsx tests/fuzzcache.slow.test.ts [seeds] [steps] [first seed] - random step lists,
 // built the way the app builds them (each step added and rebuilt, its taps
 // taken from the last rebuild's faces and edges), then held to what a rebuild
 // must always do, whatever the steps:

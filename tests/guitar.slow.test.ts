@@ -1,4 +1,4 @@
-// Run: npx tsx tests/guitar.test.ts [out.json] - a steel-string acoustic guitar
+// Run: npx tsx tests/guitar.slow.test.ts [out.json] - a steel-string acoustic guitar
 // (dreadnought-like, 645 mm scale), made with every tool there is: variables
 // (depth, top thickness, tuners a side); sketches with lines, arcs, circles,
 // rectangles, an ellipse, polygons, splines, text, sketch fillets, offset,

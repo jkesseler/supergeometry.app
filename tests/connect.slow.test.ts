@@ -1,4 +1,4 @@
-// Run: npx tsx tests/connect.test.ts
+// Run: npx tsx tests/connect.slow.test.ts
 // Connect: a freeform bridge between two picked faces, joined (Add / Auto),
 // cut (Cut) or a body of its own (New body) - between two boxes facing each
 // other, side by side (the bridge bends round), different sizes and shapes,

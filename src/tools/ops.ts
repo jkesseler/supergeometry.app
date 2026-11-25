@@ -113,9 +113,8 @@ export class ExtrudeOp extends FeatureOp<ExtrudeFeature> {
     }
     if (opts.expr && !existing) {
       this.feature.exprs = { distance: opts.expr };
-    }
-    // Typed (on the face, before the tool started) as a formula: kept as one.
-    else if (opts.typed && !existing) {
+    } else if (opts.typed && !existing) {
+      // Typed (on the face, before the tool started) as a formula: kept as one.
       this.typedInto('distance', opts.typed, t => (this.thick && this.measure === 'total' ? `${t} - ${Math.round(this.thick.distance * 1e6) / 1e6}mm` : t));
     }
   }

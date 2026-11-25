@@ -1,4 +1,4 @@
-// Run: npx tsx tests/gridsizes.test.ts
+// Run: npx tsx tests/gridsizes.slow.test.ts
 // The same small part built at six sizes, from a hundredth of its size (a
 // block 0.4 mm long, its walls 15 microns) to a thousand times (40 metres): a hole, rounds, a
 // face pulled, a boss, a chamfer, a pocket, its floor rounded, a shell, a

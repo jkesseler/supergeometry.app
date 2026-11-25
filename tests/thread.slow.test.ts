@@ -1,9 +1,9 @@
-// Run: npx tsx tests/thread.test.ts - the Thread step: an outside thread on a
+// Run: npx tsx tests/thread.slow.test.ts - the Thread step: an outside thread on a
 // shank, an inside one in a nut's hole, left-handed, short faces refused,
 // the head next to the shank left alone.
 import opencascade from 'replicad-opencascadejs';
-import { measureVolume, setOC } from 'replicad';
-import { debugBodies, regenerate } from '../src/kernel/engine';
+import { makeBaseBox, makeCylinder, measureVolume, setOC } from 'replicad';
+import { debugBodies, regenerate, threadFace } from '../src/kernel/engine';
 import { healthOf, isHealthy } from '../src/kernel/repair';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import { defaultPitch, threadLabel } from '../src/kernel/threads';
@@ -66,15 +66,12 @@ const rf: any = await regenerate([...screw, { ...thr, face: { body: 'b', center:
 check('a flat face: refused with a message', rf.errors.some((e: any) => /round faces/.test(e.message)), rf.errors.map((e: any) => e.message).join());
 // Every common size, outside on a rod and inside a nut, right and left hand:
 // each must come out (the kernel checks the cut against the groove's exact volume).
-import { makeCylinder, makeBaseBox } from 'replicad';
-import { threadFace } from '../src/kernel/engine';
-import { defaultPitch as dp } from '../src/kernel/threads';
 const bad: string[] = [];
 const stray: string[] = [];
 let count = 0;
 t = Date.now();
 for (const diameter of [3, 4, 5, 6, 8, 10, 12, 16, 20, 24]) {
-  const pitch = dp(diameter, false);
+  const pitch = defaultPitch(diameter, false);
   for (const left of [false, true]) {
     count += 2;
     try {

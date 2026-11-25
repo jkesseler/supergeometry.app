@@ -1,4 +1,4 @@
-// For tests/text.test.ts: how text was made before - every font curve cut into
+// For tests/text.slow.test.ts: how text was made before - every font curve cut into
 // `refSteps` straight pieces - to compare the fitted outlines with.
 //
 // Text laid out as closed outline polylines (each glyph contour; holes come out
