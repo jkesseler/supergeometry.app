@@ -6,7 +6,7 @@
  */
 const bigPrints = new Map<string, string>();
 export function shortBig(_k: string, value: unknown): unknown {
-  if (typeof value !== 'string' || value.length < 20_000) {
+  if (typeof value !== 'string' || value.length < 20000) {
     return value;
   }
   let print = bigPrints.get(value);
