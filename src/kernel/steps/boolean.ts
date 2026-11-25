@@ -5,7 +5,6 @@ import { isFault } from '../faults';
 import { openEdges, shapeValid, subShapes } from '../health';
 import { cylinderOf, unify } from '../faceEdit';
 import { measureVolume, quickVolume } from '../ocFree';
-import { rebuild } from '../rebuildState';
 import { threadDepth } from '../threads';
 import { add, dot, len, norm, scale, sub } from '../../geom';
 import { offsetSolid } from './shell';
@@ -14,7 +13,7 @@ import type { Shape3D } from 'replicad';
 import type { BooleanFeature, Vec3 } from '../../doc/types';
 import type { Ctx } from '../types';
 
-export function applyBoolean(feature: BooleanFeature, ctx: Ctx) {
+export function applyBoolean(feature: BooleanFeature, ctx: Ctx, stepsNow: Set<string>) {
   const { bodies } = ctx;
   let target = need(bodies, feature.target);
   const toolIds = bodyList(feature.tools, bodies, 'tools', feature.whole);
@@ -37,7 +36,7 @@ export function applyBoolean(feature: BooleanFeature, ctx: Ctx) {
       let shapes = grown.get(shape)?.get(by);
       if (!shapes) {
         // (A threaded body: the same thread cut on the body grown. The kernel can't grow a thread's own faces.)
-        shapes = grownThreaded(shape, by, toolIds[tools.indexOf(shape)] ?? (shape === target ? feature.target : '')) ?? grownBy(shape, by) ?? undefined;
+        shapes = grownThreaded(shape, by, toolIds[tools.indexOf(shape)] ?? (shape === target ? feature.target : ''), stepsNow) ?? grownBy(shape, by) ?? undefined;
         if (!shapes) {
           throw new Error(`Couldn't keep ${+by.toFixed(4)} mm clear round one of the bodies - try a smaller clearance`);
         }
@@ -179,8 +178,8 @@ function grownBy(shape: Shape3D, by: number): Shape3D[] | null {
  * smaller), which is what a nut cut with it needs to turn on the bolt with that gap.
  * Null when the body has no thread of its own any more, or it doesn't work out (the plain way is tried then).
  */
-function grownThreaded(shape: Shape3D, by: number, bodyId: string): Shape3D[] | null {
-  const cut = [...threadsCut].filter(([step, t]) => t.body === bodyId && rebuild.stepsNow.has(step)).map(([, t]) => t);
+function grownThreaded(shape: Shape3D, by: number, bodyId: string, stepsNow: Set<string>): Shape3D[] | null {
+  const cut = [...threadsCut].filter(([step, t]) => t.body === bodyId && stepsNow.has(step)).map(([, t]) => t);
   if (!cut.length) {
     return null;
   }

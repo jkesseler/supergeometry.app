@@ -262,6 +262,8 @@ interface StepScope {
   off: string;
   origins: Map<string, OriginOf>;
   editable: Set<string>;
+  /** The steps of the project being built (a thread's record is only good while its step is there). */
+  stepsNow: Set<string>;
 }
 
 /** Steps after the History's breakpoint are off, like suppressed ones; Edit Freeform steps are put into the freeforms they edit (those build with the new cage). */
@@ -291,7 +293,7 @@ function reuseUnchanged(lastBuilt: CacheEntry, key: string, ctx: Ctx): CacheEntr
 }
 
 async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
-  rebuild.stepsNow = new Set(features.map(feature => feature.id));
+  const stepsNow = new Set(features.map(feature => feature.id));
   useSafeBooleans();
   useReleases();
   const prepared = prepareFeatures(features);
@@ -337,7 +339,7 @@ async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
       entry = reuseUnchanged(lastBuilt, key, ctx);
       rebuildStats.reused++;
     } else {
-      entry = await buildStep(feature, ctx, { key, json, off, origins, editable });
+      entry = await buildStep(feature, ctx, { key, json, off, origins, editable, stepsNow });
     }
     if (entry.origin) {
       origins.set(feature.id, entry.origin);
@@ -357,7 +359,7 @@ async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
 
 /** A step built now, on the model before it (a suppressed one only passes it on). */
 async function buildStep(feature: Feature, ctx: Ctx, scope: StepScope): Promise<CacheEntry> {
-  const { key, json, off, origins, editable } = scope;
+  const { key, json, off, origins } = scope;
   const out = fork(ctx);
   const entry: CacheEntry = { key, ctx: out, id: feature.id, json, off, input: ctx };
   rebuildStats.ran++;
@@ -378,7 +380,7 @@ async function buildStep(feature: Feature, ctx: Ctx, scope: StepScope): Promise<
     startReading(reads);
     const touched = touchedBodies(feature, ctx);
     const copies = copyTouchedBodies(feature, touched, out);
-    await apply(feature, out, editable);
+    await apply(feature, out, scope);
     entry.origin = originsOf(feature, out);
     stopReading();
     if (entry.origin) {
@@ -590,7 +592,7 @@ function numberBodies(entries: CacheEntry[]): Map<string, number> {
   return numbers;
 }
 
-async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise<void> {
+async function apply(feature: Feature, ctx: Ctx, scope: StepScope): Promise<void> {
   switch (feature.type) {
     case 'sketch':
       return applySketch(feature, ctx);
@@ -615,7 +617,7 @@ async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise
       return applyShell(feature, ctx);
 
     case 'boolean':
-      return applyBoolean(feature, ctx);
+      return applyBoolean(feature, ctx, scope.stepsNow);
 
     case 'transform':
       transform(feature, ctx);
@@ -641,7 +643,7 @@ async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise
       return; // drawn by the UI only
 
     case 'freeformEdit':
-      return applyFreeformEdit(feature, editable);
+      return applyFreeformEdit(feature, scope.editable);
 
     case 'freeform':
       return applyFreeform(feature, ctx);
