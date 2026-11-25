@@ -64,24 +64,26 @@ export class KernelClient {
   private start(): void {
     // A fresh worker sends every mesh again.
     this.meshes = new Map();
-    this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-    this.worker.onmessage = this.handler;
-    // The engine died without an answer (out of memory, a fault outside any step): what waits on it would wait for
-    // ever, and "Working…" with it. Everything waiting ends, and a fresh engine is started.
-    const worker = this.worker;
-    worker.onerror = (e) => {
-      if (worker !== this.worker) {
-        return;
-      }
-      console.error('The geometry engine stopped:', e.message);
-      this.stop();
-      this.onLost?.();
-    };
+    this.setWorker(new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }));
     this.ready = this.call({ type: 'init' }).then((response) => {
       if (response.type === 'error') {
         throw new Error(response.message);
       }
     });
+  }
+
+  private setWorker(worker: Worker): void {
+    this.worker = worker;
+    worker.onmessage = this.handler;
+    // Died without an answer (out of memory): whatever waits on it, "Working…" too, would wait for ever.
+    worker.onerror = (e) => {
+      if (worker !== this.worker) {
+        return;
+      }
+      console.error('[KernelClient] the geometry engine stopped, starting a fresh one:', e.message);
+      this.stop();
+      this.onLost?.();
+    };
   }
 
   /** A spare engine, given the last saved project (and the last preview): it's ready to take over. */
@@ -95,6 +97,13 @@ export class KernelClient {
     let count = 0;
     const waiting = new Map<number, (r: Response) => void>();
     worker.onmessage = (e: MessageEvent<Envelope<Response>>) => waiting.get(e.data.id)?.(e.data.msg);
+    // Died while warming: dropped, so a later rebuild can warm another.
+    worker.onerror = () => {
+      worker.terminate();
+      if (this.spare === spare) {
+        this.spare = null;
+      }
+    };
     const ask = (msg: Request) =>
       new Promise<Response>((resolve) => {
         waiting.set(++count, resolve);
@@ -143,8 +152,7 @@ export class KernelClient {
     }
     this.spare = null;
     this.worker.terminate();
-    this.worker = spare.worker;
-    this.worker.onmessage = this.handler;
+    this.setWorker(spare.worker);
     this.ready = Promise.resolve();
     // It sends meshes it already sent (to us, while warming) as keys only.
     this.meshes = new Map(spare.bodies.map(b => [b.key, b]));
@@ -216,7 +224,16 @@ export class KernelClient {
   /** `saved`: the project as saved (not a tool's preview) - the engine keeps its steps for Cancel. */
   private async runRegen(features: Feature[], saved: boolean, resolve: (r: RegenResult | null) => void) {
     this.regenRunning = true;
-    await this.ready;
+    try {
+      await this.ready;
+    } catch (error) {
+      console.error('[KernelClient.runRegen] the geometry engine did not start, nothing rebuilt:', error);
+      this.regenRunning = false;
+      this.regenQueued?.resolve(null);
+      this.regenQueued = null;
+
+      return resolve(null);
+    }
     this.running = features;
     this.last = { features, saved: saved ? features : this.last.saved };
     const worker = this.worker;
