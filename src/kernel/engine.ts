@@ -428,6 +428,14 @@ export function debugBodies(): Map<string, Shape3D> {
   return lastBodies;
 }
 
+/** Edits that change a solid in place (their results are checked). */
+const GUARDED = new Set<string>(['extrude', 'revolve', 'sweep', 'loft', 'boolean', 'fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom', 'split', 'connect', 'hole']);
+/** Edits that must not break a body into pieces (cuts and booleans may). */
+const NO_SPLIT = new Set<string>(['fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom']);
+
+/** A shell in pieces: what was cut into the opened face hung from that face alone. */
+const SHELL_LOOSE = 'Opening this face would leave what is cut into it (a pocket, a blind hole) standing loose from the rest - open another face';
+
 /**
  * Replay features in order. Results are cached per feature, keyed by the JSON
  * of every feature up to it, so editing feature k only rebuilds k onwards.
@@ -928,9 +936,6 @@ function followLinks(step: string, before: Ctx, out: Ctx): void {
   }
 }
 
-/** A shell in pieces: what was cut into the opened face hung from that face alone. */
-const SHELL_LOOSE = 'Opening this face would leave what is cut into it (a pocket, a blind hole) standing loose from the rest - open another face';
-
 /**
  * A face's facts, kept from the last time it was shown: a step changes a few of a body's faces and leaves the rest
  * the very same faces, and each one's exact area was measured again for the whole body all the same (a freeform
@@ -1223,11 +1228,6 @@ function touchedBodies(feature: Feature, ctx: Ctx, all = true): string[] {
 
   return [...named].filter(id => ctx.bodies.has(id));
 }
-
-/** Edits that change a solid in place (their results are checked). */
-const GUARDED = new Set<string>(['extrude', 'revolve', 'sweep', 'loft', 'boolean', 'fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom', 'split', 'connect', 'hole']);
-/** Edits that must not break a body into pieces (cuts and booleans may). */
-const NO_SPLIT = new Set<string>(['fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom']);
 
 export function errorText(err: unknown): string {
   // A step whose saved values are missing or the wrong kind (a damaged file, a
