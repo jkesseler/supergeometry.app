@@ -264,7 +264,6 @@ function unchangedFor(was: CacheEntry, json: string, ctx: Ctx, off: string): boo
   return true;
 }
 
-
 // ------------------------------------------------------------------ public API
 
 /** Each body's volume, area, centre of mass and box, measured on the solid (for its mass, in BIM). */
@@ -876,9 +875,6 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
   }
 }
 
-// ------------------------------------------------------------ affine maps
-
-
 /**
  * Linked bodies follow each other: a step that changed one body of a group (rounded an edge of it, cut a hole in
  * it, joined something to it...) leaves every other body of the group changed the same way - the changed body's
@@ -932,16 +928,8 @@ function followLinks(step: string, before: Ctx, out: Ctx): void {
   }
 }
 
-
 /** A shell in pieces: what was cut into the opened face hung from that face alone. */
 const SHELL_LOOSE = 'Opening this face would leave what is cut into it (a pocket, a blind hole) standing loose from the rest - open another face';
-
-// ------------------------------------------------------------ feature helpers
-
-
-
-
-// ----------------------------------------------------- geometric references
 
 /**
  * A face's facts, kept from the last time it was shown: a step changes a few of a body's faces and leaves the rest
@@ -1073,8 +1061,6 @@ function originsOf(feature: Feature, ctx: Ctx): OriginOf | undefined {
     return hit.d < 1e-3 ? hit.key : null;
   };
 }
-
-
 
 // ------------------------------------------------------------------- meshing
 
@@ -1238,12 +1224,10 @@ function touchedBodies(feature: Feature, ctx: Ctx, all = true): string[] {
   return [...named].filter(id => ctx.bodies.has(id));
 }
 
-
 /** Edits that change a solid in place (their results are checked). */
 const GUARDED = new Set<string>(['extrude', 'revolve', 'sweep', 'loft', 'boolean', 'fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom', 'split', 'connect', 'hole']);
 /** Edits that must not break a body into pieces (cuts and booleans may). */
 const NO_SPLIT = new Set<string>(['fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom']);
-
 
 export function errorText(err: unknown): string {
   // A step whose saved values are missing or the wrong kind (a damaged file, a
