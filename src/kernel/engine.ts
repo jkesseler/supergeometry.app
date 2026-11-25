@@ -326,6 +326,20 @@ export function healthReport(id: string, name: string, shape: Shape3D): BodyHeal
   return { id, name, ...health, edges, box, healthy: isHealthy(health) };
 }
 
+/** The project with its threads left plain, as drawings draw it, rebuilt in `drawingCache`. */
+export async function runWithPlainThreads(features: Feature[]): Promise<Ctx> {
+  const keep = cache;
+  cache = drawingCache;
+  alsoCache = keep;
+  try {
+    return (await run(features.map(feature => (feature.type === 'thread' && !feature.suppressed ? { ...feature, suppressed: true } : feature)))).ctx;
+  } finally {
+    drawingCache = cache;
+    cache = keep;
+    alsoCache = [];
+  }
+}
+
 /**
  * Drawings: the bodies seen along each view's direction, with hidden line
  * removal (OpenCascade's exact HLR), each body's edges kept apart so a balloon
@@ -340,16 +354,7 @@ export async function projectViews(features: Feature[], views: ViewSpec[], only?
   if (!threads.length) {
     ctx = (await run(features)).ctx;
   } else {
-    const keep = cache;
-    cache = drawingCache;
-    alsoCache = keep;
-    try {
-      ctx = (await run(features.map(feature => (feature.type === 'thread' && !feature.suppressed ? { ...feature, suppressed: true } : feature)))).ctx;
-    } finally {
-      drawingCache = cache;
-      cache = keep;
-      alsoCache = [];
-    }
+    ctx = await runWithPlainThreads(features);
   }
   const bodies = [...ctx.bodies.entries()].filter(([id]) => !only || only.includes(id));
   const marks = threadMarks(threads, ctx);
