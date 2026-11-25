@@ -19,7 +19,7 @@ import { applyFreeformEdits } from '../doc/freeformEdits';
 import { add, cross, dist, dot, norm, scale, sub, xDirFor } from '../geom';
 import { closestOnEntity } from '../sketch/regions';
 import { deepCopy, openEdges, subShapes } from './health';
-import { healthOf, isHealthy, repairShape } from './repair';
+import { healthOf, isHealthy } from './repair';
 import { threadDepth } from './threads';
 import {
   cylinderOf,
@@ -62,10 +62,10 @@ import { applySplit } from './steps/split';
 import { applyImport, importCache } from './steps/import';
 import { applyHole } from './steps/hole';
 import { fillNetwork, fillToPlane } from './steps/fill';
+import { applyRepair } from './steps/repair';
 import type {
   Feature,
   PlaneDef,
-  RepairFeature,
   SketchEntity,
   Vec3
 } from '../doc/types';
@@ -1280,19 +1280,6 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
   }
 }
 
-function applyRepair(feature: RepairFeature, ctx: Ctx) {
-  const { bodies } = ctx;
-  for (const id of feature.bodies) {
-    const body = need(bodies, id);
-    const repaired = repairShape(body);
-    if (!repaired) {
-      throw new Error(`This body can't be made a clean solid: ${whatsWrong(healthOf(body))}`);
-    }
-    editNotes.push(repaired.fixes.length ? `Repaired: ${repaired.fixes.join(', ')}.` : "Nothing to repair - it's a clean solid already.");
-    bodies.set(id, repaired.shape);
-  }
-}
-
 // ------------------------------------------------------------ affine maps
 
 
@@ -1682,25 +1669,6 @@ export function errorText(err: unknown): string {
   }
 
   return String(err);
-}
-
-/** What's wrong with a body, in words (for a repair that couldn't fix it). */
-function whatsWrong(health: ReturnType<typeof healthOf>): string {
-  const out: string[] = [];
-  if (!health.solids) {
-    out.push(health.shells ? "it's a surface that doesn't close" : 'it has no surface that encloses anything');
-  }
-  if (health.openEdges) {
-    out.push(`${health.openEdges} open edge${health.openEdges > 1 ? 's' : ''} (a gap or a missing curved face)`);
-  }
-  if (!health.valid) {
-    out.push("faces that don't meet up");
-  }
-  if (health.thin) {
-    out.push(`${health.thin} hair-thin face${health.thin > 1 ? 's' : ''}`);
-  }
-
-  return out.join(', ') || "it doesn't enclose a volume";
 }
 
 /**
