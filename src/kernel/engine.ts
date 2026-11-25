@@ -85,6 +85,7 @@ import { anchorOf, freeformFaces, meshViews, viewEdge } from './viewLines';
 import { entitiesWire, pathOf, regionFaces, regionHoleWires, regionWire, withFittedSplines } from './sketchGeom';
 import { stretchShape } from './stretch';
 import { imprint, onFace as linesOnFace, seenFrom, wrapOnto } from './wrap';
+import { MESH_MAX, TooBig } from './protocol';
 import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewBody, ViewEdge, ViewSpec, ConstructionInfo, EdgeInfo, ExportFormat, FaceInfo, FeatureError, RegenResult } from './protocol';
 
 type Bodies = Map<string, Shape3D>;
@@ -7152,21 +7153,6 @@ function staysClosed(before: Shape3D, after: Shape3D): Shape3D {
   }
 
   return after;
-}
-
-/**
- * The most triangles a mesh file may have. Every triangle is a face of the
- * body (flat neighbours merged), and a body takes time and memory by its
- * faces: 57 000 triangles come in in 13 s on a desktop, 115 000 in 41 s,
- * 250 000 in a minute and a half (a phone is several times slower, with less
- * memory). More is refused at once, in words: it used to run the engine out
- * of memory, which showed as a step that "broke down".
- */
-const MESH_MAX = 250000;
-class TooBig extends Error {
-  constructor(count: number) {
-    super(`This mesh has ${count.toLocaleString('en-US')} triangles - more than can be brought in (up to ${MESH_MAX.toLocaleString('en-US')}). Thin it out in a mesh program first`);
-  }
 }
 
 /**

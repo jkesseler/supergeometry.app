@@ -30,6 +30,25 @@ const bytes = async (b: Blob) => new Uint8Array(await b.arrayBuffer());
   check("a slicer's 3MF: its meshes as STL, components placed, inches to mm", result.format === 'stl' && triangleCount === 2 && Math.abs(point[0] - 76.2) < 1e-3 && Math.abs(point[2] - 50.8) < 1e-3, { n: triangleCount, p: point });
 }
 
+// A shared file that would freeze the tab: parts placed ten times inside parts, sixteen levels deep.
+{
+  const nested = async (mesh: string) => {
+    const objects = [`<object id="1" type="model"><mesh>${mesh}</mesh></object>`];
+    for (let id = 2; id <= 17; id++) {
+      objects.push(`<object id="${id}" type="model"><components>${`<component objectid="${id - 1}"/>`.repeat(10)}</components></object>`);
+    }
+    const xml = `<?xml version="1.0"?><model unit="millimeter"><resources>${objects.join('')}</resources><build><item objectid="17"/></build></model>`;
+    const started = Date.now();
+    const error = await read3mf(await bytes(await zip([{ name: '3D/3dmodel.model', data: new TextEncoder().encode(xml) }]))).then(() => null, (err: Error) => err.message);
+
+    return { error, ms: Date.now() - started };
+  };
+  const triangles = await nested('<vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles>');
+  check('nested 3MF: refused at once for its triangles', !!triangles.error?.includes('10,000,000,000,000,000 triangles') && triangles.ms < 1000, triangles);
+  const empty = await nested('<vertices/><triangles/>');
+  check('nested 3MF with no triangles: refused at once for its placements', !!empty.error?.includes('places its parts') && empty.ms < 1000, empty);
+}
+
 // GLB: a valid header, the JSON chunk, a mesh per body with its colour.
 {
   const out = glb([cube, { ...cube, name: 'Glass', color: '#ffffff', opacity: 0.4 }], 'Project');

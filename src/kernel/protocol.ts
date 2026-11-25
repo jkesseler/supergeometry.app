@@ -3,6 +3,15 @@
 
 import type { Feature, PlaneDef, SketchEntity, Vec3 } from '../doc/types';
 
+/** Each triangle becomes a face: 250 000 take 90 s to import on a desktop, and more ran the engine out of memory. */
+export const MESH_MAX = 250000;
+
+export class TooBig extends Error {
+  constructor(count: number) {
+    super(`This mesh has ${count.toLocaleString('en-US')} triangles - more than can be brought in (up to ${MESH_MAX.toLocaleString('en-US')}). Thin it out in a mesh program first`);
+  }
+}
+
 export interface FaceInfo {
   center: Vec3;
   normal: Vec3;

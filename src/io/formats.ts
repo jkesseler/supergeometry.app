@@ -2,7 +2,13 @@
 // renderers) and 3MF in (slicer files: the exact model packed in one of ours,
 // else its meshes).
 
+import { MESH_MAX, TooBig } from '../kernel/protocol';
+
 // ------------------------------------------------------------------ unzip
+
+/** A small file can unpack to gigabytes (a "ZIP bomb"): past this much it is refused. */
+const MAX_UNPACKED_BYTES = 512 * 2 ** 20;
+const TOO_BIG_UNPACKED = 'it unpacks to more than 512 MB';
 
 /** The files of a ZIP archive (what 3MF is), by name. */
 export async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>> {
@@ -21,6 +27,7 @@ export async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>>
   let at = dv.getUint32(end + 16, true);
   const out = new Map<string, Uint8Array>();
   const dec = new TextDecoder();
+  let unpacked = 0;
   for (let entry = 0; entry < count; entry++) {
     if (dv.getUint32(at, true) !== 0x02014b50) {
       throw new Error('the file is damaged');
@@ -35,7 +42,12 @@ export async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>>
     const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
     const data = bytes.subarray(start, start + packed);
     if (!name.endsWith('/')) {
-      out.set(name, method === 8 ? await inflate(data) : data);
+      const file = method === 8 ? await inflate(data, MAX_UNPACKED_BYTES - unpacked) : data;
+      unpacked += file.length;
+      if (unpacked > MAX_UNPACKED_BYTES) {
+        throw new Error(TOO_BIG_UNPACKED);
+      }
+      out.set(name, file);
     }
     at += 46 + nameLength + extra + comment;
   }
@@ -43,10 +55,30 @@ export async function unzip(bytes: Uint8Array): Promise<Map<string, Uint8Array>>
   return out;
 }
 
-async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+async function inflate(bytes: Uint8Array, maxBytes: number): Promise<Uint8Array> {
+  const reader = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    size += value.length;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw new Error(TOO_BIG_UNPACKED);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
 
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  return out;
 }
 
 // -------------------------------------------------------------------- 3MF
@@ -69,6 +101,12 @@ const compose = (a: M, b: M): M => {
 
   return [...product, ...t];
 };
+
+/** An object's triangles and placements, its parts' included. */
+interface PartCount {
+  triangles: number;
+  placements: number;
+}
 
 /**
  * A 3MF file as something to import: the exact STEP model when it carries one
@@ -126,14 +164,44 @@ export async function read3mf(bytes: Uint8Array): Promise<{ format: 'step' | 'st
     }
   };
   const items = [...xml.matchAll(/<(?:\w+:)?item\b([^>]*)>/g)].map(match => attrs(match[1]));
-  if (items.length) {
-    for (const it of items) {
-      add(it.objectid, matrix(it.transform), 0);
+  const roots = items.length
+    ? items.map(it => ({ id: it.objectid, m: matrix(it.transform) }))
+    : [...objects.keys()].map(id => ({ id, m: matrix() }));
+  // Parts placed inside parts multiply (ten per level, sixteen deep: 10^16), so they are counted before any is made.
+  const counted = new Map<string, PartCount>();
+  const countOf = (id: string, depth: number): PartCount => {
+    const obj = objects.get(id);
+    if (!obj || depth > 16) {
+      return { triangles: 0, placements: 0 };
     }
-  } else {
-    for (const id of objects.keys()) {
-      add(id, matrix(), 0);
+    const key = `${id} ${depth}`;
+    let count = counted.get(key);
+    if (!count) {
+      count = { triangles: obj.t.length, placements: 1 };
+      for (const part of obj.parts) {
+        const inner = countOf(part.id, depth + 1);
+        count.triangles += inner.triangles;
+        count.placements += inner.placements;
+      }
+      counted.set(key, count);
     }
+
+    return count;
+  };
+  const total: PartCount = { triangles: 0, placements: 0 };
+  for (const root of roots) {
+    const count = countOf(root.id, 0);
+    total.triangles += count.triangles;
+    total.placements += count.placements;
+  }
+  if (total.triangles > MESH_MAX) {
+    throw new TooBig(total.triangles);
+  }
+  if (total.placements > MESH_MAX) {
+    throw new Error(`it places its parts ${total.placements.toLocaleString('en-US')} times - more than can be brought in`);
+  }
+  for (const root of roots) {
+    add(root.id, root.m, 0);
   }
   if (!tris.length) {
     throw new Error('it has no triangles in it');
