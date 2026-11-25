@@ -3,7 +3,6 @@
 // a standard scale, balloons with the parts list's item numbers.
 import opencascade from 'replicad-opencascadejs';
 import { setOC } from 'replicad';
-import { projectViews } from '../src/kernel/engine';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import {
   angleDim,
@@ -35,6 +34,7 @@ import {
 } from '../src/bim/drawingSheet';
 import { emptyDoc, type Feature } from '../src/doc/types';
 import { sheetToDXF } from '../src/io/sheetDxf';
+import { projectViews } from '../src/kernel/drawings';
 import type { PartRow } from '../src/bim/sheet';
 
 setOC(await (opencascade as unknown as () => Promise<any>)());
@@ -109,7 +109,7 @@ check('parts list: the material, its mass', svg.includes('Structural steel S235J
 check('hidden lines dashed', svg.includes('stroke-dasharray="3 1"') || !views.get('front')!.bodies.some(b => b.hidden));
 
 // ---- Edges to dimension, tapping them, the dimensions put on.
-const holed = (await import('../src/kernel/engine')).projectViews;
+const holed = (await import('../src/kernel/drawings')).projectViews;
 const disc: Feature[] = (() => {
   const es = [
     { id: 'o', kind: 'polyline', points: [[0, 0], [60, 0], [60, 40], [0, 40]], closed: true },
