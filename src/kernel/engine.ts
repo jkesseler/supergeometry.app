@@ -53,6 +53,7 @@ import { chainKey, hash53, shortBig } from './stepKey';
 import { originsOf } from './originsOf';
 import { rawEntries, Noted, startReading, stopReading, unchangedFor, fork, recordDelta } from './readTracking';
 import { followLinks } from './links';
+import { drawingLookup, keepDrawingRebuild, keepModelRebuild, lastRebuiltBodies, modelLookup, resetRebuildCache } from './rebuildCache';
 import { resetFaceInfos } from './faceInfoCache';
 import { meshBody, smoothStepsOf } from './viewMesh';
 import { printMesh } from './printMesh';
@@ -63,7 +64,8 @@ import type {
   Vec3
 } from '../doc/types';
 import type { BodyHealth, BodyMesh, BodyProps, ExportFormat, FeatureError, RegenResult } from './protocol';
-import type { Reads, Recorded } from './readTracking';
+import type { CacheEntry } from './rebuildCache';
+import type { Reads } from './readTracking';
 import type { Ctx } from './types';
 
 export { shapeValid } from './health';
@@ -71,34 +73,9 @@ export { shapeValid } from './health';
 /** How many steps the last rebuild ran, took as they were (nothing before them changed), or put back (nothing they read changed). */
 export const rebuildStats = { ran: 0, kept: 0, reused: 0 };
 
-export interface CacheEntry extends Recorded {
-  key: string;
-  ctx: Ctx;
-  id?: string;
-  /** Worked, but had to give something up (shown on the step in History). */
-  note?: string;
-  /** Which of its faces a face is (see provenance.ts): for steps made from a sketch. */
-  origin?: OriginOf;
-}
-
-let cache: CacheEntry[] = [];
-/**
- * The saved project's steps, kept while a step is being changed (its previews
- * fill `cache`): Cancel goes back to them at once, not after a rebuild of
- * every step after the one that was open.
- */
-let savedCache: CacheEntry[] = [];
-/** The project with its threads left plain, as drawings draw it (kept apart from `cache`). */
-let drawingCache: CacheEntry[] = [];
-/** While drawings rebuild into `drawingCache`: the model's own steps, for the ones before its first thread. */
-let alsoCache: CacheEntry[] = [];
-
 /** After a fresh OpenCascade was loaded: everything made with the old one is dropped. */
 export function resetKernel(): void {
-  cache = [];
-  savedCache = [];
-  drawingCache = [];
-  lastBodies = new Map();
+  resetRebuildCache();
   importCache.clear();
   sketchWas.clear();
   resetFaceInfos();
@@ -174,18 +151,13 @@ export function healthReport(id: string, name: string, shape: Shape3D): BodyHeal
   return { id, name, ...health, edges, box, healthy: isHealthy(health) };
 }
 
-/** The project with its threads left plain, as drawings draw it, rebuilt in `drawingCache`. */
+/** The project with its threads left plain, as drawings draw it, rebuilt in the drawings' own steps. */
 export async function runWithPlainThreads(features: Feature[]): Promise<Ctx> {
-  const keep = cache;
-  cache = drawingCache;
-  alsoCache = keep;
-  try {
-    return (await run(features.map(feature => (feature.type === 'thread' && !feature.suppressed ? { ...feature, suppressed: true } : feature)))).ctx;
-  } finally {
-    drawingCache = cache;
-    cache = keep;
-    alsoCache = [];
-  }
+  const plain = features.map(feature => (feature.type === 'thread' && !feature.suppressed ? { ...feature, suppressed: true } : feature));
+  const rebuilt = await rebuildSteps(plain, drawingLookup());
+  keepDrawingRebuild(rebuilt.entries, rebuilt.ctx.bodies);
+
+  return rebuilt.ctx;
 }
 
 export async function exportBodies(features: Feature[], format: ExportFormat, only?: string[]): Promise<Blob> {
@@ -218,7 +190,7 @@ export async function exportBodies(features: Feature[], format: ExportFormat, on
 
 export async function regenerate(features: Feature[], saved = false): Promise<RegenResult> {
   const t0 = performance.now();
-  const { ctx, errors, numbers, notes, whole } = await run(features, saved);
+  const { ctx, errors, numbers, notes, whole, entries } = await run(features, saved);
   const names = bodyNames(features, [...ctx.bodies.keys()], numbers);
   const smoothSteps = smoothStepsOf(features);
   const meshes: BodyMesh[] = [];
@@ -228,12 +200,12 @@ export async function regenerate(features: Feature[], saved = false): Promise<Re
     } catch (err) {
       if (isFault(err)) {
         // The last step that changed this body is the one whose result can't be shown.
-        let index = cache.length - 1;
-        while (index > 0 && cache[index - 1].ctx.bodies.get(id) === shape) {
+        let index = entries.length - 1;
+        while (index > 0 && entries[index - 1].ctx.bodies.get(id) === shape) {
           index--;
         }
-        if (cache[index]) {
-          blame(cache[index].key);
+        if (entries[index]) {
+          blame(entries[index].key);
         }
         throw new KernelFault(features[index]?.id ?? baseId(id));
       }
@@ -260,9 +232,8 @@ export async function regenerate(features: Feature[], saved = false): Promise<Re
 }
 
 /** The solids of the last rebuild (for tests that check the real geometry, not just its mesh). */
-let lastBodies: Map<string, Shape3D> = new Map();
 export function debugBodies(): Map<string, Shape3D> {
-  return lastBodies;
+  return lastRebuiltBodies();
 }
 
 /** Edits that change a solid in place (their results are checked). */
@@ -278,6 +249,13 @@ const SHELL_LOOSE = 'Opening this face would leave what is cut into it (a pocket
  * of every feature up to it, so editing feature k only rebuilds k onwards.
  */
 export async function run(features: Feature[], saved = false) {
+  const rebuilt = await rebuildSteps(features, modelLookup());
+  keepModelRebuild(rebuilt.entries, rebuilt.ctx.bodies, saved);
+
+  return rebuilt;
+}
+
+async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
   rebuild.stepsNow = new Set(features.map(feature => feature.id));
   useSafeBooleans();
   useReleases();
@@ -295,7 +273,7 @@ export async function run(features: Feature[], saved = false) {
   const off = [...rebuild.switchedOff].sort().join();
   // The steps as last rebuilt (by step, wherever in the list they are now).
   const before = new Map<string, CacheEntry>();
-  for (const e of [...cache, ...savedCache, ...alsoCache]) {
+  for (const e of lookup.flat()) {
     if (e.id && !before.has(e.id)) {
       before.set(e.id, e);
     }
@@ -318,7 +296,7 @@ export async function run(features: Feature[], saved = false) {
     const text = JSON.stringify((feature.type === 'boolean' || feature.type === 'delete') && feature.whole ? { ...feature, whole: undefined } : feature, shortBig);
     const json = `${hash53(text, 3)}.${text.length}`;
     key = chainKey(key, text);
-    const cached: CacheEntry | undefined = !hit ? undefined : cache[i]?.key === key ? cache[i] : savedCache[i]?.key === key ? savedCache[i] : alsoCache[i]?.key === key ? alsoCache[i] : undefined;
+    const cached: CacheEntry | undefined = hit ? lookup.map(entries => entries[i]).find(candidate => candidate?.key === key) : undefined;
     hit = !!cached;
     let entry: CacheEntry;
     const was = before.get(feature.id);
@@ -507,11 +485,6 @@ export async function run(features: Feature[], saved = false) {
     ctx = entry.ctx;
     next.push(entry);
   }
-  cache = next;
-  if (saved) {
-    savedCache = next;
-  }
-  lastBodies = ctx.bodies;
   // Steps that don't say yet which patterns they used whole: as they were made.
   let whole: Record<string, string[]> | undefined;
   features.forEach((feature, i) => {
@@ -536,7 +509,7 @@ export async function run(features: Feature[], saved = false) {
     }
   }
 
-  return { ctx, errors, numbers, notes, whole };
+  return { ctx, errors, numbers, notes, whole, entries: next };
 }
 
 async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise<void> {
