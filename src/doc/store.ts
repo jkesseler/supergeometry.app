@@ -80,6 +80,8 @@ const BIG = 50_000;
 const bigById = new Map<string, string>();
 const idOfBig = new Map<string, string>();
 const REF = '\u0000sg-big:';
+/** Only goes up: ids restored with the undo history after a reload must never be handed out again. */
+let nextBigId = 0;
 
 function pack(doc: ProjectDoc): string {
   return JSON.stringify(doc, (_k, value) => {
@@ -88,7 +90,7 @@ function pack(doc: ProjectDoc): string {
     }
     let id = idOfBig.get(value);
     if (!id) {
-      id = `${REF}${idOfBig.size}`;
+      id = `${REF}${nextBigId++}`;
       idOfBig.set(value, id);
       bigById.set(id, value);
     }
@@ -158,6 +160,7 @@ export class DocStore {
     for (const [id, bigValue] of savedHistory.big ?? []) {
       bigById.set(id, bigValue);
       idOfBig.set(bigValue, id);
+      nextBigId = Math.max(nextBigId, Number(id.slice(REF.length)) + 1);
     }
     this.undoStack = savedHistory.undo;
     this.redoStack = savedHistory.redo;
@@ -370,6 +373,8 @@ export class DocStore {
     this.transientBase = null;
     this.undoStack = [];
     this.redoStack = [];
+    bigById.clear();
+    idOfBig.clear();
     this.lastMerge = null;
     this.changed();
   }
