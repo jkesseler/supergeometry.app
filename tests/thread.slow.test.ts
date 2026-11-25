@@ -3,7 +3,8 @@
 // the head next to the shank left alone.
 import opencascade from 'replicad-opencascadejs';
 import { makeBaseBox, makeCylinder, measureVolume, setOC } from 'replicad';
-import { debugBodies, regenerate, threadFace } from '../src/kernel/engine';
+import { debugBodies, regenerate } from '../src/kernel/engine';
+import { threadFace } from '../src/kernel/steps/thread';
 import { healthOf, isHealthy } from '../src/kernel/repair';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import { defaultPitch, threadLabel } from '../src/kernel/threads';
