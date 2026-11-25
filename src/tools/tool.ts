@@ -50,6 +50,8 @@ export interface AppContext {
   readonly selection: Sel[];
   /** Thread the selected round face. */
   startThread(): void;
+  /** Hole on the flat face picked, where it was tapped. */
+  startHole(): void;
   /** Open a step of the history to change it (as tapping it in History does). */
   editStep(id: string): void;
   setSelection(sel: Sel[]): void;

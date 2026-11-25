@@ -9,6 +9,7 @@ import { faceFreeformTool } from '../tools/faceFreeform';
 import { freeformBodies } from '../doc/freeformCopies';
 import { editedStep } from '../doc/freeformEdits';
 import { ImprintOp, WrapOp } from '../tools/wrapOps';
+import { HoleOp } from '../tools/holeOp';
 import { SketchTool } from '../tools/sketch';
 import type { RegenResult } from '../kernel/protocol';
 import type { EdgeFeature, ExtrudeFeature, Feature, FillToPlaneFeature, ImageFeature, LoftFeature, PlaneFeature, RevolveFeature, ShellFeature, SketchFeature, SplitFeature, SweepFeature, TransformFeature, Vec3 } from '../doc/types';
@@ -319,6 +320,8 @@ export class History {
         return this.app.setTool(new WrapOp(this.app, existing.source, existing));
       case 'thread':
         return this.app.setTool(new ThreadOp(this.app, existing.face, existing.round ?? { r: 5, hole: false }, existing));
+      case 'hole':
+        return this.app.setTool(new HoleOp(this.app, existing.face, existing.at, undefined, existing));
       case 'plane':
         return this.app.setTool(new PlaneOp(this.app, existing.plane, existing.face, existing as PlaneFeature));
       case 'transform': {

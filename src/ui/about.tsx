@@ -124,6 +124,8 @@ interface AboutDialogProps {
   onClose: () => void;
 }
 
+const aboutHtml = () => render(aboutText()).replace(/<h1>([\s\S]*?)<\/h1>/, `<h1><a href="${REPO}" target="_blank" rel="noopener" title="Open the project on GitHub">$1</a></h1>`);
+
 function AboutDialog({ onClose }: AboutDialogProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -156,7 +158,7 @@ function AboutDialog({ onClose }: AboutDialogProps) {
           <div class="panel-title">About</div>
           <button type="button" class="icon-btn library-close" title="Close" onClick={onClose} dangerouslySetInnerHTML={{ __html: icons.close }} />
         </div>
-        <div class="about-body" ref={bodyRef} onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: render(aboutText()) }} />
+        <div class="about-body" ref={bodyRef} onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: aboutHtml() }} />
       </div>
     </div>
   );

@@ -62,6 +62,33 @@ function unreadable(bytes: Uint8Array, format: 'step' | 'stl'): string | null {
   return bytes.length ? "it isn't an STL file, or it is damaged" : 'the file is empty';
 }
 
+/**
+ * A mesh has come in (or was asked to be given faces): once it is built, how many of its round parts are true
+ * round faces now, said once. (Looked for a few times a second until the body is there - it can take a while.)
+ */
+export function sayRounds(app: AppContext, id: string, name: string, before = -1): void {
+  const began = Date.now();
+  const look = () => {
+    if (!app.store.doc.features.some(f => f.id === id)) {
+      return;
+    }
+    const body = app.view.body(id);
+    const count = body ? body.faces.filter(f => f.round).length : -1;
+    // (Asked of a mesh already in the project: until its faces have changed.)
+    if (body && (before < 0 || body.faces.length !== before)) {
+      if (count > 0) {
+        app.ui.toast(`${name}: ${count} round ${count === 1 ? 'part is a true round face' : 'parts are true round faces'} now (holes, bosses, rounded corners).`);
+      }
+
+      return;
+    }
+    if (Date.now() - began < 180_000) {
+      setTimeout(look, 400);
+    }
+  };
+  setTimeout(look, 400);
+}
+
 export async function insertFile(app: AppContext): Promise<void> {
   const file = await pickFile('.step,.stp,.stl,.obj,.3mf,.dxf,.svg,.dwg,.super,.tessel');
   if (!file) {
@@ -120,7 +147,12 @@ export async function insertFile(app: AppContext): Promise<void> {
       return app.ui.toast(`Could not insert ${file.name}: ${why}`, 'error');
     }
     app.ui.setStatus(`Importing ${file.name}…`);
-    app.store.add({ ...app.store.newIdentity('import'), type: 'import', format, fileName: file.name, data: toBase64(bytes), apart: true });
+    // (A mesh: its flat faces made whole and its round parts round - see kernel/meshRound.ts.)
+    const step = { ...app.store.newIdentity('import'), type: 'import' as const, format, fileName: file.name, data: toBase64(bytes), apart: true, ...(format === 'stl' ? { round: true } : {}) };
+    app.store.add(step);
+    if (format === 'stl') {
+      sayRounds(app, step.id, file.name);
+    }
     app.ui.setStatus(null);
   } catch (err) {
     app.ui.setStatus(null);

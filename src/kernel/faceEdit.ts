@@ -1986,13 +1986,14 @@ function takeOffBlend(body: Shape3D, face: Face): Shape3D {
  * `size`: how big the body is, when known (the result of a join is about as
  * big as what was joined) - boxing every result again was slow on big bodies.
  */
-export function unify(body: Shape3D, size?: number): Shape3D {
+export function unify(body: Shape3D, size?: number, loose?: { linear: number; angular: number }): Shape3D {
   const oc = getOC();
   const unifier = new oc.ShapeUpgrade_UnifySameDomain(body.wrapped, true, true, false);
   try {
-    // Surfaces rebuilt from samples match the originals only to ~1e-9 relative.
-    unifier.SetLinearTolerance((size ?? sizeOf(body)) * 1e-6);
-    unifier.SetAngularTolerance(1e-6);
+    // Surfaces rebuilt from samples match the originals only to ~1e-9 relative. (`loose`: a mesh's flat faces, their
+    // corners as far off their plane as a file's seven digits leave them.)
+    unifier.SetLinearTolerance(loose?.linear ?? (size ?? sizeOf(body)) * 1e-6);
+    unifier.SetAngularTolerance(loose?.angular ?? 1e-6);
     unifier.Build();
     // (The kernel's handle to the result is given back once the body has its own: release.ts.)
     const made = unifier.Shape();

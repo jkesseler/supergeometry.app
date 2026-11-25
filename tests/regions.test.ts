@@ -30,7 +30,24 @@ const cases: [string, SketchEntity[], string[]][] = [
   ['figure-8 spline → 2', [{ id: 's', kind: 'spline', points: [[0, 0], [20, 20], [20, 0], [0, 20]], closed: true, mode: 'fit' }], ['*', '*']],
   ['hand-drawn loop past its start → 1', [{ id: 's', kind: 'spline', points: [[0, -3], [0, 10], [10, 20], [20, 10], [10, 0], [-3, 0]], closed: false, mode: 'fit' }], ['*']],
   ['hairpin spline (no crossing) → 0', [{ id: 's', kind: 'spline', points: [[0, 0], [10, 0], [10.3, 0.4], [0, 0.8]], closed: false, mode: 'fit' }], []],
-  ['partly overlapping lines → square', [line('1', [0, 0], [10, 0]), line('1b', [3, 0], [14, 0]), line('2', [10, 0], [10, 10]), line('3', [10, 10], [0, 10]), line('4', [0, 10], [0, 0])], ['100.00']]
+  ['partly overlapping lines → square', [line('1', [0, 0], [10, 0]), line('1b', [3, 0], [14, 0]), line('2', [10, 0], [10, 10]), line('3', [10, 10], [0, 10]), line('4', [0, 10], [0, 0])], ['100.00']],
+  // A line drawn up to a circle and ending on it (reported: "Points are coincidents. The area under the circle
+  // doesn't fill, unless the circle crosses the bottom line"): the shape it closes is a shape - the circle clear of
+  // the bar, just touching it, and crossing it; the end exactly on the circle, and a hair off it either way.
+  ...[10.2, 9.4, 8.6].flatMap((cy, k) =>
+    [0, 1e-9, -1e-9, 1e-6].map((off): [string, SketchEntity[], string[]] => {
+      const on = (ang: number, d: number): [number, number] => [(8.4 + d) * Math.cos(ang), cy + (8.4 + d) * Math.sin(ang)];
+
+      return [
+        `a bar, a ring over it, two lines up to the ring (circle ${['clear of', 'touching', 'crossing'][k]} the bar, ends ${off} off)`,
+        [rect('r', 0, 0, 20, 2), { id: 'o', kind: 'circle', center: [0, cy], radius: 8.4 }, { id: 'i', kind: 'circle', center: [0, cy], radius: 7 }, line('l', [-10, 1], on(3.1, off)), line('m', [10, 1], on(0.1, -off))],
+        new Array(4 + k).fill('*')
+      ];
+    })
+  ),
+  // An arc's end on a line, and a line's end on a line's middle (a T): both close their shapes.
+  ["an arc ending on a line's middle", [line('b', [-10, 0], [10, 0]), { id: 'a', kind: 'arc', a: [5, 0], m: [0, 5], b: [-5, 0] }], ['*']],
+  ['a T closes two shapes', [rect('a', 0, 0, 20, 10), line('l', [0, -5], [0, 5])], ['100.00', '100.00']]
 ];
 
 let failed = 0;

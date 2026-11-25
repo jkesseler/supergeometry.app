@@ -32,7 +32,7 @@ import { Updates } from './ui/update';
 import { Exporter } from './app/exporting';
 import { History } from './app/history';
 import { Keys } from './app/keys';
-import { startThread } from './app/thread';
+import { startHole, startThread } from './app/thread';
 import { Undoing } from './app/undoing';
 import { Scene } from './app/scene';
 import { itemsHost, sentenceHost, setupBusy, setupVR, variableTagHost } from './app/setup';
@@ -341,6 +341,10 @@ export class App implements AppContext {
 
   startThread(): void {
     startThread(this);
+  }
+
+  startHole(): void {
+    startHole(this);
   }
 
   setSection(sectionState: SectionState | null): void {

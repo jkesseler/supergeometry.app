@@ -85,7 +85,8 @@ export class Menus {
           { id: 'extrude', label: 'Extrude', icon: 'extrude', pulse: this.firstShape(), run: wait('Extrude', ['profile', 'face'], () => src() && this.app.setTool(new ExtrudeOp(this.app, src()!))) },
           { id: 'revolve', label: 'Revolve', icon: 'revolve', run: wait('Revolve', ['profile', 'face'], () => src() && this.app.setTool(new RevolveOp(this.app, src()!))) },
           { id: 'sweep', label: 'Sweep', icon: 'sweep', run: wait('Sweep', ['profile', 'face'], () => src() && this.app.setTool(new SweepOp(this.app, src()!))) },
-          { id: 'loft', label: 'Loft', icon: 'loft', run: wait('Loft', ['profile', 'face'], () => this.app.setTool(new LoftOp(this.app, sourcesOf(this.app, this.app.selection).flatMap((source): ExtrudeSource[] => (source.kind === 'profile' ? source.regions.map(region => ({ ...source, regions: [region] })) : [source])), this.app.selection))) }
+          { id: 'loft', label: 'Loft', icon: 'loft', run: wait('Loft', ['profile', 'face'], () => this.app.setTool(new LoftOp(this.app, sourcesOf(this.app, this.app.selection).flatMap((source): ExtrudeSource[] => (source.kind === 'profile' ? source.regions.map(region => ({ ...source, regions: [region] })) : [source])), this.app.selection))) },
+          { id: 'hole', label: 'Hole', icon: 'hole', run: wait('Hole (tap a flat face where the screw goes)', ['face'], () => this.app.startHole()) }
         ]
       },
       {

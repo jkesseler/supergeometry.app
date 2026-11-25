@@ -482,6 +482,12 @@ export interface ImportFeature extends FeatureBase {
    * Missing (files put in before this): all of them one body, as they were - what was built on that body stays.
    */
   apart?: boolean;
+  /**
+   * A mesh's round parts made truly round: the runs of flat strips that are a hole, a boss, a pin or a rounded
+   * upright corner become one round face each (see kernel/meshRound.ts). Set on files put in from now on; missing
+   * (files put in before): as they were - what was built on their strips stays.
+   */
+  round?: boolean;
 }
 
 /** A reference image placed on a plane (for tracing). */
@@ -605,6 +611,43 @@ export interface ThreadFeature extends FeatureBase {
 }
 
 /**
+ * A hole for a screw, drilled square into a flat face: the shaft, and at the mouth a recess for the screw's head
+ * (straight-sided for a cap screw, a 90° cone for a countersunk one). The sizes come from the screw size chosen
+ * (holeSizes.ts) and can each be typed over.
+ */
+export interface HoleFrom {
+  edge: EdgeRef;
+  d: number;
+}
+
+export interface HoleFeature extends FeatureBase {
+  type: 'hole';
+  /** The flat face it goes into. */
+  face: FaceRef;
+  /** Where on the face (world; put onto the face's plane when the face has moved along its normal). */
+  at: Vec3;
+  /** Put down on the centre of this round edge (a boss's rim, another hole's): it stays on that centre. */
+  around?: EdgeRef;
+  /** Put down on the middle of the face: it stays in the middle. */
+  centered?: boolean;
+  /**
+   * Held this far from two straight edges of the face (the sizes typed by them): it stays that far from each.
+   * `d` is measured square to the edge, towards the face's middle (negative: the other side).
+   */
+  from?: [HoleFrom, HoleFrom];
+  /** The screw the sizes are for ("M3"); missing: none chosen (Other). */
+  size?: string;
+  diameter: number;
+  /** Right through the body (`depth` is not used). */
+  through: boolean;
+  depth: number;
+  head: 'none' | 'counterbore' | 'countersink';
+  /** The recess for the head: how wide at the mouth, and (a counterbore) how deep. */
+  headDiameter: number;
+  headDepth: number;
+}
+
+/**
  * Repair bodies: gaps sewn, missing flat faces filled, hair-thin faces
  * removed, faces fixed and merged, inside-out solids turned - the shape
  * itself stays. Turns loose faces (an imported mesh or STEP surface) into a solid.
@@ -706,6 +749,7 @@ export type Feature =
   | FaceFreeformFeature
   | FillToPlaneFeature
   | ThreadFeature
+  | HoleFeature
   | RepairFeature
   | ScaleFaceFeature
   | ReplaceFaceFeature

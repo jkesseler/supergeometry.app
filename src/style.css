@@ -419,6 +419,110 @@ body.update-pending #more-btn::after,
   color: var(--muted);
   font-size: 12px;
 }
+/* The version line is a button: it opens What's new. */
+button.menu-note {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+/* The constraints of a pick, as a list. */
+.dialog.constraint-list {
+  width: min(440px, calc(100vw - 24px));
+  max-height: min(80vh, calc(100vh - 24px - var(--safe-t) - var(--safe-b)));
+  padding: 14px;
+}
+.constraint-rows {
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.constraint-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px 6px 8px;
+  border-radius: 10px;
+}
+.constraint-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.constraint-glyph {
+  flex: none;
+  width: 24px;
+  text-align: center;
+  color: #ffc23d;
+  font-weight: 600;
+}
+.constraint-what {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.constraint-what b {
+  font-weight: 600;
+  font-size: 14px;
+}
+.constraint-what span {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.constraint-value {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.constraint-value input {
+  width: 74px;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  font: 600 13px ui-monospace, monospace;
+  text-align: right;
+}
+.constraint-value:focus-within {
+  border-color: rgba(61, 139, 255, 0.85);
+}
+.constraint-value input.invalid {
+  color: #ff6b6b;
+}
+.dialog.constraint-list > .text-btn.danger {
+  align-self: flex-start;
+  color: #ff8a8a;
+}
+.dialog.whats-new {
+  width: min(560px, calc(100vw - 24px));
+}
+.whats-new-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(61, 139, 255, 0.85);
+  vertical-align: middle;
+}
+.whats-new-kind {
+  margin-top: 6px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 /* Undo / redo dock: bottom-left corner, always; the section/measure buttons sit above it. */
 #undo-dock {
   position: fixed;
@@ -2187,6 +2291,19 @@ form.dialog {
 .about-body h1 {
   font-size: 22px;
   margin: 8px 0 6px;
+}
+/* The name: a link to the project's page, looking like the name (underlined under the pointer). */
+.about-body h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+.about-body h1 a:hover {
+  text-decoration: underline;
+}
+.about-body h1 a::after {
+  content: " ↗";
+  font-size: 14px;
+  color: var(--muted);
 }
 .about-body h2 {
   font-size: 18px;

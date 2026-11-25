@@ -202,6 +202,55 @@ function compute(entities: SketchEntity[]): Arrangement {
     }
   }
 
+  // ---- ends that lie on another curve
+  // A line drawn up to a circle, its end held on it, meets the circle - but not the straight pieces the circle is
+  // looked at as above: its end is on the true round, a hair outside them, and nothing crossed. The shape the line
+  // closed was no shape (reported: "Points are coincidents. The area under the circle doesn't fill, unless the
+  // circle crosses the bottom line"). So each open curve's ends are looked for on every other curve itself, and
+  // that curve is cut where one lies on it.
+  const onTol = eps * 50;
+  const endBoxes = samples.map((s) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, step = 0;
+    s.pts.forEach(([x, y], i) => {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+      if (i) {
+        step = Math.max(step, Math.hypot(x - s.pts[i - 1][0], y - s.pts[i - 1][1]));
+      }
+    });
+    // (A round curve bulges past its own sample points: by less than one of its pieces is long.)
+    const pad = onTol + (s.pts.length > 2 ? step : 0);
+
+    return { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad };
+  });
+  prims.forEach((p, pi) => {
+    if (isClosedPrim(p)) {
+      return;
+    }
+    for (const end of [evalPrim(p, 0), evalPrim(p, 1)]) {
+      prims.forEach((q, qi) => {
+        if (qi === pi) {
+          return;
+        }
+        const b = endBoxes[qi];
+        if (end[0] < b.x0 || end[0] > b.x1 || end[1] < b.y0 || end[1] > b.y1) {
+          return;
+        }
+        const near = closestOnPrim(q, end);
+        if (near.d > onTol) {
+          return;
+        }
+        // (At that curve's own end: they meet end to end already.)
+        if (!isClosedPrim(q) && (near.t < 1e-9 || near.t > 1 - 1e-9)) {
+          return;
+        }
+        splits[qi].push(near.t);
+      });
+    }
+  });
+
   // ---- pieces
   const nodes: Vec2[] = [];
   // (Looked up by the cell they're in, and the cells around it: a sketch of

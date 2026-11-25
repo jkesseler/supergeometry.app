@@ -13,6 +13,7 @@ import { Updates } from '../ui/update';
 import { Offline } from '../ui/offline';
 import { Install } from '../ui/install';
 import { canShareType } from '../app/exporting';
+import { showWhatsNew } from '../ui/whatsNew';
 import { wireProjectName } from './projectName';
 import type { EdgeRef, Vec3 } from '../doc/types';
 import type { App } from '../app';
@@ -57,7 +58,8 @@ export class Topbar {
     on('file-btn', () => ((more.hidden = true), menu.toggleAttribute('hidden'), !menu.hidden && phoneItemsAway()));
     on('more-btn', () => ((menu.hidden = true), more.toggleAttribute('hidden'), !more.hidden && phoneItemsAway()));
     on('history-btn', () => ((menu.hidden = more.hidden = true), this.app.ui.toggleHistory()));
-    document.getElementById('m-version')!.textContent = `Version ${__APP_VERSION__}`;
+    document.getElementById('m-version')!.textContent = `Version ${__APP_VERSION__} · What's new`;
+    this.on('m-version', () => ((this.more.hidden = true), showWhatsNew(__APP_VERSION__)));
   }
 
   private fullscreen(): void {

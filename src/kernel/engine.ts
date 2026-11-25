@@ -68,6 +68,12 @@ import { healthOf, isHealthy, repairShape } from './repair';
 export { shapeValid } from './health';
 import { applyPlan, boundaryEdges, cachedPlan, deleteFaces, isClosed, selfCrossings, subdivide } from '../freeform/cage';
 import { closestOnEntity } from '../sketch/regions';
+import { holeFromLines } from '../doc/holeSizes';
+import { meshFlatFaces, meshModel, meshParts, stlTriangles, type MeshModel, type MeshCylinder, type MeshFace, type MeshStandIn } from './meshRound';
+import { faceMiddle, holeCutter, holeFault, roundCentre } from './hole';
+import { threadDepth } from './threads';
+import { cylinderOf, deleteFace,
+  deleteFaces as deleteBodyFaces, editNotes, freeformFace, sameSizesAgain, sheetFace, sheetFaces, hasBlends, inFlatFace, looseBox, offsetFace, onFace as pointOnFace, planeOf, replaceFacePlane, SIDES_MEET, sizeOf, unify } from './faceEdit';
 import { edgeOrigins, edgeSteps, faceAliases, faceOrigins, faceSteps, inheritTags, movedTags, oldEdgeSteps, sameSteps, seamEdges, setOrigins, tagBody, type OriginOf } from './provenance';
 import { railLoft } from './loftRails';
 import { loftInLine } from './loftAlign';
@@ -75,9 +81,6 @@ import { binarySTL, faceTriangles, meshEdgeLines, meshFaces, meshOff, type FaceM
 import { areaProperties, measureArea as trueArea, measureVolume, normalOnEdge, quickVolume, roughVolume, surfaceAt, volumeProperties } from './ocFree';
 import { useReleases } from './release';
 import { useSafeBooleans, withoutInternals } from './safeBooleans';
-import { cylinderOf, deleteFace,
-  deleteFaces as deleteBodyFaces, editNotes, freeformFace, sameSizesAgain, sheetFace, sheetFaces, hasBlends, inFlatFace, looseBox, offsetFace, onFace as pointOnFace, planeOf, replaceFacePlane, SIDES_MEET, sizeOf, unify } from './faceEdit';
-import { threadDepth } from './threads';
 import { anchorOf, freeformFaces, meshViews, viewEdge } from './viewLines';
 import { entitiesWire, pathOf, regionFaces, regionHoleWires, regionWire, withFittedSplines } from './sketchGeom';
 import { stretchShape } from './stretch';
@@ -2121,12 +2124,17 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
       return;
 
     case 'import': {
-      let shape = importCache.get(feature.data);
+      const rounding = feature.format === 'stl' && !!feature.round;
+      const cacheKey = rounding ? `round:${feature.data}` : feature.data;
+      let shape = importCache.get(cacheKey);
       if (!shape) {
         const bytes = Uint8Array.from(atob(feature.data), char => char.charCodeAt(0));
         const blob = new Blob([bytes]);
         try {
-          shape = (feature.format === 'step' ? await importSTEP(blob) : readSTL(bytes)) as Shape3D;
+          // (A mesh asked to be made into faces: its flat faces built whole here, whichever way they face; where
+          // that cannot be done, the kernel's own reading of the file.)
+          const whole = rounding ? meshBodyOf(bytes) : null;
+          shape = whole?.shape ?? ((feature.format === 'step' ? await importSTEP(blob) : readSTL(bytes)) as Shape3D);
         } catch (err) {
           // (The engine itself breaking down is for whoever runs it - it was
           // taken for a file that couldn't be read, and the broken engine kept.
@@ -2140,12 +2148,12 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
         if (isEmpty(shape)) {
           throw new Error('The file contains no solid geometry');
         }
-        importCache.set(feature.data, shape);
+        importCache.set(cacheKey, shape);
       }
       // A file of several solids (an assembly; this app's own STEP of two bodies): each a body of its own, to pick,
       // hide, move and cut by itself. (They came in as one body of several pieces: the two bodies of a project
       // saved as STEP and opened again were one, that nothing could take apart.)
-      const solids = feature.apart && feature.format === 'step' ? subShapes(shape, 'SOLID') : [];
+      const solids = feature.apart && (feature.format === 'step' || rounding) ? subShapes(shape, 'SOLID') : [];
       if (solids.length > 1) {
         solids.forEach((solid, i) => bodies.set(i ? `${feature.id}:${i}` : feature.id, cast(solid) as Shape3D));
 
@@ -2272,6 +2280,71 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
       const n0 = planeOf(face).normal;
       const normal = dot(plane.normal, n0) < 0 ? scale(plane.normal, -1) : plane.normal;
       bodies.set(feature.face.body, staysClosed(body, replaceFacePlane(body, face, { origin: plane.origin, normal: normal, xDir: xDirFor(normal) })));
+
+      return;
+    }
+
+    case 'hole': {
+      const body = need(bodies, feature.face.body);
+      const face = resolveFace(body, feature.face, g => g.geomType === 'PLANE');
+      const out = norm(face.normalAt().toTuple() as Vec3);
+      const on = planeOf(face).origin;
+      // Where: the centre of the round edge it was put on, the face's middle, or the place itself - on the face's
+      // plane as it is now (the face moved out or in since: the hole starts at it still).
+      let at = feature.at;
+      if (feature.around) {
+        try {
+          at = roundCentre(resolveEdge(body, feature.around)) ?? at;
+        } catch {
+          // The edge is gone: where it was put.
+        }
+      } else if (feature.centered) {
+        at = faceMiddle(face);
+      } else if (feature.from) {
+        try {
+          const lines = feature.from.map((x) => {
+            const e = resolveEdge(body, x.edge);
+            if (e.geomType !== 'LINE') {
+              throw new Error('not straight');
+            }
+
+            return { a: e.pointAt(0).toTuple() as Vec3, b: e.pointAt(1).toTuple() as Vec3, d: x.d };
+          });
+          at = holeFromLines(at, faceMiddle(face), out, lines[0], lines[1]) ?? at;
+        } catch {
+          // An edge is gone, or round now: where it was put.
+        }
+      }
+      at = sub(at, scale(out, dot(sub(at, on), out)));
+      const into = scale(out, -1);
+      // Right through: past the far side of the body, wherever that is.
+      let depth = feature.depth;
+      if (feature.through) {
+        const [lo, hi] = body.boundingBox.bounds as [Vec3, Vec3];
+        depth = 0;
+        for (const x of [lo[0], hi[0]]) {
+          for (const y of [lo[1], hi[1]]) {
+            for (const z of [lo[2], hi[2]]) {
+              depth = Math.max(depth, dot(sub([x, y, z], at), into));
+            }
+          }
+        }
+        depth += Math.max(1, feature.diameter);
+      }
+      const fault = holeFault(feature, depth);
+      if (fault) {
+        throw new Error(fault);
+      }
+      // Its mouth is open: nothing of the body over it. (Put on the plate under a boss - the boss's foot is a round
+      // edge to catch on - it was drilled from the plate's face down, a hollow under the boss that nothing showed.)
+      if (insideOf(body, [add(at, scale(out, Math.max(2e-3, feature.diameter * 0.05)))])[0]) {
+        throw new Error('The body covers the hole there: tap the face the screw goes in from.');
+      }
+      const made = body.cut(holeCutter(feature, at, into, depth, Math.max(1e-3, feature.diameter * 0.01))) as Shape3D;
+      if (!(volumeOf(body) - volumeOf(made) > 1e-9)) {
+        throw new Error('The hole is off the body there: nothing to drill into. Drag it onto the face.');
+      }
+      bodies.set(feature.face.body, made);
 
       return;
     }
@@ -6947,7 +7020,7 @@ function patternCount(count: number): void {
 }
 
 /** Edits that change a solid in place (their results are checked). */
-const GUARDED = new Set<string>(['extrude', 'revolve', 'sweep', 'loft', 'boolean', 'fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom', 'split', 'connect']);
+const GUARDED = new Set<string>(['extrude', 'revolve', 'sweep', 'loft', 'boolean', 'fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom', 'split', 'connect', 'hole']);
 /** Edits that must not break a body into pieces (cuts and booleans may). */
 const NO_SPLIT = new Set<string>(['fillet', 'chamfer', 'shell', 'moveFace', 'scaleFace', 'replaceFace', 'deleteGeom']);
 
@@ -7209,6 +7282,370 @@ function readSTL(bytes: Uint8Array): Shape3D {
     oc.FS.unlink(`/${name}`);
     reader.delete();
     read.delete();
+  }
+}
+
+/**
+ * A mesh file as a body: its flat faces each one face, whichever way they face, and its round parts truly round
+ * (see meshRound.ts). Null when the mesh cannot be read that way (open, tangled, nothing flat in it) - it then
+ * comes in as the kernel reads it.
+ */
+function meshBodyOf(bytes: Uint8Array): { shape: Shape3D; made: number } | null {
+  const all = stlTriangles(bytes);
+  if (!all) {
+    return null;
+  }
+  if (all.length / 9 > MESH_MAX) {
+    throw new TooBig(all.length / 9);
+  }
+  // A file of several separate parts (a box and its lid): each read by itself, and together again as its solids -
+  // a body each (see "import"). A part inside another (a hollow's inner skin) is not a part of its own: the old way.
+  const parts = meshParts(all);
+  if (!parts) {
+    return null;
+  }
+  // Read first, all of it, which is quick; built only if it is worth building.
+  const models = parts.map(p => meshModel(p));
+  if (models.some(m => !m)) {
+    return null;
+  }
+  // (A mesh with little flat in it - a figure, a scan, a bowl whose curves are cut into four-sided flats, two
+  // triangles each: nearly a face a triangle, or a face to two. Building that face by face took as long again as
+  // the kernel's own reader, for nothing - 11 s more on a bowl of 62,000 triangles, in one part or in four. Counted
+  // after the round parts' strips are taken out, so a part that is mostly holes and bosses is not taken for one.)
+  const count = all.length / 9;
+  if (count > 5000 && models.reduce((s, m) => s + m!.faces.length, 0) > count * 0.4) {
+    return null;
+  }
+  const made = parts.map((p, i) => meshPartBody(p, models[i]!));
+  if (made.some(m => !m)) {
+    return null;
+  }
+  if (made.length === 1) {
+    return made[0];
+  }
+
+  return { shape: makeCompound(made.map(m => m!.shape.clone())) as unknown as Shape3D, made: made.reduce((s, m) => s + m!.made, 0) };
+}
+
+/** One part of a mesh, read (see meshModel), as a body: round parts stood in for and made round with a ring each. */
+function meshPartBody(tris: Float64Array, model: MeshModel): { shape: Shape3D; made: number } | null {
+  // Should any of the quick way not come out sound, the plain way: every strip a face, the round parts made round
+  // one after another.
+  const quick = model.rounds.length ? facesSolid(model.faces) : null;
+  const rounded = quick && ringsOn(quick, model.rounds);
+  if (rounded) {
+    const more = model.rest.length ? roundMeshSolid(rounded, model.rest) : { shape: rounded, made: 0 };
+
+    return { shape: more.shape, made: model.rounds.length + more.made };
+  }
+  const flat = model.rounds.length ? meshFlatFaces(tris) : model.faces;
+  const plain = flat && facesSolid(flat);
+  if (!plain) {
+    return null;
+  }
+  const cyls = [...model.rounds.map(r => r.cy), ...model.rest];
+
+  return cyls.length ? roundMeshSolid(plain, cyls) : { shape: plain, made: 0 };
+}
+
+/** Flat faces, each given by its outline and holes, sewn into one closed skin: a solid - or null if they do not close into one sound solid. */
+function facesSolid(faces: MeshFace[]): Shape3D | null {
+  const oc = getOC();
+  const lo: Vec3 = [Infinity, Infinity, Infinity];
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
+  for (const f of faces) {
+    for (const p of f.outer) {
+      for (let k = 0; k < 3; k++) {
+        (lo[k] = Math.min(lo[k], p[k])), (hi[k] = Math.max(hi[k], p[k]));
+      }
+    }
+  }
+  const size = len(sub(hi, lo)) || 1;
+  const sew = new oc.BRepBuilderAPI_Sewing(Math.max(1e-7, size * 1e-7), true, true, true, false);
+  const progress = new oc.Message_ProgressRange();
+  try {
+    const wire = (ring: Vec3[]) => assembleWire(ring.map((p, i) => makeLine(p, ring[(i + 1) % ring.length])));
+    for (const f of faces) {
+      // (On its own plane, said outright: found again from the outline, a face with holes was "not flat".)
+      const pln = new oc.gp_Pln(new oc.gp_Pnt(...f.outer[0]), new oc.gp_Dir(...f.n));
+      const mk = new oc.BRepBuilderAPI_MakeFace(pln, wire(f.outer).wrapped, true);
+      for (const h of f.holes) {
+        mk.Add(wire(h).wrapped);
+      }
+      if (!mk.IsDone()) {
+        return null;
+      }
+      sew.Add(mk.Face());
+    }
+    sew.Perform(progress);
+    const shells = subShapes(cast(sew.SewedShape()) as Shape3D, 'SHELL');
+    if (shells.length !== 1 || sew.NbFreeEdges() !== 0) {
+      return null;
+    }
+    const mk = new oc.BRepBuilderAPI_MakeSolid();
+    mk.Add(shells[0]);
+    let solid = cast(mk.Solid()) as Shape3D;
+    mk.delete();
+    if (measureVolume(solid) < 0) {
+      oc.BRepLib.OrientClosedSolid(solid.wrapped);
+    }
+    // (Straight edges cut where a neighbour's corner met them: each one edge again.)
+    const tidy = unify(solid, size);
+    if (shapeValid(tidy)) {
+      solid = tidy;
+    }
+    const v = measureVolume(solid);
+    if (!(v > 0) || openEdges(solid).length || !shapeValid(solid)) {
+      return null;
+    }
+    volumes.set(solid, v);
+
+    return solid;
+  } catch (err) {
+    if (isFault(err)) {
+      throw err;
+    }
+
+    return null;
+  } finally {
+    sew.delete();
+    progress.delete();
+  }
+}
+
+/**
+ * The round parts of a mesh body that were stood in for (meshModel) made round: a ring from inside each stand-in
+ * out to its true radius, cut from the body round a hole, joined to it round a boss - all the holes at once, all
+ * the bosses at once. Null unless the body is then one sound solid whose volume changed by what lay between the
+ * stand-ins and the round faces.
+ */
+function ringsOn(solid: Shape3D, rounds: MeshStandIn[]): Shape3D | null {
+  const size = sizeOf(solid);
+  let spare = 0;
+  try {
+    const tools = rounds.map((s) => {
+      const cy = s.cy;
+      const v = norm(cross(cy.a, cy.u));
+      const at = (r: number, ang: number, t: number): Vec3 => add(add(cy.c, scale(cy.a, t)), add(scale(cy.u, r * Math.cos(ang)), scale(v, r * Math.sin(ang))));
+      // An end with nothing past it: a cut goes a hair past it. An end with the body past it: a join goes a hair in.
+      const hair = Math.max(2e-3, (cy.r - s.inner) * 0.25);
+      const rp = s.inner + (cy.r - s.inner) * 0.25;
+      const angs = [0.25, 0.5, 0.75].map(k => cy.sweep * k);
+      const ends: [number, number] = [...s.ends];
+      [s.ends[0] - hair * 0.5, s.ends[1] + hair * 0.5].forEach((t, e) => {
+        const inside = insideOf(solid, angs.map(ang => at(rp, ang, t)));
+        if (!inside.every(x => x === !cy.concave)) {
+          return;
+        }
+        ends[e] += e ? hair : -hair;
+        // (The most that hair can take or add past the end, where the end is not as clean as a plate's face.)
+        spare += ((cy.r * cy.r - s.inner * s.inner) * cy.sweep * hair) / 2;
+      });
+      const outline = makePolygon([at(s.inner, 0, ends[0]), at(cy.r, 0, ends[0]), at(cy.r, 0, ends[1]), at(s.inner, 0, ends[1])]);
+
+      return revolution(outline, cy.c, cy.a, Math.min(360, (cy.sweep * 180) / Math.PI)) as Shape3D;
+    });
+    const holes = tools.filter((_, i) => rounds[i].cy.concave);
+    const bosses = tools.filter((_, i) => !rounds[i].cy.concave);
+    let out = solid;
+    if (holes.length) {
+      out = booleanWith('cut', out, holes, size);
+    }
+    if (bosses.length) {
+      out = booleanWith('fuse', out, bosses, size);
+    }
+    const expect = rounds.reduce((sum, s) => sum + (s.cy.concave ? -s.volume : s.volume), 0);
+    const most = rounds.reduce((sum, s) => sum + s.volume, 0);
+    const change = measureVolume(out) - volumeOf(solid);
+    if (Math.abs(change - expect) > Math.max(most * 0.01, size ** 3 * 1e-10) + spare) {
+      return null;
+    }
+    if (subShapes(out, 'SOLID').length !== 1 || openEdges(out).length || !shapeValid(out)) {
+      return null;
+    }
+
+    return out;
+  } catch (err) {
+    if (isFault(err)) {
+      throw err;
+    }
+
+    return null;
+  }
+}
+
+/**
+ * A mesh's cylinders made truly round (see meshRound.ts for how they are found).
+ *
+ * The flat strips lie just inside their cylinder, touching it at the creases - a hair's breadth from it where the
+ * mesh is cut fine (a 4 mm hole in 252 strips: 0.00015 mm), which is nothing the kernel can cut along. So the
+ * strips are first buried or cut away with room to spare, then the round face is made in clean material:
+ *  - a hole: a ring that covers its wall, a little either side, is joined on (the hole is now too small, its strips
+ *    inside the body), then a ring from inside that out to the true radius is cut away;
+ *  - a boss: the same ring is cut away (the boss is now too thin), then one out to the true radius joined on.
+ * Rings, not whole cylinders: a boss with a bore keeps its bore, a post standing in a hole stays. A ring ends
+ * exactly where its strips end, or a hair past that where it does no harm (a cut into the open, a join into the body).
+ *
+ * All of them in three passes; checked: the body is still one sound solid, and its volume changed by what lay
+ * between the strips and the round faces, no more. If not, one at a time, each checked, those that fail left as
+ * strips. Returns how many were made round.
+ */
+const SLOW_ROUNDS_AT_ONCE = 24;
+/**
+ * How many round parts are tried one at a time the slow way: each try is two or three cuts of the whole body, and
+ * that takes as long as the body has faces - two seconds on one of two thousand. Eight on a small body, none
+ * on one of over 1500 faces. (By the body's size, not by the clock: the same file gives the same faces on a phone as on a desktop.)
+ */
+const slowRounds = (faces: number) => Math.min(8, Math.floor(1500 / Math.max(1, faces)));
+export function roundMeshSolid(solid: Shape3D, cyls: MeshCylinder[]): { shape: Shape3D; made: number } {
+  const size = sizeOf(solid);
+  interface Job {
+    cy: MeshCylinder;
+    /** The most a ring's hair past an end can take or add there (a round that ends on a cone's flats: a little of them). */
+    spare: number;
+    /** The ring that buries (a hole) or removes (a boss) the strips, and the one that makes the round face. */
+    rough: () => Shape3D;
+    fine: () => Shape3D;
+  }
+  const jobs: Job[] = [];
+  // Which to try: all of them where they are few enough to do at once; else the biggest few, by how big the body
+  // is (see slowRounds) - chosen before anything is asked of the kernel about them (it was asked what lies past
+  // each end of a hundred and fifty rounds, of which it then tried one).
+  // (Strips that end at different heights - on a slope, at another feature - are not tried: a ring their whole
+  // length would add or take where there is nothing of them.)
+  // (A body too big for even one try: none - at once is a try like any other.)
+  if (!slowRounds(solid.faces.length)) {
+    return { shape: solid, made: 0 };
+  }
+  const even = cyls.filter(cy => cy.even);
+  const worth = (cy: MeshCylinder) => (cy.sweep > 2 * Math.PI - 1e-9 ? 1e6 : 1) * cy.r * cy.sweep * (cy.t1 - cy.t0);
+  const atOnce = even.length <= SLOW_ROUNDS_AT_ONCE;
+  const chosen = atOnce ? even : [...even].sort((x, y) => worth(y) - worth(x)).slice(0, slowRounds(solid.faces.length));
+  for (const cy of chosen) {
+    const half = cy.step / 2;
+    const sag = cy.r * (1 - Math.cos(half));
+    const room = Math.max(sag * 4, size * 2e-4);
+    const inner = cy.r * Math.cos(half) - room;
+    if (!(inner > 0) || !(sag > 0)) {
+      continue;
+    }
+    const v = norm(cross(cy.a, cy.u));
+    const at = (r: number, ang: number, t: number): Vec3 => add(add(cy.c, scale(cy.a, t)), add(scale(cy.u, r * Math.cos(ang)), scale(v, r * Math.sin(ang))));
+    // What is past each end, just inside the strips: the body, or nothing.
+    const hair = Math.max(2e-3, sag);
+    const rp = cy.r * Math.cos(half) - sag * 0.25;
+    const angs = [0.25, 0.5, 0.75].map(k => cy.sweep * k);
+    const past = [cy.t0 - hair * 0.5, cy.t1 + hair * 0.5].map(t => insideOf(solid, angs.map(ang => at(rp, ang, t))));
+    const open = past.map(p => p.every(x => !x));
+    const filled = past.map(p => p.every(x => x));
+    const ring = (r0: number, r1: number, ends: [number, number]): Shape3D => {
+      const outline = makePolygon([at(r0, 0, ends[0]), at(r1, 0, ends[0]), at(r1, 0, ends[1]), at(r0, 0, ends[1])]);
+
+      return revolution(outline, cy.c, cy.a, Math.min(360, (cy.sweep * 180) / Math.PI)) as Shape3D;
+    };
+    const exact: [number, number] = [cy.t0, cy.t1];
+    const intoOpen: [number, number] = [cy.t0 - (open[0] ? hair : 0), cy.t1 + (open[1] ? hair : 0)];
+    const intoBody: [number, number] = [cy.t0 - (filled[0] ? hair : 0), cy.t1 + (filled[1] ? hair : 0)];
+    const within = Math.max(0, inner - room);
+    const spare = (((cy.r * cy.r - within * within) * cy.sweep * hair) / 2) * (cy.concave ? open : filled).filter(Boolean).length;
+    jobs.push(
+      cy.concave
+        ? { cy, spare, rough: () => ring(inner, cy.r + room, exact), fine: () => ring(within, cy.r, intoOpen) }
+        : { cy, spare, rough: () => ring(inner, cy.r + room, intoOpen), fine: () => ring(within, cy.r, intoBody) }
+    );
+  }
+  const apply = (body: Shape3D, list: Job[]): Shape3D | null => {
+    try {
+      const holes = list.filter(j => j.cy.concave);
+      const bosses = list.filter(j => !j.cy.concave);
+      let out = body;
+      if (holes.length) {
+        out = booleanWith('fuse', out, holes.map(j => j.rough()), size);
+      }
+      out = booleanWith('cut', out, [...holes.map(j => j.fine()), ...bosses.map(j => j.rough())], size);
+      if (bosses.length) {
+        out = booleanWith('fuse', out, bosses.map(j => j.fine()), size);
+      }
+      const expect = list.reduce((s, j) => s + (j.cy.concave ? -j.cy.sliver : j.cy.sliver), 0);
+      const most = list.reduce((s, j) => s + j.cy.sliver, 0);
+      const change = measureVolume(out) - volumeOf(body);
+      // (By what lay between the strips and the round faces - and no more than the hairs past the ends besides:
+      // taken at holes, added at bosses.)
+      const slack = Math.max(most * 0.03, size ** 3 * 1e-10);
+      const took = holes.reduce((s, j) => s + j.spare, 0);
+      const gave = bosses.reduce((s, j) => s + j.spare, 0);
+      if (change - expect > slack + gave || expect - change > slack + took) {
+        return null;
+      }
+      if (subShapes(out, 'SOLID').length !== 1 || openEdges(out).length || !shapeValid(out)) {
+        return null;
+      }
+
+      return out;
+    } catch (err) {
+      if (isFault(err)) {
+        throw err;
+      }
+
+      return null;
+    }
+  };
+  if (!jobs.length) {
+    return { shape: solid, made: 0 };
+  }
+  // All at once where there are few enough for that to be likely; else, and if that fails, one at a time - the
+  // biggest first, and no more than a handful: each try is two or three cuts of the whole body, and a part with
+  // lettering has a hundred and fifty rounds a fifth of a millimetre across (a guitar pick: 18 s, for 3 made).
+  // (By count, not by the clock: the same file gives the same faces on a phone as on a desktop.)
+  const all = atOnce ? apply(solid, jobs) : null;
+  if (all) {
+    return { shape: all, made: jobs.length };
+  }
+  jobs.sort((x, y) => worth(y.cy) - worth(x.cy));
+  let body = solid;
+  let made = 0;
+  for (const job of jobs.slice(0, slowRounds(solid.faces.length))) {
+    const next = apply(body, [job]);
+    if (next) {
+      (body = next), made++;
+    }
+  }
+
+  return { shape: body, made };
+}
+
+/** A join or cut of a body with several tools at once (that do not overlap each other), faces on one surface merged. */
+function booleanWith(op: 'cut' | 'fuse', a: Shape3D, list: Shape3D[], size: number): Shape3D {
+  const oc = getOC();
+  const algo = op === 'cut' ? new oc.BRepAlgoAPI_Cut() : new oc.BRepAlgoAPI_Fuse();
+  const args = new oc.NCollection_List_TopoDS_Shape();
+  const tools = new oc.NCollection_List_TopoDS_Shape();
+  const progress = new oc.Message_ProgressRange();
+  try {
+    args.Append(a.wrapped);
+    for (const b of list) {
+      tools.Append(b.wrapped);
+    }
+    algo.SetArguments(args);
+    algo.SetTools(tools);
+    algo.SetFuzzyValue(Math.max(1e-7, size * 1e-6));
+    algo.SetNonDestructive(true);
+    algo.Build(progress);
+    if (!algo.IsDone()) {
+      throw new Error('boolean failed');
+    }
+    const made = algo.Shape();
+    try {
+      return unify(cast(withoutInternals(made)) as Shape3D, size);
+    } finally {
+      made.delete();
+    }
+  } finally {
+    algo.delete();
+    args.delete();
+    tools.delete();
+    progress.delete();
   }
 }
 

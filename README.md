@@ -296,6 +296,14 @@ sketch. A sketch stays in view until every region of it is used.
   leave copies. Two overlapping bodies picked: all three are in the list.
   Many tools at once are one checked cut.
 - **Split Body** - by a plane (yours, by name) or a face.
+- **Hole** - tap a flat face where a screw goes, then Hole: choose the screw
+  (M2 to M12) and the head (none, a counterbore for a cap screw, a countersink)
+  and the hole has the right sizes, right through or to a depth. Each size can
+  be typed over (a printer that makes holes tight wants a few tenths more).
+  Drag its dot to move it: it catches on the middle of the face and on the
+  centre of a round edge (a boss) and stays there; anywhere else, type its two
+  distances from the nearest edges, which it keeps when the part is resized.
+  It is one step in History, opened again like any other.
 - **Thread** - tap a round face or a hole's rim: a shank at the nominal size
   gets an outside thread, a hole at the tap-drill size an inside one. The
   pitch starts at the ISO coarse pitch (the line says what it makes, e.g.
@@ -432,6 +440,14 @@ can't be rebuilt after a change, it's marked and the reason is shown.
 - **More → Insert** brings in files (STEP, STL, OBJ, 3MF, DXF, SVG), another
   project's parts (**Project**), and pictures to trace over (**Image on
   plane**: on the floor, front or side, its middle at the X / Y you type).
+- A mesh (**STL**, OBJ, the meshes in a 3MF) comes in as a solid with real
+  faces, so it can be worked on: every flat side is one face, whichever way
+  it leans, and the round parts are truly round - a hole, a boss, a pin, a
+  rounded upright corner each become one round face, at its exact size. Then
+  Hole, Thread, Fillet, push/pull, Measure and joints work on it as on a part
+  drawn here. Left as they came: cones (a countersink), balls, rounded rims,
+  rounds of fewer than 12 sides, and sculpted or scanned shapes. A mesh put in
+  before this has **Make Faces** on its body.
 - A **.super** file is the whole project: every step and sketch, variables,
   saved views, names, colours, and the BIM side - materials, drawings, joints
   and the assembly's pose.

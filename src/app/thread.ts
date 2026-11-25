@@ -3,6 +3,7 @@
 import { add, dist, scale } from '../geom';
 import { ThreadOp } from '../tools/ops';
 import { faceRefOf } from '../tools/tool';
+import { HoleOp } from '../tools/holeOp';
 import type { App } from '../app';
 
 /** Thread the selected round face (a shank or a hole). */
@@ -51,4 +52,19 @@ export function startThread(app: App): void {
   }
   app.setSelection([highlight]);
   app.setTool(new ThreadOp(app, ref, info.round));
+}
+
+/** Hole: a screw's hole in the flat face picked, where it was tapped (its middle when the tap is not known). */
+export function startHole(app: App): void {
+  const highlight = app.selection[0];
+  const info = highlight?.kind === 'face' ? app.view.body(highlight.body)?.faces[highlight.face] : undefined;
+  const ref = highlight?.kind === 'face' ? faceRefOf(app, highlight) : null;
+  if (highlight?.kind !== 'face' || !info?.plane || !ref) {
+    return void app.ui.toast('Holes go into flat faces: tap one where the screw goes');
+  }
+  const tap = app.selectTool.tapPoint;
+  const hit = tap ? app.view.pick(tap.x, tap.y, { edgeTolPx: 0 }) : null;
+  const at = hit?.kind === 'face' && hit.body === highlight.body && hit.face === highlight.face ? hit.point : info.center;
+  app.setSelection([highlight]);
+  app.setTool(new HoleOp(app, ref, at, tap?.tol));
 }
