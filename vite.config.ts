@@ -38,8 +38,9 @@ function offlineFiles(): Plugin {
       walk(outDir);
       const html = readFileSync(join(outDir, 'index.html'), 'utf8');
       const build = html.match(/index-[\w-]+\.js/)?.[0] ?? String(Date.now());
-      // The page under its address too (that's what the browser asks for).
-      writeFileSync(join(outDir, 'offline-files.json'), JSON.stringify({ build, files: ['./', ...files.sort()] }));
+      // The page last (also under its address): a download cut short must not store a page without its scripts.
+      const pageLastFiles = [...files.sort().filter(file => file !== 'index.html'), 'index.html', './'];
+      writeFileSync(join(outDir, 'offline-files.json'), JSON.stringify({ build, files: pageLastFiles }));
     }
   };
 }
