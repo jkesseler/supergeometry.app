@@ -10,7 +10,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { measureArea, type Face, type Shape3D } from 'replicad';
 import { measureVolume } from '../src/kernel/ocFree';
-import { AUTO_CUT_INSIDE } from '../src/kernel/engine';
+import { AUTO_CUT_INSIDE } from '../src/kernel/steps/extrude';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import { after, bodies, block, check, circle, done, health, near, sketch, XY, YZ } from './kit';
 import type { EdgeRef, FaceRef, Feature, SketchEntity, Vec3 } from '../src/doc/types';
