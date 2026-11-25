@@ -255,40 +255,70 @@ export async function run(features: Feature[], saved = false) {
   return rebuilt;
 }
 
+/** What a step is built with besides the model before it. */
+interface StepScope {
+  key: string;
+  json: string;
+  off: string;
+  origins: Map<string, OriginOf>;
+  editable: Set<string>;
+}
+
+/** Steps after the History's breakpoint are off, like suppressed ones; Edit Freeform steps are put into the freeforms they edit (those build with the new cage). */
+function prepareFeatures(given: Feature[]): Feature[] {
+  const isRolledBack = given.some(feature => feature.rolledBack);
+  const switchedOff = isRolledBack ? given.map(feature => (feature.rolledBack && !feature.suppressed ? { ...feature, suppressed: true } : feature)) : given;
+
+  return applyFreeformEdits(switchedOff);
+}
+
+function findCached(lookup: CacheEntry[][], index: number, key: string): CacheEntry | undefined {
+  return lookup.map(entries => entries[index]).find(candidate => candidate?.key === key);
+}
+
+/** Something before it changed, but nothing it read: its result as it was, on the model as it is now. */
+function reuseUnchanged(lastBuilt: CacheEntry, key: string, ctx: Ctx): CacheEntry {
+  const out = fork(ctx);
+  for (const [kind, id, value, isThere] of lastBuilt.delta!) {
+    if (isThere) {
+      Map.prototype.set.call(out[kind], id, value);
+    } else {
+      Map.prototype.delete.call(out[kind], id);
+    }
+  }
+
+  return { ...lastBuilt, key, ctx: out, input: ctx };
+}
+
 async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
   rebuild.stepsNow = new Set(features.map(feature => feature.id));
   useSafeBooleans();
   useReleases();
-  // Steps after the History's breakpoint: off, like suppressed ones.
-  if (features.some(feature => feature.rolledBack)) {
-    features = features.map(feature => (feature.rolledBack && !feature.suppressed ? { ...feature, suppressed: true } : feature));
-  }
-  // Edit Freeform steps: put into the freeforms they edit (those build with the new cage).
-  features = applyFreeformEdits(features);
-  const editable = new Set(features.filter(feature => (feature.type === 'freeform' || feature.type === 'faceFreeform') && !feature.suppressed).map(feature => feature.id));
+  const prepared = prepareFeatures(features);
+  const editable = new Set(prepared.filter(feature => (feature.type === 'freeform' || feature.type === 'faceFreeform') && !feature.suppressed).map(feature => feature.id));
   const errors: FeatureError[] = [];
   const notes: FeatureError[] = [];
   let ctx: Ctx = fork({ bodies: new Map(), sketches: new Map(), planes: new Map(), axes: new Map(), freeforms: new Map(), sweeps: new Map(), links: new Map() });
-  rebuild.switchedOff = new Set(features.filter(feature => feature.suppressed).map(feature => feature.id));
+  rebuild.switchedOff = new Set(prepared.filter(feature => feature.suppressed).map(feature => feature.id));
   const off = [...rebuild.switchedOff].sort().join();
   // The steps as last rebuilt (by step, wherever in the list they are now).
-  const before = new Map<string, CacheEntry>();
-  for (const e of lookup.flat()) {
-    if (e.id && !before.has(e.id)) {
-      before.set(e.id, e);
+  const lastBuiltById = new Map<string, CacheEntry>();
+  for (const cachedEntry of lookup.flat()) {
+    if (cachedEntry.id && !lastBuiltById.has(cachedEntry.id)) {
+      lastBuiltById.set(cachedEntry.id, cachedEntry);
     }
   }
   rebuildStats.ran = rebuildStats.kept = rebuildStats.reused = 0;
   let key = '';
-  const next: CacheEntry[] = [];
-  let hit = true;
+  const entries: CacheEntry[] = [];
+  let isCacheHit = true;
   // Which of a step's faces is which, for the steps so far (a step looking for
   // the face it was built on asks; so does the mesh, for what gets picked next).
   const origins = new Map<string, OriginOf>();
   setOrigins(origins);
 
-  for (let i = 0; i < features.length; i++) {
-    const feature = features[i];
+  for (let i = 0; i < prepared.length; i++) {
+    const feature = prepared[i];
     // Chained hashes, not the text itself: a key holding every step's JSON
     // grew with the square of the project (an import's megabytes in each one).
     // (A step's `whole` is what it worked out the first time, taken in by the
@@ -296,182 +326,18 @@ async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
     const text = JSON.stringify((feature.type === 'boolean' || feature.type === 'delete') && feature.whole ? { ...feature, whole: undefined } : feature, shortBig);
     const json = `${hash53(text, 3)}.${text.length}`;
     key = chainKey(key, text);
-    const cached: CacheEntry | undefined = hit ? lookup.map(entries => entries[i]).find(candidate => candidate?.key === key) : undefined;
-    hit = !!cached;
+    const cached: CacheEntry | undefined = isCacheHit ? findCached(lookup, i, key) : undefined;
+    isCacheHit = !!cached;
+    const lastBuilt = lastBuiltById.get(feature.id);
     let entry: CacheEntry;
-    const was = before.get(feature.id);
     if (cached) {
       entry = cached;
       rebuildStats.kept++;
-    } else if (was && !feature.suppressed && !crashed.has(key) && unchangedFor(was, json, ctx, off)) {
-      // Something before it changed, but nothing it read: its result as it was, on the model as it is now.
-      const out = fork(ctx);
-      for (const [kind, key, value, there] of was.delta!) {
-        if (there) {
-          Map.prototype.set.call(out[kind], key, value);
-        } else {
-          Map.prototype.delete.call(out[kind], key);
-        }
-      }
-      entry = { ...was, key, ctx: out, input: ctx };
+    } else if (lastBuilt && !feature.suppressed && !crashed.has(key) && unchangedFor(lastBuilt, json, ctx, off)) {
+      entry = reuseUnchanged(lastBuilt, key, ctx);
       rebuildStats.reused++;
     } else {
-      const out = fork(ctx);
-      entry = { key, ctx: out, id: feature.id, json, off, input: ctx };
-      rebuildStats.ran++;
-      if (!feature.suppressed) {
-        const reads: Reads = { one: new Map(), all: new Set(), written: new Set() };
-        entry.reads = reads;
-        try {
-          editNotes.length = 0;
-          sameSizesAgain();
-          if (crashed.has(key)) {
-            throw new Error(crashed.get(key));
-          }
-          if (damaged(feature)) {
-            throw new Error(DAMAGED_TEXT);
-          }
-          startReading(reads);
-          const touched = touchedBodies(feature, ctx);
-          // An edit works on copies of the bodies it may touch: OpenCascade is
-          // allowed to adjust the shapes it is given, and the earlier steps'
-          // results (kept in the cache) must never change - not even when this
-          // step fails. Bodies it leaves alone get their originals back.
-          const copies = new Map<string, Shape3D>();
-          if (GUARDED.has(feature.type)) {
-            for (const id of touched) {
-              const b = out.bodies.get(id);
-              if (!b || out.freeforms.has(id)) {
-                continue;
-              }
-              const shape = deepCopy(b);
-              inheritTags(b, shape);
-              // (The same shape: its volume is known - a big body's, measured
-              // again on every step's copy, was a quarter of a small cut's time.)
-              const volume = volumes.get(b);
-              if (volume !== undefined) {
-                volumes.set(shape, volume);
-              }
-              copies.set(id, shape);
-              out.bodies.set(id, shape);
-            }
-          }
-          await apply(feature, out, editable);
-          entry.origin = originsOf(feature, out);
-          stopReading();
-          if (entry.origin) {
-            origins.set(feature.id, entry.origin);
-          }
-          for (const [id, copy] of copies) {
-            if (out.bodies.get(id) === copy) {
-              out.bodies.set(id, ctx.bodies.get(id)!);
-            }
-          }
-          // Nothing kilometres across, or away: a typo (a size with six noughts
-          // too many), and more than the engine or the view can work with.
-          for (const [id, after] of out.bodies) {
-            if (after === ctx.bodies.get(id)) {
-              continue;
-            }
-            // (The quick box first - never smaller than the body: its exact one, up to a second for a curved body
-            // and asked after every step, only for a body that may be over a limit.)
-            let [lo, hi] = looseBox(after) as [number[], number[]];
-            if (!(Math.max(...lo.map(Math.abs), ...hi.map(Math.abs)) < MAX_REACH) || Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) < 1e-2) {
-              [lo, hi] = after.boundingBox.bounds;
-            }
-            const reach = Math.max(...lo.map(Math.abs), ...hi.map(Math.abs));
-            // (An empty result has an upside-down box: left to the checks below.)
-            if (lo[0] <= hi[0] && !(reach < MAX_REACH)) {
-              throw new Error('This would reach more than 10 km from the origin - check its values (a typo?)');
-            }
-            // ...and nothing scaled away to a speck (a factor of 0.0000008).
-            if (lo[0] <= hi[0] && Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) < 1e-4) {
-              throw new Error('This would be smaller than a ten-thousandth of a mm - check its values (a typo?)');
-            }
-          }
-          // Every edit of a solid ends in one: checked (and tidied) before it counts.
-          if (GUARDED.has(feature.type)) {
-            for (const [id, after] of [...out.bodies]) {
-              const before = ctx.bodies.get(id);
-              if (after === before) {
-                continue;
-              }
-              // A freeform left as an open surface (a sheet) isn't a solid to check; a solid
-              // freeform is - its edits are checked like any body's.
-              if (before && (out.freeforms.has(id) || ctx.freeforms.has(id)) && !subShapes(before, 'SOLID').length) {
-                continue;
-              }
-              // Offsetting a face of the body itself is a face move: it doesn't split it either.
-              const inPlace = feature.type === 'extrude' && feature.source.kind === 'face' && feature.mode !== 'new' && feature.target === feature.source.face.body;
-              let kept: Shape3D | null;
-              try {
-                kept = guardEdit(before, after, !NO_SPLIT.has(feature.type) && !inPlace, feature.type !== 'fillet' && feature.type !== 'chamfer');
-              } catch (err) {
-                // Rounds or chamfers that tear the body open ran into each other (a
-                // cookie cutter's 1.2 wall, both its top edges rounded 1): a flat face
-                // patched over the gap isn't what was asked for - said, not repaired.
-                if ((feature.type === 'fillet' || feature.type === 'chamfer') && !isFault(err) && /tear the body open/.test(errorText(err))) {
-                  throw new Error(feature.type === 'fillet' ? EDGES_CLASH.replace('@', 'rounds') : EDGES_CLASH.replace('@', 'chamfers'));
-                }
-                // A shell that came out torn or broken: its walls ran into each other ("would tear the body open" said nothing of walls).
-                if (feature.type !== 'shell' || isFault(err)) {
-                  throw err;
-                }
-                throw new Error(/break the body into pieces/.test(errorText(err)) ? SHELL_LOOSE : WALLS_CLASH);
-              }
-              // Cut away to dust: the body is gone.
-              if (kept) {
-                out.bodies.set(id, kept);
-              } else {
-                out.bodies.delete(id);
-              }
-            }
-          }
-          // Which step made each face: kept from what it was made from, this step's own otherwise.
-          // (Bodies the step names; the others were only there - see tagBody.)
-          const named = touchedBodies(feature, ctx, false);
-          const from = [...named.map(id => ctx.bodies.get(id)!), ...named.flatMap(id => (copies.has(id) ? [copies.get(id)!] : []))];
-          const others = touched.filter(id => !named.includes(id)).map(id => ctx.bodies.get(id)!);
-          for (const [id, body] of out.bodies) {
-            const was = ctx.bodies.get(id);
-            if (body !== was) {
-              tagBody(body, feature.id, was ? [was, ...from] : from, was ? others.filter(other => other !== was) : others);
-            }
-          }
-          // Linked bodies: the others of a changed one's group follow it. (Any change among the links is a change
-          // for this step: it is built again then.)
-          // (A pattern of a hole changes its body's shape, as a cut does: the body's linked ones follow.)
-          if (feature.type !== 'transform' || feature.hole) {
-            reads.all.add('links');
-            followLinks(feature.id, ctx, out);
-          }
-          if (editNotes.length) {
-            entry.note = [...new Set(editNotes)].join(' ');
-          }
-          // Anything but a move/scale changing a freeform body makes it an ordinary body.
-          if (feature.type !== 'freeform' && feature.type !== 'transform') {
-            for (const id of [...out.freeforms.keys()]) {
-              if (out.bodies.get(id) !== ctx.bodies.get(id)) {
-                out.freeforms.delete(id);
-              }
-            }
-          }
-        } catch (err) {
-          stopReading();
-          if (isFault(err)) {
-            blame(key);
-            console.error(err);
-            throw new KernelFault(feature.id);
-          }
-          entry.error = errorText(err);
-          const sketches = feature.type === 'sketch' ? new Noted('sketches', ctx.sketches) : ctx.sketches;
-          if (feature.type === 'sketch') {
-            Map.prototype.set.call(sketches, feature.id, { ...feature, boundary: [] });
-          }
-          entry.ctx = { ...ctx, sketches };
-        }
-        entry.delta = recordDelta(entry.ctx, ctx, reads);
-      }
+      entry = await buildStep(feature, ctx, { key, json, off, origins, editable });
     }
     if (entry.origin) {
       origins.set(feature.id, entry.origin);
@@ -483,33 +349,245 @@ async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
       notes.push({ featureId: feature.id, message: entry.note });
     }
     ctx = entry.ctx;
-    next.push(entry);
+    entries.push(entry);
   }
-  // Steps that don't say yet which patterns they used whole: as they were made.
+
+  return { ctx, errors, numbers: numberBodies(entries), notes, whole: wholePatterns(prepared, entries), entries };
+}
+
+/** A step built now, on the model before it (a suppressed one only passes it on). */
+async function buildStep(feature: Feature, ctx: Ctx, scope: StepScope): Promise<CacheEntry> {
+  const { key, json, off, origins, editable } = scope;
+  const out = fork(ctx);
+  const entry: CacheEntry = { key, ctx: out, id: feature.id, json, off, input: ctx };
+  rebuildStats.ran++;
+  if (feature.suppressed) {
+    return entry;
+  }
+  const reads: Reads = { one: new Map(), all: new Set(), written: new Set() };
+  entry.reads = reads;
+  try {
+    editNotes.length = 0;
+    sameSizesAgain();
+    if (crashed.has(key)) {
+      throw new Error(crashed.get(key));
+    }
+    if (damaged(feature)) {
+      throw new Error(DAMAGED_TEXT);
+    }
+    startReading(reads);
+    const touched = touchedBodies(feature, ctx);
+    const copies = copyTouchedBodies(feature, touched, out);
+    await apply(feature, out, editable);
+    entry.origin = originsOf(feature, out);
+    stopReading();
+    if (entry.origin) {
+      origins.set(feature.id, entry.origin);
+    }
+    for (const [id, copy] of copies) {
+      if (out.bodies.get(id) === copy) {
+        out.bodies.set(id, ctx.bodies.get(id)!);
+      }
+    }
+    checkReach(ctx, out);
+    // Every edit of a solid ends in one: checked (and tidied) before it counts.
+    if (GUARDED.has(feature.type)) {
+      checkSolids(feature, ctx, out);
+    }
+    tagFaces(feature, ctx, out, touched, copies);
+    // Linked bodies: the others of a changed one's group follow it. (Any change among the links is a change
+    // for this step: it is built again then.)
+    // (A pattern of a hole changes its body's shape, as a cut does: the body's linked ones follow.)
+    if (feature.type !== 'transform' || feature.hole) {
+      reads.all.add('links');
+      followLinks(feature.id, ctx, out);
+    }
+    if (editNotes.length) {
+      entry.note = [...new Set(editNotes)].join(' ');
+    }
+    // Anything but a move/scale changing a freeform body makes it an ordinary body.
+    if (feature.type !== 'freeform' && feature.type !== 'transform') {
+      for (const id of [...out.freeforms.keys()]) {
+        if (out.bodies.get(id) !== ctx.bodies.get(id)) {
+          out.freeforms.delete(id);
+        }
+      }
+    }
+  } catch (err) {
+    stopReading();
+    if (isFault(err)) {
+      blame(key);
+      console.error(err);
+      throw new KernelFault(feature.id);
+    }
+    entry.error = errorText(err);
+    entry.ctx = failedContext(feature, ctx);
+  }
+  entry.delta = recordDelta(entry.ctx, ctx, reads);
+
+  return entry;
+}
+
+/**
+ * An edit works on copies of the bodies it may touch: OpenCascade is
+ * allowed to adjust the shapes it is given, and the earlier steps'
+ * results (kept in the cache) must never change - not even when this
+ * step fails. Bodies it leaves alone get their originals back.
+ */
+function copyTouchedBodies(feature: Feature, touched: string[], out: Ctx): Map<string, Shape3D> {
+  const copies = new Map<string, Shape3D>();
+  if (!GUARDED.has(feature.type)) {
+    return copies;
+  }
+  for (const id of touched) {
+    const body = out.bodies.get(id);
+    if (!body || out.freeforms.has(id)) {
+      continue;
+    }
+    const shape = deepCopy(body);
+    inheritTags(body, shape);
+    // (The same shape: its volume is known - a big body's, measured
+    // again on every step's copy, was a quarter of a small cut's time.)
+    const volume = volumes.get(body);
+    if (volume !== undefined) {
+      volumes.set(shape, volume);
+    }
+    copies.set(id, shape);
+    out.bodies.set(id, shape);
+  }
+
+  return copies;
+}
+
+/** The model as a failed step leaves it: as it was (a failed sketch is still there, with no boundary). */
+function failedContext(feature: Feature, ctx: Ctx): Ctx {
+  if (feature.type !== 'sketch') {
+    return { ...ctx };
+  }
+  const sketches = new Noted('sketches', ctx.sketches);
+  Map.prototype.set.call(sketches, feature.id, { ...feature, boundary: [] });
+
+  return { ...ctx, sketches };
+}
+
+function diagonalOf(lo: number[], hi: number[]): number {
+  return Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+}
+
+/** Nothing kilometres across, or away: a typo (a size with six noughts too many), and more than the engine or the view can work with. */
+function checkReach(ctx: Ctx, out: Ctx): void {
+  for (const [id, after] of out.bodies) {
+    if (after === ctx.bodies.get(id)) {
+      continue;
+    }
+    // (The quick box first - never smaller than the body: its exact one, up to a second for a curved body
+    // and asked after every step, only for a body that may be over a limit.)
+    let [lo, hi] = looseBox(after) as [number[], number[]];
+    if (!(Math.max(...lo.map(Math.abs), ...hi.map(Math.abs)) < MAX_REACH) || diagonalOf(lo, hi) < 1e-2) {
+      [lo, hi] = after.boundingBox.bounds;
+    }
+    const reach = Math.max(...lo.map(Math.abs), ...hi.map(Math.abs));
+    const diagonal = diagonalOf(lo, hi);
+    // (An empty result has an upside-down box: left to the checks below.)
+    const hasBox = lo[0] <= hi[0];
+    if (hasBox && !(reach < MAX_REACH)) {
+      throw new Error('This would reach more than 10 km from the origin - check its values (a typo?)');
+    }
+    // ...and nothing scaled away to a speck (a factor of 0.0000008).
+    if (hasBox && diagonal < 1e-4) {
+      throw new Error('This would be smaller than a ten-thousandth of a mm - check its values (a typo?)');
+    }
+  }
+}
+
+/** Each solid a guarded edit changed, checked (and tidied): put in the model, or taken out when cut away to dust. */
+function checkSolids(feature: Feature, ctx: Ctx, out: Ctx): void {
+  for (const [id, after] of [...out.bodies]) {
+    const previous = ctx.bodies.get(id);
+    if (after === previous) {
+      continue;
+    }
+    // A freeform left as an open surface (a sheet) isn't a solid to check; a solid
+    // freeform is - its edits are checked like any body's.
+    if (previous && (out.freeforms.has(id) || ctx.freeforms.has(id)) && !subShapes(previous, 'SOLID').length) {
+      continue;
+    }
+    // Offsetting a face of the body itself is a face move: it doesn't split it either.
+    const inPlace = feature.type === 'extrude' && feature.source.kind === 'face' && feature.mode !== 'new' && feature.target === feature.source.face.body;
+    let kept: Shape3D | null;
+    try {
+      kept = guardEdit(previous, after, !NO_SPLIT.has(feature.type) && !inPlace, feature.type !== 'fillet' && feature.type !== 'chamfer');
+    } catch (err) {
+      // Rounds or chamfers that tear the body open ran into each other (a
+      // cookie cutter's 1.2 wall, both its top edges rounded 1): a flat face
+      // patched over the gap isn't what was asked for - said, not repaired.
+      if ((feature.type === 'fillet' || feature.type === 'chamfer') && !isFault(err) && /tear the body open/.test(errorText(err))) {
+        throw new Error(feature.type === 'fillet' ? EDGES_CLASH.replace('@', 'rounds') : EDGES_CLASH.replace('@', 'chamfers'));
+      }
+      // A shell that came out torn or broken: its walls ran into each other ("would tear the body open" said nothing of walls).
+      if (feature.type !== 'shell' || isFault(err)) {
+        throw err;
+      }
+      throw new Error(/break the body into pieces/.test(errorText(err)) ? SHELL_LOOSE : WALLS_CLASH);
+    }
+    // Cut away to dust: the body is gone.
+    if (kept) {
+      out.bodies.set(id, kept);
+    } else {
+      out.bodies.delete(id);
+    }
+  }
+}
+
+/**
+ * Which step made each face: kept from what it was made from, this step's own otherwise.
+ * (Bodies the step names; the others were only there - see tagBody.)
+ */
+function tagFaces(feature: Feature, ctx: Ctx, out: Ctx, touched: string[], copies: Map<string, Shape3D>): void {
+  const named = touchedBodies(feature, ctx, false);
+  const from = [...named.map(id => ctx.bodies.get(id)!), ...named.flatMap(id => (copies.has(id) ? [copies.get(id)!] : []))];
+  const others = touched.filter(id => !named.includes(id)).map(id => ctx.bodies.get(id)!);
+  for (const [id, body] of out.bodies) {
+    const previous = ctx.bodies.get(id);
+    if (body !== previous) {
+      tagBody(body, feature.id, previous ? [previous, ...from] : from, previous ? others.filter(other => other !== previous) : others);
+    }
+  }
+}
+
+/** Steps that don't say yet which patterns they used whole: as they were made. */
+function wholePatterns(features: Feature[], entries: CacheEntry[]): Record<string, string[]> | undefined {
   let whole: Record<string, string[]> | undefined;
   features.forEach((feature, i) => {
     if ((feature.type !== 'boolean' && feature.type !== 'delete') || feature.whole || feature.suppressed) {
       return;
     }
     const ids: unknown = feature.type === 'boolean' ? feature.tools : feature.bodies;
-    const there = next[i]?.input?.bodies;
+    const bodiesBefore = entries[i]?.input?.bodies;
     // (Not for a step that failed: its saved values may be damaged.)
-    if (there && !next[i].error && Array.isArray(ids) && ids.every(id => typeof id === 'string')) {
-      (whole ??= {})[feature.id] = wholeOf(ids, new Set(rawEntries(there).map(([key]) => key)));
+    if (bodiesBefore && !entries[i].error && Array.isArray(ids) && ids.every(id => typeof id === 'string')) {
+      (whole ??= {})[feature.id] = wholeOf(ids, new Set(rawEntries(bodiesBefore).map(([id]) => id)));
     }
   });
-  // Bodies are numbered in the order they first appeared (a body that's
-  // deleted later keeps its number used, so the others don't change names).
+
+  return whole;
+}
+
+/**
+ * Bodies are numbered in the order they first appeared (a body that's
+ * deleted later keeps its number used, so the others don't change names).
+ */
+function numberBodies(entries: CacheEntry[]): Map<string, number> {
   const numbers = new Map<string, number>();
-  for (const e of next) {
-    for (const id of e.ctx.bodies.keys()) {
+  for (const entry of entries) {
+    for (const id of entry.ctx.bodies.keys()) {
       if (!numbers.has(id)) {
         numbers.set(id, numbers.size + 1);
       }
     }
   }
 
-  return { ctx, errors, numbers, notes, whole, entries: next };
+  return numbers;
 }
 
 async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise<void> {

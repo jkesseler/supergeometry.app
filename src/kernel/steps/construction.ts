@@ -3,6 +3,15 @@ import { faceInfo, resolveFace } from '../references';
 import type { AxisFeature, PlaneFeature } from '../../doc/types';
 import type { Ctx } from '../types';
 
+const PLANE_KINDS_BY_NAME: [RegExp, NonNullable<PlaneFeature['kind']>][] = [
+  [/^Midplane/, 'mid'],
+  [/3 Points/, '3pt'],
+  [/Perp/, 'perp'],
+  [/on Curve/, 'curve'],
+  [/Angle/, 'angle'],
+  [/Parallel/, 'parallel']
+];
+
 export function applyPlane(feature: PlaneFeature, ctx: Ctx) {
   let plane = feature.plane;
   if (feature.face) {
@@ -16,7 +25,7 @@ export function applyPlane(feature: PlaneFeature, ctx: Ctx) {
   }
   plane = { ...plane, origin: add(plane.origin, scale(plane.normal, feature.offset)) };
   // (Older projects: how it was made, from its name.)
-  const kind = feature.kind ?? (/^Midplane/.test(feature.name) ? 'mid' : /3 Points/.test(feature.name) ? '3pt' : /Perp/.test(feature.name) ? 'perp' : /on Curve/.test(feature.name) ? 'curve' : /Angle/.test(feature.name) ? 'angle' : /Parallel/.test(feature.name) ? 'parallel' : 'offset');
+  const kind = feature.kind ?? PLANE_KINDS_BY_NAME.find(([pattern]) => pattern.test(feature.name))?.[1] ?? 'offset';
   ctx.planes.set(feature.id, { id: feature.id, name: feature.name, plane, kind });
 }
 

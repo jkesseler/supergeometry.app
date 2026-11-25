@@ -151,8 +151,9 @@ export function unchangedFor(was: Recorded, json: string, ctx: Ctx, off: string)
     }
   }
   for (const kind of was.reads.all) {
-    const [a, b] = [rawEntries(ctx[kind] as Map<string, unknown>), was.input[kind] as Map<string, unknown>];
-    if (a.length !== rawEntries(b).length || a.some(([key, value]) => rawGet(b, key) !== value || !rawHas(b, key))) {
+    const nowEntries = rawEntries(ctx[kind] as Map<string, unknown>);
+    const thenMap = was.input[kind] as Map<string, unknown>;
+    if (nowEntries.length !== rawEntries(thenMap).length || nowEntries.some(([key, value]) => rawGet(thenMap, key) !== value || !rawHas(thenMap, key))) {
       return false;
     }
   }
@@ -164,7 +165,8 @@ export function unchangedFor(was: Recorded, json: string, ctx: Ctx, off: string)
 export function recordDelta(after: Ctx, before: Ctx, reads: Reads): Delta {
   const delta: Delta = [];
   for (const kind of KINDS) {
-    const [changed, original] = [after[kind] as Map<string, unknown>, before[kind] as Map<string, unknown>];
+    const changed = after[kind] as Map<string, unknown>;
+    const original = before[kind] as Map<string, unknown>;
     if (changed === original) {
       continue;
     }
