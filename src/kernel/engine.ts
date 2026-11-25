@@ -1384,8 +1384,6 @@ function applySketch(feature: SketchFeature, ctx: Ctx) {
     sketchWas.set(feature.id, { text, state });
     ctx.sketches.set(feature.id, state);
   }
-
-  return;
 }
 
 function applyExtrude(feature: ExtrudeFeature, ctx: Ctx) {
@@ -1546,8 +1544,6 @@ function applyExtrude(feature: ExtrudeFeature, ctx: Ctx) {
     }
   }
   combine(feature.id, feature.mode, feature.target, solid, distance < 0, ctx);
-
-  return;
 }
 
 function applyRevolve(feature: RevolveFeature, ctx: Ctx) {
@@ -1594,8 +1590,6 @@ function applyRevolve(feature: RevolveFeature, ctx: Ctx) {
     parts = withFittedSplines(turn);
   }
   combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
-
-  return;
 }
 
 function applySweep(feature: SweepFeature, ctx: Ctx) {
@@ -1746,8 +1740,6 @@ function applySweep(feature: SweepFeature, ctx: Ctx) {
   }
   combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
   ctx.sweeps.set(feature.id, spine);
-
-  return;
 }
 
 function applyLoft(feature: LoftFeature, ctx: Ctx) {
@@ -1805,8 +1797,6 @@ function applyLoft(feature: LoftFeature, ctx: Ctx) {
     }
   }
   combine(feature.id, feature.mode, feature.target, shape, false, ctx);
-
-  return;
 }
 
 function applyFilletOrChamfer(feature: EdgeFeature, ctx: Ctx) {
@@ -1915,8 +1905,6 @@ function applyFilletOrChamfer(feature: EdgeFeature, ctx: Ctx) {
     }
     bodies.set(bodyId, result);
   }
-
-  return;
 }
 
 function applyShell(feature: ShellFeature, ctx: Ctx) {
@@ -2027,8 +2015,6 @@ function applyShell(feature: ShellFeature, ctx: Ctx) {
     throw new Error(!rough ? "Shell didn't work on this shape (try a smaller thickness)" : loose ? `${WALLS_CLASH} - or what is cut into the opened face would be left standing loose (open another face)` : WALLS_CLASH);
   }
   bodies.set(feature.body, out);
-
-  return;
 }
 
 function applyBoolean(feature: BooleanFeature, ctx: Ctx) {
@@ -2159,8 +2145,6 @@ function applyBoolean(feature: BooleanFeature, ctx: Ctx) {
     throw new Error('The result is empty');
   }
   bodies.set(feature.op === 'intersect' && feature.keepTarget ? feature.id : feature.target, target);
-
-  return;
 }
 
 function applySplit(feature: SplitFeature, ctx: Ctx) {
@@ -2208,8 +2192,6 @@ function applySplit(feature: SplitFeature, ctx: Ctx) {
   }
   bodies.set(feature.body, outside);
   bodies.set(feature.id, inside);
-
-  return;
 }
 
 async function applyImport(feature: ImportFeature, ctx: Ctx) {
@@ -2250,8 +2232,6 @@ async function applyImport(feature: ImportFeature, ctx: Ctx) {
     return;
   }
   bodies.set(feature.id, shape);
-
-  return;
 }
 
 function applyFaceFreeform(feature: FaceFreeformFeature, ctx: Ctx) {
@@ -2341,8 +2321,6 @@ function applyReplaceFace(feature: ReplaceFaceFeature, ctx: Ctx) {
   const n0 = planeOf(face).normal;
   const normal = dot(plane.normal, n0) < 0 ? scale(plane.normal, -1) : plane.normal;
   bodies.set(feature.face.body, staysClosed(body, replaceFacePlane(body, face, { origin: plane.origin, normal: normal, xDir: xDirFor(normal) })));
-
-  return;
 }
 
 function applyHole(feature: HoleFeature, ctx: Ctx) {
@@ -2407,8 +2385,6 @@ function applyHole(feature: HoleFeature, ctx: Ctx) {
     throw new Error('The hole is off the body there: nothing to drill into. Drag it onto the face.');
   }
   bodies.set(feature.face.body, made);
-
-  return;
 }
 
 function applyThread(feature: ThreadFeature, ctx: Ctx) {
@@ -2434,8 +2410,6 @@ function applyThread(feature: ThreadFeature, ctx: Ctx) {
     return;
   }
   bodies.set(feature.face.body, threadFace(body, face, feature.pitch, !!feature.left, undefined, undefined, threadStarts(feature.starts)));
-
-  return;
 }
 
 function applyConnect(feature: ConnectFeature, ctx: Ctx) {
@@ -2560,8 +2534,6 @@ function applyConnect(feature: ConnectFeature, ctx: Ctx) {
       (e.outline.delete(), e.rim.delete());
     }
   }
-
-  return;
 }
 
 function applyRepair(feature: RepairFeature, ctx: Ctx) {
@@ -2575,8 +2547,6 @@ function applyRepair(feature: RepairFeature, ctx: Ctx) {
     editNotes.push(repaired.fixes.length ? `Repaired: ${repaired.fixes.join(', ')}.` : "Nothing to repair - it's a clean solid already.");
     bodies.set(id, repaired.shape);
   }
-
-  return;
 }
 
 function applyDeleteGeom(feature: DeleteGeomFeature, ctx: Ctx) {
@@ -2607,8 +2577,6 @@ function applyDeleteGeom(feature: DeleteGeomFeature, ctx: Ctx) {
     body = deleteVertex(body, vertex);
   }
   bodies.set(feature.body, staysClosed(start, body));
-
-  return;
 }
 
 function applyMoveFace(feature: MoveFaceFeature, ctx: Ctx) {
@@ -2692,8 +2660,6 @@ function applyMoveFace(feature: MoveFaceFeature, ctx: Ctx) {
   }
   const eb = need(bodies, feature.edge.body);
   bodies.set(feature.edge.body, staysClosed(eb, moveEdge(eb, feature.edge, move)));
-
-  return;
 }
 
 // ------------------------------------------------------------ affine maps
