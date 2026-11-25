@@ -2,7 +2,7 @@
 // BIM drawings: the bodies projected with hidden lines, laid out on a sheet at
 // a standard scale, balloons with the parts list's item numbers.
 import opencascade from 'replicad-opencascadejs';
-import { setOC } from 'replicad';
+import { measureVolume, setOC } from 'replicad';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import {
   angleDim,
@@ -35,6 +35,7 @@ import {
 import { emptyDoc, type Feature } from '../src/doc/types';
 import { sheetToDXF } from '../src/io/sheetDxf';
 import { projectViews } from '../src/kernel/drawings';
+import { debugBodies, regenerate } from '../src/kernel/engine';
 import type { PartRow } from '../src/bim/sheet';
 
 setOC(await (opencascade as unknown as () => Promise<any>)());
@@ -484,6 +485,24 @@ check('they sit on the rectangle around the view', spots.every(spot => spot.y ==
   check('near its line: in line with it', Math.abs(inLine - 10) < 1e-9, String(inLine));
   const free = spacedOffset({ ...first, id: 'd2', a: [0, 50], b: [80, 50], offset: 13.5 }, [first], pl);
   check('between: left where it was put', free === 13.5, String(free));
+}
+// Drawing a model with a thread leaves the model's own threaded body as it was.
+{
+  const rodEntities = [{ id: 'rc', kind: 'circle', center: [0, 0], radius: 5 }];
+  const rod: Feature[] = [
+    { id: 'rs', name: 'rs', type: 'sketch', plane: { origin: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] }, entities: rodEntities } as Feature,
+    { id: 'R', name: 'R', type: 'extrude', source: { kind: 'profile', sketch: 'rs', regions: arrangement(rodEntities as any).regions.map(regionRef) }, distance: 12, mode: 'new' } as Feature
+  ];
+  const plain = await regenerate(rod);
+  const side = plain.bodies[0].faces.find(face => face.type === 'CYLINDRE')!;
+  const threaded: Feature[] = [...rod, { id: 'rt', name: 'rt', type: 'thread', face: { body: 'R', center: side.center, normal: side.normal, area: side.area }, pitch: 1.5 } as Feature];
+  await regenerate(threaded);
+  const volumeBefore = Math.abs(measureVolume(debugBodies().get('R')!));
+  await projectViews(threaded, VIEW_SPECS);
+  await regenerate(threaded);
+  const volumeAfter = Math.abs(measureVolume(debugBodies().get('R')!));
+  check('the thread is cut', volumeBefore < Math.PI * 25 * 12 - 1);
+  check('a drawing leaves the threaded body threaded', Math.abs(volumeAfter - volumeBefore) < 1e-6, `${volumeBefore} then ${volumeAfter}`);
 }
 if (failed) {
   console.log(`${failed} failed`);
