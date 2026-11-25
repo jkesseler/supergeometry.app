@@ -110,13 +110,27 @@ export class DocStore {
 
   /** Restore the autosaved project (IndexedDB, or the old localStorage slot). */
   async load(): Promise<void> {
-    const saved = (await idbGet('autosave')) ?? (await idbGet('autosave', OLD_DB_NAME)) ?? legacyAutosave();
+    let saved: string | null = null;
+    try {
+      saved = (await idbGet('autosave')) ?? (await idbGet('autosave', OLD_DB_NAME)) ?? legacyAutosave();
+    } catch (error) {
+      console.error('[DocStore.load] autosave not read, starting empty:', error);
+      this.loadFailed = true;
+    }
     if (saved) {
       try {
         this.doc = migrate(JSON.parse(saved));
+      } catch (error) {
+        console.error('[DocStore.load] autosave unreadable, starting empty and keeping it as autosave-unread:', error);
+        this.loadFailed = true;
+        await idbSet('autosave-unread', saved).catch(stashError => console.error('[DocStore.load] could not keep the unreadable autosave:', stashError));
+      }
+    }
+    if (saved && !this.loadFailed) {
+      try {
         await this.loadHistory(saved);
-      } catch {
-        // A broken autosave must never block the app.
+      } catch (error) {
+        console.warn('[DocStore.load] undo history unreadable, starting without it:', error);
       }
     }
     this.loaded = true;
@@ -124,6 +138,8 @@ export class DocStore {
   }
   /** Until the saved project is read, saving would overwrite it with an empty one. */
   private loaded = false;
+  /** The autosave could not be read (a newer app's, or damaged): the project it belongs to must not be saved over. */
+  loadFailed = false;
 
   /**
    * Undo survives a reload (a phone drops the page whenever it likes): the
@@ -587,16 +603,17 @@ function db(name = DB_NAME): Promise<IDBDatabase | null> {
   });
 }
 
+/** Null when nothing is stored (or there is no storage here); rejects when the read failed. */
 export async function idbGet(key: string, dbName = DB_NAME): Promise<string | null> {
   const database = await db(dbName);
   if (!database) {
     return null;
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const req = database.transaction('kv').objectStore('kv').get(key);
     req.onsuccess = () => resolve((req.result as string) ?? null);
-    req.onerror = () => resolve(null);
+    req.onerror = () => reject(req.error ?? new Error('The saved value was not read'));
   });
 }
 

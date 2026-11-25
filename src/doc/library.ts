@@ -24,21 +24,31 @@ export function newProjectId(): string {
   return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/** The projects, newest first. */
+/** The projects, newest first (none when the list can't be read). */
 export async function libraryEntries(): Promise<LibraryEntry[]> {
   try {
-    const list = JSON.parse((await idbGet(INDEX)) ?? '[]') as LibraryEntry[];
+    return await readIndex();
+  } catch (error) {
+    console.error('[libraryEntries] project list not read, showing none:', error);
 
-    return Array.isArray(list) ? list.sort((a, b) => b.modified - a.modified) : [];
-  } catch {
     return [];
   }
+}
+
+/** Rejects when the list can't be read: an edit written back from an empty list would drop every project. */
+async function readIndex(): Promise<LibraryEntry[]> {
+  const list = JSON.parse((await idbGet(INDEX)) ?? '[]') as LibraryEntry[];
+  if (!Array.isArray(list)) {
+    throw new Error('The project list is damaged');
+  }
+
+  return list.sort((a, b) => b.modified - a.modified);
 }
 
 /** The index is read, changed and written back one change at a time. */
 let queue: Promise<unknown> = Promise.resolve();
 function editIndex(fn: (list: LibraryEntry[]) => LibraryEntry[]): Promise<void> {
-  const run = queue.then(async () => idbSet(INDEX, JSON.stringify(fn(await libraryEntries()))));
+  const run = queue.then(async () => idbSet(INDEX, JSON.stringify(fn(await readIndex()))));
   queue = run.catch(() => undefined);
 
   return run;

@@ -47,7 +47,8 @@ export class Projects {
   /** Startup: the open project is the library's current one (work from before the library is kept now). */
   async attach(): Promise<void> {
     let id = await currentProjectId();
-    if (!id) {
+    // An unreadable autosave: the empty project opened in its place gets an id of its own.
+    if (!id || this.app.store.loadFailed) {
       id = newProjectId();
       await setCurrentProject(id);
     }
@@ -212,11 +213,11 @@ export class Projects {
   }
 
   private async openKept(id: string): Promise<void> {
-    const text = await projectText(id);
-    if (!text) {
-      return this.app.ui.toast("That project couldn't be read", 'error');
-    }
     try {
+      const text = await projectText(id);
+      if (!text) {
+        return this.app.ui.toast("That project couldn't be read", 'error');
+      }
       await this.switchTo(parseProject(text), id);
     } catch (err) {
       this.app.ui.toast(`Could not open: ${(err as Error).message}`, 'error');
@@ -224,10 +225,15 @@ export class Projects {
   }
 
   private async downloadKept(id: string): Promise<void> {
-    const text = await projectText(id);
-    const e = (await libraryEntries()).find(libraryEntry => libraryEntry.id === id);
-    if (text && e) {
-      download(new Blob([text], { type: 'application/json' }), `${e.name}.super`);
+    try {
+      const text = await projectText(id);
+      const e = (await libraryEntries()).find(libraryEntry => libraryEntry.id === id);
+      if (text && e) {
+        download(new Blob([text], { type: 'application/json' }), `${e.name}.super`);
+      }
+    } catch (error) {
+      console.error('[Projects.downloadKept] project not read:', error);
+      this.app.ui.toast("That project couldn't be read", 'error');
     }
   }
 
