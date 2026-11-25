@@ -1,4 +1,6 @@
+import { render as mount, type ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { icons } from './icons';
 import { textField, type TextField as TextFieldElement } from './textField';
 import { twoTap } from './ui';
 
@@ -136,4 +138,63 @@ export function trackPointer(target: HTMLElement, event: PointerEvent, onMove: (
   target.addEventListener('pointermove', onMove);
   target.addEventListener('pointerup', end);
   target.addEventListener('pointercancel', end);
+}
+
+interface ModalProps {
+  title: string;
+  className: string;
+  onClose: () => void;
+  /** Swallow every key for the page behind (Escape closes) - for dialogs that sit over a live tool. */
+  isKeyTrap?: boolean;
+  children: ComponentChildren;
+}
+
+/** The dialog shell: a dimmed backdrop (tap to close), a title bar with a close button, and the body. */
+export function Modal({ title, className, onClose, isKeyTrap, children }: ModalProps) {
+  useEffect(() => {
+    if (!isKeyTrap) {
+      return;
+    }
+    const handleKey = (event: KeyboardEvent) => {
+      // A box inside the dialog owns the keys typed into it.
+      if (event.target instanceof HTMLInputElement && (event.target as HTMLElement).closest('.dialog')) {
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+      event.stopPropagation();
+    };
+    window.addEventListener('keydown', handleKey, true);
+
+    return () => window.removeEventListener('keydown', handleKey, true);
+  }, [isKeyTrap, onClose]);
+
+  return (
+    <div class="dialog-back" onPointerDown={event => event.target === event.currentTarget && onClose()}>
+      <div class={`dialog ${className}`} onKeyDown={event => !isKeyTrap && event.key === 'Escape' && onClose()}>
+        <div class="library-head">
+          <div class="panel-title">{title}</div>
+          <button type="button" class="icon-btn library-close" title="Close" onClick={onClose}>
+            <span style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: icons.close }} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Mount a component into its own host on the page; the returned function removes it. */
+export function openOverlay(view: (close: () => void) => ComponentChildren): () => void {
+  const host = document.createElement('div');
+  const close = () => {
+    mount(null, host);
+    host.remove();
+  };
+  document.body.append(host);
+  mount(<>{view(close)}</>, host);
+
+  return close;
 }

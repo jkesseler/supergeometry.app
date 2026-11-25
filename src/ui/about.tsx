@@ -1,10 +1,9 @@
 // More → About: the README (the one on GitHub), shown in the app. Built into
 // the app (it's the same file), less the lines that only make sense on GitHub.
 
-import { render as mount } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useRef } from 'preact/hooks';
 import readme from '../../README.md?raw';
-import { icons } from './icons';
+import { Modal, openOverlay } from './components';
 
 const REPO = 'https://github.com/superGeometry/supergeometry.app';
 
@@ -129,19 +128,6 @@ const aboutHtml = () => render(aboutText()).replace(/<h1>([\s\S]*?)<\/h1>/, `<h1
 function AboutDialog({ onClose }: AboutDialogProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      }
-      event.stopPropagation();
-    };
-    window.addEventListener('keydown', handleKey, true);
-
-    return () => window.removeEventListener('keydown', handleKey, true);
-  }, [onClose]);
-
   const handleBodyClick = (event: MouseEvent) => {
     const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[data-anchor]');
     if (!link) {
@@ -152,24 +138,12 @@ function AboutDialog({ onClose }: AboutDialogProps) {
   };
 
   return (
-    <div class="dialog-back" onPointerDown={event => event.target === event.currentTarget && onClose()}>
-      <div class="dialog about">
-        <div class="library-head">
-          <div class="panel-title">About</div>
-          <button type="button" class="icon-btn library-close" title="Close" onClick={onClose} dangerouslySetInnerHTML={{ __html: icons.close }} />
-        </div>
-        <div class="about-body" ref={bodyRef} onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: aboutHtml() }} />
-      </div>
-    </div>
+    <Modal title="About" className="about" onClose={onClose} isKeyTrap>
+      <div class="about-body" ref={bodyRef} onClick={handleBodyClick} dangerouslySetInnerHTML={{ __html: aboutHtml() }} />
+    </Modal>
   );
 }
 
 export function showAbout(): void {
-  const host = document.createElement('div');
-  const close = () => {
-    mount(null, host);
-    host.remove();
-  };
-  document.body.append(host);
-  mount(<AboutDialog onClose={close} />, host);
+  openOverlay(close => <AboutDialog onClose={close} />);
 }

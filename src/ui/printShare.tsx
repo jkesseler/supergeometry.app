@@ -1,7 +1,6 @@
-import { render as mount } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fmtLen } from '../units';
-import { icons } from './icons';
+import { Modal, openOverlay } from './components';
 import type { BodyHealth } from '../kernel/protocol';
 
 export interface PrintShareFile {
@@ -74,45 +73,31 @@ function PrintShare({ files, checkModel, onClose }: PrintShareProps) {
   }, []);
 
   return (
-    <div class="dialog-back" onPointerDown={event => event.target === event.currentTarget && onClose()}>
-      <div class="dialog print-share" onKeyDown={event => event.key === 'Escape' && onClose()}>
-        <div class="library-head">
-          <div class="panel-title">Print / Share</div>
-          <button class="icon-btn library-close" title="Close" onClick={onClose}>
-            <span style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: icons.close }} />
-          </button>
-        </div>
-        <div class="print-check">
-          <CheckResult check={check} />
-        </div>
-        <div class="print-files">
-          {files.map(file => (
-            <button
-              class="text-btn print-file"
-              type="button"
-              key={file.label}
-              onClick={() => {
-                onClose();
-                file.run();
-              }}
-            >
-              <b>{file.label}</b>
-              <span>{file.note}</span>
-            </button>
-          ))}
-        </div>
+    <Modal title="Print / Share" className="print-share" onClose={onClose}>
+      <div class="print-check">
+        <CheckResult check={check} />
       </div>
-    </div>
+      <div class="print-files">
+        {files.map(file => (
+          <button
+            class="text-btn print-file"
+            type="button"
+            key={file.label}
+            onClick={() => {
+              onClose();
+              file.run();
+            }}
+          >
+            <b>{file.label}</b>
+            <span>{file.note}</span>
+          </button>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
 /** Print / Share: is the model fit to print, and the files to take it away as. */
 export function showPrintShare(props: Omit<PrintShareProps, 'onClose'>): void {
-  const host = document.createElement('div');
-  const close = () => {
-    mount(null, host);
-    host.remove();
-  };
-  document.body.append(host);
-  mount(<PrintShare {...props} onClose={close} />, host);
+  openOverlay(close => <PrintShare {...props} onClose={close} />);
 }

@@ -4,8 +4,7 @@
 // EVERY PUSH adds to this list: a new entry at the top for a new day, or more lines in today's. Plain words, what
 // it does for the person, where it is. No other programs' names.
 
-import { icons } from './icons';
-import { el } from './ui';
+import { Modal, openOverlay } from './components';
 
 interface Update {
   /** The day it went out, YYYY-MM-DD. */
@@ -73,55 +72,44 @@ export const UPDATES: Update[] = [
 ];
 
 const day = (iso: string): string => {
-  const d = new Date(`${iso}T12:00:00`);
+  const date = new Date(`${iso}T12:00:00`);
 
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 };
+
+function Lines({ title, lines }: { title: string; lines?: string[] }) {
+  if (!lines?.length) {
+    return null;
+  }
+
+  return (
+    <>
+      <div class="whats-new-kind">{title}</div>
+      <ul>
+        {lines.map(line => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
 
 /** The window: the newest update on top, the ones before it under it. */
 export function showWhatsNew(version: string): void {
-  const back = el('div', 'dialog-back');
-  const box = el('div', 'dialog about whats-new');
-  const head = el('div', 'library-head');
-  head.append(el('div', 'panel-title', `What's new · Version ${version}`));
-  const closeBtn = el('button', 'icon-btn library-close');
-  closeBtn.type = 'button';
-  closeBtn.title = 'Close';
-  closeBtn.innerHTML = icons.close;
-  head.append(closeBtn);
-  const body = el('div', 'about-body');
-  UPDATES.forEach((u, i) => {
-    const h = el('h3', '', day(u.date));
-    if (i === 0) {
-      h.append(el('span', 'whats-new-tag', 'Latest'));
-    }
-    body.append(h);
-    for (const [title, lines] of [['New', u.added], ['Fixed', u.fixed]] as const) {
-      if (!lines?.length) {
-        continue;
-      }
-      body.append(el('div', 'whats-new-kind', title));
-      const ul = el('ul', '');
-      for (const line of lines) {
-        ul.append(el('li', '', line));
-      }
-      body.append(ul);
-    }
-  });
-  box.append(head, body);
-  back.append(box);
-  const close = () => {
-    back.remove();
-    window.removeEventListener('keydown', onKey, true);
-  };
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      (e.preventDefault(), close());
-    }
-    e.stopPropagation();
-  };
-  closeBtn.addEventListener('click', close);
-  back.addEventListener('pointerdown', ev => ev.target === back && close());
-  window.addEventListener('keydown', onKey, true);
-  document.body.append(back);
+  openOverlay(close => (
+    <Modal title={`What's new · Version ${version}`} className="about whats-new" onClose={close} isKeyTrap>
+      <div class="about-body">
+        {UPDATES.map((update, index) => (
+          <div key={update.date}>
+            <h3>
+              {day(update.date)}
+              {index === 0 && <span class="whats-new-tag">Latest</span>}
+            </h3>
+            <Lines title="New" lines={update.added} />
+            <Lines title="Fixed" lines={update.fixed} />
+          </div>
+        ))}
+      </div>
+    </Modal>
+  ));
 }
