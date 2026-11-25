@@ -104,34 +104,12 @@ import type {
   ThreadFeature,
   Vec3
 } from '../doc/types';
-import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewBody, ViewEdge, ViewSpec, ConstructionInfo, EdgeInfo, ExportFormat, FaceInfo, FeatureError, RegenResult } from './protocol';
+import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewBody, ViewEdge, ViewSpec, EdgeInfo, ExportFormat, FaceInfo, FeatureError, RegenResult } from './protocol';
+import type { Affine, Bodies, Ctx, SketchState } from './types';
 
 export { shapeValid } from './health';
 
-type Bodies = Map<string, Shape3D>;
-type SketchState = SketchFeature & { boundary: SketchEntity[] };
-
 const allCurves = (sketchState: SketchState): SketchEntity[] => [...sketchState.entities, ...sketchState.boundary];
-
-interface Ctx {
-  bodies: Bodies;
-  sketches: Map<string, SketchState>;
-  planes: Map<string, ConstructionInfo>;
-  axes: Map<string, ConstructionInfo>;
-  /**
-   * Bodies that are still a freeform cage moved/scaled by an affine map: they can
-   * be rebuilt exactly (e.g. stretched along X/Y/Z, which other bodies can't be).
-   */
-  freeforms: Map<string, { feature: Extract<Feature, { type: 'freeform' }>; m: Affine }>;
-  /** The paths sweeps ran along (by sweep): an offset of a sweep's end follows its path back. */
-  sweeps: Map<string, Wire>;
-  /**
-   * Bodies linked to one another (a copy or a pattern made with Link on, and what it was made from): which group
-   * each is of, and where it stands in it - the map that takes the group's shape to this body. A step that changes
-   * one of a group changes the others the same way (see `followLinks`).
-   */
-  links: Map<string, { group: string; m: Affine }>;
-}
 
 /**
  * What a step read of the model before it, as it ran: so that when an
@@ -2720,8 +2698,6 @@ function applyMoveFace(feature: MoveFaceFeature, ctx: Ctx) {
 
 // ------------------------------------------------------------ affine maps
 
-/** x' = A x + t, as [a00 a01 a02 t0, a10 a11 a12 t1, a20 a21 a22 t2]. */
-type Affine = number[];
 const AFFINE_ID: Affine = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const applyAffine = (affine: Affine, point: Vec3): Vec3 => [0, 1, 2].map(row => affine[row * 4] * point[0] + affine[row * 4 + 1] * point[1] + affine[row * 4 + 2] * point[2] + affine[row * 4 + 3]) as Vec3;
 /** The map that undoes `affine` (null: it squashes something flat, and has none). */
