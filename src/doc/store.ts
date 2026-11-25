@@ -409,11 +409,14 @@ export class DocStore {
   }
 
   private changed(tell = true): void {
-    this.edits++;
-    this.setSaved(false);
     if (tell) {
       this.listeners.forEach(fn => fn());
     }
+    if (!this.loaded) {
+      return;
+    }
+    this.edits++;
+    this.setSaved(false);
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       const edits = this.edits;

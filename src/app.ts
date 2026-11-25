@@ -38,6 +38,7 @@ import { Scene } from './app/scene';
 import { itemsHost, sentenceHost, setupBusy, setupVR, variableTagHost } from './app/setup';
 import { Menus } from './app/menus';
 import { Topbar } from './app/topbar';
+import { holdEditorLock } from './app/editorLock';
 import { Projects } from './app/projects';
 import { isHeadset, screenClass } from './device';
 import { Viewport } from './view/viewport';
@@ -144,7 +145,9 @@ export class App implements AppContext {
     this.tool.enter?.();
 
     this.ui.setStatus('Loading geometry kernel…');
-    const loaded = this.store.load().then(() => this.projects.attach());
+    const loaded = holdEditorLock(() => this.ui.ask('Open in another tab', 'superGeometry.app works in one tab at a time, so two tabs never save over each other. Close the other tab, then tap Try again.', [{ id: 'retry', label: 'Try again', primary: true }]))
+      .then(() => this.store.load())
+      .then(() => this.projects.attach());
     // Every visit starts at the projects, with a welcome: shown as soon as the
     // projects are read, while the geometry kernel is still loading behind it.
     void loaded.then(() => this.projects.show(true, true));
