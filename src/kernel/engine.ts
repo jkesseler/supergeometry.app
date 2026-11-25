@@ -74,6 +74,7 @@ import { stretchShape } from './stretch';
 import { imprint, onFace as linesOnFace, seenFrom, wrapOnto } from './wrap';
 import { MESH_MAX, TooBig } from './protocol';
 import { isFault, blame, KernelFault, crashed } from './faults';
+import { rebuild } from './rebuildState';
 import type {
   AxisRef,
   BooleanFeature,
@@ -942,7 +943,7 @@ export function debugBodies(): Map<string, Shape3D> {
 }
 
 async function run(features: Feature[], saved = false) {
-  stepsNow = new Set(features.map(feature => feature.id));
+  rebuild.stepsNow = new Set(features.map(feature => feature.id));
   useSafeBooleans();
   useReleases();
   // Steps after the History's breakpoint: off, like suppressed ones.
@@ -955,8 +956,8 @@ async function run(features: Feature[], saved = false) {
   const errors: FeatureError[] = [];
   const notes: FeatureError[] = [];
   let ctx: Ctx = fork({ bodies: new Map(), sketches: new Map(), planes: new Map(), axes: new Map(), freeforms: new Map(), sweeps: new Map(), links: new Map() });
-  switchedOff = new Set(features.filter(feature => feature.suppressed).map(feature => feature.id));
-  const off = [...switchedOff].sort().join();
+  rebuild.switchedOff = new Set(features.filter(feature => feature.suppressed).map(feature => feature.id));
+  const off = [...rebuild.switchedOff].sort().join();
   // The steps as last rebuilt (by step, wherever in the list they are now).
   const before = new Map<string, CacheEntry>();
   for (const e of [...cache, ...savedCache, ...alsoCache]) {
@@ -4298,8 +4299,6 @@ function grownBy(shape: Shape3D, by: number): Shape3D[] | null {
 
 /** The threads cut in this project, by their step: on which body, the round face's axis, size and reach, the pitch. */
 const threadsCut = new Map<string, { body: string; c: Vec3; a: Vec3; r: number; inside: boolean; pitch: number; left: boolean; t0: number; t1: number; phase?: number; starts?: number }>();
-/** The steps of the project being built (a thread's record is only good while its step is there). */
-let stepsNow = new Set<string>();
 
 /**
  * A threaded body grown by `by` (the clearance a Subtract keeps round it). The kernel's own offset of a thread's
@@ -4310,7 +4309,7 @@ let stepsNow = new Set<string>();
  * Null when the body has no thread of its own any more, or it doesn't work out (the plain way is tried then).
  */
 function grownThreaded(shape: Shape3D, by: number, bodyId: string): Shape3D[] | null {
-  const cut = [...threadsCut].filter(([step, t]) => t.body === bodyId && stepsNow.has(step)).map(([, t]) => t);
+  const cut = [...threadsCut].filter(([step, t]) => t.body === bodyId && rebuild.stepsNow.has(step)).map(([, t]) => t);
   if (!cut.length) {
     return null;
   }
@@ -4637,9 +4636,7 @@ function deleteVertex(body: Shape3D, at: Vec3): Shape3D {
 
 // ------------------------------------------------------------ feature helpers
 
-/** Steps switched off in this rebuild (a step made from one says so, not "deleted"). */
-let switchedOff = new Set<string>();
-const noSketch = (id: string) => new Error(switchedOff.has(id) ? 'Its sketch is switched off - turn it back on in History' : 'Its sketch was deleted');
+const noSketch = (id: string) => new Error(rebuild.switchedOff.has(id) ? 'Its sketch is switched off - turn it back on in History' : 'Its sketch was deleted');
 
 /** Faces (with their outward normal) for a profile or a body face. */
 function sourceFaces(src: ExtrudeSource, ctx: Ctx): { face: Face; normal: Vec3 }[] {
