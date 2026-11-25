@@ -171,7 +171,7 @@ export class DocStore {
     const big = [...refs].filter(id => bigById.has(id)).map(id => [id, bigById.get(id)!] as [string, string]);
     const savedHistory: SavedHistory = { head: hashText(docText), undo, redo, big };
 
-    return idbSet('undo', JSON.stringify(savedHistory));
+    return idbSet('undo', JSON.stringify(savedHistory)).catch(error => console.warn('[DocStore.saveHistory] undo history not saved, it will not survive a reload:', error));
   }
 
   onChange(fn: Listener): () => void {
@@ -373,7 +373,7 @@ export class DocStore {
     });
   }
 
-  /** Save the project now (before the page reloads). */
+  /** Save the project now (before the page reloads); rejects when it could not be written. */
   async flush(): Promise<void> {
     if (!this.loaded) {
       return;
@@ -600,27 +600,27 @@ export async function idbGet(key: string, dbName = DB_NAME): Promise<string | nu
   });
 }
 
+/** Rejects when the value was not written (storage full). */
 export async function idbSet(key: string, value: string): Promise<void> {
-  const database = await db();
-  if (!database) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    const t = database.transaction('kv', 'readwrite');
-    t.objectStore('kv').put(value, key);
-    t.oncomplete = t.onerror = t.onabort = () => resolve();
-  });
+  await idbWrite(store => store.put(value, key));
 }
 
+/** Rejects when the value was not deleted. */
 export async function idbDel(key: string): Promise<void> {
+  await idbWrite(store => store.delete(key));
+}
+
+async function idbWrite(change: (store: IDBObjectStore) => void): Promise<void> {
   const database = await db();
+  // Site data blocked: the app still works, only in memory.
   if (!database) {
     return;
   }
-  await new Promise<void>((resolve) => {
-    const t = database.transaction('kv', 'readwrite');
-    t.objectStore('kv').delete(key);
-    t.oncomplete = t.onerror = t.onabort = () => resolve();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction('kv', 'readwrite');
+    change(transaction.objectStore('kv'));
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error('The save was not written'));
   });
 }
 

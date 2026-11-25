@@ -139,15 +139,20 @@ export class App implements AppContext {
     this.store.onChange(() => this.docChanged());
     this.keys.attach();
     // A phone may drop the page once it's in the background: save now, undo steps included.
-    document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void this.store.flush());
-    window.addEventListener('pagehide', () => void this.store.flush());
+    const flush = () => this.store.flush().catch(error => console.error('[App] save on leaving not written:', error));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        flush();
+      }
+    });
+    window.addEventListener('pagehide', flush);
     this.topbar.attach();
     this.tool.enter?.();
 
     this.ui.setStatus('Loading geometry kernel…');
     const loaded = holdEditorLock(() => this.ui.ask('Open in another tab', 'superGeometry.app works in one tab at a time, so two tabs never save over each other. Close the other tab, then tap Try again.', [{ id: 'retry', label: 'Try again', primary: true }]))
       .then(() => this.store.load())
-      .then(() => this.projects.attach());
+      .then(() => this.projects.attach().catch(error => console.error('[App] project library not attached, the autosave still works:', error)));
     // Every visit starts at the projects, with a welcome: shown as soon as the
     // projects are read, while the geometry kernel is still loading behind it.
     void loaded.then(() => this.projects.show(true, true));
@@ -161,7 +166,7 @@ export class App implements AppContext {
         // in the welcome window too, if that's still open.
         const entry = (await libraryEntries()).find(e => e.id === this.projects.projectId);
         if (entry && !entry.thumb && this.store.features.length) {
-          await this.projects.keep(JSON.stringify(this.store.doc), true);
+          await this.projects.keep(JSON.stringify(this.store.doc), true).catch(error => console.error('[App] first picture of the project not saved:', error));
           const thumb = (await libraryEntries()).find(e => e.id === this.projects.projectId)?.thumb;
           const pic = document.querySelector<HTMLElement>('.library-card.current .library-pic');
           if (thumb && pic && !pic.querySelector('img')) {

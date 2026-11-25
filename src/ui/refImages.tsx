@@ -631,7 +631,7 @@ export class RefImages {
         .slice()
         .sort((a, b) => zOf(a) - zOf(b))
         .map(win => ({ x: win.x / innerWidth, y: win.y / innerHeight, w: win.w, h: win.h, min: win.min, active: win.active, refs: win.refs }));
-      void idbSet(KEY, JSON.stringify(all));
+      idbSet(KEY, JSON.stringify(all)).catch(error => console.warn('[RefImages.save] window places not saved:', error));
     }, 300);
   }
 

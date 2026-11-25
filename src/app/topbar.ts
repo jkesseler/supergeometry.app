@@ -102,7 +102,18 @@ export class Topbar {
     const { moreItem } = this;
     // Help and Tutorial: placeholders for now.
     // A newer build out? More pulses and its Update item says NEW.
-    this.app.updates = new Updates(() => this.app.store.flush());
+    this.app.updates = new Updates(async () => {
+      try {
+        await this.app.store.flush();
+
+        return true;
+      } catch (error) {
+        console.error('[Topbar] project not saved, so not reloading:', error);
+        this.app.ui.toast('The project could not be saved on this device, so the app did not reload', 'error');
+
+        return false;
+      }
+    });
     moreItem('m-update', () => void this.app.confirmReset());
     // Phones and tablets: an offer to add the app to the home screen (More → Install app too).
     const install = new Install(t => this.app.ui.toast(t));

@@ -19,7 +19,8 @@ export interface LibraryActions {
   download(id: string): void;
   /** Resolves with the new name (null: kept as it was). */
   rename(id: string, name: string): Promise<string | null>;
-  remove(id: string): Promise<void>;
+  /** False when it could not be removed (the card stays). */
+  remove(id: string): Promise<boolean>;
 }
 
 const DOWNLOAD
@@ -169,8 +170,9 @@ function LibraryDialog({ entries, currentId, act, opts, onClose }: LibraryDialog
   };
 
   const handleRemove = async (id: string) => {
-    await act.remove(id);
-    setItems(current => current.filter(item => item.id !== id));
+    if (await act.remove(id)) {
+      setItems(current => current.filter(item => item.id !== id));
+    }
   };
 
   return (

@@ -21,7 +21,11 @@ export class Projects {
    */
   async newProject(): Promise<void> {
     const was = this.app.store.features.length ? this.app.store.doc.name : null;
-    await this.switchTo(emptyDoc(), newProjectId());
+    try {
+      await this.switchTo(emptyDoc(), newProjectId());
+    } catch (error) {
+      return this.saveFailed('start a new project', error);
+    }
     if (was) {
       this.app.ui.toast(`“${was}” is kept in File → Open`);
     }
@@ -52,7 +56,11 @@ export class Projects {
     // The library's copy follows when the app goes to the background (the
     // autosave holds the newest state meanwhile, and is copied in at the next
     // start if need be) - no extra saving or drawing while modelling.
-    this.app.store.onSaved = text => document.visibilityState === 'hidden' && void this.keep(text);
+    this.app.store.onSaved = (text) => {
+      if (document.visibilityState === 'hidden') {
+        this.keep(text).catch(error => console.error('[Projects.onSaved] library copy not saved, the autosave still has it:', error));
+      }
+    };
     // Its newest state is the autosave (a page closed mid-save left the library a step behind).
     const text = JSON.stringify(this.app.store.doc);
     // (No picture: nothing is drawn yet.)
@@ -83,7 +91,7 @@ export class Projects {
     }
   }
 
-  /** Close the open project (it's kept, with a fresh picture) and open another. */
+  /** Close the open project (it's kept, with a fresh picture) and open another; rejects, the open project still open, when it could not be kept. */
   async switchTo(doc: ProjectDoc, id: string): Promise<void> {
     this.app.setTool(null);
     this.app.setSection(null);
@@ -116,7 +124,7 @@ export class Projects {
   async show(welcome = false, starting = false): Promise<void> {
     // The open one with its picture as it looks now (starting: nothing has changed, nor is it drawn yet).
     if (this.projectId && !starting) {
-      await this.keep(JSON.stringify(this.app.store.doc), true);
+      await this.keep(JSON.stringify(this.app.store.doc), true).catch(error => console.error('[Projects.show] library copy not saved, opening the projects anyway:', error));
     }
     const entries = await libraryEntries();
     showLibrary(entries, this.projectId, {
@@ -125,7 +133,17 @@ export class Projects {
       newProject: () => void this.newProject(),
       openFile: () => this.openFile(),
       download: id => void this.downloadKept(id),
-      remove: id => forgetProject(id),
+      remove: async (id) => {
+        try {
+          await forgetProject(id);
+
+          return true;
+        } catch (error) {
+          this.saveFailed('remove the project', error);
+
+          return false;
+        }
+      },
       rename: async (id, current) => {
         const name = (await this.app.ui.dialog('Rename project', [{ key: 'name', label: 'Name', value: current }]))?.name.trim();
         if (!name || name === current) {
@@ -134,13 +152,25 @@ export class Projects {
         // The open one through its document (the top bar and its autosave follow).
         if (id === this.projectId) {
           this.app.store.commit(draft => (draft.name = name));
-        } else {
-          await renameProject(id, name);
-        }
 
-        return name;
+          return name;
+        }
+        try {
+          await renameProject(id, name);
+
+          return name;
+        } catch (error) {
+          this.saveFailed('rename the project', error);
+
+          return null;
+        }
       }
     }, { welcome, fullscreen: this.fullscreen, onClose: welcome ? () => this.offerTutorial() : undefined });
+  }
+
+  private saveFailed(what: string, error: unknown): void {
+    console.error(`[Projects] could not ${what}:`, error);
+    this.app.ui.toast(`Could not ${what}: this device did not save it (its storage may be full)`, 'error');
   }
 
   /** The tutorial has been offered on this device (or begun): it isn't offered again. */

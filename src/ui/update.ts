@@ -35,8 +35,8 @@ interface OfflineStore {
 export class Updates {
   offline: OfflineStore | null = null;
 
-  /** `beforeReload` saves the project before the page is reloaded. */
-  constructor(private beforeReload: () => Promise<void>) {
+  /** `beforeReload` saves the project before the page is reloaded; false (not saved) stops the reload. */
+  constructor(private beforeReload: () => Promise<boolean>) {
     // Only a built site has a build to compare (not the dev server).
     if (!loadedBuild()) {
       return;
@@ -76,7 +76,10 @@ export class Updates {
    * workers) and reload from the site. The project is saved first.
    */
   async reset(): Promise<void> {
-    await this.beforeReload();
+    const isSaved = await this.beforeReload();
+    if (!isSaved) {
+      return;
+    }
     // Offline mode: the stored copy is downloaded again (the newest version), not removed.
     if (this.offline?.on && navigator.onLine) {
       await this.offline.download(true);
