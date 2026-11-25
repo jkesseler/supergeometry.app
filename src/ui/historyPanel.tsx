@@ -2,6 +2,7 @@ import { render as mount } from 'preact';
 import { BETA_TYPES } from '../doc/store';
 import { ungroupedSteps } from '../doc/historyGroups';
 import { TwoTapButton } from './components';
+import { BetaTag } from './toolList';
 import { icons, type IconName } from './icons';
 import type { FeatureError } from '../kernel/protocol';
 import type { Feature, HistoryGroup } from '../doc/types';
@@ -345,11 +346,7 @@ function StepRow({ panel, feature, group, snapshot, hasBreakpoint, warning }: St
         onClick={event => (event.ctrlKey || event.metaKey || event.shiftKey || panel.isPicking ? panel.check(feature.id) : handlers.edit(feature.id))}
       >
         {feature.name}
-        {BETA_TYPES.has(feature.type) && (
-          <span class="beta-tag" title="New and still being tried out: it may change, or not work on every shape">
-            BETA
-          </span>
-        )}
+        {BETA_TYPES.has(feature.type) && <BetaTag />}
       </button>
       {canHide
         ? <IconButton icon={isHidden ? 'eyeOff' : 'eye'} title={isHidden ? 'Show' : 'Hide'} onClick={() => handlers.toggleHidden!(feature.id)} />

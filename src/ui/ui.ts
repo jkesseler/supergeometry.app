@@ -5,6 +5,7 @@ import { settings } from '../settings';
 import { selectAll } from './textField';
 import { numpadInput, typingInto } from './numpad';
 import { HistoryPanel } from './historyPanel';
+import { renderHint, renderLeftColumn, renderPointerLabel, renderTools } from './toolList';
 import { askDialog, formDialog, showContextMenu, type Choice, type DialogField } from './dialogs';
 import { icons, type IconName } from './icons';
 import type { FeatureError } from '../kernel/protocol';
@@ -437,27 +438,16 @@ export class UI {
       return;
     }
     this.leftSig = sig;
-    host.replaceChildren(
-      ...items.map((it, i) => {
-        const b = el('button', `right-btn left-btn${it.active ? ' on' : ''}${it.pulse ? ' pulse' : ''}`);
-        b.dataset.left = it.id;
-        b.title = it.disabled && it.why ? `${it.label}: ${it.why}` : it.label + (it.active ? ' (on - tap to switch off)' : '');
-        b.innerHTML = icons[it.icon as IconName] ?? '';
-        b.append(el('span', 'right-label', it.label.replace(' View', '')));
-        b.addEventListener('click', () => {
-          const now = this.leftItems[i];
-          if (!now) {
-            return;
-          }
-          if (now.disabled) {
-            return this.toast(now.why ?? `${now.label} can't be used now`);
-          }
-          now.run?.();
-        });
-
-        return b;
-      })
-    );
+    renderLeftColumn(host, items, (index) => {
+      const now = this.leftItems[index];
+      if (!now) {
+        return;
+      }
+      if (now.disabled) {
+        return this.toast(now.why ?? `${now.label} can't be used now`);
+      }
+      now.run?.();
+    });
   }
   private leftItems: ToolItem[] = [];
 
@@ -541,7 +531,6 @@ export class UI {
     this.flyoutOwner = item.id;
     // Measure before re-rendering: a nested anchor lives inside this flyout.
     const rect = anchor.getBoundingClientRect();
-    this.flyout.innerHTML = '';
     renderTools(this.flyout, item.children ?? [], (child, btn) => this.openFlyout(child, btn), () => this.closeFlyout());
     // Colour choices show as a grid of circles.
     this.flyout.classList.toggle('swatch-grid', !!item.children?.length && item.children.every(child => child.swatch));
@@ -753,27 +742,12 @@ export class UI {
   // ------------------------------------------------------- hint/status/toast
 
   setHint(text: string | null): void {
-    // The words, and a small × to put the guide text away for good (More → Guide text brings it back). Asked for:
-    // "there is no way to remove them" - the switch in More was not found. (Only the × takes a tap: the words let
-    // taps through to the model under them.)
-    if (!this.hintWords) {
-      this.hintWords = document.createElement('span');
-      const x = document.createElement('button');
-      x.type = 'button';
-      x.className = 'hint-x';
-      x.textContent = '×';
-      x.title = 'Hide guide text (More → Guide text shows it again)';
-      x.setAttribute('aria-label', 'Hide guide text');
-      x.addEventListener('pointerdown', e => e.stopPropagation());
-      x.addEventListener('click', (e) => {
-        e.stopPropagation();
-        settings.set('showHints', false);
-        this.refreshHint();
-        this.toast('Guide text is off. More → Guide text turns it on again.');
-      });
-      this.hint.replaceChildren(this.hintWords, x);
-    }
-    this.hintWords.textContent = text ?? '';
+    // (A small × puts the guide text away for good - More → Guide text brings it back. Asked for: "there is no way to remove them" - the switch in More was not found.)
+    renderHint(this.hint, text ?? '', () => {
+      settings.set('showHints', false);
+      this.refreshHint();
+      this.toast('Guide text is off. More → Guide text turns it on again.');
+    });
     this.hintText = text;
     this.hint.hidden = !text || !settings.value.showHints;
     // How tall it is (a long hint wraps to more lines): the sketch tools column keeps clear of it.
@@ -784,7 +758,6 @@ export class UI {
 
 
   private hintText: string | null = null;
-  private hintWords: HTMLElement | null = null;
 
   /** More → Guide text switched: show (or hide) what's there now. */
   refreshHint(): void {
@@ -902,7 +875,7 @@ export class UI {
     }
     this.labelEl.hidden = false;
     const tip = typing ? 'Enter ↵ apply · Esc cancel' : null;
-    this.labelEl.replaceChildren(el('span', 'label-value', value), ...(tip ? [el('span', 'label-tip', tip)] : []));
+    renderPointerLabel(this.labelEl, value, tip);
     this.labelEl.classList.toggle('typing', typing);
     this.labelEl.style.transform = `translate(${Math.round(x + 18)}px, ${Math.round(y + 14)}px)`;
   }
@@ -1762,80 +1735,12 @@ export function usable(items: ToolItem[]): ToolItem[] {
   return out.filter((toolItem, i, a) => !toolItem.id.startsWith('---') || (i > 0 && i < a.length - 1 && !a[i - 1].id.startsWith('---')));
 }
 
-function renderTools(host: HTMLElement, all: ToolItem[], onFlyout: (item: ToolItem, btn: HTMLElement) => void, after?: () => void): void {
-  host.innerHTML = '';
-  const items = usable(all);
-  for (const item of items) {
-    if (item.id.startsWith('---')) {
-      host.append(el('div', 'tool-sep'));
-      continue;
-    }
-    const b = toolButton(item, true);
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (item.disabled) {
-        return;
-      }
-      if (item.children?.length && !(item.variantsWhenActive && !item.active && item.run)) {
-        onFlyout(item, b);
-      } else {
-        item.run?.();
-        after?.();
-      }
-    });
-    host.append(b);
-  }
-}
-
 /** The small BETA tag on a tool still being tried out. */
 function betaTag(): HTMLElement {
-  const t = el('span', 'beta-tag', 'BETA');
-  t.title = 'New and still being tried out: it may change, or not work on every shape';
+  const tag = el('span', 'beta-tag', 'BETA');
+  tag.title = 'New and still being tried out: it may change, or not work on every shape';
 
-  return t;
-}
-
-function toolButton(item: ToolItem, withLabel: boolean): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.className = 'tool';
-  b.dataset.tool = item.id;
-  b.dataset.label = item.label;
-  b.classList.toggle('active', !!item.active);
-  b.classList.toggle('pulse', !!item.pulse);
-  b.classList.toggle('has-children', !!item.children?.length);
-  b.classList.toggle('disabled', !!item.disabled);
-  b.title = item.disabled && item.why ? item.why : item.shortcut ? `${item.label} (${item.shortcut})` : item.label;
-  // (A colour comes from the project - a file someone else may have made: it is given to the swatch as a colour,
-  // never written into the page as markup.)
-  if (item.swatch) {
-    const sw = el('span', 'swatch');
-    sw.style.background = item.swatch;
-    b.replaceChildren(sw);
-  } else {
-    b.innerHTML = icons[item.icon];
-  }
-  if (withLabel) {
-    const span = el('span', 'tool-label');
-    const top = el('span', 'tool-name', item.label);
-    if (item.beta) {
-      top.append(betaTag());
-    }
-    if (item.shortcut) {
-      top.append(el('kbd', '', item.shortcut));
-    }
-    span.append(top);
-    if (item.sub) {
-      span.append(el('span', 'tool-sub', item.sub));
-    }
-    b.append(span);
-  }
-  if (item.trailing?.length) {
-    const t = el('span', 'tool-trailing');
-    t.innerHTML = item.trailing.map(i => icons[i]).join('');
-    b.append(t);
-  }
-
-  return b;
+  return tag;
 }
 
 /**
