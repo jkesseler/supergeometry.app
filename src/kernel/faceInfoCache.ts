@@ -41,6 +41,12 @@ export function getFaceInfo(face: Face): FaceInfo {
   return info;
 }
 
+export function resetFaceInfos(): void {
+  infosNow = new Map();
+  infosWas = new Map();
+  infosKept = 0;
+}
+
 function keepInfo(hash: number, entry: KeptFace): void {
   // (Not for ever: the faces of bodies long gone are let go, two lots back.)
   if (infosKept >= 6000) {

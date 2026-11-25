@@ -55,7 +55,7 @@ import { chainKey, hash53, shortBig } from './stepKey';
 import { originsOf } from './originsOf';
 import { rawEntries, rawGet, rawHas } from './readTracking';
 import { followLinks } from './links';
-import { getFaceInfo } from './faceInfoCache';
+import { getFaceInfo, resetFaceInfos } from './faceInfoCache';
 import type {
   Feature,
   PlaneDef,
@@ -216,6 +216,7 @@ export function resetKernel(): void {
   lastBodies = new Map();
   importCache.clear();
   sketchWas.clear();
+  resetFaceInfos();
 }
 
 /**
