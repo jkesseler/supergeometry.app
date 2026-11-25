@@ -18,7 +18,6 @@ import type { Feature } from './doc/types';
 import type { Sel } from './tools/tool';
 import type { SweepWord } from './ui/sentence';
 import type { PickHit } from './view/viewport';
-import type { ProjectDoc } from './doc/types';
 
 // (The app's insides it reads: kept out of the classes' public faces on purpose.)
 interface Insides {
@@ -26,7 +25,6 @@ interface Insides {
   regenerate(): Promise<void>;
   undo(): void;
   redo(): void;
-  switchProject(doc: ProjectDoc, id: string): Promise<void>;
 }
 interface UIInsides {
   toolItems: ToolItem[];
@@ -609,7 +607,7 @@ export function installDebug(app: App): void {
       if (name) {
         doc.name = name;
       }
-      await inside.switchProject(doc, newProjectId());
+      await app.projects.switchTo(doc, newProjectId());
       await sg.idle();
 
       return doc.name;
