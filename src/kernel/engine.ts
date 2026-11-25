@@ -18,7 +18,7 @@ import {
   looseBox
 } from './faceEdit';
 import { inheritTags, setOrigins, tagBody, type OriginOf } from './provenance';
-import { binarySTL, meshFaces, type FaceMesh } from './meshing';
+import { binarySTL } from './meshing';
 import { measureArea as trueArea, volumeProperties } from './ocFree';
 import { useReleases } from './release';
 import { useSafeBooleans } from './safeBooleans';
@@ -55,6 +55,7 @@ import { rawEntries, rawGet, rawHas } from './readTracking';
 import { followLinks } from './links';
 import { resetFaceInfos } from './faceInfoCache';
 import { meshBody, smoothStepsOf } from './viewMesh';
+import { printMesh } from './printMesh';
 import type {
   Feature,
   PlaneDef,
@@ -348,29 +349,7 @@ export async function exportBodies(features: Feature[], format: ExportFormat, on
   return new Blob([binarySTL(shapes.map(([, shape]) => printMesh(shape))) as BlobPart], { type: 'application/sla' });
 }
 
-/**
- * A body's mesh for printing - of a copy of it: meshed itself, the body kept
- * those triangles (ten times the view's, megabytes on a part of a few hundred
- * faces) for as long as it was there, and every later copy of it carried them.
- * Kept here with the body instead, for the next file made of it.
- */
-const printMeshes = new WeakMap<Shape3D, FaceMesh>();
-function printMesh(shape: Shape3D): FaceMesh {
-  let faceMesh = printMeshes.get(shape);
-  if (!faceMesh) {
-    printMeshes.set(shape, (faceMesh = meshFaces(deepCopy(shape), PRINT_TOLERANCE, PRINT_ANGLE)));
-  }
 
-  return faceMesh;
-}
-
-/**
- * How finely a mesh for printing (STL, 3MF) follows curved surfaces: within
- * 0.01 mm, and a facet per 0.05 rad (under 3°). Slicers draw each facet flat,
- * so round faces showed as polygons at the view's coarser setting.
- */
-const PRINT_TOLERANCE = 0.01;
-const PRINT_ANGLE = 0.05;
 
 export async function regenerate(features: Feature[], saved = false): Promise<RegenResult> {
   const t0 = performance.now();
