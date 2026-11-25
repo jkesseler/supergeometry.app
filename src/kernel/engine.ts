@@ -11,7 +11,6 @@ import {
   type Shape3D
 } from 'replicad';
 import { applyFreeformEdits } from '../doc/freeformEdits';
-import { add, dot, norm, scale, xDirFor } from '../geom';
 import { deepCopy, openEdges, subShapes } from './health';
 import { healthOf, isHealthy } from './repair';
 import {
@@ -25,19 +24,19 @@ import { binarySTL, meshEdgeLines, meshFaces, meshOff, type FaceMesh } from './m
 import { measureArea as trueArea, volumeProperties } from './ocFree';
 import { useReleases } from './release';
 import { useSafeBooleans } from './safeBooleans';
-import { imprint, onFace as linesOnFace, seenFrom, wrapOnto } from './wrap';
 import { isFault, blame, KernelFault, crashed, errorText } from './faults';
 import { rebuild } from './rebuildState';
 import { DAMAGED_TEXT, MAX_REACH, damaged } from './damaged';
-import { baseId, bodyList, bodyNames, need, staysClosed, wholeOf, touchedBodies } from './bodies';
-import { edgeInfo, faceInfo, resolveEdge, resolveFace } from './references';
-import { AFFINE_ID } from './affine';
+import { baseId, bodyNames, wholeOf, touchedBodies } from './bodies';
+import { edgeInfo, faceInfo } from './references';
 import { volumes } from './booleans';
-import { sourceFaces } from './sources';
 import { EDGES_CLASH, guardEdit } from './editGuard';
-import { freeformShape } from './freeformShape';
 import { applyConnect } from './steps/connect';
-import { applyDeleteGeom, applyFaceFreeform, applyMoveFace, applyReplaceFace, scaleFace } from './steps/directEdit';
+import { applyAxis, applyPlane } from './steps/construction';
+import { applyDelete } from './steps/delete';
+import { applyFreeform, applyFreeformEdit } from './steps/freeform';
+import { applyImprint, applyWrap } from './steps/imprint';
+import { applyDeleteGeom, applyFaceFreeform, applyMoveFace, applyReplaceFace, applyScaleFace } from './steps/directEdit';
 import { applyExtrude } from './steps/extrude';
 import { WALLS_CLASH, applyShell } from './steps/shell';
 import { applyThread } from './steps/thread';
@@ -51,7 +50,7 @@ import { movedFrom, transform } from './steps/transform';
 import { applySplit } from './steps/split';
 import { applyImport, importCache } from './steps/import';
 import { applyHole } from './steps/hole';
-import { fillNetwork, fillToPlane } from './steps/fill';
+import { applyFill, applyFillToPlane } from './steps/fill';
 import { applyRepair } from './steps/repair';
 import { chainKey, hash53, shortBig } from './stepKey';
 import { originsOf } from './originsOf';
@@ -195,8 +194,6 @@ interface CacheEntry {
 const meshCache = new WeakMap<Shape3D, BodyMesh>();
 /** The Freeform Face steps of the project being rebuilt (their faces are patches of one smooth surface). */
 let smoothSteps = new Set<string>();
-/** Freeform and Freeform Face steps that are on (what an Edit Freeform step can edit). */
-let editable = new Set<string>();
 /** The next mesh's key (see BodyMesh.key). */
 let meshKey = 1;
 let cache: CacheEntry[] = [];
@@ -450,7 +447,7 @@ export async function run(features: Feature[], saved = false) {
   }
   // Edit Freeform steps: put into the freeforms they edit (those build with the new cage).
   features = applyFreeformEdits(features);
-  editable = new Set(features.filter(feature => (feature.type === 'freeform' || feature.type === 'faceFreeform') && !feature.suppressed).map(feature => feature.id));
+  const editable = new Set(features.filter(feature => (feature.type === 'freeform' || feature.type === 'faceFreeform') && !feature.suppressed).map(feature => feature.id));
   const errors: FeatureError[] = [];
   const notes: FeatureError[] = [];
   let ctx: Ctx = fork({ bodies: new Map(), sketches: new Map(), planes: new Map(), axes: new Map(), freeforms: new Map(), sweeps: new Map(), links: new Map() });
@@ -542,7 +539,7 @@ export async function run(features: Feature[], saved = false) {
               out.bodies.set(id, shape);
             }
           }
-          await apply(feature, out);
+          await apply(feature, out, editable);
           entry.origin = originsOf(feature, out);
           reading = null;
           if (entry.origin) {
@@ -719,8 +716,7 @@ export async function run(features: Feature[], saved = false) {
   return { ctx, errors, numbers, notes, whole };
 }
 
-async function apply(feature: Feature, ctx: Ctx): Promise<void> {
-  const { bodies } = ctx;
+async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise<void> {
   switch (feature.type) {
     case 'sketch':
       return applySketch(feature, ctx);
@@ -755,63 +751,29 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
     case 'split':
       return applySplit(feature, ctx);
 
-    case 'plane': {
-      let plane = feature.plane;
-      if (feature.face) {
-        const body = bodies.get(feature.face.body);
-        if (body) {
-          const info = faceInfo(resolveFace(body, feature.face));
-          if (info.plane) {
-            plane = { ...info.plane, xDir: dot(info.plane.normal, feature.plane.normal) > 0.999 ? feature.plane.xDir : info.plane.xDir };
-          }
-        }
-      }
-      plane = { ...plane, origin: add(plane.origin, scale(plane.normal, feature.offset)) };
-      // (Older projects: how it was made, from its name.)
-      const kind = feature.kind ?? (/^Midplane/.test(feature.name) ? 'mid' : /3 Points/.test(feature.name) ? '3pt' : /Perp/.test(feature.name) ? 'perp' : /on Curve/.test(feature.name) ? 'curve' : /Angle/.test(feature.name) ? 'angle' : /Parallel/.test(feature.name) ? 'parallel' : 'offset');
-      ctx.planes.set(feature.id, { id: feature.id, name: feature.name, plane, kind });
-
-      return;
-    }
+    case 'plane':
+      return applyPlane(feature, ctx);
 
     case 'axis':
-      ctx.axes.set(feature.id, { id: feature.id, name: feature.name, plane: { origin: feature.origin, normal: norm(feature.dir), xDir: xDirFor(norm(feature.dir)) } });
-
-      return;
+      return applyAxis(feature, ctx);
 
     case 'import':
       return applyImport(feature, ctx);
 
     case 'delete':
-      for (const b of bodyList(feature.bodies, bodies, 'bodies', feature.whole)) {
-        bodies.delete(b);
-      }
-
-      return;
+      return applyDelete(feature, ctx);
 
     case 'image':
       return; // drawn by the UI only
 
     case 'freeformEdit':
-      // (Put into its freeform before the rebuild: nothing more to do here.)
-      if (!editable.has(feature.target)) {
-        throw new Error('The freeform this edits is gone (deleted, or switched off)');
-      }
-
-      return;
+      return applyFreeformEdit(feature, editable);
 
     case 'freeform':
-      bodies.set(feature.id, freeformShape(feature, AFFINE_ID));
-      ctx.freeforms.set(feature.id, { feature: feature, m: AFFINE_ID });
+      return applyFreeform(feature, ctx);
 
-      return;
-
-    case 'scaleFace': {
-      const body = need(bodies, feature.face.body);
-      bodies.set(feature.face.body, staysClosed(body, scaleFace(body, resolveFace(body, feature.face), feature.u, feature.factors)));
-
-      return;
-    }
+    case 'scaleFace':
+      return applyScaleFace(feature, ctx);
 
     case 'faceFreeform':
       return applyFaceFreeform(feature, ctx);
@@ -825,52 +787,20 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
     case 'thread':
       return applyThread(feature, ctx);
 
-    case 'imprint': {
-      const body = need(bodies, feature.body);
-      if (feature.source) {
-        const src = sourceFaces(feature.source, ctx);
-        if (!src.length) {
-          throw new Error('Nothing to project');
-        }
-        const normal = src[0].normal;
-        bodies.set(feature.body, imprint(body, src.flatMap(source => source.face.edges), normal, seenFrom(body, src[0].face.center.toTuple() as Vec3, normal)));
+    case 'imprint':
+      return applyImprint(feature, ctx);
 
-        return;
-      }
-      if (!feature.edges?.length || !feature.face) {
-        throw new Error('Pick the edges, then the face to project them onto');
-      }
-      const face = resolveFace(body, feature.face);
-      const curves = feature.edges.map(edge => resolveEdge(need(bodies, edge.body), edge));
-      bodies.set(feature.body, imprint(body, curves, face.normalAt(face.center).toTuple() as Vec3, linesOnFace(body, face)));
-
-      return;
-    }
-
-    case 'wrap': {
-      const body = need(bodies, feature.face.body);
-      const round = resolveFace(body, feature.face, face => face.geomType === 'CYLINDRE');
-      bodies.set(feature.face.body, wrapOnto(body, round, sourceFaces(feature.source, ctx), feature.height));
-
-      return;
-    }
+    case 'wrap':
+      return applyWrap(feature, ctx);
 
     case 'connect':
       return applyConnect(feature, ctx);
 
-    case 'fill': {
-      bodies.set(feature.id, fillNetwork(feature, ctx));
+    case 'fill':
+      return applyFill(feature, ctx);
 
-      return;
-    }
-
-    case 'fillToPlane': {
-      const sheet = need(bodies, feature.body);
-      bodies.set(feature.body, fillToPlane(sheet, feature.plane));
-      ctx.freeforms.delete(feature.body);
-
-      return;
-    }
+    case 'fillToPlane':
+      return applyFillToPlane(feature, ctx);
 
     case 'repair':
       return applyRepair(feature, ctx);

@@ -12,7 +12,7 @@ import { measureVolume } from '../ocFree';
 import { applyPlan, boundaryEdges, cachedPlan } from '../../freeform/cage';
 import { curvePoints } from './connect';
 import type { Edge, Face, Shape3D } from 'replicad';
-import type { DeleteGeomFeature, EdgeRef, FaceFreeformFeature, MoveFaceFeature, ReplaceFaceFeature, Vec3 } from '../../doc/types';
+import type { DeleteGeomFeature, EdgeRef, FaceFreeformFeature, MoveFaceFeature, ReplaceFaceFeature, ScaleFaceFeature, Vec3 } from '../../doc/types';
 import type { Ctx } from '../types';
 
 export function applyFaceFreeform(feature: FaceFreeformFeature, ctx: Ctx) {
@@ -77,6 +77,11 @@ export function applyFaceFreeform(feature: FaceFreeformFeature, ctx: Ctx) {
     }
   }
   throw last;
+}
+
+export function applyScaleFace(feature: ScaleFaceFeature, ctx: Ctx) {
+  const body = need(ctx.bodies, feature.face.body);
+  ctx.bodies.set(feature.face.body, staysClosed(body, scaleFace(body, resolveFace(body, feature.face), feature.u, feature.factors)));
 }
 
 export function applyReplaceFace(feature: ReplaceFaceFeature, ctx: Ctx) {

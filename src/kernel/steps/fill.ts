@@ -10,7 +10,7 @@ import { halfSpace } from '../booleans';
 import { editNotes, unify } from '../faceEdit';
 import { repairShape } from '../repair';
 import type { AnyShape, Edge, Face, Shape3D } from 'replicad';
-import type { EdgeRef, Feature, PathRef, PlaneDef, Vec3 } from '../../doc/types';
+import type { EdgeRef, Feature, FillFeature, FillToPlaneFeature, PathRef, PlaneDef, Vec3 } from '../../doc/types';
 import type { Ctx } from '../types';
 
 /**
@@ -237,4 +237,14 @@ export function fillToPlane(sheet: Shape3D, plane: PlaneDef): Shape3D {
   }
 
   return repaired.shape;
+}
+
+export function applyFill(feature: FillFeature, ctx: Ctx) {
+  ctx.bodies.set(feature.id, fillNetwork(feature, ctx));
+}
+
+export function applyFillToPlane(feature: FillToPlaneFeature, ctx: Ctx) {
+  const sheet = need(ctx.bodies, feature.body);
+  ctx.bodies.set(feature.body, fillToPlane(sheet, feature.plane));
+  ctx.freeforms.delete(feature.body);
 }
