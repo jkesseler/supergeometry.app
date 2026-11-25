@@ -51,7 +51,7 @@ import { applyFill, applyFillToPlane } from './steps/fill';
 import { applyRepair } from './steps/repair';
 import { chainKey, hash53, shortBig } from './stepKey';
 import { originsOf } from './originsOf';
-import { rawEntries, rawGet, rawHas } from './readTracking';
+import { rawEntries, Noted, startReading, stopReading, unchangedFor, fork, recordDelta } from './readTracking';
 import { followLinks } from './links';
 import { resetFaceInfos } from './faceInfoCache';
 import { meshBody, smoothStepsOf } from './viewMesh';
@@ -63,128 +63,18 @@ import type {
   Vec3
 } from '../doc/types';
 import type { BodyHealth, BodyMesh, BodyProps, ExportFormat, FeatureError, RegenResult } from './protocol';
+import type { Reads, Recorded } from './readTracking';
 import type { Ctx } from './types';
 
 export { shapeValid } from './health';
 
-/**
- * What a step read of the model before it, as it ran: so that when an
- * earlier step changes, a step that read nothing of what changed is not
- * rebuilt - its result is put on the model as it is now.
- */
-interface Reads {
-  /** Each thing it asked for ("bodies|id") and what it got (undefined: not there). */
-  one: Map<string, unknown>;
-  /** Kinds it looked through all of (any change among them is a change for it). */
-  all: Set<keyof Ctx>;
-  written: Set<string>;
-}
-let reading: Reads | null = null;
-const KINDS = ['bodies', 'sketches', 'planes', 'axes', 'freeforms', 'sweeps', 'links'] as const;
-
-/** A map of the model (its bodies, sketches…) that notes what a step reads of it. */
-class Noted<V> extends Map<string, V> {
-  private live = false;
-  constructor(readonly kind: keyof Ctx, from?: Map<string, V>) {
-    super();
-    if (from) {
-      for (const [key, value] of rawEntries(from)) {
-        super.set(key, value);
-      }
-    }
-    this.live = true;
-  }
-  private saw(entryKey: string, value: unknown): void {
-    const key = `${this.kind}|${entryKey}`;
-    if (reading && !reading.written.has(key) && !reading.one.has(key)) {
-      reading.one.set(key, value);
-    }
-  }
-  get(key: string): V | undefined {
-    const value = super.get(key);
-    this.saw(key, value);
-
-    return value;
-  }
-  has(key: string): boolean {
-    this.saw(key, super.get(key));
-
-    return super.has(key);
-  }
-  set(key: string, value: V): this {
-    if (this.live) {
-      reading?.written.add(`${this.kind}|${key}`);
-    }
-
-    return super.set(key, value);
-  }
-  delete(key: string): boolean {
-    reading?.written.add(`${this.kind}|${key}`);
-
-    return super.delete(key);
-  }
-  clear(): void {
-    reading?.all.add(this.kind);
-    super.clear();
-  }
-  get size(): number {
-    reading?.all.add(this.kind);
-
-    return super.size;
-  }
-  keys(): MapIterator<string> {
-    reading?.all.add(this.kind);
-
-    return super.keys();
-  }
-  values(): MapIterator<V> {
-    reading?.all.add(this.kind);
-
-    return super.values();
-  }
-  entries(): MapIterator<[string, V]> {
-    reading?.all.add(this.kind);
-
-    return super.entries();
-  }
-  forEach(fn: (value: V, key: string, map: Map<string, V>) => void, thisArg?: unknown): void {
-    reading?.all.add(this.kind);
-    super.forEach(fn, thisArg);
-  }
-  [Symbol.iterator](): MapIterator<[string, V]> {
-    reading?.all.add(this.kind);
-
-    return super[Symbol.iterator]();
-  }
-}
-/** The model for the next step to work on: a copy to change, the one before it left as it is. */
-function fork(ctx: Ctx): Ctx {
-  return {
-    bodies: new Noted('bodies', ctx.bodies),
-    sketches: new Noted('sketches', ctx.sketches),
-    planes: new Noted('planes', ctx.planes),
-    axes: new Noted('axes', ctx.axes),
-    freeforms: new Noted('freeforms', ctx.freeforms),
-    sweeps: new Noted('sweeps', ctx.sweeps),
-    links: new Noted('links', ctx.links)
-  };
-}
 /** How many steps the last rebuild ran, took as they were (nothing before them changed), or put back (nothing they read changed). */
 export const rebuildStats = { ran: 0, kept: 0, reused: 0 };
 
-interface CacheEntry {
+export interface CacheEntry extends Recorded {
   key: string;
   ctx: Ctx;
-  /** The step, and its values as text (hashed): the same step, unchanged? */
   id?: string;
-  json?: string;
-  /** What it read of the model before it, that model, and what it changed in it. */
-  reads?: Reads;
-  input?: Ctx;
-  delta?: [keyof Ctx, string, unknown, boolean][];
-  /** The steps switched off when it ran (a failed step's words depend on it). */
-  off?: string;
-  error?: string;
   /** Worked, but had to give something up (shown on the step in History). */
   note?: string;
   /** Which of its faces a face is (see provenance.ts): for steps made from a sketch. */
@@ -230,31 +120,6 @@ export async function withFreshKernel<T>(reload: () => Promise<void>, work: () =
       resetKernel();
     }
   }
-}
-
-/** Is a step as it was last rebuilt, and everything it read of the model then still what is there now? */
-function unchangedFor(was: CacheEntry, json: string, ctx: Ctx, off: string): boolean {
-  if (was.json !== json || !was.reads || !was.delta || !was.input) {
-    return false;
-  }
-  // (What a failed step says can depend on which steps are switched off.)
-  if (was.error && was.off !== off) {
-    return false;
-  }
-  for (const [key, value] of was.reads.one) {
-    const at = key.indexOf('|');
-    if (rawGet(ctx[key.slice(0, at) as keyof Ctx] as Map<string, unknown>, key.slice(at + 1)) !== value) {
-      return false;
-    }
-  }
-  for (const kind of was.reads.all) {
-    const [a, b] = [rawEntries(ctx[kind] as Map<string, unknown>), was.input[kind] as Map<string, unknown>];
-    if (a.length !== rawEntries(b).length || a.some(([key, value]) => rawGet(b, key) !== value || !rawHas(b, key))) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 // ------------------------------------------------------------------ public API
@@ -488,7 +353,7 @@ export async function run(features: Feature[], saved = false) {
           if (damaged(feature)) {
             throw new Error(DAMAGED_TEXT);
           }
-          reading = reads;
+          startReading(reads);
           const touched = touchedBodies(feature, ctx);
           // An edit works on copies of the bodies it may touch: OpenCascade is
           // allowed to adjust the shapes it is given, and the earlier steps'
@@ -515,7 +380,7 @@ export async function run(features: Feature[], saved = false) {
           }
           await apply(feature, out, editable);
           entry.origin = originsOf(feature, out);
-          reading = null;
+          stopReading();
           if (entry.origin) {
             origins.set(feature.id, entry.origin);
           }
@@ -614,7 +479,7 @@ export async function run(features: Feature[], saved = false) {
             }
           }
         } catch (err) {
-          reading = null;
+          stopReading();
           if (isFault(err)) {
             blame(key);
             console.error(err);
@@ -627,23 +492,7 @@ export async function run(features: Feature[], saved = false) {
           }
           entry.ctx = { ...ctx, sketches };
         }
-        // What it changed in the model (and each of those as it was is something it went by).
-        entry.delta = [];
-        for (const kind of KINDS) {
-          const [a, b] = [entry.ctx[kind] as Map<string, unknown>, ctx[kind] as Map<string, unknown>];
-          if (a === b) {
-            continue;
-          }
-          for (const key of new Set([...rawEntries(a).map(rawEntry => rawEntry[0]), ...rawEntries(b).map(rawEntry => rawEntry[0])])) {
-            if (rawGet(a, key) === rawGet(b, key) && rawHas(a, key) === rawHas(b, key)) {
-              continue;
-            }
-            entry.delta.push([kind, key, rawGet(a, key), rawHas(a, key)]);
-            if (!reads.one.has(`${kind}|${key}`)) {
-              reads.one.set(`${kind}|${key}`, rawGet(b, key));
-            }
-          }
-        }
+        entry.delta = recordDelta(entry.ctx, ctx, reads);
       }
     }
     if (entry.origin) {
