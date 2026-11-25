@@ -292,10 +292,15 @@ function reuseUnchanged(lastBuilt: CacheEntry, key: string, ctx: Ctx): CacheEntr
   return { ...lastBuilt, key, ctx: out, input: ctx };
 }
 
-async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
-  const stepsNow = new Set(features.map(feature => feature.id));
+/** The patches on OpenCascade's classes that every rebuild relies on (each installs once). */
+function initKernel(): void {
   useSafeBooleans();
   useReleases();
+}
+
+async function rebuildSteps(features: Feature[], lookup: CacheEntry[][]) {
+  const stepsNow = new Set(features.map(feature => feature.id));
+  initKernel();
   const prepared = prepareFeatures(features);
   const editable = new Set(prepared.filter(feature => (feature.type === 'freeform' || feature.type === 'faceFreeform') && !feature.suppressed).map(feature => feature.id));
   const errors: FeatureError[] = [];
