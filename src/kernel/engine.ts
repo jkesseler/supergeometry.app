@@ -7,7 +7,6 @@
 
 import {
   exportSTEP,
-  type Face,
   type Shape3D
 } from 'replicad';
 import { applyFreeformEdits } from '../doc/freeformEdits';
@@ -28,7 +27,7 @@ import { isFault, blame, KernelFault, crashed, errorText } from './faults';
 import { rebuild } from './rebuildState';
 import { DAMAGED_TEXT, MAX_REACH, damaged } from './damaged';
 import { baseId, bodyNames, wholeOf, touchedBodies } from './bodies';
-import { edgeInfo, faceInfo } from './references';
+import { edgeInfo } from './references';
 import { volumes } from './booleans';
 import { EDGES_CLASH, guardEdit } from './editGuard';
 import { applyConnect } from './steps/connect';
@@ -56,6 +55,7 @@ import { chainKey, hash53, shortBig } from './stepKey';
 import { originsOf } from './originsOf';
 import { rawEntries, rawGet, rawHas } from './readTracking';
 import { followLinks } from './links';
+import { getFaceInfo } from './faceInfoCache';
 import type {
   Feature,
   PlaneDef,
@@ -813,53 +813,6 @@ async function apply(feature: Feature, ctx: Ctx, editable: Set<string>): Promise
   }
 }
 
-/**
- * A face's facts, kept from the last time it was shown: a step changes a few of a body's faces and leaves the rest
- * the very same faces, and each one's exact area was measured again for the whole body all the same (a freeform
- * shoe with a hole cut in it: 1.7 s of measuring faces that hadn't changed).
- */
-let infosNow = new Map<number, { face: { IsEqual(o: unknown): boolean; IsNull(): boolean }; info: FaceInfo }[]>();
-let infosWas = new Map<number, { face: { IsEqual(o: unknown): boolean; IsNull(): boolean }; info: FaceInfo }[]>();
-let infosKept = 0;
-function faceInfoKept(face: Face): FaceInfo {
-  let hash = -1;
-  try {
-    hash = (face.wrapped as unknown as { HashCode(max: number): number }).HashCode(2147483647);
-    for (const kept of [infosNow, infosWas]) {
-      const hit = kept.get(hash)?.find(entry => !entry.face.IsNull() && entry.face.IsEqual(face.wrapped));
-      if (hit) {
-        if (kept === infosWas) {
-          keepInfo(hash, hit);
-        }
-
-        return hit.info;
-      }
-    }
-  } catch {
-    // Measured, below.
-  }
-  const info = faceInfo(face);
-  if (hash >= 0) {
-    keepInfo(hash, { face: face.wrapped as never, info });
-  }
-
-  return info;
-}
-function keepInfo(hash: number, entry: { face: { IsEqual(o: unknown): boolean; IsNull(): boolean }; info: FaceInfo }): void {
-  // (Not for ever: the faces of bodies long gone are let go, two lots back.)
-  if (infosKept >= 6000) {
-    infosWas = infosNow;
-    infosNow = new Map();
-    infosKept = 0;
-  }
-  const list = infosNow.get(hash);
-  if (list) {
-    list.push(entry);
-  } else {
-    infosNow.set(hash, [entry]);
-  }
-  infosKept++;
-}
 
 // ------------------------------------------------------------------- meshing
 
@@ -979,7 +932,7 @@ function meshBody(id: string, name: string, shape: Shape3D): BodyMesh {
     faceGroups: m.faceGroups.map((faceGroup, i) => ({ start: faceGroup.start, count: faceGroup.count, face: i })),
     edgePositions: new Float32Array(e.lines),
     edgeGroups: e.edgeGroups.map((edgeGroup, i) => ({ start: edgeGroup.start, count: edgeGroup.count, edge: i })),
-    faces: shape.faces.map((face, i) => ({ ...faceInfoKept(face), step: faceSteps(shape)?.[i], curve: faceOrigins(shape)?.[i], ...(faceAliases(shape)?.[i] ? { was: faceAliases(shape)![i] } : {}) })),
+    faces: shape.faces.map((face, i) => ({ ...getFaceInfo(face), step: faceSteps(shape)?.[i], curve: faceOrigins(shape)?.[i], ...(faceAliases(shape)?.[i] ? { was: faceAliases(shape)![i] } : {}) })),
     edges: shape.edges.map((e, i) => ({ ...edgeInfo(e), steps: edgeSteps(shape)?.[i], curves: edgeOrigins(shape)?.[i], ...(oldEdgeSteps(shape) ? { was: oldEdgeSteps(shape)![i] } : {}), ...(seamEdges(shape)[i] ? { seam: true } : {}) })),
 
     openEdges: openEdges(shape)
