@@ -4,8 +4,9 @@
 import opencascade from 'replicad-opencascadejs';
 import wasmUrl from 'replicad-opencascadejs/wasm?url';
 import { setOC } from 'replicad';
-import { bodyHealth, bodyProperties, errorText, exportBodies, regenerate, resetKernel, withFreshKernel } from './engine';
+import { bodyHealth, bodyProperties, exportBodies, regenerate, resetKernel, withFreshKernel } from './engine';
 import { projectViews } from './drawings';
+import { errorText } from './faults';
 import type { BodyMesh, Envelope, Request, Response } from './protocol';
 
 /**

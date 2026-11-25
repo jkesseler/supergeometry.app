@@ -1,3 +1,5 @@
+import { DAMAGED_TEXT } from './damaged';
+
 /**
  * The engine itself broke down on a step (out of memory, a fault inside
  * OpenCascade): nothing it holds can be trusted after that. Whoever runs the
@@ -43,4 +45,26 @@ export function isFault(err: unknown): boolean {
   const text = err instanceof Error ? `${err.name} ${err.message}` : typeof err === 'string' ? err : '';
 
   return /memory access out of bounds|out of memory|unreachable|table index is out of bounds|null function or function signature mismatch|Aborted\(|Maximum call stack|Expected null or instance of|Cannot pass deleted object|BindingError/i.test(text);
+}
+
+export function errorText(err: unknown): string {
+  // A step whose saved values are missing or the wrong kind (a damaged file, a
+  // step from a newer version) trips the code itself: said in words, not "x is not iterable".
+  if (err instanceof RangeError && /allocation|array length|Array buffer|too large/i.test(err.message)) {
+    return 'This is too big to compute (a value far too big?)';
+  }
+  if (err instanceof TypeError || err instanceof RangeError || err instanceof ReferenceError) {
+    console.error(err);
+
+    return DAMAGED_TEXT;
+  }
+  if (err instanceof Error) {
+    return err.message.trim() || 'The geometry kernel could not compute this (try other values)';
+  }
+  // OpenCascade gave up (a raw exception from the kernel): say so in words.
+  if (typeof err === 'number' || String(err).includes('WebAssembly.Exception') || String(err) === '[object Object]') {
+    return 'The geometry kernel could not compute this (try other values)';
+  }
+
+  return String(err);
 }

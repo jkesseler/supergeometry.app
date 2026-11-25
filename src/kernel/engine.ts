@@ -27,7 +27,7 @@ import { measureArea as trueArea, volumeProperties } from './ocFree';
 import { useReleases } from './release';
 import { useSafeBooleans } from './safeBooleans';
 import { imprint, onFace as linesOnFace, seenFrom, wrapOnto } from './wrap';
-import { isFault, blame, KernelFault, crashed } from './faults';
+import { isFault, blame, KernelFault, crashed, errorText } from './faults';
 import { rebuild } from './rebuildState';
 import { DAMAGED_TEXT, MAX_REACH, damaged } from './damaged';
 import { baseId, bodyList, bodyNames, need, staysClosed, wholeOf } from './bodies';
@@ -1228,28 +1228,6 @@ function touchedBodies(feature: Feature, ctx: Ctx, all = true): string[] {
   }
 
   return [...named].filter(id => ctx.bodies.has(id));
-}
-
-export function errorText(err: unknown): string {
-  // A step whose saved values are missing or the wrong kind (a damaged file, a
-  // step from a newer version) trips the code itself: said in words, not "x is not iterable".
-  if (err instanceof RangeError && /allocation|array length|Array buffer|too large/i.test(err.message)) {
-    return 'This is too big to compute (a value far too big?)';
-  }
-  if (err instanceof TypeError || err instanceof RangeError || err instanceof ReferenceError) {
-    console.error(err);
-
-    return DAMAGED_TEXT;
-  }
-  if (err instanceof Error) {
-    return err.message.trim() || 'The geometry kernel could not compute this (try other values)';
-  }
-  // OpenCascade gave up (a raw exception from the kernel): say so in words.
-  if (typeof err === 'number' || String(err).includes('WebAssembly.Exception') || String(err) === '[object Object]') {
-    return 'The geometry kernel could not compute this (try other values)';
-  }
-
-  return String(err);
 }
 
 
