@@ -5,7 +5,8 @@
 // project still there afterwards.
 import opencascade from 'replicad-opencascadejs';
 import { setOC } from 'replicad';
-import { isFault, KernelFault, regenerate, withFreshKernel } from '../src/kernel/engine';
+import { regenerate, withFreshKernel } from '../src/kernel/engine';
+import { isFault, KernelFault } from '../src/kernel/faults';
 import { arrangement, regionRef } from '../src/sketch/regions';
 import type { Feature, PlaneDef } from '../src/doc/types';
 
