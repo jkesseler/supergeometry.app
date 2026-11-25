@@ -76,14 +76,31 @@ import { MESH_MAX, TooBig } from './protocol';
 import { isFault, blame, KernelFault, crashed } from './faults';
 import type {
   AxisRef,
+  BooleanFeature,
+  ConnectFeature,
+  DeleteGeomFeature,
+  EdgeFeature,
   EdgeRef,
+  ExtrudeFeature,
   ExtrudeSource,
+  FaceFreeformFeature,
   FaceRef,
   Feature,
+  HoleFeature,
+  ImportFeature,
+  LoftFeature,
+  MoveFaceFeature,
   PathRef,
   PlaneDef,
+  RepairFeature,
+  ReplaceFaceFeature,
+  RevolveFeature,
+  ShellFeature,
   SketchEntity,
   SketchFeature,
+  SplitFeature,
+  SweepFeature,
+  ThreadFeature,
   Vec3
 } from '../doc/types';
 import type { BodyHealth, BodyMesh, BodyProps, ProjectedView, ViewBody, ViewEdge, ViewSpec, ConstructionInfo, EdgeInfo, ExportFormat, FaceInfo, FeatureError, RegenResult } from './protocol';
@@ -1206,854 +1223,38 @@ async function run(features: Feature[], saved = false) {
 async function apply(feature: Feature, ctx: Ctx): Promise<void> {
   const { bodies } = ctx;
   switch (feature.type) {
-    case 'sketch': {
-      const plane = feature.attachedTo ? followFace(feature, bodies) : feature.onPlane ? followPlane(feature, ctx) : feature.plane;
-      // On a face, the face outline takes part in regions: a line across the face splits it.
-      const outline = feature.attachedTo ? faceBoundary(feature.attachedTo, plane, bodies) : [];
-      // Offsets of the outline, made from it as it is now (they follow the face).
-      const boundary = [...outline, ...outlineOffsetCurves(outline, feature.outlineOffsets)];
-      // Curves that follow a body's edge go where it is now, the rest by its dimensions to them.
-      const entities = feature.links?.length ? followEdges(feature, plane, bodies) : feature.entities;
-      const state: SketchState = { ...feature, entities, plane, boundary };
-      // The same sketch as last time, to the last digit (the page took the
-      // curves the engine moved as the sketch's own): it is that one, and
-      // the steps made from it have nothing new to read.
-      const text = JSON.stringify(state);
-      const was = sketchWas.get(feature.id);
-      if (was?.text === text) {
-        ctx.sketches.set(feature.id, was.state);
-      } else {
-        sketchWas.set(feature.id, { text, state });
-        ctx.sketches.set(feature.id, state);
-      }
+    case 'sketch':
+      return applySketch(feature, ctx);
 
-      return;
-    }
+    case 'extrude':
+      return applyExtrude(feature, ctx);
 
-    case 'extrude': {
-      const ext = feature.extent ?? 'distance';
-      if (ext === 'distance' && Math.abs(feature.distance) < 1e-6) {
-        throw new Error('Distance is zero');
-      }
-      if (ext === 'to' && feature.symmetric) {
-        throw new Error('Up to works one way only - switch Sides back to One side');
-      }
-      if (ext === 'to' && !feature.to?.face && !feature.to?.plane) {
-        throw new Error('Pick the face or plane it goes up to');
-      }
-      // Where it starts: at the shape, or `start` from it along its normal.
-      const startFaces = () => {
-        const src = sourceFaces(feature.source, ctx);
+    case 'revolve':
+      return applyRevolve(feature, ctx);
 
-        return feature.start ? src.map(({ face, normal }) => ({ face: face.clone().translate(scale(normal, feature.start!)) as Face, normal })) : src;
-      };
-      // Up to: the face (where it is now) or the plane it stops at.
-      const upTo = ext === 'to' ? extrudeTarget(feature.to!, ctx) : null;
-      // How far: the distance, or far enough to come out of everything (the way the distance's sign says, or towards the target).
-      let distance = feature.distance;
-      if (ext === 'through' && !ctx.bodies.size) {
-        throw new Error('Through all goes through the bodies there are - there are none yet: set a Distance');
-      }
-      if (ext !== 'distance') {
-        const src = startFaces();
-        const reach = reachOf(ctx, src.map(source => source.face as unknown as Shape3D), upTo?.shape);
-        const normal = src[0]?.normal ?? [0, 0, 1];
-        const center = src[0]?.face.center.toTuple() as Vec3 | undefined;
-        const way = upTo && center ? Math.sign(dot(sub(upTo.point, center), normal)) || 1 : Math.sign(feature.distance) || 1;
-        distance = way * reach;
-      }
-      const plain = ext === 'distance' && !feature.start && !feature.draft;
-      // Pushing/pulling a face of its own body offsets it: the neighbouring faces
-      // extend along their own surfaces (a round side stays round).
-      const tapered = feature.taper !== undefined && Math.abs(feature.taper - 1) > 1e-9;
-      if (tapered && feature.symmetric) {
-        throw new Error('Taper works one way only - switch Sides back to One side');
-      }
-      if (tapered) {
-        // Sides leaning in (or out): each shape's outline to a scaled copy at the far end.
-        // Pieces that meet are one shape first: a circle drawn on a small face
-        // is split by the face's outline into a disc and a ring round it (the
-        // ring was refused as "a shape with a hole", and each piece would have
-        // shrunk towards its own middle).
-        if (ext !== 'distance' || feature.draft) {
-          throw new Error('Taper end % works with a set distance and no draft - set Taper end back to 100%');
-        }
-        const src = startFaces();
-        const parts = mergedFaces(src.map(source => source.face), src[0]?.normal ?? [0, 0, 1]).map(face => ({ face, normal: src[0].normal })).map(({ face, normal }) => {
-          // (replicad's outerWire() and innerWires() free the face they're asked
-          // of: they're asked of copies.)
-          const center = face.center.toTuple() as Vec3;
-          if (face.clone().innerWires().length) {
-            throw new Error('Taper works on shapes without holes');
-          }
-          const w0 = face.clone().outerWire();
-          const taper = Math.max(0.002, feature.taper!);
-          // Straight-edged shapes: flat sides (a loft makes them curved surfaces,
-          // and then nothing that needs a flat face - sketch on it, move it - works).
-          const flat = taperedPrism(face, center, normal, taper, distance);
-          if (flat) {
-            return flat;
-          }
-          const w1 = w0.clone().scale(taper, center).translate(scale(normal, distance));
-          try {
-            return loft([w0, w1], { ruled: true }) as Shape3D;
-          } catch {
-            throw new Error("This shape can't be tapered");
-          }
-        });
-        combine(feature.id, feature.mode, feature.target, fuseAll(parts), distance < 0, ctx);
+    case 'sweep':
+      return applySweep(feature, ctx);
 
-        return;
-      }
-      if (plain && feature.source.kind === 'face' && feature.mode !== 'new' && feature.mode !== 'intersect' && feature.target === feature.source.face.body && !feature.symmetric) {
-        const body = need(bodies, feature.target);
-        const face = resolveFace(body, feature.source.face);
-        const distance = feature.mode === 'cut' ? -Math.abs(feature.distance) : feature.mode === 'join' ? Math.abs(feature.distance) : feature.distance;
-        // The end of a sweep pushed in: shortened along its path, the new end
-        // square to the path there (not the old end's plane slid along).
-        const trimmed = distance < 0 ? trimSweepEnd(body, face, -distance, ctx) : null;
-        if (trimmed) {
-          bodies.set(feature.target, staysClosed(body, trimmed));
-
-          return;
-        }
-        try {
-          const out = staysClosed(body, offsetFace(body, face, distance));
-          // Hair-thin faces left behind (a face pushed over a fillet): a straight push is cleaner.
-          if (face.geomType === 'PLANE' && slivers(out) > slivers(body)) {
-            throw new Error('slivers');
-          }
-          bodies.set(feature.target, out);
-
-          return;
-        } catch (err) {
-          // Faces whose neighbours don't enclose them still get a straight push -
-          // but not one with a fillet on it (the old fillet would stay standing).
-          // (Nor one whose sides meet before it gets there: straight sides would be another shape.)
-          if (face.geomType !== 'PLANE' || hasBlends(body, face) || (err instanceof Error && err.message === SIDES_MEET)) {
-            throw err;
-          }
-        }
-      }
-      // Symmetric: from `distance` behind the shape to `distance` in front.
-      const parts = startFaces().map(({ face, normal }) => {
-        const straight = feature.symmetric ? basicFaceExtrusion(face.clone().translate(scale(normal, -distance)), new Vector(normal).multiply(2 * distance)) : basicFaceExtrusion(face, new Vector(normal).multiply(distance));
-
-        // Draft: the sides lean from the shape's own plane (both ways from it, symmetric).
-        return feature.draft ? drafted(straight, scale(normal, Math.sign(distance) || 1), face.center.toTuple() as Vec3, feature.draft) : straight;
-      });
-      let solid = fuseAll(parts);
-      // Up to: what goes past the face or plane is cut off.
-      if (upTo) {
-        solid = trimmedTo(solid, upTo, startFaces()[0]?.face.center.toTuple() as Vec3);
-      }
-      // Auto: other bodies the extrusion runs into get cut through. Drawn on
-      // its own (no body it belongs to), it then only cuts - no new body.
-      // (By the way it goes: going +, a shape drawn on its own is a new body, whatever it runs into.)
-      if (feature.mode === 'auto' && !(feature.byDirection && !feature.target && distance >= 0)) {
-        const hit = overlapping(solid, ctx, feature.target);
-        // Started inside a body (drawn on a plane through it) and reaching out
-        // of it: cut, and the part outside left off - said so (a pipe's branch
-        // drawn on the floor through the pipe came out a notch, no word why).
-        if (hit.length && !feature.target && Math.abs(distance) > 1e-9) {
-          const dir = Math.sign(distance);
-          const starts = startFaces().flatMap(({ face, normal }) => {
-            const { p } = pointOnFace(face as unknown as Shape3D, face); const e = 1e-3;
-
-            return [add(p, scale(normal, e * dir)), add(p, scale(normal, -e * dir))]; 
-          });
-          const inside = hit.some(id => insideOf(need(bodies, id), starts).every(Boolean));
-          if (inside) {
-            let rest: Shape3D = solid;
-            for (const id of hit) {
-              rest = checkedBoolean('cut', rest, need(bodies, id));
-            }
-            if (!isEmpty(rest) && Math.abs(measureVolume(rest)) > 1e-3 * Math.abs(measureVolume(solid))) {
-              editNotes.push(AUTO_CUT_INSIDE);
-            }
-          }
-        }
-        for (const id of hit) {
-          const cut = checkedBoolean('cut', need(bodies, id), solid);
-          if (isEmpty(cut)) {
-            bodies.delete(id);
-          } else {
-            bodies.set(id, cut);
-          }
-          ctx.freeforms.delete(id);
-        }
-        if (hit.length && !feature.target) {
-          return;
-        }
-      }
-      combine(feature.id, feature.mode, feature.target, solid, distance < 0, ctx);
-
-      return;
-    }
-
-    case 'revolve': {
-      if (Math.abs(feature.angle) < 1e-6) {
-        throw new Error('Angle is zero');
-      }
-      const axis = resolveAxis(feature.axis, ctx);
-      if (feature.travel && Math.abs(feature.travel) > 1e-9) {
-        // Moving along the axis while turning: a helical sweep (threads, springs).
-        const parts = withHoles(feature.source, ctx, wire => helicalSweep(wire, axis.origin, norm(axis.dir), feature.angle, feature.travel!));
-        combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
-
-        return;
-      }
-      if (Math.abs(feature.angle) > 360 + 1e-6) {
-        throw new Error('More than one turn needs a Travel along the axis (or it overlaps itself)');
-      }
-      const whole = Math.abs(Math.abs(feature.angle) - 360) < 1e-6;
-      const turnFace = (face: Face): Shape3D => {
-        // A whole ellipse turned all the way round is a ring with one face and
-        // no edges: later unions break it (a combustor ring took one fuel
-        // nozzle, then came out inside out). Two halves, joined, are sound.
-        if (whole && face.edges.length === 1 && face.edges[0].geomType === 'ELLIPSE') {
-          const half = revolution(face, axis.origin, axis.dir, 180) as Shape3D;
-
-          return half.fuse(half.clone().rotate(180, axis.origin, axis.dir));
-        }
-
-        return revolution(face, axis.origin, axis.dir, feature.angle) as Shape3D;
-      };
-      // A shape across the axis turns into itself (the kernel only said it
-      // "could not compute this").
-      for (const { face } of sourceFaces(feature.source, ctx)) {
-        if (crossesAxis(face, axis.origin, norm(axis.dir))) {
-          throw new Error('The shape crosses the axis - it has to stay on one side of it (touching it is fine)');
-        }
-      }
-      const turn = () => sourceFaces(feature.source, ctx).map(({ face }) => turnFace(face));
-      let parts: Shape3D[];
-      try {
-        parts = turn();
-      } catch {
-        // A profile whose exact spline won't turn (it touches the axis awkwardly): a close fit does.
-        parts = withFittedSplines(turn);
-      }
-      combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
-
-      return;
-    }
-
-    case 'sweep': {
-      const spine = pathWire(feature.path, ctx);
-      // The profile keeps its turn round the path as it goes (OpenCascade's
-      // corrected Frenet), not the path's own Frenet frame: that one flips
-      // half a turn where a bend changes side (an S curve) and is undefined
-      // where the path runs straight, so the tube broke into pieces that
-      // jumped sideways there - a profile off the path's centre most of all.
-      const scale = feature.scale ?? 1;
-      if (!(scale > 0)) {
-        throw new Error('The end size must be more than 0');
-      }
-      const twist = feature.twist ?? 0;
-      const parallel = feature.orientation === 'parallel';
-      if (parallel && Math.abs(twist) > 1e-9) {
-        throw new Error('A twist turns the profile with the path: set Orientation to Normal to path');
-      }
-      const corner = feature.corner === 'mitre' ? 'right' : 'round';
-      // Moved onto the path: its centre to the path's nearer end, turned square to the path there.
-      const place = feature.position === 'start' ? onPathStart(sourceFaces(feature.source, ctx), spine) : null;
-      // Along a straight line square to the profiles, from one of its ends,
-      // unturned and the same size all the way: an extrusion, made as one (the
-      // sweep's faces looked the same but wouldn't take a chamfer round a
-      // gear's teeth that the extrusion's took).
-      const ends = Math.abs(scale - 1) < 1e-9 && Math.abs(twist) < 1e-9 && !place ? straightRun(spine) : null;
-      if (ends) {
-        const faces = sourceFaces(feature.source, ctx);
-        const [a, b] = ends;
-        const length = dist(a, b);
-        const runs = faces.map(({ face, normal }) => {
-          const unitNormal = norm(normal);
-          if (len(cross(norm(sub(b, a)), unitNormal)) > 1e-9) {
-            return null;
-          }
-          const center = face.center.toTuple() as Vec3;
-          if (Math.abs(dot(sub(a, center), unitNormal)) < length * 1e-9) {
-            return sub(b, a);
-          }
-          if (Math.abs(dot(sub(b, center), unitNormal)) < length * 1e-9) {
-            return sub(a, b);
-          }
-
-          return null;
-        });
-        if (runs.every(run => run)) {
-          const parts = faces.map(({ face }, i) => basicFaceExtrusion(face, new Vector(runs[i]!)) as Shape3D);
-          combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
-          ctx.sweeps.set(feature.id, spine);
-
-          return;
-        }
-      }
-      const scaled = Math.abs(scale - 1) > 1e-9;
-      const twisted = Math.abs(twist) > 1e-9;
-      // Facing the same way all along, the profile has no thickness where the
-      // path runs in the profile's own plane (up a post, then sideways): that
-      // leg came out missing without a word, or as a body "damaged", and a
-      // ring's never came back at all (the engine hung). Said, before it's tried.
-      if (parallel) {
-        const src = sourceFaces(feature.source, ctx);
-        const facing = place ? norm(spine.tangentAt(dist(src[0].face.center.toTuple() as Vec3, spine.startPoint.toTuple() as Vec3) <= dist(src[0].face.center.toTuple() as Vec3, spine.endPoint.toTuple() as Vec3) ? 0 : 1).toTuple() as Vec3) : norm(src[0]?.normal ?? [0, 0, 1]);
-        if (runsAcross(spine, facing) > 0.02) {
-          throw new Error('Facing the same way, the profile slides along its own plane on part of this path and has no thickness there - turn the profile to face along that part, or set Orientation to Normal to path');
-        }
-      }
-      // One profile along one path is one solid. Round a sharp corner of the
-      // path a profile that changes size, or turns as it goes, came out in two
-      // pieces run through each other (or broken): said as what it is.
-      const corners = (scaled || twisted) && sharpCorners(spine);
-      const cornerTrouble = () =>
-        new Error(`A profile that ${scaled && twisted ? 'changes size and turns' : scaled ? 'changes size' : 'turns'} as it goes can't get round a sharp corner of the path - round the corner (a small fillet in the path's sketch), or set ${scaled && twisted ? 'End size back to 100% and Twist to 0' : scaled ? 'End size back to 100%' : 'Twist back to 0'}`);
-      const whole = (part: Shape3D): Shape3D => {
-        const pieces = subShapes(part, 'SOLID').length;
-        if (pieces === 1 && !(corners && !shapeValid(part))) {
-          return part;
-        }
-        if (corners) {
-          throw cornerTrouble();
-        }
-        if (twisted) {
-          throw new Error("The twist didn't build along this path - try a smoother path (no sharp corners) or less twist");
-        }
-        throw new Error('The sweep came apart along this path - try a smoother path (no sharp corners, no tight turns)');
-      };
-      // (With holes - a tube: each wire's sweep may be sound and the one cut from the other still not.)
-      const made = () => withHoles(feature.source, ctx, (w0, outer0) => {
-        const wire = place ? place(w0) : w0;
-        const outer = place ? place(outer0) : outer0;
-        const law = scaled ? scaleLaw(spine, scale) : null;
-        if (parallel) {
-          return whole(flatFaces(fixedSweep(wire, spine, corner, law)));
-        }
-        // A circle round the path's start, square to it, is the same twisted or not (a gear's bore): swept
-        // plainly it stays a true cylinder (twisted, a spline with a winding seam that threads couldn't use).
-        if (!twisted || roundAboutPath(wire, spine)) {
-          return whole(flatFaces(genericSweep(wire, spine, { frenet: false, transitionMode: corner, law }) as Shape3D));
-        }
-        // Twisted: the profile's sideways direction follows a curve wound round the path.
-        const reach = Math.max(1, len(sub(...(outer.boundingBox.bounds as [Vec3, Vec3]))));
-        try {
-          return whole(flatFaces(genericSweep(wire, spine, { auxiliarySpine: twistGuide(spine, twist, reach), transitionMode: 'right', law }) as Shape3D));
-        } catch (err) {
-          if (err instanceof Error && /Could not sweep/.test(err.message)) {
-            throw new Error("The twist didn't build along this path - try a smoother path (no sharp corners) or less twist");
-          }
-          throw err;
-        }
-      });
-      let parts: Shape3D[];
-      try {
-        parts = made();
-      } catch (err) {
-        if (!corners || isFault(err) || (err instanceof Error && /sharp corner/.test(err.message))) {
-          throw err;
-        }
-        throw cornerTrouble();
-      }
-      if (corners && parts.some(part => subShapes(part, 'SOLID').length !== 1 || !shapeValid(part))) {
-        throw cornerTrouble();
-      }
-      // Mitred: each leg of the path is a piece of its own, so a flat side
-      // running round (a picture frame's front) was four faces meeting along
-      // the mitres - a chamfer round its inside edge "didn't fit", a round
-      // round its outside took more than it should at the corners. One face each.
-      if (corner === 'right') {
-        parts = parts.map(part => unify(part));
-      }
-      // A curve of the path that bends tighter than the profile is wide: the body folds over itself on the inside of
-      // the bend and comes out lumpy there - said, with both sizes (it is no fault of the build; it looked like one).
-      if (!parallel) {
-        const bend = tightestBend(spine);
-        const reach = Math.max(0, ...sourceFaces(feature.source, ctx).map(({ face }) => {
-          const center = face.center.toTuple() as Vec3;
-          let far = 0;
-          for (const e of face.edges) {
-            for (let i = 0; i <= 8; i++) {
-              far = Math.max(far, dist(e.pointAt(i / 8).toTuple() as Vec3, center));
-            }
-          }
-
-          return far;
-        })) * Math.max(1, scale);
-        if (bend < reach * 0.98) {
-          const mm = (value: number) => String(Math.round(value * 10) / 10);
-          editNotes.push(`The path bends tighter (a radius of about ${mm(bend)} mm) than the profile reaches from its middle (${mm(reach)} mm): the body folds over itself inside that bend. A gentler bend, or a smaller profile, keeps it even.`);
-        }
-      }
-      combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
-      ctx.sweeps.set(feature.id, spine);
-
-      return;
-    }
-
-    case 'loft': {
-      if (feature.sections.length < 2) {
-        throw new Error('Pick at least two profiles');
-      }
-      // Each section's own plane (a profile's sketch, or the face).
-      const frames = feature.sections.map(section => sectionFrame(section, ctx));
-      let order = feature.sections.map((_, i) => i);
-      const n0 = frames[0].normal;
-      // Parallel sections go in their order along the normal, whatever order they were picked in
-      // (a loft that doubles back on itself isn't a solid).
-      if (!feature.closed && !feature.guide && frames.every(fr => Math.abs(dot(fr.normal, n0)) > 0.999)) {
-        const height = (i: number) => dot(sub(frames[i].origin, frames[0].origin), n0);
-        order.sort((a, b) => height(a) - height(b));
-        for (let index = 1; index < order.length; index++) {
-          if (Math.abs(height(order[index]) - height(order[index - 1])) < 1e-6) {
-            throw new Error('Two profiles lie on the same plane: loft needs them one above another');
-          }
-        }
-      }
-      // The same profile picked twice counts once.
-      order = order.filter((i, index) => index === 0 || JSON.stringify(feature.sections[i]) !== JSON.stringify(feature.sections[order[index - 1]]));
-      if (order.length < 2) {
-        throw new Error('Pick at least two different profiles');
-      }
-      let wires = order.map(i => sourceWires(feature.sections[i], ctx)[0]);
-      if ((feature.startContinuity || feature.endContinuity) && !feature.guide && !feature.closed) {
-        if (feature.ruled) {
-          throw new Error("Straight sides can't also leave a profile smoothly: switch off Straight sides");
-        }
-        const nrm = order.map(i => frames[i].normal);
-        wires = withEndPulls(wires, nrm, feature.startContinuity, feature.startWeight ?? 1, feature.endContinuity, feature.endWeight ?? 1);
-      }
-      let shape: Shape3D;
-      if (feature.rails?.length || feature.connections?.length) {
-        if (feature.guide || feature.closed) {
-          throw new Error("Guide curves and connections can't be used with a centre line or a closed loop");
-        }
-        const rails = (feature.rails ?? []).map(pathRef => pathWire(pathRef, ctx));
-        const conns = (feature.connections ?? []).map(connection => order.map(i => connection[i]));
-        shape = railLoft(wires, rails, conns);
-      } else if (feature.guide || feature.closed) {
-        if (feature.closed && wires.length < 3 && !feature.guide) {
-          throw new Error('A closed loop needs at least three profiles');
-        }
-        shape = loftAlong(wires, feature.guide ? pathWire(feature.guide, ctx) : null, !!feature.closed);
-      } else {
-        try {
-        // One smooth side where the sections' starts are in line already (see loftAlign.ts).
-          const inLine = loftInLine(wires, feature.ruled);
-          shape = inLine && shapeValid(inLine) && quickVolume(inLine) > 0 ? inLine : loft(wires, { ruled: feature.ruled });
-        } catch {
-          throw new Error("These profiles can't be lofted together");
-        }
-      }
-      combine(feature.id, feature.mode, feature.target, shape, false, ctx);
-
-      return;
-    }
+    case 'loft':
+      return applyLoft(feature, ctx);
 
     case 'fillet':
-    case 'chamfer': {
-      const byBody = new Map<string, EdgeRef[]>();
-      for (const e of feature.edges) {
-        byBody.set(e.body, [...(byBody.get(e.body) ?? []), e]);
-      }
-      for (const [bodyId, refs] of byBody) {
-        const body = need(bodies, bodyId);
-        // (An edge next to nothing in length - the end of a sliver, picked with the
-        // rest of a face's outline before such ends were cleared away - isn't one to round.)
-        const real = refs.filter(ref => ref.length > 1e-4);
-        // A sliver of a picked run gone (a blade's root cut short where the hub's seam
-        // crossed it, moved when the blade did) is skipped: the round runs on along the
-        // smooth run it was part of. A whole edge gone still says so.
-        const picked = real.length ? real : refs;
-        const longest = Math.max(...picked.map(edgeRef => edgeRef.length));
-        const found = picked.map((edgeRef) => {
-          try {
-            return resolveEdge(body, edgeRef, true);
-          } catch (err) {
-            if (err instanceof Error && err.message === EDGE_GONE && edgeRef.length < longest * 0.05) {
-              return null;
-            }
-            throw err;
-          }
-        });
-        const edges = found.filter((e): e is Edge => !!e);
-        if (!edges.length) {
-          throw new Error(EDGE_GONE);
-        }
-        if (edges.length < found.length) {
-          editNotes.push(`${found.length - edges.length} tiny piece${found.length - edges.length > 1 ? 's' : ''} of the edges it was built on ${found.length - edges.length > 1 ? 'are' : 'is'} gone - the rest are ${feature.type === 'fillet' ? 'rounded' : 'chamfered'}.`);
-        }
-        let result: Shape3D | null = null;
-        // Two-Distance chamfer: each edge's first distance runs along one of
-        // its two faces (Flip: the other one), the second along the other.
-        const d2 = feature.type === 'chamfer' && feature.distance2 !== undefined && feature.distance2 > 0 ? feature.distance2 : null;
-        const sideOf = (e: Edge): Face => {
-          const two = body.faces.filter(fc => fc.edges.some(edge => edge.isSame(e)));
-          if (!two.length) {
-            throw new Error('That edge has no face beside it to measure the chamfer along');
-          }
+    case 'chamfer':
+      return applyFilletOrChamfer(feature, ctx);
 
-          return two[feature.flip && two.length > 1 ? 1 : 0];
-        };
-        const twoDistance = (radius: number) =>
-          body.chamfer((e: Edge) => (edges.some(edge => edge.isSame(e)) ? { distances: [radius, (d2! * radius) / feature.radius] as [number, number], selectedFace: finder => finder.inList([sideOf(e)]) } : null));
-        // Variable fillet: the radius runs evenly from one end of each edge to the other.
-        const r2 = feature.type === 'fillet' && feature.radius2 !== undefined && feature.radius2 > 0 && Math.abs(feature.radius2 - feature.radius) > 1e-9 ? feature.radius2 : null;
-        const variable = (radius: number) =>
-          body.fillet((e: Edge) => {
-            if (!edges.some(edge => edge.isSame(e))) {
-              return null;
-            }
-            const ends: [number, number] = [radius, (r2! * radius) / feature.radius];
+    case 'shell':
+      return applyShell(feature, ctx);
 
-            return feature.flip ? [ends[1], ends[0]] : ends;
-          });
-        if (feature.type === 'fillet' && feature.g2 && (r2 || feature.chord)) {
-          throw new Error('Smooth (G2) takes one radius - set Type to Constant and Size to Radius');
-        }
-        const edge = (radius: number) =>
-          feature.type === 'fillet' && feature.g2 ? g2Fillet(body, edges, radius) : feature.type === 'fillet' ? (feature.chord ? chordFillet(body, edges, radius, r2 ? (r2 * radius) / feature.radius : radius, !!feature.flip) : r2 ? variable(radius) : body.fillet(radius, finder => finder.inList(edges))) : d2 ? twoDistance(radius) : body.chamfer(radius, finder => finder.inList(edges));
-        try {
-          result = edge(feature.radius);
-        } catch (err) {
-          if (err instanceof Error && !/WebAssembly|kernel/i.test(err.message)) {
-            throw err;
-          }
-          // Exactly the size that uses up a face (4 mm on both edges of an
-          // 8 mm block: a full round): the two roundings meet with nothing
-          // between, and that exact case fails where 3.999 works. A hair
-          // less gives the same shape, to a millionth of a millimetre.
-          for (const factor of [1 - 1e-6, 1 - 1e-5, 1 - 1e-4]) {
-            try {
-              result = edge(feature.radius * factor);
-              break;
-            } catch {
-              // a bit less again
-            }
-          }
-        }
-        // Too big for a face beside it (OpenCascade gives up): built as a true round that
-        // cuts on through that face's far edge (overflow: keep surface).
-        if (!result && feature.type === 'fillet' && !feature.g2 && !r2 && !feature.chord) {
-          try {
-            result = blendFillet(body, edges, feature.radius, false);
-            editNotes.push("The round was too big for a face beside it, so it cuts on through that face's far edge (still exactly round).");
-          } catch {
-            result = null;
-          }
-        }
-        if (result && feature.type === 'fillet' && !feature.g2 && (feature.setback ?? 0) > 0) {
-          result = setbackCorners(result, edges, feature.setback!, feature.radius * Math.max(1, r2 ? r2 / feature.radius : 1));
-        }
-        if (!result) {
-          const what = feature.type === 'fillet' ? 'radius' : 'distance';
-          // No corner there at all: the faces either side run smoothly into each other (the lines between a
-          // freeform's patches, where a round already ends). Said as that - "too big" sent people to try smaller.
-          if (edges.every(e => smoothEdge(body, e))) {
-            throw new Error(`${edges.length > 1 ? 'Those edges are' : 'That edge is'} smooth already: the faces either side run into each other with no corner to ${feature.type === 'fillet' ? 'round' : 'cut'}. Pick an edge with a corner.`);
-          }
-          throw new Error(`That ${feature.type} doesn't fit here - the ${what} is too big for the faces around ${edges.length > 1 ? 'those edges' : 'that edge'}. Try a smaller ${what}.`);
-        }
-        bodies.set(bodyId, result);
-      }
-
-      return;
-    }
-
-    case 'shell': {
-      const body = need(bodies, feature.body);
-      let faces = feature.faces.map(face => resolveFace(body, face));
-      // Every face picked (a ball's one round face) leaves no wall to keep: hollow it sealed instead.
-      if (faces.length && body.faces.every(face => faces.some(removed => removed.isSame(face)))) {
-        faces = [];
-        editNotes.push("Every face of the body was picked, so there's no opening: it's hollow inside, sealed. Pick fewer faces for an opening.");
-      }
-      // A freeform: drop the picked cage faces and thicken the rest inward -
-      // exact, where shelling its smooth surfaces is unreliable.
-      const ff = ctx.freeforms.get(feature.body);
-      if (ff && faces.length) {
-        bodies.set(feature.body, shellFreeform(ff, faces, Math.abs(feature.thickness)));
-        ctx.freeforms.delete(feature.body);
-
-        return;
-      }
-      // Positive thickness shells inward (negative grows outward with rounded corners).
-      const t = Math.abs(feature.thickness);
-      // (To a thousandth first: a hollowed body is well off what it was. Only one within a hundredth is measured exactly.)
-      const q0 = Math.abs(quickVolume(body));
-      const hollowed = (shape: Shape3D | null): shape is Shape3D => !!shape && (Math.abs(Math.abs(quickVolume(shape)) - q0) > 0.01 * q0 || Math.abs(Math.abs(volumeOf(shape)) - Math.abs(volumeOf(body))) > 1e-6 * Math.abs(volumeOf(body)));
-      // A shell to trust: hollow, a sound solid, a wall behind every face it
-      // kept and nothing left deep inside. OpenCascade can "succeed" without
-      // hollowing anything, or hollowing only a corner of it - or hollow it
-      // and leave a wall out: where two faces are closer together than two
-      // walls (a pocket 1.7 mm from a hole, 1 mm walls) it dropped the
-      // pocket's walls without a word, the pocket a window into the hollow.
-      const kept = body.faces.filter(face => !faces.some(removed => removed.isSame(face)));
-      const gaps = openEdges(body).length;
-      // (No hair-thin faces either, as every edit is held to: the exact case
-      // above comes out "fine" with its inside rounds shrunk to slivers.)
-      const thin0 = hairThin(body);
-      const fine = (shape: Shape3D) => {
-        if (hairThin(shape) <= thin0) {
-          return true;
-        }
-        try {
-          return hairThin(unify(shape)) <= thin0;
-        } catch {
-          return false;
-        }
-      };
-      // (The quick checks first: measuring the volume of a way that came out
-      // wrong took 6.6 s in a split box's shell, the hair-thin faces that
-      // turned it down a fifth of a second.)
-      const good = (shape: Shape3D | null): shape is Shape3D => !!shape && shapeValid(shape) && openEdges(shape).length <= gaps && fine(shape) && hollowed(shape) && wallsStand(body, shape, kept, t) && hollowInside(body, shape, kept, t);
-      // The ways there are, in turn: in one step (no face picked: that gives
-      // only the inner core back - a battery case came out solid); hollowed
-      // with an offset copy of the body, the openings cut through (many-faced
-      // shapes trip the one-step shell); and that a hair thicker - a wall
-      // exactly as thick as the corners are round (2 mm walls in a box with
-      // 2 mm corners) has inside corners that shrink to nothing, and that
-      // exact case defeats both: a hair thicker gives the sharp inside corner
-      // it should have.
-      const ways: (() => Shape3D | null)[] = [
-        () => {
-          if (!faces.length) {
-            return null;
-          }
-          try {
-            return body.shell(t, finder => finder.inList(faces));
-          } catch {
-            return null;
-          }
-        },
-        () => shellByOffset(body, faces, t),
-        // (Sealed too: a closed box with 2 mm rounds hollowed 2 thick.)
-        ...[1 + 1e-4, 1 + 1e-3].map(factor => () => shellByOffset(body, faces, t * factor)),
-        // ...and the hollow put together from what is cut out of the body, each
-        // cut-out grown on its own: where two of them are closer than two walls
-        // (a pocket 1.7 mm from a hole, 1 mm walls) offsetting the whole body fails.
-        () => shellByOffset(body, faces, t, true)
-      ];
-      let out: Shape3D | null = null;
-      // (Hollow, but torn or broken: put right below, if nothing better comes -
-      // the first of them, found only then: its volume can be slow to measure.)
-      const tried: Shape3D[] = [];
-      for (const way of ways) {
-        const made = way();
-        if (good(made)) {
-          out = made;
-          break;
-        }
-        if (made) {
-          tried.push(made);
-        }
-      }
-      const rough = out ? null : (tried.find(shape => hollowed(shape)) ?? null);
-      if (!out && rough) {
-        // Put right as any edit's result is - and then held to the same: a
-        // broken shell "repaired" came out sound and a sixth too light, the
-        // walls round two bores gone.
-        const fixed = repairShape(rough, { maxSolids: Math.max(1, subShapes(body, 'SOLID').length) });
-        if (fixed && good(fixed.shape)) {
-          if (fixed.fixes.length) {
-            editNotes.push(`Repaired automatically: ${fixed.fixes.join(', ')}.`);
-          }
-          out = fixed.shape;
-        }
-      }
-      // (A pocket or a blind hole cut into the face being opened hangs from that face alone.)
-      const loose = faces.some(face => face.clone().innerWires().length > 0);
-      if (!out) {
-        throw new Error(!rough ? "Shell didn't work on this shape (try a smaller thickness)" : loose ? `${WALLS_CLASH} - or what is cut into the opened face would be left standing loose (open another face)` : WALLS_CLASH);
-      }
-      bodies.set(feature.body, out);
-
-      return;
-    }
-
-    case 'boolean': {
-      let target = need(bodies, feature.target);
-      const toolIds = bodyList(feature.tools, bodies, 'tools', feature.whole);
-      const solidsIn = (x: Shape3D) => [...iterTopo(x.wrapped, 'solid')].length;
-      // Subtract: every tool at once (see cutAway), each kept the clearance
-      // away if one is set, cut from the body, the tools or all of them.
-      if (feature.op === 'subtract' && toolIds.length) {
-        const tools = toolIds.map(t => need(bodies, t));
-        if (!solidsIn(target) || tools.some(t => !solidsIn(t))) {
-          throw new Error('One of these is an open surface (e.g. a freeform with a hole), not a solid. Close it first: tap an edge of the hole → Fill hole, or give it a Thickness - then Union.');
-        }
-        const gap = Math.max(0, feature.clearance ?? 0);
-        const from = feature.cutFrom ?? 'body';
-        // Each body grown by the gap it keeps from the others (once each).
-        const grown = new Map<Shape3D, Map<number, Shape3D[]>>();
-        const grow = (shape: Shape3D, by: number): Shape3D[] => {
-          if (!(by > 0)) {
-            return [shape.clone()];
-          }
-          let shapes = grown.get(shape)?.get(by);
-          if (!shapes) {
-            // (A threaded body: the same thread cut on the body grown. The kernel can't grow a thread's own faces.)
-            shapes = grownThreaded(shape, by, toolIds[tools.indexOf(shape)] ?? (shape === target ? feature.target : '')) ?? grownBy(shape, by) ?? undefined;
-            if (!shapes) {
-              throw new Error(`Couldn't keep ${+by.toFixed(4)} mm clear round one of the bodies - try a smaller clearance`);
-            }
-            grown.set(shape, (grown.get(shape) ?? new Map()).set(by, shapes));
-          }
-
-          return shapes.map(shape => shape.clone());
-        };
-        if (from === 'body') {
-          const out = cutAway(target, tools.flatMap(t => grow(t, gap)));
-          if (!feature.keepTools) {
-            for (const t of toolIds) {
-              bodies.delete(t);
-            }
-          }
-          // Kept as it was: the result is a body of its own.
-          bodies.set(feature.keepTarget ? feature.id : feature.target, out);
-
-          return;
-        }
-        // The others give way: each cut by the body, grown by the gap.
-        if (from === 'tools') {
-          const outs = tools.map(t => cutAway(t, grow(target, gap)));
-          outs.forEach((out, outIndex) => bodies.set(toolIds[outIndex], out));
-
-          return;
-        }
-        // All of them, in turn: each gives way half the gap to the ones still
-        // to come, and the ones before it what's left - itself less the
-        // earlier ones grown by the whole gap, but its own core (itself
-        // brought in by half the gap) kept. So any two end up the gap apart,
-        // half from each where they overlapped: a peg through a plate, a hole
-        // r + gap/2 and a pin r - gap/2. Only the bodies as they were are
-        // grown or brought in (the kernel can't grow a cut one: its round
-        // from the cut is the gap's own radius).
-        const ids = [feature.target, ...toolIds];
-        const was = [target, ...tools];
-        const now = was.map((b, index) => {
-          const by = was.slice(index + 1).flatMap(shape => grow(shape, gap / 2));
-          if (index > 0) {
-            let early = fuseAll(was.slice(0, index).flatMap(shape => grow(shape, gap)));
-            const core = gap > 0 ? broughtIn(b, gap / 2) : b.clone();
-            // (Its core not kept, if that cut fails: more is cut away, still the gap apart.)
-            if (core) {
-              try {
-                early = fuzzyBoolean('cut', early, core);
-              } catch (err) {
-                if (isFault(err)) {
-                  throw err;
-                }
-              }
-            }
-            if (!isEmpty(early)) {
-              by.push(early);
-            }
-          }
-
-          return by.length ? cutAway(b, by) : b;
-        });
-        now.forEach((shape, index) => bodies.set(ids[index], shape));
-
-        return;
-      }
-      let open: number | undefined;
-      for (const t of toolIds) {
-        const tool = need(bodies, t);
-        const solids = (x: Shape3D) => [...iterTopo(x.wrapped, 'solid')].length;
-        // An open freeform (a surface with a hole) isn't a solid: nothing to join into.
-        if (!solids(target) || !solids(tool)) {
-          throw new Error('One of these is an open surface (e.g. a freeform with a hole), not a solid. Close it first: tap an edge of the hole → Fill hole, or give it a Thickness - then Union.');
-        }
-        const before = feature.op === 'union' ? solids(target) + solids(tool) : 0;
-        const prev = target;
-        target = feature.op === 'union' ? target.fuse(tool) : feature.op === 'subtract' ? target.cut(tool) : target.intersect(tool);
-        // A join that leaves a gap (a coil wound round a hollowed cowl: one
-        // edge left open where the two met): the tolerant join closes it.
-        if (feature.op === 'union') {
-          open ??= openEdges(prev).length;
-          let now = openEdges(target).length;
-          if (now > open + openEdges(tool).length) {
-            try {
-              const fz = fuzzyBoolean('fuse', prev, tool);
-              const nz = openEdges(fz).length;
-              if (nz < now && booleanVolumeOk('fuse', prev, tool, fz)) {
-                [target, now] = [fz, nz];
-              }
-            } catch {
-              // keep the plain result: the usual checks speak for it
-            }
-          }
-          open = now;
-        }
-        // A union joins: a body that doesn't touch would only be grouped with it, not joined.
-        if (feature.op === 'union' && solids(target) >= before) {
-          throw new Error("These bodies don't touch - Union needs them to overlap or touch (move one onto the other first)");
-        }
-        if (!(feature.op === 'intersect' && feature.keepTools)) {
-          bodies.delete(t);
-        }
-      }
-      if (isEmpty(target)) {
-        throw new Error('The result is empty');
-      }
-      bodies.set(feature.op === 'intersect' && feature.keepTarget ? feature.id : feature.target, target);
-
-      return;
-    }
+    case 'boolean':
+      return applyBoolean(feature, ctx);
 
     case 'transform':
       transform(feature, ctx);
 
       return;
 
-    case 'split': {
-      const body = need(bodies, feature.body);
-      // Several planes, or bodies, at once: every piece they cut it into. The
-      // biggest stays the body; the others are new ones.
-      if (feature.planes?.length || feature.tools?.length || feature.noPlane) {
-        const planes = [...(feature.noPlane ? [] : [feature.plane]), ...(feature.planes ?? [])];
-        const tools = (feature.tools ?? []).filter(t => t !== feature.body).map(t => need(bodies, t));
-        if (!planes.length && !tools.length) {
-          throw new Error('Pick a plane or a body to split it with');
-        }
-        const pieces = splitAll(body, planes, tools);
-        if (pieces.length < 2) {
-          throw new Error("Nothing it's split with cuts through the body");
-        }
-        bodies.set(feature.body, pieces[0]);
-        pieces.slice(1).forEach((piece, pieceIndex) => bodies.set(pieceIndex ? `${feature.id}:${pieceIndex + 1}` : feature.id, piece));
-
-        return;
-      }
-      const half = halfSpace(feature.plane, body);
-      let a: Shape3D | null = null, b: Shape3D | null = null;
-      try {
-        a = body.intersect(half);
-        b = body.cut(half);
-      } catch {
-        // Faces lying on the plane (a coil's end drawn on it) can stop the
-        // plain split: the tolerant one treats them as on it.
-      }
-      // A plane crossing a round face's seam twice (the top off a ball turned
-      // round the pipe's axis) gives the plain split an empty, broken half,
-      // with no error: the halves must be sound and add up to the body.
-      const whole = Math.abs(volumeOf(body));
-      const sound = (shape: Shape3D | null) => !!shape && !isEmpty(shape) && shapeValid(shape);
-      const addsUp = () => Math.abs(Math.abs(volumeOf(a!)) + Math.abs(volumeOf(b!)) - whole) <= Math.max(1e-9, whole * 1e-4);
-      if (!sound(a) || !sound(b) || !addsUp()) {
-        a = fuzzyBoolean('common', body, half);
-        b = fuzzyBoolean('cut', body, half);
-      }
-      const [inside, outside] = [a as Shape3D, b as Shape3D];
-      if (isEmpty(inside) || isEmpty(outside)) {
-        throw new Error("The plane doesn't cut through the body");
-      }
-      bodies.set(feature.body, outside);
-      bodies.set(feature.id, inside);
-
-      return;
-    }
+    case 'split':
+      return applySplit(feature, ctx);
 
     case 'plane': {
       let plane = feature.plane;
@@ -2079,46 +1280,8 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
 
       return;
 
-    case 'import': {
-      const rounding = feature.format === 'stl' && !!feature.round;
-      const cacheKey = rounding ? `round:${feature.data}` : feature.data;
-      let shape = importCache.get(cacheKey);
-      if (!shape) {
-        const bytes = Uint8Array.from(atob(feature.data), char => char.charCodeAt(0));
-        const blob = new Blob([bytes]);
-        try {
-          // (A mesh asked to be made into faces: its flat faces built whole here, whichever way they face; where
-          // that cannot be done, the kernel's own reading of the file.)
-          const whole = rounding ? meshBodyOf(bytes) : null;
-          shape = whole?.shape ?? ((feature.format === 'step' ? await importSTEP(blob) : readSTL(bytes)) as Shape3D);
-        } catch (err) {
-          // (The engine itself breaking down is for whoever runs it - it was
-          // taken for a file that couldn't be read, and the broken engine kept.
-          // A mesh too big says so in its own words.)
-          if (isFault(err) || err instanceof TooBig) {
-            throw err;
-          }
-          // (OpenCascade's own words were "This shape has not type, it is null".)
-          throw new Error(feature.format === 'step' ? "This STEP file couldn't be read - it may be damaged" : "This STL file couldn't be read");
-        }
-        if (isEmpty(shape)) {
-          throw new Error('The file contains no solid geometry');
-        }
-        importCache.set(cacheKey, shape);
-      }
-      // A file of several solids (an assembly; this app's own STEP of two bodies): each a body of its own, to pick,
-      // hide, move and cut by itself. (They came in as one body of several pieces: the two bodies of a project
-      // saved as STEP and opened again were one, that nothing could take apart.)
-      const solids = feature.apart && (feature.format === 'step' || rounding) ? subShapes(shape, 'SOLID') : [];
-      if (solids.length > 1) {
-        solids.forEach((solid, i) => bodies.set(i ? `${feature.id}:${i}` : feature.id, cast(solid) as Shape3D));
-
-        return;
-      }
-      bodies.set(feature.id, shape);
-
-      return;
-    }
+    case 'import':
+      return applyImport(feature, ctx);
 
     case 'delete':
       for (const b of bodyList(feature.bodies, bodies, 'bodies', feature.whole)) {
@@ -2151,185 +1314,17 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
       return;
     }
 
-    case 'faceFreeform': {
-      const body = need(bodies, feature.face.body);
-      const face = resolveFace(body, feature.face);
-      if (!feature.cage?.verts?.length) {
-        throw new Error('Made before Freeform Face had a cage: tap the face, Edit Freeform, and shape it again');
-      }
-      // The cage follows the face (an earlier step moved it).
-      const center = face.center.toTuple() as Vec3;
-      const cage = { faces: feature.cage.faces, verts: feature.cage.verts.map(vertex => add(center, vertex)) };
-      // Several faces side by side: one smooth surface over them all (no fitted way for those).
-      if (feature.more?.length) {
-        const Fs = [face, ...feature.more.map(faceRef => resolveFace(body, faceRef))];
-        const normal = facesNormal(Fs.map(face => face.normalAt().toTuple() as Vec3));
-        try {
-          bodies.set(feature.face.body, staysClosed(body, sheetFaces(body, Fs, cage, normal)));
-        } catch (err) {
-          if (isFault(err) || (err instanceof Error && /holes in them/.test(err.message))) {
-            throw err;
-          }
-          throw new Error("These faces can't be made one smooth surface like that - move the points less, or pick fewer faces");
-        }
+    case 'faceFreeform':
+      return applyFaceFreeform(feature, ctx);
 
-        return;
-      }
-      const unitNormal = norm(face.normalAt().toTuple() as Vec3);
-      // Through the cage's surface twice as fine as the cage; if the face
-      // can't be filled through that many points (a fine cage on an outline
-      // with inward corners), through the cage's own.
-      if (!faceCagePoints(cage, unitNormal, false)) {
-        return;
-      }
-      // The cage's own smooth surface, its border on the face's edges. (A cage
-      // whose border doesn't follow the edges - laid before it did - or a
-      // body that won't close round it: fitted through its points instead.)
-      try {
-        bodies.set(feature.face.body, staysClosed(body, sheetFace(body, face, cage)));
+    case 'replaceFace':
+      return applyReplaceFace(feature, ctx);
 
-        return;
-      } catch (err) {
-        if (isFault(err) || (err instanceof Error && /holes in them/.test(err.message))) {
-          throw err;
-        }
-      }
-      let last: unknown;
-      for (const fine of [true, false]) {
-        const pts = faceCagePoints(cage, unitNormal, fine);
-        if (!pts) {
-          return;
-        }
-        try {
-          bodies.set(feature.face.body, staysClosed(body, freeformFace(body, face, onFace(face, pts))));
+    case 'hole':
+      return applyHole(feature, ctx);
 
-          return;
-        } catch (err) {
-          if (isFault(err)) {
-            throw err;
-          }
-          last = err;
-        }
-      }
-      throw last;
-    }
-
-    case 'replaceFace': {
-      const body = need(bodies, feature.face.body);
-      const face = resolveFace(body, feature.face);
-      // Follow the target face if it's still there; else the plane as saved.
-      let plane = feature.plane;
-      if (feature.target) {
-        const tb = bodies.get(feature.target.body);
-        const tf = tb && (() => {
-          try {
-            return resolveFace(tb, feature.target!);
-          } catch {
-            return null;
-          }
-        })();
-        if (tf?.geomType === 'PLANE') {
-          plane = planeOf(tf);
-        }
-      }
-      // Keep the face pointing the way it pointed (outward).
-      const n0 = planeOf(face).normal;
-      const normal = dot(plane.normal, n0) < 0 ? scale(plane.normal, -1) : plane.normal;
-      bodies.set(feature.face.body, staysClosed(body, replaceFacePlane(body, face, { origin: plane.origin, normal: normal, xDir: xDirFor(normal) })));
-
-      return;
-    }
-
-    case 'hole': {
-      const body = need(bodies, feature.face.body);
-      const face = resolveFace(body, feature.face, candidate => candidate.geomType === 'PLANE');
-      const out = norm(face.normalAt().toTuple() as Vec3);
-      const on = planeOf(face).origin;
-      // Where: the centre of the round edge it was put on, the face's middle, or the place itself - on the face's
-      // plane as it is now (the face moved out or in since: the hole starts at it still).
-      let at = feature.at;
-      if (feature.around) {
-        try {
-          at = roundCentre(resolveEdge(body, feature.around)) ?? at;
-        } catch {
-          // The edge is gone: where it was put.
-        }
-      } else if (feature.centered) {
-        at = faceMiddle(face);
-      } else if (feature.from) {
-        try {
-          const lines = feature.from.map((x) => {
-            const e = resolveEdge(body, x.edge);
-            if (e.geomType !== 'LINE') {
-              throw new Error('not straight');
-            }
-
-            return { a: e.pointAt(0).toTuple() as Vec3, b: e.pointAt(1).toTuple() as Vec3, d: x.d };
-          });
-          at = holeFromLines(at, faceMiddle(face), out, lines[0], lines[1]) ?? at;
-        } catch {
-          // An edge is gone, or round now: where it was put.
-        }
-      }
-      at = sub(at, scale(out, dot(sub(at, on), out)));
-      const into = scale(out, -1);
-      // Right through: past the far side of the body, wherever that is.
-      let depth = feature.depth;
-      if (feature.through) {
-        const [lo, hi] = body.boundingBox.bounds as [Vec3, Vec3];
-        depth = 0;
-        for (const x of [lo[0], hi[0]]) {
-          for (const y of [lo[1], hi[1]]) {
-            for (const z of [lo[2], hi[2]]) {
-              depth = Math.max(depth, dot(sub([x, y, z], at), into));
-            }
-          }
-        }
-        depth += Math.max(1, feature.diameter);
-      }
-      const fault = holeFault(feature, depth);
-      if (fault) {
-        throw new Error(fault);
-      }
-      // Its mouth is open: nothing of the body over it. (Put on the plate under a boss - the boss's foot is a round
-      // edge to catch on - it was drilled from the plate's face down, a hollow under the boss that nothing showed.)
-      if (insideOf(body, [add(at, scale(out, Math.max(2e-3, feature.diameter * 0.05)))])[0]) {
-        throw new Error('The body covers the hole there: tap the face the screw goes in from.');
-      }
-      const made = body.cut(holeCutter(feature, at, into, depth, Math.max(1e-3, feature.diameter * 0.01))) as Shape3D;
-      if (!(volumeOf(body) - volumeOf(made) > 1e-9)) {
-        throw new Error('The hole is off the body there: nothing to drill into. Drag it onto the face.');
-      }
-      bodies.set(feature.face.body, made);
-
-      return;
-    }
-
-    case 'thread': {
-      const body = need(bodies, feature.face.body);
-      const face = threadTarget(body, feature);
-      const cy = cylinderOf(face);
-      // (How it was cut is kept by its step: a clearance round the body is the same thread cut on the body grown -
-      // see grownThreaded.)
-      if (cy) {
-        const a = norm(cy.a);
-        const ts: number[] = [];
-        for (const e of face.edges) {
-          for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
-            ts.push(dot(sub(e.pointAt(fraction).toTuple() as Vec3, cy.c), a));
-          }
-        }
-        const used: { phase?: number } = {};
-        const made = threadFace(body, face, feature.pitch, !!feature.left, undefined, used, threadStarts(feature.starts));
-        threadsCut.set(feature.id, { body: feature.face.body, c: cy.c, a, r: cy.r, inside: cy.s < 0, pitch: feature.pitch, left: !!feature.left, t0: Math.min(...ts), t1: Math.max(...ts), phase: used.phase, starts: threadStarts(feature.starts) });
-        bodies.set(feature.face.body, made);
-
-        return;
-      }
-      bodies.set(feature.face.body, threadFace(body, face, feature.pitch, !!feature.left, undefined, undefined, threadStarts(feature.starts)));
-
-      return;
-    }
+    case 'thread':
+      return applyThread(feature, ctx);
 
     case 'imprint': {
       const body = need(bodies, feature.body);
@@ -2361,130 +1356,8 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
       return;
     }
 
-    case 'connect': {
-      const [ra, rb] = feature.faces;
-      const shapeA = need(bodies, ra.body);
-      const shapeB = need(bodies, rb.body);
-      const fa = resolveFace(shapeA, ra);
-      const fb = resolveFace(shapeB, rb);
-      if (ra.body === rb.body && fa.isSame(fb)) {
-        throw new Error('Pick two different faces to connect');
-      }
-      const mode = feature.mode === 'auto' ? 'join' : feature.mode;
-      const size = feature.size ?? 1;
-      // Cut between two faces of one body: a tunnel, into the faces (else out of them).
-      const inward = mode === 'cut' && ra.body === rb.body;
-      // Cutting a face's whole outline out: the cutter a hair wider, so no sliver stays on the walls beside it.
-      const cutSize = mode === 'cut' && !inward && size > 0.99 ? size * 1.002 : size;
-      const ea = bridgeEnd(shapeA, fa, cutSize, inward, mode !== 'new');
-      const eb = bridgeEnd(shapeB, fb, cutSize, inward, mode !== 'new');
-      const reach = Math.max(ea.reach, eb.reach);
-      // The bridge's outline at each end (the fold check carries them along the curve).
-      const rings = { a: ea.ring, b: eb.ring };
-      let along: (t: number) => Vec3;
-      // Turning with its curve, the outline never runs back over itself (the
-      // bridge folding through itself: a solid no join or cut can use). Where
-      // it would - `slide`: the way the outline keeps facing instead, all the
-      // way, sliding along the curve without turning.
-      let sound = true;
-      let slide: Vec3 | undefined;
-      // Points taken along the curve for the sweep's path (two arcs: more, or the
-      // path fitted through them wavers where the arcs meet and the sweep breaks).
-      let samples = 60;
-      if (feature.guide) {
-        // Eased onto the guide over a longer stretch when it leaves the face
-        // steeply; where the guide itself turns tighter than the bridge is
-        // wide, rounded off a little at a time until it fits.
-        const drawn = curvePoints(pathWire(feature.guide, ctx).wrapped, 200);
-        const fit = (pts: Vec3[]) => [1.5, 2.5, 3.5, 5].map(factor => guideCurve(pts, ea.center, eb.center, ea.dir, eb.dir, factor * reach)).find(curve => gentle(curve, rings));
-        let pts = oriented(evenly(drawn, 60), ea.center, eb.center);
-        let found = fit(pts);
-        for (let attempt = 0; attempt < 40 && !found; attempt++) {
-          found = fit((pts = smoothed(pts, 10, ea.dir, eb.dir)));
-        }
-        along = found ?? guideCurve(drawn, ea.center, eb.center, ea.dir, eb.dir, 1.5 * reach);
-        sound = !!found;
-        if (!sound) {
-          slide = slideAxis(along, ea.dir, scale(eb.dir, -1), reach) ?? undefined;
-        }
-      } else {
-        const plain = plainSpine(ea.center, ea.dir, eb.center, eb.dir, feature.bulge ?? 1, rings);
-        along = plain.along;
-        sound = plain.gentle;
-        if (!sound) {
-          // Faces too wide for how close they are (or how far to the side of
-          // each other): two arcs - the gentlest way from one to the other -
-          // or, facing each other, a bridge that slides along the plain curve.
-          const arcs = arcSpine(ea.center, ea.dir, eb.center, eb.dir);
-          if (arcs && gentle(arcs, rings)) {
-            (along = arcs), (sound = true), (samples = 180);
-          } else {
-            const sliding = slidingSpine(ea.center, ea.dir, eb.center, eb.dir, feature.bulge ?? 1, reach);
-            if (sliding) {
-              (along = sliding.along), (slide = sliding.axis);
-            }
-          }
-        }
-      }
-      // Into both bodies (one, when both faces are on it).
-      const into = (bridge: Shape3D) => {
-        combine(feature.id, mode, ra.body, bridge, false, ctx);
-        if (rb.body !== ra.body) {
-          if (mode === 'join') {
-            combine(feature.id, 'join', ra.body, need(bodies, rb.body), false, ctx);
-            bodies.delete(rb.body);
-            ctx.freeforms.delete(rb.body);
-          } else {
-            combine(feature.id, 'cut', rb.body, bridge, false, ctx);
-          }
-        }
-        ctx.freeforms.delete(ra.body);
-      };
-      try {
-        const made = sweepBridge(ea, eb, along, { guided: !!feature.guide, exact: true, slide, samples });
-        if (mode === 'new') {
-          bodies.set(feature.id, made.shape);
-
-          return;
-        }
-        if (!made.exact) {
-          return into(made.shape);
-        }
-        // Starting on the faces' very edges, its walls lie on the bodies' own:
-        // where joining (or cutting) that fails, the bridge made the other way
-        // (a little inside the edges) - on the bodies as they were.
-        const was = [ra.body, rb.body].map(id => [id, bodies.get(id), ctx.freeforms.get(id)] as const);
-        try {
-          into(made.shape);
-        } catch (err) {
-          if (isFault(err)) {
-            throw err;
-          }
-          for (const [id, body, ff] of was) {
-            if (body) {
-              bodies.set(id, body);
-            }
-            if (ff) {
-              ctx.freeforms.set(id, ff);
-            }
-          }
-          into(sweepBridge(ea, eb, along, { guided: !!feature.guide, exact: false, slide, samples }).shape);
-        }
-      } catch (err) {
-        // On a curve too tight for it the bridge runs through itself: whatever
-        // went wrong with it after that, this is why.
-        if (isFault(err) || sound || slide) {
-          throw err;
-        }
-        throw new Error(bridgeFailed(!!feature.guide));
-      } finally {
-        for (const e of [ea, eb]) {
-          (e.outline.delete(), e.rim.delete());
-        }
-      }
-
-      return;
-    }
+    case 'connect':
+      return applyConnect(feature, ctx);
 
     case 'fill': {
       bodies.set(feature.id, fillNetwork(feature, ctx));
@@ -2500,135 +1373,1348 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
       return;
     }
 
-    case 'repair': {
-      for (const id of feature.bodies) {
-        const body = need(bodies, id);
-        const repaired = repairShape(body);
-        if (!repaired) {
-          throw new Error(`This body can't be made a clean solid: ${whatsWrong(healthOf(body))}`);
-        }
-        editNotes.push(repaired.fixes.length ? `Repaired: ${repaired.fixes.join(', ')}.` : "Nothing to repair - it's a clean solid already.");
-        bodies.set(id, repaired.shape);
+    case 'repair':
+      return applyRepair(feature, ctx);
+
+    case 'deleteGeom':
+      return applyDeleteGeom(feature, ctx);
+
+    case 'moveFace':
+      return applyMoveFace(feature, ctx);
+  }
+}
+
+function applySketch(feature: SketchFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const plane = feature.attachedTo ? followFace(feature, bodies) : feature.onPlane ? followPlane(feature, ctx) : feature.plane;
+  // On a face, the face outline takes part in regions: a line across the face splits it.
+  const outline = feature.attachedTo ? faceBoundary(feature.attachedTo, plane, bodies) : [];
+  // Offsets of the outline, made from it as it is now (they follow the face).
+  const boundary = [...outline, ...outlineOffsetCurves(outline, feature.outlineOffsets)];
+  // Curves that follow a body's edge go where it is now, the rest by its dimensions to them.
+  const entities = feature.links?.length ? followEdges(feature, plane, bodies) : feature.entities;
+  const state: SketchState = { ...feature, entities, plane, boundary };
+  // The same sketch as last time, to the last digit (the page took the
+  // curves the engine moved as the sketch's own): it is that one, and
+  // the steps made from it have nothing new to read.
+  const text = JSON.stringify(state);
+  const was = sketchWas.get(feature.id);
+  if (was?.text === text) {
+    ctx.sketches.set(feature.id, was.state);
+  } else {
+    sketchWas.set(feature.id, { text, state });
+    ctx.sketches.set(feature.id, state);
+  }
+
+  return;
+}
+
+function applyExtrude(feature: ExtrudeFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const ext = feature.extent ?? 'distance';
+  if (ext === 'distance' && Math.abs(feature.distance) < 1e-6) {
+    throw new Error('Distance is zero');
+  }
+  if (ext === 'to' && feature.symmetric) {
+    throw new Error('Up to works one way only - switch Sides back to One side');
+  }
+  if (ext === 'to' && !feature.to?.face && !feature.to?.plane) {
+    throw new Error('Pick the face or plane it goes up to');
+  }
+  // Where it starts: at the shape, or `start` from it along its normal.
+  const startFaces = () => {
+    const src = sourceFaces(feature.source, ctx);
+
+    return feature.start ? src.map(({ face, normal }) => ({ face: face.clone().translate(scale(normal, feature.start!)) as Face, normal })) : src;
+  };
+  // Up to: the face (where it is now) or the plane it stops at.
+  const upTo = ext === 'to' ? extrudeTarget(feature.to!, ctx) : null;
+  // How far: the distance, or far enough to come out of everything (the way the distance's sign says, or towards the target).
+  let distance = feature.distance;
+  if (ext === 'through' && !ctx.bodies.size) {
+    throw new Error('Through all goes through the bodies there are - there are none yet: set a Distance');
+  }
+  if (ext !== 'distance') {
+    const src = startFaces();
+    const reach = reachOf(ctx, src.map(source => source.face as unknown as Shape3D), upTo?.shape);
+    const normal = src[0]?.normal ?? [0, 0, 1];
+    const center = src[0]?.face.center.toTuple() as Vec3 | undefined;
+    const way = upTo && center ? Math.sign(dot(sub(upTo.point, center), normal)) || 1 : Math.sign(feature.distance) || 1;
+    distance = way * reach;
+  }
+  const plain = ext === 'distance' && !feature.start && !feature.draft;
+  // Pushing/pulling a face of its own body offsets it: the neighbouring faces
+  // extend along their own surfaces (a round side stays round).
+  const tapered = feature.taper !== undefined && Math.abs(feature.taper - 1) > 1e-9;
+  if (tapered && feature.symmetric) {
+    throw new Error('Taper works one way only - switch Sides back to One side');
+  }
+  if (tapered) {
+    // Sides leaning in (or out): each shape's outline to a scaled copy at the far end.
+    // Pieces that meet are one shape first: a circle drawn on a small face
+    // is split by the face's outline into a disc and a ring round it (the
+    // ring was refused as "a shape with a hole", and each piece would have
+    // shrunk towards its own middle).
+    if (ext !== 'distance' || feature.draft) {
+      throw new Error('Taper end % works with a set distance and no draft - set Taper end back to 100%');
+    }
+    const src = startFaces();
+    const parts = mergedFaces(src.map(source => source.face), src[0]?.normal ?? [0, 0, 1]).map(face => ({ face, normal: src[0].normal })).map(({ face, normal }) => {
+      // (replicad's outerWire() and innerWires() free the face they're asked
+      // of: they're asked of copies.)
+      const center = face.center.toTuple() as Vec3;
+      if (face.clone().innerWires().length) {
+        throw new Error('Taper works on shapes without holes');
       }
+      const w0 = face.clone().outerWire();
+      const taper = Math.max(0.002, feature.taper!);
+      // Straight-edged shapes: flat sides (a loft makes them curved surfaces,
+      // and then nothing that needs a flat face - sketch on it, move it - works).
+      const flat = taperedPrism(face, center, normal, taper, distance);
+      if (flat) {
+        return flat;
+      }
+      const w1 = w0.clone().scale(taper, center).translate(scale(normal, distance));
+      try {
+        return loft([w0, w1], { ruled: true }) as Shape3D;
+      } catch {
+        throw new Error("This shape can't be tapered");
+      }
+    });
+    combine(feature.id, feature.mode, feature.target, fuseAll(parts), distance < 0, ctx);
+
+    return;
+  }
+  if (plain && feature.source.kind === 'face' && feature.mode !== 'new' && feature.mode !== 'intersect' && feature.target === feature.source.face.body && !feature.symmetric) {
+    const body = need(bodies, feature.target);
+    const face = resolveFace(body, feature.source.face);
+    const distance = feature.mode === 'cut' ? -Math.abs(feature.distance) : feature.mode === 'join' ? Math.abs(feature.distance) : feature.distance;
+    // The end of a sweep pushed in: shortened along its path, the new end
+    // square to the path there (not the old end's plane slid along).
+    const trimmed = distance < 0 ? trimSweepEnd(body, face, -distance, ctx) : null;
+    if (trimmed) {
+      bodies.set(feature.target, staysClosed(body, trimmed));
 
       return;
     }
+    try {
+      const out = staysClosed(body, offsetFace(body, face, distance));
+      // Hair-thin faces left behind (a face pushed over a fillet): a straight push is cleaner.
+      if (face.geomType === 'PLANE' && slivers(out) > slivers(body)) {
+        throw new Error('slivers');
+      }
+      bodies.set(feature.target, out);
 
-    case 'deleteGeom': {
-      const start = need(bodies, feature.body);
-      let body = start;
-      // Picked together, taken out together: a slot's two walls and floor close
-      // up as one gap (one wall alone has nothing to close it).
-      let together: Shape3D | null = null;
-      if (feature.faces.length > 1) {
-        try {
-          together = deleteBodyFaces(body, feature.faces.map(face => resolveFace(body, face)));
-        } catch {
-          together = null;
+      return;
+    } catch (err) {
+      // Faces whose neighbours don't enclose them still get a straight push -
+      // but not one with a fillet on it (the old fillet would stay standing).
+      // (Nor one whose sides meet before it gets there: straight sides would be another shape.)
+      if (face.geomType !== 'PLANE' || hasBlends(body, face) || (err instanceof Error && err.message === SIDES_MEET)) {
+        throw err;
+      }
+    }
+  }
+  // Symmetric: from `distance` behind the shape to `distance` in front.
+  const parts = startFaces().map(({ face, normal }) => {
+    const straight = feature.symmetric ? basicFaceExtrusion(face.clone().translate(scale(normal, -distance)), new Vector(normal).multiply(2 * distance)) : basicFaceExtrusion(face, new Vector(normal).multiply(distance));
+
+    // Draft: the sides lean from the shape's own plane (both ways from it, symmetric).
+    return feature.draft ? drafted(straight, scale(normal, Math.sign(distance) || 1), face.center.toTuple() as Vec3, feature.draft) : straight;
+  });
+  let solid = fuseAll(parts);
+  // Up to: what goes past the face or plane is cut off.
+  if (upTo) {
+    solid = trimmedTo(solid, upTo, startFaces()[0]?.face.center.toTuple() as Vec3);
+  }
+  // Auto: other bodies the extrusion runs into get cut through. Drawn on
+  // its own (no body it belongs to), it then only cuts - no new body.
+  // (By the way it goes: going +, a shape drawn on its own is a new body, whatever it runs into.)
+  if (feature.mode === 'auto' && !(feature.byDirection && !feature.target && distance >= 0)) {
+    const hit = overlapping(solid, ctx, feature.target);
+    // Started inside a body (drawn on a plane through it) and reaching out
+    // of it: cut, and the part outside left off - said so (a pipe's branch
+    // drawn on the floor through the pipe came out a notch, no word why).
+    if (hit.length && !feature.target && Math.abs(distance) > 1e-9) {
+      const dir = Math.sign(distance);
+      const starts = startFaces().flatMap(({ face, normal }) => {
+        const { p } = pointOnFace(face as unknown as Shape3D, face); const e = 1e-3;
+
+        return [add(p, scale(normal, e * dir)), add(p, scale(normal, -e * dir))]; 
+      });
+      const inside = hit.some(id => insideOf(need(bodies, id), starts).every(Boolean));
+      if (inside) {
+        let rest: Shape3D = solid;
+        for (const id of hit) {
+          rest = checkedBoolean('cut', rest, need(bodies, id));
+        }
+        if (!isEmpty(rest) && Math.abs(measureVolume(rest)) > 1e-3 * Math.abs(measureVolume(solid))) {
+          editNotes.push(AUTO_CUT_INSIDE);
         }
       }
-      if (together) {
-        body = together;
+    }
+    for (const id of hit) {
+      const cut = checkedBoolean('cut', need(bodies, id), solid);
+      if (isEmpty(cut)) {
+        bodies.delete(id);
       } else {
-        for (const face of feature.faces) {
-          body = deleteFace(body, resolveFace(body, face));
-        }
+        bodies.set(id, cut);
       }
-      for (const edge of feature.edges) {
-        body = deleteEdge(body, edge);
-      }
-      for (const vertex of feature.vertices) {
-        body = deleteVertex(body, vertex);
-      }
-      bodies.set(feature.body, staysClosed(start, body));
-
+      ctx.freeforms.delete(id);
+    }
+    if (hit.length && !feature.target) {
       return;
     }
+  }
+  combine(feature.id, feature.mode, feature.target, solid, distance < 0, ctx);
 
-    case 'moveFace': {
-      let rotation = feature.rotate && Math.abs(feature.rotate.angle) > 1e-9 ? feature.rotate : undefined;
-      let translate = feature.translate;
-      const move = (point: Vec3) => add(rotation ? rotateAbout(point, rotation.origin, rotation.axis, rotation.angle) : point, translate);
-      const turn = (normal: Vec3) => (rotation ? norm(sub(rotateAbout(add(rotation.origin, normal), rotation.origin, rotation.axis, rotation.angle), rotation.origin)) : normal);
-      if (feature.face) {
-        const body = need(bodies, feature.face.body);
-        const face = resolveFace(body, feature.face);
-        const { origin, normal } = planeOf(face);
-        const nn = norm(normal);
-        // Pushed straight out (or tilted about a line in it) when it was made:
-        // still that, square to the face as it is now - a step before it that
-        // turns the face a little more mustn't make the push a slide.
-        const was = feature.face.normal && len(feature.face.normal) > 1e-9 ? norm(feature.face.normal) : undefined;
-        if (was) {
-          const way = dot(nn, was) < 0 ? -1 : 1;
-          const out = dot(translate, was);
-          if (len(sub(translate, scale(was, out))) <= 1e-6 * Math.max(1, Math.abs(out))) {
-            translate = scale(nn, out * way);
-          }
-          if (rotation && Math.abs(dot(norm(rotation.axis), was)) <= 1e-6) {
-            const inPlane = sub(rotation.axis, scale(nn, dot(rotation.axis, nn)));
-            if (len(inPlane) > 1e-9) {
-              rotation = { ...rotation, axis: norm(inPlane) };
-            }
-          }
-        }
-        // Slid within its own plane, or turned about its normal: its corners
-        // move and the faces round it follow (a plane alone can't show that -
-        // the face stayed where it was).
-        const slide = sub(translate, scale(nn, dot(translate, nn)));
-        const twist = !!rotation && Math.abs(dot(norm(rotation.axis), nn)) > 1e-6;
-        if (len(slide) > 1e-9 || twist) {
-          const size = Math.hypot(body.boundingBox.width, body.boundingBox.height, body.boundingBox.depth) || 1;
-          const loop = faceLoop(face, size * 1e-6);
-          const out = loop ? movePolyhedronPoints(body, loop.map(vertex => [vertex, move(vertex)] as [Vec3, Vec3])) : null;
-          if (!out) {
-            throw new Error('Sliding or turning a face within its plane works on bodies of flat, straight-edged faces - push or tilt it instead');
-          }
-          bodies.set(feature.face.body, staysClosed(body, out));
+  return;
+}
 
-          return;
-        }
-        // Drawn inside a bigger flat face (projected onto it): moving its plane
-        // moves nothing - raised, it's a prism joined on; sunk, one cut out.
-        if (inFlatFace(body, face)) {
-          if (rotation) {
-            throw new Error('This face lies in a bigger flat face: it can be pushed straight out or in, not tilted (Extrude it at an angle instead)');
-          }
-          const along = dot(translate, nn);
-          if (Math.abs(along) < 1e-12) {
-            return;
-          }
-          const prism = basicFaceExtrusion(face, new Vector(scale(nn, along))) as Shape3D;
-          const size = Math.hypot(body.boundingBox.width, body.boundingBox.height, body.boundingBox.depth) || 1;
-          const { p } = pointOnFace(body, face);
-          const [into] = insideOf(body, [add(p, scale(nn, Math.sign(along) * Math.min(Math.abs(along) / 2, size * 1e-3)))]);
-          bodies.set(feature.face.body, staysClosed(body, checkedBoolean(into ? 'cut' : 'fuse', body, prism)));
+function applyRevolve(feature: RevolveFeature, ctx: Ctx) {
+  if (Math.abs(feature.angle) < 1e-6) {
+    throw new Error('Angle is zero');
+  }
+  const axis = resolveAxis(feature.axis, ctx);
+  if (feature.travel && Math.abs(feature.travel) > 1e-9) {
+    // Moving along the axis while turning: a helical sweep (threads, springs).
+    const parts = withHoles(feature.source, ctx, wire => helicalSweep(wire, axis.origin, norm(axis.dir), feature.angle, feature.travel!));
+    combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
 
-          return;
-        }
-        const turned = turn(normal);
-        bodies.set(feature.face.body, staysClosed(body, replaceFacePlane(body, face, { origin: move(origin), normal: turned, xDir: xDirFor(turned) })));
+    return;
+  }
+  if (Math.abs(feature.angle) > 360 + 1e-6) {
+    throw new Error('More than one turn needs a Travel along the axis (or it overlaps itself)');
+  }
+  const whole = Math.abs(Math.abs(feature.angle) - 360) < 1e-6;
+  const turnFace = (face: Face): Shape3D => {
+    // A whole ellipse turned all the way round is a ring with one face and
+    // no edges: later unions break it (a combustor ring took one fuel
+    // nozzle, then came out inside out). Two halves, joined, are sound.
+    if (whole && face.edges.length === 1 && face.edges[0].geomType === 'ELLIPSE') {
+      const half = revolution(face, axis.origin, axis.dir, 180) as Shape3D;
 
-        return;
+      return half.fuse(half.clone().rotate(180, axis.origin, axis.dir));
+    }
+
+    return revolution(face, axis.origin, axis.dir, feature.angle) as Shape3D;
+  };
+  // A shape across the axis turns into itself (the kernel only said it
+  // "could not compute this").
+  for (const { face } of sourceFaces(feature.source, ctx)) {
+    if (crossesAxis(face, axis.origin, norm(axis.dir))) {
+      throw new Error('The shape crosses the axis - it has to stay on one side of it (touching it is fine)');
+    }
+  }
+  const turn = () => sourceFaces(feature.source, ctx).map(({ face }) => turnFace(face));
+  let parts: Shape3D[];
+  try {
+    parts = turn();
+  } catch {
+    // A profile whose exact spline won't turn (it touches the axis awkwardly): a close fit does.
+    parts = withFittedSplines(turn);
+  }
+  combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
+
+  return;
+}
+
+function applySweep(feature: SweepFeature, ctx: Ctx) {
+  const spine = pathWire(feature.path, ctx);
+  // The profile keeps its turn round the path as it goes (OpenCascade's
+  // corrected Frenet), not the path's own Frenet frame: that one flips
+  // half a turn where a bend changes side (an S curve) and is undefined
+  // where the path runs straight, so the tube broke into pieces that
+  // jumped sideways there - a profile off the path's centre most of all.
+  const scale = feature.scale ?? 1;
+  if (!(scale > 0)) {
+    throw new Error('The end size must be more than 0');
+  }
+  const twist = feature.twist ?? 0;
+  const parallel = feature.orientation === 'parallel';
+  if (parallel && Math.abs(twist) > 1e-9) {
+    throw new Error('A twist turns the profile with the path: set Orientation to Normal to path');
+  }
+  const corner = feature.corner === 'mitre' ? 'right' : 'round';
+  // Moved onto the path: its centre to the path's nearer end, turned square to the path there.
+  const place = feature.position === 'start' ? onPathStart(sourceFaces(feature.source, ctx), spine) : null;
+  // Along a straight line square to the profiles, from one of its ends,
+  // unturned and the same size all the way: an extrusion, made as one (the
+  // sweep's faces looked the same but wouldn't take a chamfer round a
+  // gear's teeth that the extrusion's took).
+  const ends = Math.abs(scale - 1) < 1e-9 && Math.abs(twist) < 1e-9 && !place ? straightRun(spine) : null;
+  if (ends) {
+    const faces = sourceFaces(feature.source, ctx);
+    const [a, b] = ends;
+    const length = dist(a, b);
+    const runs = faces.map(({ face, normal }) => {
+      const unitNormal = norm(normal);
+      if (len(cross(norm(sub(b, a)), unitNormal)) > 1e-9) {
+        return null;
       }
-      if (feature.vertex) {
-        if (ctx.freeforms.has(feature.vertex.body)) {
-          throw new Error("A freeform's shape comes from its cage: use Edit Freeform to move its points");
-        }
-        const body = need(bodies, feature.vertex.body);
-        bodies.set(feature.vertex.body, staysClosed(body, moveVertex(body, feature.vertex.at, move(feature.vertex.at))));
+      const center = face.center.toTuple() as Vec3;
+      if (Math.abs(dot(sub(a, center), unitNormal)) < length * 1e-9) {
+        return sub(b, a);
+      }
+      if (Math.abs(dot(sub(b, center), unitNormal)) < length * 1e-9) {
+        return sub(a, b);
+      }
 
-        return;
-      }
-      if (!feature.edge) {
-        throw new Error('Nothing to move');
-      }
-      const eb = need(bodies, feature.edge.body);
-      bodies.set(feature.edge.body, staysClosed(eb, moveEdge(eb, feature.edge, move)));
+      return null;
+    });
+    if (runs.every(run => run)) {
+      const parts = faces.map(({ face }, i) => basicFaceExtrusion(face, new Vector(runs[i]!)) as Shape3D);
+      combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
+      ctx.sweeps.set(feature.id, spine);
 
       return;
     }
   }
+  const scaled = Math.abs(scale - 1) > 1e-9;
+  const twisted = Math.abs(twist) > 1e-9;
+  // Facing the same way all along, the profile has no thickness where the
+  // path runs in the profile's own plane (up a post, then sideways): that
+  // leg came out missing without a word, or as a body "damaged", and a
+  // ring's never came back at all (the engine hung). Said, before it's tried.
+  if (parallel) {
+    const src = sourceFaces(feature.source, ctx);
+    const facing = place ? norm(spine.tangentAt(dist(src[0].face.center.toTuple() as Vec3, spine.startPoint.toTuple() as Vec3) <= dist(src[0].face.center.toTuple() as Vec3, spine.endPoint.toTuple() as Vec3) ? 0 : 1).toTuple() as Vec3) : norm(src[0]?.normal ?? [0, 0, 1]);
+    if (runsAcross(spine, facing) > 0.02) {
+      throw new Error('Facing the same way, the profile slides along its own plane on part of this path and has no thickness there - turn the profile to face along that part, or set Orientation to Normal to path');
+    }
+  }
+  // One profile along one path is one solid. Round a sharp corner of the
+  // path a profile that changes size, or turns as it goes, came out in two
+  // pieces run through each other (or broken): said as what it is.
+  const corners = (scaled || twisted) && sharpCorners(spine);
+  const cornerTrouble = () =>
+    new Error(`A profile that ${scaled && twisted ? 'changes size and turns' : scaled ? 'changes size' : 'turns'} as it goes can't get round a sharp corner of the path - round the corner (a small fillet in the path's sketch), or set ${scaled && twisted ? 'End size back to 100% and Twist to 0' : scaled ? 'End size back to 100%' : 'Twist back to 0'}`);
+  const whole = (part: Shape3D): Shape3D => {
+    const pieces = subShapes(part, 'SOLID').length;
+    if (pieces === 1 && !(corners && !shapeValid(part))) {
+      return part;
+    }
+    if (corners) {
+      throw cornerTrouble();
+    }
+    if (twisted) {
+      throw new Error("The twist didn't build along this path - try a smoother path (no sharp corners) or less twist");
+    }
+    throw new Error('The sweep came apart along this path - try a smoother path (no sharp corners, no tight turns)');
+  };
+  // (With holes - a tube: each wire's sweep may be sound and the one cut from the other still not.)
+  const made = () => withHoles(feature.source, ctx, (w0, outer0) => {
+    const wire = place ? place(w0) : w0;
+    const outer = place ? place(outer0) : outer0;
+    const law = scaled ? scaleLaw(spine, scale) : null;
+    if (parallel) {
+      return whole(flatFaces(fixedSweep(wire, spine, corner, law)));
+    }
+    // A circle round the path's start, square to it, is the same twisted or not (a gear's bore): swept
+    // plainly it stays a true cylinder (twisted, a spline with a winding seam that threads couldn't use).
+    if (!twisted || roundAboutPath(wire, spine)) {
+      return whole(flatFaces(genericSweep(wire, spine, { frenet: false, transitionMode: corner, law }) as Shape3D));
+    }
+    // Twisted: the profile's sideways direction follows a curve wound round the path.
+    const reach = Math.max(1, len(sub(...(outer.boundingBox.bounds as [Vec3, Vec3]))));
+    try {
+      return whole(flatFaces(genericSweep(wire, spine, { auxiliarySpine: twistGuide(spine, twist, reach), transitionMode: 'right', law }) as Shape3D));
+    } catch (err) {
+      if (err instanceof Error && /Could not sweep/.test(err.message)) {
+        throw new Error("The twist didn't build along this path - try a smoother path (no sharp corners) or less twist");
+      }
+      throw err;
+    }
+  });
+  let parts: Shape3D[];
+  try {
+    parts = made();
+  } catch (err) {
+    if (!corners || isFault(err) || (err instanceof Error && /sharp corner/.test(err.message))) {
+      throw err;
+    }
+    throw cornerTrouble();
+  }
+  if (corners && parts.some(part => subShapes(part, 'SOLID').length !== 1 || !shapeValid(part))) {
+    throw cornerTrouble();
+  }
+  // Mitred: each leg of the path is a piece of its own, so a flat side
+  // running round (a picture frame's front) was four faces meeting along
+  // the mitres - a chamfer round its inside edge "didn't fit", a round
+  // round its outside took more than it should at the corners. One face each.
+  if (corner === 'right') {
+    parts = parts.map(part => unify(part));
+  }
+  // A curve of the path that bends tighter than the profile is wide: the body folds over itself on the inside of
+  // the bend and comes out lumpy there - said, with both sizes (it is no fault of the build; it looked like one).
+  if (!parallel) {
+    const bend = tightestBend(spine);
+    const reach = Math.max(0, ...sourceFaces(feature.source, ctx).map(({ face }) => {
+      const center = face.center.toTuple() as Vec3;
+      let far = 0;
+      for (const e of face.edges) {
+        for (let i = 0; i <= 8; i++) {
+          far = Math.max(far, dist(e.pointAt(i / 8).toTuple() as Vec3, center));
+        }
+      }
+
+      return far;
+    })) * Math.max(1, scale);
+    if (bend < reach * 0.98) {
+      const mm = (value: number) => String(Math.round(value * 10) / 10);
+      editNotes.push(`The path bends tighter (a radius of about ${mm(bend)} mm) than the profile reaches from its middle (${mm(reach)} mm): the body folds over itself inside that bend. A gentler bend, or a smaller profile, keeps it even.`);
+    }
+  }
+  combine(feature.id, feature.mode, feature.target, fuseAll(parts), false, ctx);
+  ctx.sweeps.set(feature.id, spine);
+
+  return;
+}
+
+function applyLoft(feature: LoftFeature, ctx: Ctx) {
+  if (feature.sections.length < 2) {
+    throw new Error('Pick at least two profiles');
+  }
+  // Each section's own plane (a profile's sketch, or the face).
+  const frames = feature.sections.map(section => sectionFrame(section, ctx));
+  let order = feature.sections.map((_, i) => i);
+  const n0 = frames[0].normal;
+  // Parallel sections go in their order along the normal, whatever order they were picked in
+  // (a loft that doubles back on itself isn't a solid).
+  if (!feature.closed && !feature.guide && frames.every(fr => Math.abs(dot(fr.normal, n0)) > 0.999)) {
+    const height = (i: number) => dot(sub(frames[i].origin, frames[0].origin), n0);
+    order.sort((a, b) => height(a) - height(b));
+    for (let index = 1; index < order.length; index++) {
+      if (Math.abs(height(order[index]) - height(order[index - 1])) < 1e-6) {
+        throw new Error('Two profiles lie on the same plane: loft needs them one above another');
+      }
+    }
+  }
+  // The same profile picked twice counts once.
+  order = order.filter((i, index) => index === 0 || JSON.stringify(feature.sections[i]) !== JSON.stringify(feature.sections[order[index - 1]]));
+  if (order.length < 2) {
+    throw new Error('Pick at least two different profiles');
+  }
+  let wires = order.map(i => sourceWires(feature.sections[i], ctx)[0]);
+  if ((feature.startContinuity || feature.endContinuity) && !feature.guide && !feature.closed) {
+    if (feature.ruled) {
+      throw new Error("Straight sides can't also leave a profile smoothly: switch off Straight sides");
+    }
+    const nrm = order.map(i => frames[i].normal);
+    wires = withEndPulls(wires, nrm, feature.startContinuity, feature.startWeight ?? 1, feature.endContinuity, feature.endWeight ?? 1);
+  }
+  let shape: Shape3D;
+  if (feature.rails?.length || feature.connections?.length) {
+    if (feature.guide || feature.closed) {
+      throw new Error("Guide curves and connections can't be used with a centre line or a closed loop");
+    }
+    const rails = (feature.rails ?? []).map(pathRef => pathWire(pathRef, ctx));
+    const conns = (feature.connections ?? []).map(connection => order.map(i => connection[i]));
+    shape = railLoft(wires, rails, conns);
+  } else if (feature.guide || feature.closed) {
+    if (feature.closed && wires.length < 3 && !feature.guide) {
+      throw new Error('A closed loop needs at least three profiles');
+    }
+    shape = loftAlong(wires, feature.guide ? pathWire(feature.guide, ctx) : null, !!feature.closed);
+  } else {
+    try {
+    // One smooth side where the sections' starts are in line already (see loftAlign.ts).
+      const inLine = loftInLine(wires, feature.ruled);
+      shape = inLine && shapeValid(inLine) && quickVolume(inLine) > 0 ? inLine : loft(wires, { ruled: feature.ruled });
+    } catch {
+      throw new Error("These profiles can't be lofted together");
+    }
+  }
+  combine(feature.id, feature.mode, feature.target, shape, false, ctx);
+
+  return;
+}
+
+function applyFilletOrChamfer(feature: EdgeFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const byBody = new Map<string, EdgeRef[]>();
+  for (const e of feature.edges) {
+    byBody.set(e.body, [...(byBody.get(e.body) ?? []), e]);
+  }
+  for (const [bodyId, refs] of byBody) {
+    const body = need(bodies, bodyId);
+    // (An edge next to nothing in length - the end of a sliver, picked with the
+    // rest of a face's outline before such ends were cleared away - isn't one to round.)
+    const real = refs.filter(ref => ref.length > 1e-4);
+    // A sliver of a picked run gone (a blade's root cut short where the hub's seam
+    // crossed it, moved when the blade did) is skipped: the round runs on along the
+    // smooth run it was part of. A whole edge gone still says so.
+    const picked = real.length ? real : refs;
+    const longest = Math.max(...picked.map(edgeRef => edgeRef.length));
+    const found = picked.map((edgeRef) => {
+      try {
+        return resolveEdge(body, edgeRef, true);
+      } catch (err) {
+        if (err instanceof Error && err.message === EDGE_GONE && edgeRef.length < longest * 0.05) {
+          return null;
+        }
+        throw err;
+      }
+    });
+    const edges = found.filter((e): e is Edge => !!e);
+    if (!edges.length) {
+      throw new Error(EDGE_GONE);
+    }
+    if (edges.length < found.length) {
+      editNotes.push(`${found.length - edges.length} tiny piece${found.length - edges.length > 1 ? 's' : ''} of the edges it was built on ${found.length - edges.length > 1 ? 'are' : 'is'} gone - the rest are ${feature.type === 'fillet' ? 'rounded' : 'chamfered'}.`);
+    }
+    let result: Shape3D | null = null;
+    // Two-Distance chamfer: each edge's first distance runs along one of
+    // its two faces (Flip: the other one), the second along the other.
+    const d2 = feature.type === 'chamfer' && feature.distance2 !== undefined && feature.distance2 > 0 ? feature.distance2 : null;
+    const sideOf = (e: Edge): Face => {
+      const two = body.faces.filter(fc => fc.edges.some(edge => edge.isSame(e)));
+      if (!two.length) {
+        throw new Error('That edge has no face beside it to measure the chamfer along');
+      }
+
+      return two[feature.flip && two.length > 1 ? 1 : 0];
+    };
+    const twoDistance = (radius: number) =>
+      body.chamfer((e: Edge) => (edges.some(edge => edge.isSame(e)) ? { distances: [radius, (d2! * radius) / feature.radius] as [number, number], selectedFace: finder => finder.inList([sideOf(e)]) } : null));
+    // Variable fillet: the radius runs evenly from one end of each edge to the other.
+    const r2 = feature.type === 'fillet' && feature.radius2 !== undefined && feature.radius2 > 0 && Math.abs(feature.radius2 - feature.radius) > 1e-9 ? feature.radius2 : null;
+    const variable = (radius: number) =>
+      body.fillet((e: Edge) => {
+        if (!edges.some(edge => edge.isSame(e))) {
+          return null;
+        }
+        const ends: [number, number] = [radius, (r2! * radius) / feature.radius];
+
+        return feature.flip ? [ends[1], ends[0]] : ends;
+      });
+    if (feature.type === 'fillet' && feature.g2 && (r2 || feature.chord)) {
+      throw new Error('Smooth (G2) takes one radius - set Type to Constant and Size to Radius');
+    }
+    const edge = (radius: number) =>
+      feature.type === 'fillet' && feature.g2 ? g2Fillet(body, edges, radius) : feature.type === 'fillet' ? (feature.chord ? chordFillet(body, edges, radius, r2 ? (r2 * radius) / feature.radius : radius, !!feature.flip) : r2 ? variable(radius) : body.fillet(radius, finder => finder.inList(edges))) : d2 ? twoDistance(radius) : body.chamfer(radius, finder => finder.inList(edges));
+    try {
+      result = edge(feature.radius);
+    } catch (err) {
+      if (err instanceof Error && !/WebAssembly|kernel/i.test(err.message)) {
+        throw err;
+      }
+      // Exactly the size that uses up a face (4 mm on both edges of an
+      // 8 mm block: a full round): the two roundings meet with nothing
+      // between, and that exact case fails where 3.999 works. A hair
+      // less gives the same shape, to a millionth of a millimetre.
+      for (const factor of [1 - 1e-6, 1 - 1e-5, 1 - 1e-4]) {
+        try {
+          result = edge(feature.radius * factor);
+          break;
+        } catch {
+          // a bit less again
+        }
+      }
+    }
+    // Too big for a face beside it (OpenCascade gives up): built as a true round that
+    // cuts on through that face's far edge (overflow: keep surface).
+    if (!result && feature.type === 'fillet' && !feature.g2 && !r2 && !feature.chord) {
+      try {
+        result = blendFillet(body, edges, feature.radius, false);
+        editNotes.push("The round was too big for a face beside it, so it cuts on through that face's far edge (still exactly round).");
+      } catch {
+        result = null;
+      }
+    }
+    if (result && feature.type === 'fillet' && !feature.g2 && (feature.setback ?? 0) > 0) {
+      result = setbackCorners(result, edges, feature.setback!, feature.radius * Math.max(1, r2 ? r2 / feature.radius : 1));
+    }
+    if (!result) {
+      const what = feature.type === 'fillet' ? 'radius' : 'distance';
+      // No corner there at all: the faces either side run smoothly into each other (the lines between a
+      // freeform's patches, where a round already ends). Said as that - "too big" sent people to try smaller.
+      if (edges.every(e => smoothEdge(body, e))) {
+        throw new Error(`${edges.length > 1 ? 'Those edges are' : 'That edge is'} smooth already: the faces either side run into each other with no corner to ${feature.type === 'fillet' ? 'round' : 'cut'}. Pick an edge with a corner.`);
+      }
+      throw new Error(`That ${feature.type} doesn't fit here - the ${what} is too big for the faces around ${edges.length > 1 ? 'those edges' : 'that edge'}. Try a smaller ${what}.`);
+    }
+    bodies.set(bodyId, result);
+  }
+
+  return;
+}
+
+function applyShell(feature: ShellFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const body = need(bodies, feature.body);
+  let faces = feature.faces.map(face => resolveFace(body, face));
+  // Every face picked (a ball's one round face) leaves no wall to keep: hollow it sealed instead.
+  if (faces.length && body.faces.every(face => faces.some(removed => removed.isSame(face)))) {
+    faces = [];
+    editNotes.push("Every face of the body was picked, so there's no opening: it's hollow inside, sealed. Pick fewer faces for an opening.");
+  }
+  // A freeform: drop the picked cage faces and thicken the rest inward -
+  // exact, where shelling its smooth surfaces is unreliable.
+  const ff = ctx.freeforms.get(feature.body);
+  if (ff && faces.length) {
+    bodies.set(feature.body, shellFreeform(ff, faces, Math.abs(feature.thickness)));
+    ctx.freeforms.delete(feature.body);
+
+    return;
+  }
+  // Positive thickness shells inward (negative grows outward with rounded corners).
+  const t = Math.abs(feature.thickness);
+  // (To a thousandth first: a hollowed body is well off what it was. Only one within a hundredth is measured exactly.)
+  const q0 = Math.abs(quickVolume(body));
+  const hollowed = (shape: Shape3D | null): shape is Shape3D => !!shape && (Math.abs(Math.abs(quickVolume(shape)) - q0) > 0.01 * q0 || Math.abs(Math.abs(volumeOf(shape)) - Math.abs(volumeOf(body))) > 1e-6 * Math.abs(volumeOf(body)));
+  // A shell to trust: hollow, a sound solid, a wall behind every face it
+  // kept and nothing left deep inside. OpenCascade can "succeed" without
+  // hollowing anything, or hollowing only a corner of it - or hollow it
+  // and leave a wall out: where two faces are closer together than two
+  // walls (a pocket 1.7 mm from a hole, 1 mm walls) it dropped the
+  // pocket's walls without a word, the pocket a window into the hollow.
+  const kept = body.faces.filter(face => !faces.some(removed => removed.isSame(face)));
+  const gaps = openEdges(body).length;
+  // (No hair-thin faces either, as every edit is held to: the exact case
+  // above comes out "fine" with its inside rounds shrunk to slivers.)
+  const thin0 = hairThin(body);
+  const fine = (shape: Shape3D) => {
+    if (hairThin(shape) <= thin0) {
+      return true;
+    }
+    try {
+      return hairThin(unify(shape)) <= thin0;
+    } catch {
+      return false;
+    }
+  };
+  // (The quick checks first: measuring the volume of a way that came out
+  // wrong took 6.6 s in a split box's shell, the hair-thin faces that
+  // turned it down a fifth of a second.)
+  const good = (shape: Shape3D | null): shape is Shape3D => !!shape && shapeValid(shape) && openEdges(shape).length <= gaps && fine(shape) && hollowed(shape) && wallsStand(body, shape, kept, t) && hollowInside(body, shape, kept, t);
+  // The ways there are, in turn: in one step (no face picked: that gives
+  // only the inner core back - a battery case came out solid); hollowed
+  // with an offset copy of the body, the openings cut through (many-faced
+  // shapes trip the one-step shell); and that a hair thicker - a wall
+  // exactly as thick as the corners are round (2 mm walls in a box with
+  // 2 mm corners) has inside corners that shrink to nothing, and that
+  // exact case defeats both: a hair thicker gives the sharp inside corner
+  // it should have.
+  const ways: (() => Shape3D | null)[] = [
+    () => {
+      if (!faces.length) {
+        return null;
+      }
+      try {
+        return body.shell(t, finder => finder.inList(faces));
+      } catch {
+        return null;
+      }
+    },
+    () => shellByOffset(body, faces, t),
+    // (Sealed too: a closed box with 2 mm rounds hollowed 2 thick.)
+    ...[1 + 1e-4, 1 + 1e-3].map(factor => () => shellByOffset(body, faces, t * factor)),
+    // ...and the hollow put together from what is cut out of the body, each
+    // cut-out grown on its own: where two of them are closer than two walls
+    // (a pocket 1.7 mm from a hole, 1 mm walls) offsetting the whole body fails.
+    () => shellByOffset(body, faces, t, true)
+  ];
+  let out: Shape3D | null = null;
+  // (Hollow, but torn or broken: put right below, if nothing better comes -
+  // the first of them, found only then: its volume can be slow to measure.)
+  const tried: Shape3D[] = [];
+  for (const way of ways) {
+    const made = way();
+    if (good(made)) {
+      out = made;
+      break;
+    }
+    if (made) {
+      tried.push(made);
+    }
+  }
+  const rough = out ? null : (tried.find(shape => hollowed(shape)) ?? null);
+  if (!out && rough) {
+    // Put right as any edit's result is - and then held to the same: a
+    // broken shell "repaired" came out sound and a sixth too light, the
+    // walls round two bores gone.
+    const fixed = repairShape(rough, { maxSolids: Math.max(1, subShapes(body, 'SOLID').length) });
+    if (fixed && good(fixed.shape)) {
+      if (fixed.fixes.length) {
+        editNotes.push(`Repaired automatically: ${fixed.fixes.join(', ')}.`);
+      }
+      out = fixed.shape;
+    }
+  }
+  // (A pocket or a blind hole cut into the face being opened hangs from that face alone.)
+  const loose = faces.some(face => face.clone().innerWires().length > 0);
+  if (!out) {
+    throw new Error(!rough ? "Shell didn't work on this shape (try a smaller thickness)" : loose ? `${WALLS_CLASH} - or what is cut into the opened face would be left standing loose (open another face)` : WALLS_CLASH);
+  }
+  bodies.set(feature.body, out);
+
+  return;
+}
+
+function applyBoolean(feature: BooleanFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  let target = need(bodies, feature.target);
+  const toolIds = bodyList(feature.tools, bodies, 'tools', feature.whole);
+  const solidsIn = (x: Shape3D) => [...iterTopo(x.wrapped, 'solid')].length;
+  // Subtract: every tool at once (see cutAway), each kept the clearance
+  // away if one is set, cut from the body, the tools or all of them.
+  if (feature.op === 'subtract' && toolIds.length) {
+    const tools = toolIds.map(t => need(bodies, t));
+    if (!solidsIn(target) || tools.some(t => !solidsIn(t))) {
+      throw new Error('One of these is an open surface (e.g. a freeform with a hole), not a solid. Close it first: tap an edge of the hole → Fill hole, or give it a Thickness - then Union.');
+    }
+    const gap = Math.max(0, feature.clearance ?? 0);
+    const from = feature.cutFrom ?? 'body';
+    // Each body grown by the gap it keeps from the others (once each).
+    const grown = new Map<Shape3D, Map<number, Shape3D[]>>();
+    const grow = (shape: Shape3D, by: number): Shape3D[] => {
+      if (!(by > 0)) {
+        return [shape.clone()];
+      }
+      let shapes = grown.get(shape)?.get(by);
+      if (!shapes) {
+        // (A threaded body: the same thread cut on the body grown. The kernel can't grow a thread's own faces.)
+        shapes = grownThreaded(shape, by, toolIds[tools.indexOf(shape)] ?? (shape === target ? feature.target : '')) ?? grownBy(shape, by) ?? undefined;
+        if (!shapes) {
+          throw new Error(`Couldn't keep ${+by.toFixed(4)} mm clear round one of the bodies - try a smaller clearance`);
+        }
+        grown.set(shape, (grown.get(shape) ?? new Map()).set(by, shapes));
+      }
+
+      return shapes.map(shape => shape.clone());
+    };
+    if (from === 'body') {
+      const out = cutAway(target, tools.flatMap(t => grow(t, gap)));
+      if (!feature.keepTools) {
+        for (const t of toolIds) {
+          bodies.delete(t);
+        }
+      }
+      // Kept as it was: the result is a body of its own.
+      bodies.set(feature.keepTarget ? feature.id : feature.target, out);
+
+      return;
+    }
+    // The others give way: each cut by the body, grown by the gap.
+    if (from === 'tools') {
+      const outs = tools.map(t => cutAway(t, grow(target, gap)));
+      outs.forEach((out, outIndex) => bodies.set(toolIds[outIndex], out));
+
+      return;
+    }
+    // All of them, in turn: each gives way half the gap to the ones still
+    // to come, and the ones before it what's left - itself less the
+    // earlier ones grown by the whole gap, but its own core (itself
+    // brought in by half the gap) kept. So any two end up the gap apart,
+    // half from each where they overlapped: a peg through a plate, a hole
+    // r + gap/2 and a pin r - gap/2. Only the bodies as they were are
+    // grown or brought in (the kernel can't grow a cut one: its round
+    // from the cut is the gap's own radius).
+    const ids = [feature.target, ...toolIds];
+    const was = [target, ...tools];
+    const now = was.map((b, index) => {
+      const by = was.slice(index + 1).flatMap(shape => grow(shape, gap / 2));
+      if (index > 0) {
+        let early = fuseAll(was.slice(0, index).flatMap(shape => grow(shape, gap)));
+        const core = gap > 0 ? broughtIn(b, gap / 2) : b.clone();
+        // (Its core not kept, if that cut fails: more is cut away, still the gap apart.)
+        if (core) {
+          try {
+            early = fuzzyBoolean('cut', early, core);
+          } catch (err) {
+            if (isFault(err)) {
+              throw err;
+            }
+          }
+        }
+        if (!isEmpty(early)) {
+          by.push(early);
+        }
+      }
+
+      return by.length ? cutAway(b, by) : b;
+    });
+    now.forEach((shape, index) => bodies.set(ids[index], shape));
+
+    return;
+  }
+  let open: number | undefined;
+  for (const t of toolIds) {
+    const tool = need(bodies, t);
+    const solids = (x: Shape3D) => [...iterTopo(x.wrapped, 'solid')].length;
+    // An open freeform (a surface with a hole) isn't a solid: nothing to join into.
+    if (!solids(target) || !solids(tool)) {
+      throw new Error('One of these is an open surface (e.g. a freeform with a hole), not a solid. Close it first: tap an edge of the hole → Fill hole, or give it a Thickness - then Union.');
+    }
+    const before = feature.op === 'union' ? solids(target) + solids(tool) : 0;
+    const prev = target;
+    target = feature.op === 'union' ? target.fuse(tool) : feature.op === 'subtract' ? target.cut(tool) : target.intersect(tool);
+    // A join that leaves a gap (a coil wound round a hollowed cowl: one
+    // edge left open where the two met): the tolerant join closes it.
+    if (feature.op === 'union') {
+      open ??= openEdges(prev).length;
+      let now = openEdges(target).length;
+      if (now > open + openEdges(tool).length) {
+        try {
+          const fz = fuzzyBoolean('fuse', prev, tool);
+          const nz = openEdges(fz).length;
+          if (nz < now && booleanVolumeOk('fuse', prev, tool, fz)) {
+            [target, now] = [fz, nz];
+          }
+        } catch {
+          // keep the plain result: the usual checks speak for it
+        }
+      }
+      open = now;
+    }
+    // A union joins: a body that doesn't touch would only be grouped with it, not joined.
+    if (feature.op === 'union' && solids(target) >= before) {
+      throw new Error("These bodies don't touch - Union needs them to overlap or touch (move one onto the other first)");
+    }
+    if (!(feature.op === 'intersect' && feature.keepTools)) {
+      bodies.delete(t);
+    }
+  }
+  if (isEmpty(target)) {
+    throw new Error('The result is empty');
+  }
+  bodies.set(feature.op === 'intersect' && feature.keepTarget ? feature.id : feature.target, target);
+
+  return;
+}
+
+function applySplit(feature: SplitFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const body = need(bodies, feature.body);
+  // Several planes, or bodies, at once: every piece they cut it into. The
+  // biggest stays the body; the others are new ones.
+  if (feature.planes?.length || feature.tools?.length || feature.noPlane) {
+    const planes = [...(feature.noPlane ? [] : [feature.plane]), ...(feature.planes ?? [])];
+    const tools = (feature.tools ?? []).filter(t => t !== feature.body).map(t => need(bodies, t));
+    if (!planes.length && !tools.length) {
+      throw new Error('Pick a plane or a body to split it with');
+    }
+    const pieces = splitAll(body, planes, tools);
+    if (pieces.length < 2) {
+      throw new Error("Nothing it's split with cuts through the body");
+    }
+    bodies.set(feature.body, pieces[0]);
+    pieces.slice(1).forEach((piece, pieceIndex) => bodies.set(pieceIndex ? `${feature.id}:${pieceIndex + 1}` : feature.id, piece));
+
+    return;
+  }
+  const half = halfSpace(feature.plane, body);
+  let a: Shape3D | null = null, b: Shape3D | null = null;
+  try {
+    a = body.intersect(half);
+    b = body.cut(half);
+  } catch {
+    // Faces lying on the plane (a coil's end drawn on it) can stop the
+    // plain split: the tolerant one treats them as on it.
+  }
+  // A plane crossing a round face's seam twice (the top off a ball turned
+  // round the pipe's axis) gives the plain split an empty, broken half,
+  // with no error: the halves must be sound and add up to the body.
+  const whole = Math.abs(volumeOf(body));
+  const sound = (shape: Shape3D | null) => !!shape && !isEmpty(shape) && shapeValid(shape);
+  const addsUp = () => Math.abs(Math.abs(volumeOf(a!)) + Math.abs(volumeOf(b!)) - whole) <= Math.max(1e-9, whole * 1e-4);
+  if (!sound(a) || !sound(b) || !addsUp()) {
+    a = fuzzyBoolean('common', body, half);
+    b = fuzzyBoolean('cut', body, half);
+  }
+  const [inside, outside] = [a as Shape3D, b as Shape3D];
+  if (isEmpty(inside) || isEmpty(outside)) {
+    throw new Error("The plane doesn't cut through the body");
+  }
+  bodies.set(feature.body, outside);
+  bodies.set(feature.id, inside);
+
+  return;
+}
+
+async function applyImport(feature: ImportFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const rounding = feature.format === 'stl' && !!feature.round;
+  const cacheKey = rounding ? `round:${feature.data}` : feature.data;
+  let shape = importCache.get(cacheKey);
+  if (!shape) {
+    const bytes = Uint8Array.from(atob(feature.data), char => char.charCodeAt(0));
+    const blob = new Blob([bytes]);
+    try {
+      // (A mesh asked to be made into faces: its flat faces built whole here, whichever way they face; where
+      // that cannot be done, the kernel's own reading of the file.)
+      const whole = rounding ? meshBodyOf(bytes) : null;
+      shape = whole?.shape ?? ((feature.format === 'step' ? await importSTEP(blob) : readSTL(bytes)) as Shape3D);
+    } catch (err) {
+      // (The engine itself breaking down is for whoever runs it - it was
+      // taken for a file that couldn't be read, and the broken engine kept.
+      // A mesh too big says so in its own words.)
+      if (isFault(err) || err instanceof TooBig) {
+        throw err;
+      }
+      // (OpenCascade's own words were "This shape has not type, it is null".)
+      throw new Error(feature.format === 'step' ? "This STEP file couldn't be read - it may be damaged" : "This STL file couldn't be read");
+    }
+    if (isEmpty(shape)) {
+      throw new Error('The file contains no solid geometry');
+    }
+    importCache.set(cacheKey, shape);
+  }
+  // A file of several solids (an assembly; this app's own STEP of two bodies): each a body of its own, to pick,
+  // hide, move and cut by itself. (They came in as one body of several pieces: the two bodies of a project
+  // saved as STEP and opened again were one, that nothing could take apart.)
+  const solids = feature.apart && (feature.format === 'step' || rounding) ? subShapes(shape, 'SOLID') : [];
+  if (solids.length > 1) {
+    solids.forEach((solid, i) => bodies.set(i ? `${feature.id}:${i}` : feature.id, cast(solid) as Shape3D));
+
+    return;
+  }
+  bodies.set(feature.id, shape);
+
+  return;
+}
+
+function applyFaceFreeform(feature: FaceFreeformFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const body = need(bodies, feature.face.body);
+  const face = resolveFace(body, feature.face);
+  if (!feature.cage?.verts?.length) {
+    throw new Error('Made before Freeform Face had a cage: tap the face, Edit Freeform, and shape it again');
+  }
+  // The cage follows the face (an earlier step moved it).
+  const center = face.center.toTuple() as Vec3;
+  const cage = { faces: feature.cage.faces, verts: feature.cage.verts.map(vertex => add(center, vertex)) };
+  // Several faces side by side: one smooth surface over them all (no fitted way for those).
+  if (feature.more?.length) {
+    const Fs = [face, ...feature.more.map(faceRef => resolveFace(body, faceRef))];
+    const normal = facesNormal(Fs.map(face => face.normalAt().toTuple() as Vec3));
+    try {
+      bodies.set(feature.face.body, staysClosed(body, sheetFaces(body, Fs, cage, normal)));
+    } catch (err) {
+      if (isFault(err) || (err instanceof Error && /holes in them/.test(err.message))) {
+        throw err;
+      }
+      throw new Error("These faces can't be made one smooth surface like that - move the points less, or pick fewer faces");
+    }
+
+    return;
+  }
+  const unitNormal = norm(face.normalAt().toTuple() as Vec3);
+  // Through the cage's surface twice as fine as the cage; if the face
+  // can't be filled through that many points (a fine cage on an outline
+  // with inward corners), through the cage's own.
+  if (!faceCagePoints(cage, unitNormal, false)) {
+    return;
+  }
+  // The cage's own smooth surface, its border on the face's edges. (A cage
+  // whose border doesn't follow the edges - laid before it did - or a
+  // body that won't close round it: fitted through its points instead.)
+  try {
+    bodies.set(feature.face.body, staysClosed(body, sheetFace(body, face, cage)));
+
+    return;
+  } catch (err) {
+    if (isFault(err) || (err instanceof Error && /holes in them/.test(err.message))) {
+      throw err;
+    }
+  }
+  let last: unknown;
+  for (const fine of [true, false]) {
+    const pts = faceCagePoints(cage, unitNormal, fine);
+    if (!pts) {
+      return;
+    }
+    try {
+      bodies.set(feature.face.body, staysClosed(body, freeformFace(body, face, onFace(face, pts))));
+
+      return;
+    } catch (err) {
+      if (isFault(err)) {
+        throw err;
+      }
+      last = err;
+    }
+  }
+  throw last;
+}
+
+function applyReplaceFace(feature: ReplaceFaceFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const body = need(bodies, feature.face.body);
+  const face = resolveFace(body, feature.face);
+  // Follow the target face if it's still there; else the plane as saved.
+  let plane = feature.plane;
+  if (feature.target) {
+    const tb = bodies.get(feature.target.body);
+    const tf = tb && (() => {
+      try {
+        return resolveFace(tb, feature.target!);
+      } catch {
+        return null;
+      }
+    })();
+    if (tf?.geomType === 'PLANE') {
+      plane = planeOf(tf);
+    }
+  }
+  // Keep the face pointing the way it pointed (outward).
+  const n0 = planeOf(face).normal;
+  const normal = dot(plane.normal, n0) < 0 ? scale(plane.normal, -1) : plane.normal;
+  bodies.set(feature.face.body, staysClosed(body, replaceFacePlane(body, face, { origin: plane.origin, normal: normal, xDir: xDirFor(normal) })));
+
+  return;
+}
+
+function applyHole(feature: HoleFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const body = need(bodies, feature.face.body);
+  const face = resolveFace(body, feature.face, candidate => candidate.geomType === 'PLANE');
+  const out = norm(face.normalAt().toTuple() as Vec3);
+  const on = planeOf(face).origin;
+  // Where: the centre of the round edge it was put on, the face's middle, or the place itself - on the face's
+  // plane as it is now (the face moved out or in since: the hole starts at it still).
+  let at = feature.at;
+  if (feature.around) {
+    try {
+      at = roundCentre(resolveEdge(body, feature.around)) ?? at;
+    } catch {
+      // The edge is gone: where it was put.
+    }
+  } else if (feature.centered) {
+    at = faceMiddle(face);
+  } else if (feature.from) {
+    try {
+      const lines = feature.from.map((x) => {
+        const e = resolveEdge(body, x.edge);
+        if (e.geomType !== 'LINE') {
+          throw new Error('not straight');
+        }
+
+        return { a: e.pointAt(0).toTuple() as Vec3, b: e.pointAt(1).toTuple() as Vec3, d: x.d };
+      });
+      at = holeFromLines(at, faceMiddle(face), out, lines[0], lines[1]) ?? at;
+    } catch {
+      // An edge is gone, or round now: where it was put.
+    }
+  }
+  at = sub(at, scale(out, dot(sub(at, on), out)));
+  const into = scale(out, -1);
+  // Right through: past the far side of the body, wherever that is.
+  let depth = feature.depth;
+  if (feature.through) {
+    const [lo, hi] = body.boundingBox.bounds as [Vec3, Vec3];
+    depth = 0;
+    for (const x of [lo[0], hi[0]]) {
+      for (const y of [lo[1], hi[1]]) {
+        for (const z of [lo[2], hi[2]]) {
+          depth = Math.max(depth, dot(sub([x, y, z], at), into));
+        }
+      }
+    }
+    depth += Math.max(1, feature.diameter);
+  }
+  const fault = holeFault(feature, depth);
+  if (fault) {
+    throw new Error(fault);
+  }
+  // Its mouth is open: nothing of the body over it. (Put on the plate under a boss - the boss's foot is a round
+  // edge to catch on - it was drilled from the plate's face down, a hollow under the boss that nothing showed.)
+  if (insideOf(body, [add(at, scale(out, Math.max(2e-3, feature.diameter * 0.05)))])[0]) {
+    throw new Error('The body covers the hole there: tap the face the screw goes in from.');
+  }
+  const made = body.cut(holeCutter(feature, at, into, depth, Math.max(1e-3, feature.diameter * 0.01))) as Shape3D;
+  if (!(volumeOf(body) - volumeOf(made) > 1e-9)) {
+    throw new Error('The hole is off the body there: nothing to drill into. Drag it onto the face.');
+  }
+  bodies.set(feature.face.body, made);
+
+  return;
+}
+
+function applyThread(feature: ThreadFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const body = need(bodies, feature.face.body);
+  const face = threadTarget(body, feature);
+  const cy = cylinderOf(face);
+  // (How it was cut is kept by its step: a clearance round the body is the same thread cut on the body grown -
+  // see grownThreaded.)
+  if (cy) {
+    const a = norm(cy.a);
+    const ts: number[] = [];
+    for (const e of face.edges) {
+      for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+        ts.push(dot(sub(e.pointAt(fraction).toTuple() as Vec3, cy.c), a));
+      }
+    }
+    const used: { phase?: number } = {};
+    const made = threadFace(body, face, feature.pitch, !!feature.left, undefined, used, threadStarts(feature.starts));
+    threadsCut.set(feature.id, { body: feature.face.body, c: cy.c, a, r: cy.r, inside: cy.s < 0, pitch: feature.pitch, left: !!feature.left, t0: Math.min(...ts), t1: Math.max(...ts), phase: used.phase, starts: threadStarts(feature.starts) });
+    bodies.set(feature.face.body, made);
+
+    return;
+  }
+  bodies.set(feature.face.body, threadFace(body, face, feature.pitch, !!feature.left, undefined, undefined, threadStarts(feature.starts)));
+
+  return;
+}
+
+function applyConnect(feature: ConnectFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const [ra, rb] = feature.faces;
+  const shapeA = need(bodies, ra.body);
+  const shapeB = need(bodies, rb.body);
+  const fa = resolveFace(shapeA, ra);
+  const fb = resolveFace(shapeB, rb);
+  if (ra.body === rb.body && fa.isSame(fb)) {
+    throw new Error('Pick two different faces to connect');
+  }
+  const mode = feature.mode === 'auto' ? 'join' : feature.mode;
+  const size = feature.size ?? 1;
+  // Cut between two faces of one body: a tunnel, into the faces (else out of them).
+  const inward = mode === 'cut' && ra.body === rb.body;
+  // Cutting a face's whole outline out: the cutter a hair wider, so no sliver stays on the walls beside it.
+  const cutSize = mode === 'cut' && !inward && size > 0.99 ? size * 1.002 : size;
+  const ea = bridgeEnd(shapeA, fa, cutSize, inward, mode !== 'new');
+  const eb = bridgeEnd(shapeB, fb, cutSize, inward, mode !== 'new');
+  const reach = Math.max(ea.reach, eb.reach);
+  // The bridge's outline at each end (the fold check carries them along the curve).
+  const rings = { a: ea.ring, b: eb.ring };
+  let along: (t: number) => Vec3;
+  // Turning with its curve, the outline never runs back over itself (the
+  // bridge folding through itself: a solid no join or cut can use). Where
+  // it would - `slide`: the way the outline keeps facing instead, all the
+  // way, sliding along the curve without turning.
+  let sound = true;
+  let slide: Vec3 | undefined;
+  // Points taken along the curve for the sweep's path (two arcs: more, or the
+  // path fitted through them wavers where the arcs meet and the sweep breaks).
+  let samples = 60;
+  if (feature.guide) {
+    // Eased onto the guide over a longer stretch when it leaves the face
+    // steeply; where the guide itself turns tighter than the bridge is
+    // wide, rounded off a little at a time until it fits.
+    const drawn = curvePoints(pathWire(feature.guide, ctx).wrapped, 200);
+    const fit = (pts: Vec3[]) => [1.5, 2.5, 3.5, 5].map(factor => guideCurve(pts, ea.center, eb.center, ea.dir, eb.dir, factor * reach)).find(curve => gentle(curve, rings));
+    let pts = oriented(evenly(drawn, 60), ea.center, eb.center);
+    let found = fit(pts);
+    for (let attempt = 0; attempt < 40 && !found; attempt++) {
+      found = fit((pts = smoothed(pts, 10, ea.dir, eb.dir)));
+    }
+    along = found ?? guideCurve(drawn, ea.center, eb.center, ea.dir, eb.dir, 1.5 * reach);
+    sound = !!found;
+    if (!sound) {
+      slide = slideAxis(along, ea.dir, scale(eb.dir, -1), reach) ?? undefined;
+    }
+  } else {
+    const plain = plainSpine(ea.center, ea.dir, eb.center, eb.dir, feature.bulge ?? 1, rings);
+    along = plain.along;
+    sound = plain.gentle;
+    if (!sound) {
+      // Faces too wide for how close they are (or how far to the side of
+      // each other): two arcs - the gentlest way from one to the other -
+      // or, facing each other, a bridge that slides along the plain curve.
+      const arcs = arcSpine(ea.center, ea.dir, eb.center, eb.dir);
+      if (arcs && gentle(arcs, rings)) {
+        (along = arcs), (sound = true), (samples = 180);
+      } else {
+        const sliding = slidingSpine(ea.center, ea.dir, eb.center, eb.dir, feature.bulge ?? 1, reach);
+        if (sliding) {
+          (along = sliding.along), (slide = sliding.axis);
+        }
+      }
+    }
+  }
+  // Into both bodies (one, when both faces are on it).
+  const into = (bridge: Shape3D) => {
+    combine(feature.id, mode, ra.body, bridge, false, ctx);
+    if (rb.body !== ra.body) {
+      if (mode === 'join') {
+        combine(feature.id, 'join', ra.body, need(bodies, rb.body), false, ctx);
+        bodies.delete(rb.body);
+        ctx.freeforms.delete(rb.body);
+      } else {
+        combine(feature.id, 'cut', rb.body, bridge, false, ctx);
+      }
+    }
+    ctx.freeforms.delete(ra.body);
+  };
+  try {
+    const made = sweepBridge(ea, eb, along, { guided: !!feature.guide, exact: true, slide, samples });
+    if (mode === 'new') {
+      bodies.set(feature.id, made.shape);
+
+      return;
+    }
+    if (!made.exact) {
+      return into(made.shape);
+    }
+    // Starting on the faces' very edges, its walls lie on the bodies' own:
+    // where joining (or cutting) that fails, the bridge made the other way
+    // (a little inside the edges) - on the bodies as they were.
+    const was = [ra.body, rb.body].map(id => [id, bodies.get(id), ctx.freeforms.get(id)] as const);
+    try {
+      into(made.shape);
+    } catch (err) {
+      if (isFault(err)) {
+        throw err;
+      }
+      for (const [id, body, ff] of was) {
+        if (body) {
+          bodies.set(id, body);
+        }
+        if (ff) {
+          ctx.freeforms.set(id, ff);
+        }
+      }
+      into(sweepBridge(ea, eb, along, { guided: !!feature.guide, exact: false, slide, samples }).shape);
+    }
+  } catch (err) {
+    // On a curve too tight for it the bridge runs through itself: whatever
+    // went wrong with it after that, this is why.
+    if (isFault(err) || sound || slide) {
+      throw err;
+    }
+    throw new Error(bridgeFailed(!!feature.guide));
+  } finally {
+    for (const e of [ea, eb]) {
+      (e.outline.delete(), e.rim.delete());
+    }
+  }
+
+  return;
+}
+
+function applyRepair(feature: RepairFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  for (const id of feature.bodies) {
+    const body = need(bodies, id);
+    const repaired = repairShape(body);
+    if (!repaired) {
+      throw new Error(`This body can't be made a clean solid: ${whatsWrong(healthOf(body))}`);
+    }
+    editNotes.push(repaired.fixes.length ? `Repaired: ${repaired.fixes.join(', ')}.` : "Nothing to repair - it's a clean solid already.");
+    bodies.set(id, repaired.shape);
+  }
+
+  return;
+}
+
+function applyDeleteGeom(feature: DeleteGeomFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  const start = need(bodies, feature.body);
+  let body = start;
+  // Picked together, taken out together: a slot's two walls and floor close
+  // up as one gap (one wall alone has nothing to close it).
+  let together: Shape3D | null = null;
+  if (feature.faces.length > 1) {
+    try {
+      together = deleteBodyFaces(body, feature.faces.map(face => resolveFace(body, face)));
+    } catch {
+      together = null;
+    }
+  }
+  if (together) {
+    body = together;
+  } else {
+    for (const face of feature.faces) {
+      body = deleteFace(body, resolveFace(body, face));
+    }
+  }
+  for (const edge of feature.edges) {
+    body = deleteEdge(body, edge);
+  }
+  for (const vertex of feature.vertices) {
+    body = deleteVertex(body, vertex);
+  }
+  bodies.set(feature.body, staysClosed(start, body));
+
+  return;
+}
+
+function applyMoveFace(feature: MoveFaceFeature, ctx: Ctx) {
+  const { bodies } = ctx;
+  let rotation = feature.rotate && Math.abs(feature.rotate.angle) > 1e-9 ? feature.rotate : undefined;
+  let translate = feature.translate;
+  const move = (point: Vec3) => add(rotation ? rotateAbout(point, rotation.origin, rotation.axis, rotation.angle) : point, translate);
+  const turn = (normal: Vec3) => (rotation ? norm(sub(rotateAbout(add(rotation.origin, normal), rotation.origin, rotation.axis, rotation.angle), rotation.origin)) : normal);
+  if (feature.face) {
+    const body = need(bodies, feature.face.body);
+    const face = resolveFace(body, feature.face);
+    const { origin, normal } = planeOf(face);
+    const nn = norm(normal);
+    // Pushed straight out (or tilted about a line in it) when it was made:
+    // still that, square to the face as it is now - a step before it that
+    // turns the face a little more mustn't make the push a slide.
+    const was = feature.face.normal && len(feature.face.normal) > 1e-9 ? norm(feature.face.normal) : undefined;
+    if (was) {
+      const way = dot(nn, was) < 0 ? -1 : 1;
+      const out = dot(translate, was);
+      if (len(sub(translate, scale(was, out))) <= 1e-6 * Math.max(1, Math.abs(out))) {
+        translate = scale(nn, out * way);
+      }
+      if (rotation && Math.abs(dot(norm(rotation.axis), was)) <= 1e-6) {
+        const inPlane = sub(rotation.axis, scale(nn, dot(rotation.axis, nn)));
+        if (len(inPlane) > 1e-9) {
+          rotation = { ...rotation, axis: norm(inPlane) };
+        }
+      }
+    }
+    // Slid within its own plane, or turned about its normal: its corners
+    // move and the faces round it follow (a plane alone can't show that -
+    // the face stayed where it was).
+    const slide = sub(translate, scale(nn, dot(translate, nn)));
+    const twist = !!rotation && Math.abs(dot(norm(rotation.axis), nn)) > 1e-6;
+    if (len(slide) > 1e-9 || twist) {
+      const size = Math.hypot(body.boundingBox.width, body.boundingBox.height, body.boundingBox.depth) || 1;
+      const loop = faceLoop(face, size * 1e-6);
+      const out = loop ? movePolyhedronPoints(body, loop.map(vertex => [vertex, move(vertex)] as [Vec3, Vec3])) : null;
+      if (!out) {
+        throw new Error('Sliding or turning a face within its plane works on bodies of flat, straight-edged faces - push or tilt it instead');
+      }
+      bodies.set(feature.face.body, staysClosed(body, out));
+
+      return;
+    }
+    // Drawn inside a bigger flat face (projected onto it): moving its plane
+    // moves nothing - raised, it's a prism joined on; sunk, one cut out.
+    if (inFlatFace(body, face)) {
+      if (rotation) {
+        throw new Error('This face lies in a bigger flat face: it can be pushed straight out or in, not tilted (Extrude it at an angle instead)');
+      }
+      const along = dot(translate, nn);
+      if (Math.abs(along) < 1e-12) {
+        return;
+      }
+      const prism = basicFaceExtrusion(face, new Vector(scale(nn, along))) as Shape3D;
+      const size = Math.hypot(body.boundingBox.width, body.boundingBox.height, body.boundingBox.depth) || 1;
+      const { p } = pointOnFace(body, face);
+      const [into] = insideOf(body, [add(p, scale(nn, Math.sign(along) * Math.min(Math.abs(along) / 2, size * 1e-3)))]);
+      bodies.set(feature.face.body, staysClosed(body, checkedBoolean(into ? 'cut' : 'fuse', body, prism)));
+
+      return;
+    }
+    const turned = turn(normal);
+    bodies.set(feature.face.body, staysClosed(body, replaceFacePlane(body, face, { origin: move(origin), normal: turned, xDir: xDirFor(turned) })));
+
+    return;
+  }
+  if (feature.vertex) {
+    if (ctx.freeforms.has(feature.vertex.body)) {
+      throw new Error("A freeform's shape comes from its cage: use Edit Freeform to move its points");
+    }
+    const body = need(bodies, feature.vertex.body);
+    bodies.set(feature.vertex.body, staysClosed(body, moveVertex(body, feature.vertex.at, move(feature.vertex.at))));
+
+    return;
+  }
+  if (!feature.edge) {
+    throw new Error('Nothing to move');
+  }
+  const eb = need(bodies, feature.edge.body);
+  bodies.set(feature.edge.body, staysClosed(eb, moveEdge(eb, feature.edge, move)));
+
+  return;
 }
 
 // ------------------------------------------------------------ affine maps
