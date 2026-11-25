@@ -55,6 +55,7 @@ import { fillNetwork, fillToPlane } from './steps/fill';
 import { applyRepair } from './steps/repair';
 import { chainKey, hash53, shortBig } from './stepKey';
 import { originsOf } from './originsOf';
+import { rawEntries, rawGet, rawHas } from './readTracking';
 import type {
   Feature,
   PlaneDef,
@@ -80,9 +81,6 @@ interface Reads {
 }
 let reading: Reads | null = null;
 const KINDS = ['bodies', 'sketches', 'planes', 'axes', 'freeforms', 'sweeps', 'links'] as const;
-const rawGet = <V>(map: Map<string, V>, key: string): V | undefined => Map.prototype.get.call(map, key) as V | undefined;
-const rawHas = (map: Map<string, unknown>, key: string): boolean => Map.prototype.has.call(map, key) as boolean;
-const rawEntries = <V>(map: Map<string, V>): [string, V][] => [...(Map.prototype.entries.call(map) as IterableIterator<[string, V]>)];
 
 /** A map of the model (its bodies, sketches…) that notes what a step reads of it. */
 class Noted<V> extends Map<string, V> {
