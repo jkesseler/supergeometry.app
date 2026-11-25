@@ -64,19 +64,19 @@ export class HoleOp extends FeatureOp<HoleFeature> {
   }
 
   refresh(): void {
-    const f = this.feature;
-    if (this.dragging || (!f.around && !f.centered)) {
+    const feature = this.feature;
+    if (this.dragging || (!feature.around && !feature.centered)) {
       return;
     }
-    const wall = this.app.view.body(f.face.body)?.faces.find(g => g.step === f.id && g.round?.hole && Math.abs(dot(g.normal, this.out)) < 0.01);
+    const wall = this.app.view.body(feature.face.body)?.faces.find(face => face.step === feature.id && face.round?.hole && Math.abs(dot(face.normal, this.out)) < 0.01);
     if (!wall) {
       return;
     }
-    const c = this.flatten(wall.center);
-    if (dist(c, this.at) < 1e-7) {
+    const flattened = this.flatten(wall.center);
+    if (dist(flattened, this.at) < 1e-7) {
       return;
     }
-    this.actual = c;
+    this.actual = flattened;
     this.show();
   }
 
@@ -97,13 +97,13 @@ export class HoleOp extends FeatureOp<HoleFeature> {
       if (i !== null) {
         this.on = body.faces[i].center;
       }
-      const wall = body.faces.find(g => g.step === existing.id && g.round?.hole && Math.abs(dot(g.normal, this.out)) < 0.01);
+      const wall = body.faces.find(face => face.step === existing.id && face.round?.hole && Math.abs(dot(face.normal, this.out)) < 0.01);
       if (wall) {
         this.feature.at = wall.center;
       }
     }
     const size0 = Math.sqrt(face.area) || 1;
-    const flat = (p: Vec3) => Math.abs(dot(sub(p, this.on), this.out)) < 1e-4 * Math.max(1, size0);
+    const flat = (point: Vec3) => Math.abs(dot(sub(point, this.on), this.out)) < 1e-4 * Math.max(1, size0);
     body?.edges.forEach((e) => {
       // (Not the hole's own rim.)
       if (existing && e.steps?.includes(existing.id)) {
@@ -116,9 +116,9 @@ export class HoleOp extends FeatureOp<HoleFeature> {
       if (e.type === 'LINE' && dist(e.start, e.end) > 1e-6) {
         this.lines.push({ a: e.start, b: e.end, ref });
       } else if (e.type === 'CIRCLE') {
-        const c = centreOf(e.start, e.mid, e.end);
-        if (c && !this.rounds.some(r => dist(r.c, c) < 1e-6)) {
-          this.rounds.push({ c, ref });
+        const centre = centreOf(e.start, e.mid, e.end);
+        if (centre && !this.rounds.some(round => dist(round.c, centre) < 1e-6)) {
+          this.rounds.push({ c: centre, ref });
         }
       }
     });
@@ -130,22 +130,22 @@ export class HoleOp extends FeatureOp<HoleFeature> {
     }
   }
 
-  private flatten(p: Vec3): Vec3 {
-    return sub(p, scale(this.out, dot(sub(p, this.on), this.out)));
+  private flatten(point: Vec3): Vec3 {
+    return sub(point, scale(this.out, dot(sub(point, this.on), this.out)));
   }
 
   // ------------------------------------------------------------ where it is
 
   /** The two straight edges nearest a point that do not run the same way (the nearest first). */
-  private nearest(p: Vec3): [Line, Line] | null {
-    const far = (l: Line): number => {
-      const t = sub(l.b, l.a);
-      const L = len(t);
-      const along = dot(sub(p, l.a), t) / (L * L);
-      const square = len(cross(sub(p, l.a), t)) / L;
+  private nearest(point: Vec3): [Line, Line] | null {
+    const far = (line: Line): number => {
+      const t = sub(line.b, line.a);
+      const length = len(t);
+      const along = dot(sub(point, line.a), t) / (length * length);
+      const square = len(cross(sub(point, line.a), t)) / length;
 
       // (An edge the point is not beside counts as further off: the one it is beside is the one meant.)
-      return square + (along < 0 ? -along * L : along > 1 ? (along - 1) * L : 0);
+      return square + (along < 0 ? -along * length : along > 1 ? (along - 1) * length : 0);
     };
     const sorted = [...this.lines].sort((x, y) => far(x) - far(y));
     const first = sorted[0];
@@ -153,63 +153,63 @@ export class HoleOp extends FeatureOp<HoleFeature> {
       return null;
     }
     const t1 = norm(sub(first.b, first.a));
-    const second = sorted.find(l => len(cross(t1, norm(sub(l.b, l.a)))) > 0.3);
+    const second = sorted.find(line => len(cross(t1, norm(sub(line.b, line.a)))) > 0.3);
 
     return second ? [first, second] : null;
   }
 
   /** How far it is from each of the edges it is measured from. */
   private distances(): [number, number] | null {
-    const h = this.edges2;
-    if (!h) {
+    const edges2 = this.edges2;
+    if (!edges2) {
       return null;
     }
-    const d = h.map(l => distanceFrom(l, this.at, this.middle, this.out));
+    const distances = edges2.map(line => distanceFrom(line, this.at, this.middle, this.out));
 
-    return d[0] === null || d[1] === null ? null : [d[0], d[1]];
+    return distances[0] === null || distances[1] === null ? null : [distances[0], distances[1]];
   }
 
   /** The edges a hole opened again is held from (or, with none, the nearest: only to show its sizes). */
   private hold(): void {
-    const f = this.feature;
-    const tol = 1e-4 * Math.max(1, Math.sqrt(f.face.area));
-    const mine = f.from?.map(x => this.lines.find(l => dist(l.ref.mid, x.edge.mid) < tol));
-    this.edges2 = mine?.[0] && mine[1] ? [mine[0], mine[1]] : this.nearest(f.at);
+    const feature = this.feature;
+    const tol = 1e-4 * Math.max(1, Math.sqrt(feature.face.area));
+    const mine = feature.from?.map(x => this.lines.find(line => dist(line.ref.mid, x.edge.mid) < tol));
+    this.edges2 = mine?.[0] && mine[1] ? [mine[0], mine[1]] : this.nearest(feature.at);
   }
 
   /**
    * Put down at a point of the face: on the face's middle or a round edge's centre when within `catchAt` of one,
    * else held from the two nearest straight edges, their sizes in steps of `step`.
    */
-  private place(p: Vec3, catchAt: number, step = 0): void {
-    const f = this.feature;
-    p = this.flatten(p);
+  private place(target: Vec3, catchAt: number, step = 0): void {
+    const feature = this.feature;
+    target = this.flatten(target);
     this.actual = null;
-    delete f.around;
-    delete f.centered;
-    delete f.from;
+    delete feature.around;
+    delete feature.centered;
+    delete feature.from;
     let best: { c: Vec3; d: number; round?: Round } | null = null;
-    for (const c of [{ c: this.flatten(this.middle) }, ...this.rounds.map(round => ({ c: round.c, round }))]) {
-      const d = dist(c.c, p);
-      if (d <= catchAt && (!best || d < best.d)) {
-        best = { ...c, d };
+    for (const candidate of [{ c: this.flatten(this.middle) }, ...this.rounds.map(round => ({ c: round.c, round }))]) {
+      const distance = dist(candidate.c, target);
+      if (distance <= catchAt && (!best || distance < best.d)) {
+        best = { ...candidate, d: distance };
       }
     }
     if (best) {
-      f.at = best.c;
+      feature.at = best.c;
       if (best.round) {
-        f.around = best.round.ref;
+        feature.around = best.round.ref;
       } else {
-        f.centered = true;
+        feature.centered = true;
       }
-      this.edges2 = this.nearest(f.at);
+      this.edges2 = this.nearest(feature.at);
       this.caught = best.round ? 'On the centre of the round edge' : 'In the middle of the face';
 
       return;
     }
     this.caught = null;
-    f.at = p;
-    this.edges2 = this.nearest(p);
+    feature.at = target;
+    this.edges2 = this.nearest(target);
     this.keepSizes(step);
   }
 
@@ -218,31 +218,31 @@ export class HoleOp extends FeatureOp<HoleFeature> {
 
   /** Held from its two edges at the sizes it has now (in steps of `step`), or at `typed` for one of them. */
   private keepSizes(step = 0, typed?: { i: number; v: number }): void {
-    const f = this.feature;
-    const h = this.edges2;
-    const d = this.distances();
-    if (!h || !d) {
+    const feature = this.feature;
+    const edges2 = this.edges2;
+    const distances = this.distances();
+    if (!edges2 || !distances) {
       return;
     }
-    f.at = this.at;
+    feature.at = this.at;
     this.actual = null;
-    const size = d.map((x, i) => {
+    const size = distances.map((x, i) => {
       if (typed?.i === i) {
         return (x < 0 ? -1 : 1) * typed.v;
       }
 
       return Math.round((step > 0 ? Math.round(x / step) * step : x) * 1e9) / 1e9;
     });
-    const at = holeFromLines(f.at, this.middle, this.out, { ...h[0], d: size[0] }, { ...h[1], d: size[1] });
+    const at = holeFromLines(feature.at, this.middle, this.out, { ...edges2[0], d: size[0] }, { ...edges2[1], d: size[1] });
     if (!at) {
       return;
     }
-    f.at = this.flatten(at);
-    delete f.around;
-    delete f.centered;
-    f.from = [
-      { edge: h[0].ref, d: size[0] },
-      { edge: h[1].ref, d: size[1] }
+    feature.at = this.flatten(at);
+    delete feature.around;
+    delete feature.centered;
+    feature.from = [
+      { edge: edges2[0].ref, d: size[0] },
+      { edge: edges2[1].ref, d: size[1] }
     ];
   }
 
@@ -257,8 +257,8 @@ export class HoleOp extends FeatureOp<HoleFeature> {
   exit(): void {
     this.handle?.dispose();
     this.handle = null;
-    for (const d of this.dims) {
-      d.dispose();
+    for (const dimension of this.dims) {
+      dimension.dispose();
     }
     this.dims = [];
     super.exit();
@@ -277,42 +277,42 @@ export class HoleOp extends FeatureOp<HoleFeature> {
     }
     const at = this.at;
     this.handle.set(at, this.out);
-    const h = this.edges2;
-    const d = this.distances();
-    if (!h || !d) {
-      for (const w of this.dims) {
-        w.dispose();
+    const edges2 = this.edges2;
+    const distances = this.distances();
+    if (!edges2 || !distances) {
+      for (const dimension of this.dims) {
+        dimension.dispose();
       }
       this.dims = [];
 
       return;
     }
-    h.forEach((l, i) => {
-      const m = sideOf(l, this.middle, at, this.out);
-      if (!m) {
+    edges2.forEach((line, i) => {
+      const side = sideOf(line, this.middle, at, this.out);
+      if (!side) {
         return;
       }
       this.dims[i] ??= new DimWidget(this.app.view, {
-        value: Math.abs(d[i]),
+        value: Math.abs(distances[i]),
         // (Its box past the edge, off the face: on the line it sat on the hole.)
         boxAt: 'beyond',
         boxGap: 6,
-        dir: scale(m, -1),
+        dir: scale(side, -1),
         facing: this.out,
-        onInput: v => this.typed(i, v),
+        onInput: value => this.typed(i, value),
         onCommit: () => this.done()
       });
-      this.dims[i].set(at, sub(at, scale(m, d[i])));
-      this.dims[i].setValue(Math.abs(d[i]));
+      this.dims[i].set(at, sub(at, scale(side, distances[i])));
+      this.dims[i].setValue(Math.abs(distances[i]));
     });
   }
 
   /** A size typed by one of its edges: that far from it, as far from the other as it was. */
-  private typed(i: number, v: number): void {
-    if (!(v >= 0)) {
+  private typed(i: number, value: number): void {
+    if (!(value >= 0)) {
       return;
     }
-    this.keepSizes(0, { i, v });
+    this.keepSizes(0, { i, v: value });
     this.show();
     this.update();
   }
@@ -322,21 +322,21 @@ export class HoleOp extends FeatureOp<HoleFeature> {
     this.update();
   }
 
-  private catchAt(p: ToolPointer): number {
-    return this.app.view.cam.worldPerPixel(this.app.view.height) * Math.max(12, p.tol);
+  private catchAt(pointer: ToolPointer): number {
+    return this.app.view.cam.worldPerPixel(this.app.view.height) * Math.max(12, pointer.tol);
   }
 
-  private pointOn(p: ToolPointer): Vec3 | null {
-    return this.app.view.rayToPlane(p.x, p.y, { origin: this.on, normal: this.out, xDir: [1, 0, 0] });
+  private pointOn(pointer: ToolPointer): Vec3 | null {
+    return this.app.view.rayToPlane(pointer.x, pointer.y, { origin: this.on, normal: this.out, xDir: [1, 0, 0] });
   }
 
-  hover(p: ToolPointer | null): void {
-    this.handle?.setHot(!!p && (this.dragging || !!this.handle?.hit(p)));
+  hover(pointer: ToolPointer | null): void {
+    this.handle?.setHot(!!pointer && (this.dragging || !!this.handle?.hit(pointer)));
     this.app.setHover(null);
   }
 
-  down(p: ToolPointer): boolean {
-    if (!this.handle?.hit(p)) {
+  down(pointer: ToolPointer): boolean {
+    if (!this.handle?.hit(pointer)) {
       return false;
     }
     this.dragging = true;
@@ -344,17 +344,17 @@ export class HoleOp extends FeatureOp<HoleFeature> {
     return true;
   }
 
-  drag(p: ToolPointer): void {
+  drag(pointer: ToolPointer): void {
     if (!this.dragging) {
       return;
     }
-    const at = this.pointOn(p);
+    const at = this.pointOn(pointer);
     if (!at) {
       return;
     }
-    this.place(at, this.catchAt(p), niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4));
-    const d = this.distances();
-    this.app.ui.setLabel(p.x, p.y, this.caught ?? (d && this.feature.from ? `${fmtLen(Math.abs(d[0]))} and ${fmtLen(Math.abs(d[1]))} from the edges` : null));
+    this.place(at, this.catchAt(pointer), niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4));
+    const distances = this.distances();
+    this.app.ui.setLabel(pointer.x, pointer.y, this.caught ?? (distances && this.feature.from ? `${fmtLen(Math.abs(distances[0]))} and ${fmtLen(Math.abs(distances[1]))} from the edges` : null));
     this.moved();
   }
 
@@ -366,19 +366,19 @@ export class HoleOp extends FeatureOp<HoleFeature> {
   }
 
   /** A tap on the body puts the hole there; a tap on nothing ends the tool (the hole is kept). */
-  tap(p: ToolPointer): void {
-    const hit = this.app.view.pick(p.x, p.y, { edgeTolPx: p.tol });
+  tap(pointer: ToolPointer): void {
+    const hit = this.app.view.pick(pointer.x, pointer.y, { edgeTolPx: pointer.tol });
     if (!hit || !('body' in hit) || hit.body !== this.feature.face.body) {
-      return super.tap(p);
+      return super.tap(pointer);
     }
     // On its face (or in the hole itself): there. Another face of the body - a side wall - is not a place on this one.
     const mine = hit.kind === 'face' && this.app.view.body(hit.body)?.faces[hit.face]?.step === this.feature.id;
     const flat = Math.abs(dot(sub(hit.point, this.on), this.out)) < 1e-3 * Math.max(1, Math.sqrt(this.feature.face.area));
-    const at = mine || flat ? this.pointOn(p) : null;
+    const at = mine || flat ? this.pointOn(pointer) : null;
     if (!at) {
       return void this.app.ui.toast('Tap the face the hole is in to move it there');
     }
-    this.place(at, this.catchAt(p), niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4));
+    this.place(at, this.catchAt(pointer), niceStep(this.app.view.cam.worldPerPixel(this.app.view.height) * 4));
     if (this.caught) {
       this.app.ui.toast(this.caught);
     }
@@ -387,9 +387,9 @@ export class HoleOp extends FeatureOp<HoleFeature> {
   }
 
   protected hint(): string {
-    const f = this.feature;
-    const what = `${f.size ? `${f.size} hole` : `Hole ${fmtLen(f.diameter)} across`}${f.head === 'none' ? '' : `, ${f.head}`}${f.through ? ', right through' : `, ${fmtLen(f.depth)} deep`}`;
-    const where = f.around ? 'It is on the centre of the round edge, and stays there.' : f.centered ? 'It is in the middle of the face, and stays there.' : f.from ? 'Type its two sizes from the edges, or drag its dot.' : 'Drag its dot to move it.';
+    const feature = this.feature;
+    const what = `${feature.size ? `${feature.size} hole` : `Hole ${fmtLen(feature.diameter)} across`}${feature.head === 'none' ? '' : `, ${feature.head}`}${feature.through ? ', right through' : `, ${fmtLen(feature.depth)} deep`}`;
+    const where = feature.around ? 'It is on the centre of the round edge, and stays there.' : feature.centered ? 'It is in the middle of the face, and stays there.' : feature.from ? 'Type its two sizes from the edges, or drag its dot.' : 'Drag its dot to move it.';
 
     return `${what}. ${where}`;
   }
@@ -399,20 +399,20 @@ export class HoleOp extends FeatureOp<HoleFeature> {
   }
 
   protected items(): PanelItem[] {
-    const f = this.feature;
+    const feature = this.feature;
     const items: PanelItem[] = [
-      { type: 'choice', label: 'Screw', list: true, options: [...SCREW_SIZES.map(s => ({ id: s.name, label: s.name })), { id: '', label: 'Other' }], value: f.size ?? '', onChange: id => this.setScrew(id) },
+      { type: 'choice', label: 'Screw', list: true, options: [...SCREW_SIZES.map(screwSize => ({ id: screwSize.name, label: screwSize.name })), { id: '', label: 'Other' }], value: feature.size ?? '', onChange: id => this.setScrew(id) },
       this.num('Diameter', 'diameter', 'length', { min: 0.01, onInput: () => this.changed() }),
-      { type: 'choice', label: 'Head', options: HEADS, value: f.head, onChange: id => this.setHead(id as Head) }
+      { type: 'choice', label: 'Head', options: HEADS, value: feature.head, onChange: id => this.setHead(id as Head) }
     ];
-    if (f.head !== 'none') {
+    if (feature.head !== 'none') {
       items.push(this.num('Head diameter', 'headDiameter', 'length', { min: 0.01, onInput: () => this.changed() }));
     }
-    if (f.head === 'counterbore') {
+    if (feature.head === 'counterbore') {
       items.push(this.num('Head depth', 'headDepth', 'length', { min: 0.01, onInput: () => this.changed() }));
     }
-    items.push({ type: 'toggle', label: 'Through', value: f.through, onChange: v => ((f.through = v), this.changed(true)) });
-    if (!f.through) {
+    items.push({ type: 'toggle', label: 'Through', value: feature.through, onChange: isOn => ((feature.through = isOn), this.changed(true)) });
+    if (!feature.through) {
       items.push(this.num('Depth', 'depth', 'length', { min: 0.01, onInput: () => this.changed() }));
     }
 
@@ -420,31 +420,31 @@ export class HoleOp extends FeatureOp<HoleFeature> {
   }
 
   private setScrew(name: string): void {
-    const f = this.feature;
+    const feature = this.feature;
     const size = screwSize(name);
     if (size) {
-      Object.assign(f, holeFor(size, f.head));
+      Object.assign(feature, holeFor(size, feature.head));
     } else {
-      delete f.size;
+      delete feature.size;
     }
     this.fitDepth();
     // (Sizes from the table: no longer what a formula typed for the last screw said.)
-    for (const k of ['diameter', 'headDiameter', 'headDepth']) {
-      this.setExpr(k, null);
+    for (const field of ['diameter', 'headDiameter', 'headDepth']) {
+      this.setExpr(field, null);
     }
     this.changed(true);
   }
 
   private setHead(head: Head): void {
-    const f = this.feature;
-    f.head = head;
-    const size = screwSize(f.size);
+    const feature = this.feature;
+    feature.head = head;
+    const size = screwSize(feature.size);
     if (head !== 'none') {
-      const made = size ? holeFor(size, head) : headFor(f.diameter, head);
-      f.headDiameter = made.headDiameter;
-      f.headDepth = made.headDepth;
-      for (const k of ['headDiameter', 'headDepth']) {
-        this.setExpr(k, null);
+      const made = size ? holeFor(size, head) : headFor(feature.diameter, head);
+      feature.headDiameter = made.headDiameter;
+      feature.headDepth = made.headDepth;
+      for (const field of ['headDiameter', 'headDepth']) {
+        this.setExpr(field, null);
       }
     }
     this.fitDepth();
@@ -453,19 +453,19 @@ export class HoleOp extends FeatureOp<HoleFeature> {
 
   /** A hole to a depth goes deeper than the recess for its head (choosing a bigger screw made it "too shallow"). */
   private fitDepth(): void {
-    const f = this.feature;
-    if (f.through || f.head === 'none') {
+    const feature = this.feature;
+    if (feature.through || feature.head === 'none') {
       return;
     }
-    const recess = f.head === 'counterbore' ? f.headDepth : sinkDepth(f);
-    if (!(f.depth > recess)) {
-      f.depth = Math.ceil(recess + f.diameter);
+    const recess = feature.head === 'counterbore' ? feature.headDepth : sinkDepth(feature);
+    if (!(feature.depth > recess)) {
+      feature.depth = Math.ceil(recess + feature.diameter);
     }
   }
 
   private changed(panel = false): void {
-    const f = this.feature;
-    lastHole = { ...(f.size ? { size: f.size } : {}), diameter: f.diameter, head: f.head, headDiameter: f.headDiameter, headDepth: f.headDepth, through: f.through, depth: f.depth };
+    const feature = this.feature;
+    lastHole = { ...(feature.size ? { size: feature.size } : {}), diameter: feature.diameter, head: feature.head, headDiameter: feature.headDiameter, headDepth: feature.headDepth, through: feature.through, depth: feature.depth };
     if (panel) {
       this.render();
     }
@@ -477,18 +477,18 @@ export class HoleOp extends FeatureOp<HoleFeature> {
 }
 
 /** The centre of a round edge from its start, middle and end (a whole circle: half way from start to middle). */
-function centreOf(a: Vec3, m: Vec3, b: Vec3): Vec3 | null {
-  if (dist(a, b) < 1e-7 * Math.max(1, dist(a, m))) {
-    return scale(add(a, m), 0.5);
+function centreOf(a: Vec3, midpoint: Vec3, b: Vec3): Vec3 | null {
+  if (dist(a, b) < 1e-7 * Math.max(1, dist(a, midpoint))) {
+    return scale(add(a, midpoint), 0.5);
   }
-  const ab = sub(m, a);
+  const ab = sub(midpoint, a);
   const ac = sub(b, a);
-  const n = cross(ab, ac);
-  const n2 = dot(n, n);
+  const normal = cross(ab, ac);
+  const n2 = dot(normal, normal);
   if (n2 < 1e-18) {
     return null;
   }
-  const to = add(scale(cross(n, ab), dot(ac, ac)), scale(cross(ac, n), dot(ab, ab)));
+  const to = add(scale(cross(normal, ab), dot(ac, ac)), scale(cross(ac, normal), dot(ab, ab)));
 
   return add(a, scale(to, 1 / (2 * n2)));
 }

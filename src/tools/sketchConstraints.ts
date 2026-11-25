@@ -40,15 +40,15 @@ const GLYPH: Partial<Record<ConstraintType, string>> = {
 };
 
 /** The small sign a constraint goes by (a size: its arrow). */
-export function constraintGlyph(c: SketchConstraint): string {
-  if (c.type === 'dim' || c.type === 'distance') {
-    return c.prop === 'angle' ? '∠' : '↔';
+export function constraintGlyph(sketchConstraint: SketchConstraint): string {
+  if (sketchConstraint.type === 'dim' || sketchConstraint.type === 'distance') {
+    return sketchConstraint.prop === 'angle' ? '∠' : '↔';
   }
-  if (c.type === 'pattern' || c.type === 'follow') {
+  if (sketchConstraint.type === 'pattern' || sketchConstraint.type === 'follow') {
     return '⛓';
   }
 
-  return GLYPH[c.type] ?? '•';
+  return GLYPH[sketchConstraint.type] ?? '•';
 }
 
 /** Constraints for a button press, from the current selection (empty if it doesn't fit). */

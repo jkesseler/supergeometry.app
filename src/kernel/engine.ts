@@ -2286,7 +2286,7 @@ async function apply(feature: Feature, ctx: Ctx): Promise<void> {
 
     case 'hole': {
       const body = need(bodies, feature.face.body);
-      const face = resolveFace(body, feature.face, g => g.geomType === 'PLANE');
+      const face = resolveFace(body, feature.face, candidate => candidate.geomType === 'PLANE');
       const out = norm(face.normalAt().toTuple() as Vec3);
       const on = planeOf(face).origin;
       // Where: the centre of the round edge it was put on, the face's middle, or the place itself - on the face's
@@ -7305,8 +7305,8 @@ function meshBodyOf(bytes: Uint8Array): { shape: Shape3D; made: number } | null 
     return null;
   }
   // Read first, all of it, which is quick; built only if it is worth building.
-  const models = parts.map(p => meshModel(p));
-  if (models.some(m => !m)) {
+  const models = parts.map(part => meshModel(part));
+  if (models.some(model => !model)) {
     return null;
   }
   // (A mesh with little flat in it - a figure, a scan, a bowl whose curves are cut into four-sided flats, two
@@ -7314,18 +7314,18 @@ function meshBodyOf(bytes: Uint8Array): { shape: Shape3D; made: number } | null 
   // the kernel's own reader, for nothing - 11 s more on a bowl of 62,000 triangles, in one part or in four. Counted
   // after the round parts' strips are taken out, so a part that is mostly holes and bosses is not taken for one.)
   const count = all.length / 9;
-  if (count > 5000 && models.reduce((s, m) => s + m!.faces.length, 0) > count * 0.4) {
+  if (count > 5000 && models.reduce((total, model) => total + model!.faces.length, 0) > count * 0.4) {
     return null;
   }
-  const made = parts.map((p, i) => meshPartBody(p, models[i]!));
-  if (made.some(m => !m)) {
+  const made = parts.map((part, i) => meshPartBody(part, models[i]!));
+  if (made.some(body => !body)) {
     return null;
   }
   if (made.length === 1) {
     return made[0];
   }
 
-  return { shape: makeCompound(made.map(m => m!.shape.clone())) as unknown as Shape3D, made: made.reduce((s, m) => s + m!.made, 0) };
+  return { shape: makeCompound(made.map(body => body!.shape.clone())) as unknown as Shape3D, made: made.reduce((total, body) => total + body!.made, 0) };
 }
 
 /** One part of a mesh, read (see meshModel), as a body: round parts stood in for and made round with a ring each. */
@@ -7344,7 +7344,7 @@ function meshPartBody(tris: Float64Array, model: MeshModel): { shape: Shape3D; m
   if (!plain) {
     return null;
   }
-  const cyls = [...model.rounds.map(r => r.cy), ...model.rest];
+  const cyls = [...model.rounds.map(round => round.cy), ...model.rest];
 
   return cyls.length ? roundMeshSolid(plain, cyls) : { shape: plain, made: 0 };
 }
@@ -7354,10 +7354,10 @@ function facesSolid(faces: MeshFace[]): Shape3D | null {
   const oc = getOC();
   const lo: Vec3 = [Infinity, Infinity, Infinity];
   const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
-  for (const f of faces) {
-    for (const p of f.outer) {
-      for (let k = 0; k < 3; k++) {
-        (lo[k] = Math.min(lo[k], p[k])), (hi[k] = Math.max(hi[k], p[k]));
+  for (const face of faces) {
+    for (const point of face.outer) {
+      for (let axis = 0; axis < 3; axis++) {
+        (lo[axis] = Math.min(lo[axis], point[axis])), (hi[axis] = Math.max(hi[axis], point[axis]));
       }
     }
   }
@@ -7365,13 +7365,13 @@ function facesSolid(faces: MeshFace[]): Shape3D | null {
   const sew = new oc.BRepBuilderAPI_Sewing(Math.max(1e-7, size * 1e-7), true, true, true, false);
   const progress = new oc.Message_ProgressRange();
   try {
-    const wire = (ring: Vec3[]) => assembleWire(ring.map((p, i) => makeLine(p, ring[(i + 1) % ring.length])));
-    for (const f of faces) {
+    const wire = (ring: Vec3[]) => assembleWire(ring.map((point, i) => makeLine(point, ring[(i + 1) % ring.length])));
+    for (const face of faces) {
       // (On its own plane, said outright: found again from the outline, a face with holes was "not flat".)
-      const pln = new oc.gp_Pln(new oc.gp_Pnt(...f.outer[0]), new oc.gp_Dir(...f.n));
-      const mk = new oc.BRepBuilderAPI_MakeFace(pln, wire(f.outer).wrapped, true);
-      for (const h of f.holes) {
-        mk.Add(wire(h).wrapped);
+      const pln = new oc.gp_Pln(new oc.gp_Pnt(...face.outer[0]), new oc.gp_Dir(...face.n));
+      const mk = new oc.BRepBuilderAPI_MakeFace(pln, wire(face.outer).wrapped, true);
+      for (const hole of face.holes) {
+        mk.Add(wire(hole).wrapped);
       }
       if (!mk.IsDone()) {
         return null;
@@ -7395,11 +7395,11 @@ function facesSolid(faces: MeshFace[]): Shape3D | null {
     if (shapeValid(tidy)) {
       solid = tidy;
     }
-    const v = measureVolume(solid);
-    if (!(v > 0) || openEdges(solid).length || !shapeValid(solid)) {
+    const volume = measureVolume(solid);
+    if (!(volume > 0) || openEdges(solid).length || !shapeValid(solid)) {
       return null;
     }
-    volumes.set(solid, v);
+    volumes.set(solid, volume);
 
     return solid;
   } catch (err) {
@@ -7424,25 +7424,25 @@ function ringsOn(solid: Shape3D, rounds: MeshStandIn[]): Shape3D | null {
   const size = sizeOf(solid);
   let spare = 0;
   try {
-    const tools = rounds.map((s) => {
-      const cy = s.cy;
-      const v = norm(cross(cy.a, cy.u));
-      const at = (r: number, ang: number, t: number): Vec3 => add(add(cy.c, scale(cy.a, t)), add(scale(cy.u, r * Math.cos(ang)), scale(v, r * Math.sin(ang))));
+    const tools = rounds.map((round) => {
+      const cy = round.cy;
+      const perpendicular = norm(cross(cy.a, cy.u));
+      const at = (radius: number, ang: number, t: number): Vec3 => add(add(cy.c, scale(cy.a, t)), add(scale(cy.u, radius * Math.cos(ang)), scale(perpendicular, radius * Math.sin(ang))));
       // An end with nothing past it: a cut goes a hair past it. An end with the body past it: a join goes a hair in.
-      const hair = Math.max(2e-3, (cy.r - s.inner) * 0.25);
-      const rp = s.inner + (cy.r - s.inner) * 0.25;
-      const angs = [0.25, 0.5, 0.75].map(k => cy.sweep * k);
-      const ends: [number, number] = [...s.ends];
-      [s.ends[0] - hair * 0.5, s.ends[1] + hair * 0.5].forEach((t, e) => {
+      const hair = Math.max(2e-3, (cy.r - round.inner) * 0.25);
+      const rp = round.inner + (cy.r - round.inner) * 0.25;
+      const angs = [0.25, 0.5, 0.75].map(fraction => cy.sweep * fraction);
+      const ends: [number, number] = [...round.ends];
+      [round.ends[0] - hair * 0.5, round.ends[1] + hair * 0.5].forEach((t, e) => {
         const inside = insideOf(solid, angs.map(ang => at(rp, ang, t)));
         if (!inside.every(x => x === !cy.concave)) {
           return;
         }
         ends[e] += e ? hair : -hair;
         // (The most that hair can take or add past the end, where the end is not as clean as a plate's face.)
-        spare += ((cy.r * cy.r - s.inner * s.inner) * cy.sweep * hair) / 2;
+        spare += ((cy.r * cy.r - round.inner * round.inner) * cy.sweep * hair) / 2;
       });
-      const outline = makePolygon([at(s.inner, 0, ends[0]), at(cy.r, 0, ends[0]), at(cy.r, 0, ends[1]), at(s.inner, 0, ends[1])]);
+      const outline = makePolygon([at(round.inner, 0, ends[0]), at(cy.r, 0, ends[0]), at(cy.r, 0, ends[1]), at(round.inner, 0, ends[1])]);
 
       return revolution(outline, cy.c, cy.a, Math.min(360, (cy.sweep * 180) / Math.PI)) as Shape3D;
     });
@@ -7455,8 +7455,8 @@ function ringsOn(solid: Shape3D, rounds: MeshStandIn[]): Shape3D | null {
     if (bosses.length) {
       out = booleanWith('fuse', out, bosses, size);
     }
-    const expect = rounds.reduce((sum, s) => sum + (s.cy.concave ? -s.volume : s.volume), 0);
-    const most = rounds.reduce((sum, s) => sum + s.volume, 0);
+    const expect = rounds.reduce((sum, round) => sum + (round.cy.concave ? -round.volume : round.volume), 0);
+    const most = rounds.reduce((sum, round) => sum + round.volume, 0);
     const change = measureVolume(out) - volumeOf(solid);
     if (Math.abs(change - expect) > Math.max(most * 0.01, size ** 3 * 1e-10) + spare) {
       return null;
@@ -7530,15 +7530,15 @@ export function roundMeshSolid(solid: Shape3D, cyls: MeshCylinder[]): { shape: S
     if (!(inner > 0) || !(sag > 0)) {
       continue;
     }
-    const v = norm(cross(cy.a, cy.u));
-    const at = (r: number, ang: number, t: number): Vec3 => add(add(cy.c, scale(cy.a, t)), add(scale(cy.u, r * Math.cos(ang)), scale(v, r * Math.sin(ang))));
+    const perpendicular = norm(cross(cy.a, cy.u));
+    const at = (radius: number, ang: number, t: number): Vec3 => add(add(cy.c, scale(cy.a, t)), add(scale(cy.u, radius * Math.cos(ang)), scale(perpendicular, radius * Math.sin(ang))));
     // What is past each end, just inside the strips: the body, or nothing.
     const hair = Math.max(2e-3, sag);
     const rp = cy.r * Math.cos(half) - sag * 0.25;
-    const angs = [0.25, 0.5, 0.75].map(k => cy.sweep * k);
+    const angs = [0.25, 0.5, 0.75].map(fraction => cy.sweep * fraction);
     const past = [cy.t0 - hair * 0.5, cy.t1 + hair * 0.5].map(t => insideOf(solid, angs.map(ang => at(rp, ang, t))));
-    const open = past.map(p => p.every(x => !x));
-    const filled = past.map(p => p.every(x => x));
+    const open = past.map(samples => samples.every(x => !x));
+    const filled = past.map(samples => samples.every(x => x));
     const ring = (r0: number, r1: number, ends: [number, number]): Shape3D => {
       const outline = makePolygon([at(r0, 0, ends[0]), at(r1, 0, ends[0]), at(r1, 0, ends[1]), at(r0, 0, ends[1])]);
 
@@ -7567,14 +7567,14 @@ export function roundMeshSolid(solid: Shape3D, cyls: MeshCylinder[]): { shape: S
       if (bosses.length) {
         out = booleanWith('fuse', out, bosses.map(j => j.fine()), size);
       }
-      const expect = list.reduce((s, j) => s + (j.cy.concave ? -j.cy.sliver : j.cy.sliver), 0);
-      const most = list.reduce((s, j) => s + j.cy.sliver, 0);
+      const expect = list.reduce((total, j) => total + (j.cy.concave ? -j.cy.sliver : j.cy.sliver), 0);
+      const most = list.reduce((total, j) => total + j.cy.sliver, 0);
       const change = measureVolume(out) - volumeOf(body);
       // (By what lay between the strips and the round faces - and no more than the hairs past the ends besides:
       // taken at holes, added at bosses.)
       const slack = Math.max(most * 0.03, size ** 3 * 1e-10);
-      const took = holes.reduce((s, j) => s + j.spare, 0);
-      const gave = bosses.reduce((s, j) => s + j.spare, 0);
+      const took = holes.reduce((total, j) => total + j.spare, 0);
+      const gave = bosses.reduce((total, j) => total + j.spare, 0);
       if (change - expect > slack + gave || expect - change > slack + took) {
         return null;
       }

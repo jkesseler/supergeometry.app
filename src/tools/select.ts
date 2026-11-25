@@ -1227,7 +1227,7 @@ export class SelectTool implements Tool {
       // A mesh put in before meshes were given faces: the same now, by asking. (What was built on its triangles
       // may have to be picked again: said.)
       ...(() => {
-        const mesh = bodies.length === 1 ? app.store.doc.features.find(f => f.id === bodies[0] && f.type === 'import' && f.format === 'stl' && !f.round) : undefined;
+        const mesh = bodies.length === 1 ? app.store.doc.features.find(feature => feature.id === bodies[0] && feature.type === 'import' && feature.format === 'stl' && !feature.round) : undefined;
         if (!mesh) {
           return [];
         }

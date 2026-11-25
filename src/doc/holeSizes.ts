@@ -37,7 +37,7 @@ export const SCREW_SIZES: ScrewSize[] = [
   { name: 'M12', d: 12, clearance: 13.5, bore: 20, boreDepth: 12.6, sink: 25 }
 ];
 
-export const screwSize = (name: string | undefined): ScrewSize | undefined => SCREW_SIZES.find(s => s.name === name);
+export const screwSize = (name: string | undefined): ScrewSize | undefined => SCREW_SIZES.find(screwSize => screwSize.name === name);
 
 /** The sizes a hole for this screw has, with this head. */
 export function holeFor(size: ScrewSize, head: HoleFeature['head']): Pick<HoleFeature, 'size' | 'diameter' | 'headDiameter' | 'headDepth'> {
@@ -51,13 +51,13 @@ export function holeFor(size: ScrewSize, head: HoleFeature['head']): Pick<HoleFe
 
 /** A head recess for a hole of any diameter (no screw size chosen): in the proportions of the table. */
 export function headFor(diameter: number, head: HoleFeature['head']): { headDiameter: number; headDepth: number } {
-  const round = (v: number) => Math.round(v * 10) / 10;
+  const round = (value: number) => Math.round(value * 10) / 10;
 
   return { headDiameter: round(diameter * (head === 'countersink' ? 1.95 : 1.9)), headDepth: round(diameter) };
 }
 
 /** A countersink's cone: 90° across, so as deep as it is wider (on the radius) than the hole. */
-export const sinkDepth = (f: Pick<HoleFeature, 'diameter' | 'headDiameter'>): number => Math.max(0, (f.headDiameter - f.diameter) / 2);
+export const sinkDepth = (hole: Pick<HoleFeature, 'diameter' | 'headDiameter'>): number => Math.max(0, (hole.headDiameter - hole.diameter) / 2);
 
 // ------------------------------------------------------------ held from two edges
 
@@ -78,18 +78,18 @@ export function sideOf(line: { a: Vec3; b: Vec3 }, middle: Vec3, at: Vec3, norma
   if (size < 1e-9) {
     return null;
   }
-  const m = norm(cross(normal, t));
-  const toMiddle = dot(sub(middle, line.a), m);
-  const side = Math.abs(toMiddle) > 1e-6 * Math.max(1, size) ? toMiddle : dot(sub(at, line.a), m);
+  const tangent = norm(cross(normal, t));
+  const toMiddle = dot(sub(middle, line.a), tangent);
+  const side = Math.abs(toMiddle) > 1e-6 * Math.max(1, size) ? toMiddle : dot(sub(at, line.a), tangent);
 
-  return side < 0 ? scale(m, -1) : m;
+  return side < 0 ? scale(tangent, -1) : tangent;
 }
 
-/** How far `p` is from a straight edge, measured as its hole's distance is. */
-export function distanceFrom(line: { a: Vec3; b: Vec3 }, p: Vec3, middle: Vec3, normal: Vec3): number | null {
-  const m = sideOf(line, middle, p, normal);
+/** How far `point` is from a straight edge, measured as its hole's distance is. */
+export function distanceFrom(line: { a: Vec3; b: Vec3 }, point: Vec3, middle: Vec3, normal: Vec3): number | null {
+  const side = sideOf(line, middle, point, normal);
 
-  return m ? dot(sub(p, line.a), m) : null;
+  return side ? dot(sub(point, line.a), side) : null;
 }
 
 /** The point of the face's plane (through `at`, facing `normal`) that is `d` from each of two straight edges; null: they run the same way. */
@@ -99,10 +99,10 @@ export function holeFromLines(at: Vec3, middle: Vec3, normal: Vec3, l1: HoleLine
   if (!m1 || !m2) {
     return null;
   }
-  const u = norm(xDirFor(normal));
-  const v = norm(cross(normal, u));
-  // at + x u + y v, with (that - a) . m = d for both.
-  const a11 = dot(m1, u), a12 = dot(m1, v), a21 = dot(m2, u), a22 = dot(m2, v);
+  const xAxis = norm(xDirFor(normal));
+  const yAxis = norm(cross(normal, xAxis));
+  // at + x xAxis + y yAxis, with (that - a) . tangent = d for both.
+  const a11 = dot(m1, xAxis), a12 = dot(m1, yAxis), a21 = dot(m2, xAxis), a22 = dot(m2, yAxis);
   const det = a11 * a22 - a12 * a21;
   if (Math.abs(det) < 0.05) {
     return null;
@@ -112,5 +112,5 @@ export function holeFromLines(at: Vec3, middle: Vec3, normal: Vec3, l1: HoleLine
   const x = (c1 * a22 - c2 * a12) / det;
   const y = (a11 * c2 - a21 * c1) / det;
 
-  return add(add(at, scale(u, x)), scale(v, y));
+  return add(add(at, scale(xAxis, x)), scale(yAxis, y));
 }

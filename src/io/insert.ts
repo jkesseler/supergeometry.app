@@ -69,11 +69,11 @@ function unreadable(bytes: Uint8Array, format: 'step' | 'stl'): string | null {
 export function sayRounds(app: AppContext, id: string, name: string, before = -1): void {
   const began = Date.now();
   const look = () => {
-    if (!app.store.doc.features.some(f => f.id === id)) {
+    if (!app.store.doc.features.some(feature => feature.id === id)) {
       return;
     }
     const body = app.view.body(id);
-    const count = body ? body.faces.filter(f => f.round).length : -1;
+    const count = body ? body.faces.filter(face => face.round).length : -1;
     // (Asked of a mesh already in the project: until its faces have changed.)
     if (body && (before < 0 || body.faces.length !== before)) {
       if (count > 0) {

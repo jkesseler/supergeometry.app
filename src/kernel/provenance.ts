@@ -342,7 +342,7 @@ export function edgeOrigins(shape: Shape3D): (string[] | undefined)[] | undefine
       return undefined;
     }
 
-    return [...new Set(list.map(u => `${steps[u.face]}|${origins[u.face]}`))].sort();
+    return [...new Set(list.map(use => `${steps[use.face]}|${origins[use.face]}`))].sort();
   });
   edgeOriginTags.set(shape, out);
 

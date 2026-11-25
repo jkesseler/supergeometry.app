@@ -88,12 +88,12 @@ function findEdgeUse(shape: Shape3D): { open: number[]; pinched: number } {
   let pinched = 0;
   uses.forEach((list, i) => {
     // A seam (cylinder/torus) belongs to its face twice but is listed once.
-    const n = list.reduce((s, u) => s + (u.closed ? 2 : 1), 0);
+    const count = list.reduce((total, use) => total + (use.closed ? 2 : 1), 0);
     // A pole (where a revolved profile touches the axis) is a point-edge, not a gap.
-    if (n < 2 && !degenerated[i]) {
+    if (count < 2 && !degenerated[i]) {
       open.push(i);
     }
-    if (new Set(list.map(u => u.face)).size > 2) {
+    if (new Set(list.map(use => use.face)).size > 2) {
       pinched++;
     }
   });

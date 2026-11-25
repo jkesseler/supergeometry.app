@@ -34,14 +34,14 @@ const cases: [string, SketchEntity[], string[]][] = [
   // A line drawn up to a circle and ending on it (reported: "Points are coincidents. The area under the circle
   // doesn't fill, unless the circle crosses the bottom line"): the shape it closes is a shape - the circle clear of
   // the bar, just touching it, and crossing it; the end exactly on the circle, and a hair off it either way.
-  ...[10.2, 9.4, 8.6].flatMap((cy, k) =>
+  ...[10.2, 9.4, 8.6].flatMap((cy, row) =>
     [0, 1e-9, -1e-9, 1e-6].map((off): [string, SketchEntity[], string[]] => {
-      const on = (ang: number, d: number): [number, number] => [(8.4 + d) * Math.cos(ang), cy + (8.4 + d) * Math.sin(ang)];
+      const on = (ang: number, gap: number): [number, number] => [(8.4 + gap) * Math.cos(ang), cy + (8.4 + gap) * Math.sin(ang)];
 
       return [
-        `a bar, a ring over it, two lines up to the ring (circle ${['clear of', 'touching', 'crossing'][k]} the bar, ends ${off} off)`,
+        `a bar, a ring over it, two lines up to the ring (circle ${['clear of', 'touching', 'crossing'][row]} the bar, ends ${off} off)`,
         [rect('r', 0, 0, 20, 2), { id: 'o', kind: 'circle', center: [0, cy], radius: 8.4 }, { id: 'i', kind: 'circle', center: [0, cy], radius: 7 }, line('l', [-10, 1], on(3.1, off)), line('m', [10, 1], on(0.1, -off))],
-        new Array(4 + k).fill('*')
+        new Array(4 + row).fill('*')
       ];
     })
   ),
