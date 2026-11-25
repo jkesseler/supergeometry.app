@@ -1,10 +1,10 @@
-import { BETA_TYPES, mergingCommits } from '../doc/store';
-import { ungroupedSteps } from '../doc/historyGroups';
+import { mergingCommits } from '../doc/store';
 import { screenClass, watchScreenClass } from '../device';
 import { evaluate, toDisplay, trim, UNIT_LABEL, units } from '../units';
 import { settings } from '../settings';
 import { selectAll } from './textField';
 import { numpadInput, typingInto } from './numpad';
+import { HistoryPanel } from './historyPanel';
 import { askDialog, formDialog, showContextMenu, type Choice, type DialogField } from './dialogs';
 import { icons, type IconName } from './icons';
 import type { FeatureError } from '../kernel/protocol';
@@ -186,6 +186,7 @@ export class UI {
   private popoverOwner: string | null = null;
 
   constructor() {
+    document.getElementById('history-pick')?.addEventListener('click', () => this.history.setPicking(!this.history.isPicking));
     // Phone / tablet & small laptop / monitor & TV: <html data-screen> for the stylesheet.
     watchScreenClass(() => (this.panelSide = -1));
     document.addEventListener(
@@ -1704,344 +1705,12 @@ export class UI {
 
   // ----------------------------------------------------------------- history
 
-  /** Steps whose ! explanation is folded out in History. */
-  private openWarns = new Set<string>();
-
-  /** Sketches whose steps are folded out in History. */
-  private openSteps = new Set<string>();
-
-  /** History: ticking steps to group them (the Select button, or Ctrl/Shift+click). */
-  private historyPicking = false;
-  private historyChecked = new Set<string>();
-  /** Groups folded shut (by id). */
-  private closedGroups = new Set<string>();
-  private lastHistory: Parameters<UI['renderHistory']> | null = null;
-
-  private rerenderHistory(): void {
-    if (this.lastHistory) {
-      this.renderHistory(...this.lastHistory);
-    }
-  }
-
-  private checkStep(id: string): void {
-    if (this.historyChecked.has(id)) {
-      this.historyChecked.delete(id);
-    } else {
-      this.historyChecked.add(id);
-    }
-    this.rerenderHistory();
-  }
-
-  /** Group the ticked steps: everything from the first to the last of them (groups are runs of steps). */
-  private async groupSteps(features: readonly Feature[], historyHandlers: HistoryHandlers): Promise<void> {
-    const order = features.map(feature => feature.id);
-    const idx = [...this.historyChecked].map(id => order.indexOf(id)).filter(i => i >= 0);
-    if (!idx.length) {
-      return;
-    }
-    let lo = Math.min(...idx);
-    let hi = Math.max(...idx);
-    // A group it runs into joins it (groups don't overlap).
-    let rest = historyHandlers.groups;
-    let grew = true;
-    while (grew) {
-      grew = false;
-      const keep: HistoryGroup[] = [];
-      for (const historyGroup of rest) {
-        const gi = historyGroup.steps.map(id => order.indexOf(id)).filter(i => i >= 0);
-        if (gi.length && Math.max(...gi) >= lo && Math.min(...gi) <= hi) {
-          lo = Math.min(lo, ...gi);
-          hi = Math.max(hi, ...gi);
-          grew = true;
-        } else {
-          keep.push(historyGroup);
-        }
-      }
-      rest = keep;
-    }
-    const name = await historyHandlers.askName('New group', `Group ${historyHandlers.groups.length + 1}`);
-    if (!name) {
-      return;
-    }
-    const group: HistoryGroup = { id: `hgroup-${Date.now().toString(36)}`, name, steps: order.slice(lo, hi + 1) };
-    this.historyChecked.clear();
-    this.historyPicking = false;
-    document.getElementById('history-pick')?.classList.remove('on');
-    historyHandlers.setGroups([...rest, group]);
-    if (hi - lo + 1 > idx.length) {
-      this.toast('Groups hold steps next to each other: the ones in between went in too');
-    }
-  }
-
-  /**
-   * The ticked steps out of their groups. They stay where they are in the
-   * timeline (steps aren't moved): a group they were in the middle of splits
-   * in two around them, so they show in their own place between the halves.
-   */
-  private ungroupSteps(features: readonly Feature[], historyHandlers: HistoryHandlers): void {
-    const out = ungroupedSteps(features.map(feature => feature.id), historyHandlers.groups, this.historyChecked);
-    const count = [...this.historyChecked].filter(id => historyHandlers.groups.some(group => group.steps.includes(id))).length;
-    this.historyChecked.clear();
-    this.historyPicking = false;
-    document.getElementById('history-pick')?.classList.remove('on');
-    historyHandlers.setGroups(out);
-    this.toast(`${count} step${count === 1 ? '' : 's'} out of the group, in ${count === 1 ? 'its' : 'their'} place in the timeline`);
-  }
+  private history = new HistoryPanel({ list: this.historyList, toast: text => this.toast(text), menu: (x, y, rows) => this.menu(x, y, rows) });
 
   renderHistory(features: readonly Feature[], errors: FeatureError[], activeId: string | null, historyHandlers: HistoryHandlers, warnings: Map<string, string> = new Map()): void {
-    this.lastHistory = [features, errors, activeId, historyHandlers, warnings];
-    this.historyList.innerHTML = '';
-    const pick = document.getElementById('history-pick');
-    if (pick && !pick.dataset.wired) {
-      pick.dataset.wired = '1';
-      pick.addEventListener('click', () => {
-        this.historyPicking = !this.historyPicking;
-        if (!this.historyPicking) {
-          this.historyChecked.clear();
-        }
-        pick.classList.toggle('on', this.historyPicking);
-        this.rerenderHistory();
-      });
-    }
-    if (features.length === 0) {
-      this.historyList.append(el('li', 'history-empty', 'Nothing yet. Start with Sketch.'));
-
-      return;
-    }
-    // Ticks for steps that are gone don't count.
-    const ids = new Set(features.map(feature => feature.id));
-    for (const id of this.historyChecked) {
-      if (!ids.has(id)) {
-        this.historyChecked.delete(id);
-      }
-    }
-    // Each step's group, and the step a group starts at (its row goes there).
-    const groupOf = new Map<string, HistoryGroup>();
-    for (const group of historyHandlers.groups) {
-      for (const id of group.steps) {
-        if (ids.has(id)) {
-          groupOf.set(id, group);
-        }
-      }
-    }
-    const started = new Set<string>();
-    const firstBack = features.find(feature => feature.rolledBack)?.id;
-    for (const feature of features) {
-      // The breakpoint: a bar above the steps it switched off, and its Remove.
-      if (feature.id === firstBack) {
-        const bar = el('li', 'history-break');
-        bar.append(el('span', 'history-break-label', 'Breakpoint - the steps below are off'));
-        const rm = el('button', 'text-btn history-break-remove', 'Remove');
-        rm.type = 'button';
-        rm.title = 'Remove the breakpoint: every step on again';
-        rm.addEventListener('click', () => historyHandlers.breakAfter?.(null));
-        bar.append(rm);
-        this.historyList.append(bar);
-      }
-      const historyGroup = groupOf.get(feature.id);
-      if (historyGroup && !started.has(historyGroup.id)) {
-        started.add(historyGroup.id);
-        const members = features.filter(feature => groupOf.get(feature.id) === historyGroup);
-        // The step being edited is inside: show it.
-        if (members.some(member => member.id === activeId)) {
-          this.closedGroups.delete(historyGroup.id);
-        }
-        this.historyList.append(this.groupRow(historyGroup, members, errors, historyHandlers));
-      }
-      if (historyGroup && this.closedGroups.has(historyGroup.id)) {
-        continue;
-      }
-      const li = el('li', `history-item${historyGroup ? ' in-group' : ''}${this.historyChecked.has(feature.id) ? ' checked' : ''}`);
-      if (this.historyPicking) {
-        const box = document.createElement('input');
-        box.type = 'checkbox';
-        box.className = 'items-check';
-        box.checked = this.historyChecked.has(feature.id);
-        box.addEventListener('change', () => this.checkStep(feature.id));
-        li.append(box);
-      }
-      const err = errors.find(e => e.featureId === feature.id);
-      if (err) {
-        li.classList.add('error');
-      }
-      if (feature.suppressed) {
-        li.classList.add('suppressed');
-      }
-      if (feature.rolledBack) {
-        li.classList.add('rolled-back');
-      }
-      if (feature.id === activeId) {
-        li.classList.add('active');
-      }
-      const name = el('button', 'history-name', feature.name);
-      if (BETA_TYPES.has(feature.type)) {
-        name.append(betaTag());
-      }
-      name.title = err ? err.message : 'Edit';
-      // A step that works but leaves something to look at (e.g. a body that isn't closed).
-      const warn = warnings.get(feature.id);
-      if (warn && !err) {
-        // The ! folds the explanation out under the step (like a sketch's steps).
-        const mark = el('button', 'history-warn', '!');
-        mark.title = warn;
-        mark.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.openWarns.has(feature.id)) {
-            this.openWarns.delete(feature.id);
-          } else {
-            this.openWarns.add(feature.id);
-          }
-          this.renderHistory(features, errors, activeId, historyHandlers, warnings);
-        });
-        li.prepend(mark);
-        name.title = warn;
-      }
-      // Ctrl/Cmd/Shift+click (or Select on): tick it for a group; a plain click edits it.
-      name.addEventListener('click', e => (e.ctrlKey || e.metaKey || e.shiftKey || this.historyPicking ? this.checkStep(feature.id) : historyHandlers.edit(feature.id)));
-      li.addEventListener('pointerenter', () => historyHandlers.hover?.(feature.id));
-      li.addEventListener('pointerleave', () => historyHandlers.hover?.(null));
-      // A sketch, plane or axis: the eye shows or hides it, like everywhere else. Switching
-      // one off broke every step made from it ("Its sketch was deleted") when a beginner only
-      // wanted its lines out of the way. (One switched off before still gets switched back on.)
-      const looks = (feature.type === 'sketch' || feature.type === 'plane' || feature.type === 'axis') && !feature.suppressed && !!historyHandlers.toggleHidden;
-      const hid = looks && !!historyHandlers.isHidden?.(feature.id);
-      const eye = looks
-        ? iconButton(hid ? 'eyeOff' : 'eye', hid ? 'Show' : 'Hide', () => historyHandlers.toggleHidden!(feature.id))
-        : iconButton(feature.suppressed ? 'eyeOff' : 'eye', feature.suppressed ? 'Enable' : 'Suppress', () => historyHandlers.toggle(feature.id));
-      if (hid) {
-        li.classList.add('hidden-step');
-      }
-      // Two taps: the bin sits where a phone user expects the panel's close
-      // button, and one stray tap deleted a whole extrude.
-      const del = iconButton('trash', 'Delete', () => undefined);
-      twoTap(del, `history:${feature.id}`, () => historyHandlers.remove(feature.id));
-      // A sketch's own steps fold out under it (closed by default).
-      const steps = feature.type === 'sketch' ? (feature.log ?? []) : [];
-      if (steps.length) {
-        const open = this.openSteps.has(feature.id);
-        const caret = el('button', 'history-caret', open ? '▾' : '▸');
-        caret.title = open ? 'Hide the steps in this sketch' : `Show the ${steps.length} step${steps.length > 1 ? 's' : ''} in this sketch`;
-        caret.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.openSteps.has(feature.id)) {
-            this.openSteps.delete(feature.id);
-          } else {
-            this.openSteps.add(feature.id);
-          }
-          this.renderHistory(features, errors, activeId, historyHandlers, warnings);
-        });
-        li.append(caret);
-      }
-      li.append(name, eye, del);
-      // Right-click (or a long press where the browser gives one): the step's commands.
-      li.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        this.menu(e.clientX, e.clientY, [
-          { label: 'Edit', run: () => historyHandlers.edit(feature.id) },
-          ...(looks ? [{ label: hid ? 'Show' : 'Hide', run: () => historyHandlers.toggleHidden!(feature.id) }] : []),
-          { label: feature.suppressed ? 'Enable' : 'Suppress', run: () => historyHandlers.toggle(feature.id) },
-          ...(historyHandlers.breakAfter ? [{ label: 'Insert Breakpoint After', run: () => historyHandlers.breakAfter!(feature.id) }] : []),
-          ...(historyHandlers.breakAfter && firstBack ? [{ label: 'Remove Breakpoint', run: () => historyHandlers.breakAfter!(null) }] : []),
-          ...(historyHandlers.merge ? ['-' as const, { label: 'Merge History…', run: () => historyHandlers.merge!() }] : []),
-          '-',
-          { label: 'Delete', shortcut: 'Del', run: () => historyHandlers.remove(feature.id) }
-        ]);
-      });
-      if (err) {
-        li.append(el('div', 'history-error', err.message));
-      }
-      if (warn && !err && this.openWarns.has(feature.id)) {
-        li.append(el('div', 'history-warning-text', warn));
-      }
-      this.historyList.append(li);
-      // What was done inside a sketch, step by step.
-      if (feature.type === 'sketch' && feature.log?.length && this.openSteps.has(feature.id)) {
-        const steps = feature.log;
-        const shownSteps = steps.length > 12 ? steps.slice(-12) : steps;
-        const sub = el('li', 'history-steps');
-        if (steps.length > shownSteps.length) {
-          sub.append(el('div', 'history-step more', `… ${steps.length - shownSteps.length} earlier`));
-        }
-        for (const shownStep of shownSteps) {
-          // (What the step made or changed that is still in the sketch: picked when its line is tapped.)
-          const still = (shownStep.ids ?? []).filter(id => feature.entities.some(e => e.id === id));
-          const row = el('button', 'history-step', `${shownStep.op}${shownStep.n > 1 ? ` ×${shownStep.n}` : ''}`);
-          row.title = still.length ? `Open the sketch with ${still.length === 1 ? 'this curve' : `these ${still.length} curves`} picked, to change ${still.length === 1 ? 'it' : 'them'}` : 'Open the sketch';
-          row.addEventListener('click', () => historyHandlers.edit(feature.id, still));
-          sub.append(row);
-        }
-        this.historyList.append(sub);
-      }
-    }
-    if (this.historyChecked.size) {
-      const li = el('li', 'items-actions');
-      const make = el('button', 'text-btn primary', `Group (${this.historyChecked.size})`);
-      make.addEventListener('click', () => void this.groupSteps(features, historyHandlers));
-      li.append(make);
-      // Ticked steps that are in a group: out of it, back in their place in the timeline.
-      const inGroups = [...this.historyChecked].filter(id => groupOf.has(id)).length;
-      if (inGroups) {
-        const un = el('button', 'text-btn history-ungroup');
-        un.innerHTML = icons.ungroup;
-        un.append(` Ungroup (${inGroups})`);
-        un.title = 'Take the ticked steps out of their group (they stay in their place in the timeline)';
-        un.addEventListener('click', () => this.ungroupSteps(features, historyHandlers));
-        li.append(un);
-      }
-      this.historyList.append(li);
-    } else if (this.historyPicking) {
-      this.historyList.append(el('li', 'history-empty', 'Tick steps to group them, or ungroup them.'));
-    }
+    this.history.render(features, errors, activeId, historyHandlers, warnings);
   }
 
-  /** A group's row: fold it open/shut, its name, switch all its steps off/on, rename, ungroup. */
-  private groupRow(historyGroup: HistoryGroup, members: Feature[], errors: FeatureError[], historyHandlers: HistoryHandlers): HTMLElement {
-    const closed = this.closedGroups.has(historyGroup.id);
-    const bad = members.some(member => errors.some(e => e.featureId === member.id));
-    const allOff = members.every(member => member.suppressed);
-    const li = el('li', `history-item history-group${bad ? ' error' : ''}${allOff ? ' suppressed' : ''}`);
-    // Ticking: the whole group's steps at once (to ungroup it, or group it with more).
-    if (this.historyPicking) {
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.className = 'items-check';
-      const ticked = members.filter(member => this.historyChecked.has(member.id)).length;
-      box.checked = ticked === members.length;
-      box.indeterminate = ticked > 0 && ticked < members.length;
-      box.addEventListener('change', () => {
-        for (const member of members) {
-          box.checked ? this.historyChecked.add(member.id) : this.historyChecked.delete(member.id);
-        }
-        this.rerenderHistory();
-      });
-      li.append(box);
-    }
-    const caret = el('button', 'history-caret', closed ? '▸' : '▾');
-    caret.title = closed ? `Show the ${members.length} steps` : 'Fold the group';
-    const fold = (e: Event) => {
-      e.stopPropagation();
-      if (this.closedGroups.has(historyGroup.id)) {
-        this.closedGroups.delete(historyGroup.id);
-      } else {
-        this.closedGroups.add(historyGroup.id);
-      }
-      this.rerenderHistory();
-    };
-    caret.addEventListener('click', fold);
-    const name = el('button', 'history-name');
-    name.innerHTML = icons.folder;
-    name.append(` ${historyGroup.name}`, el('span', 'history-count', ` ${members.length}`));
-    name.title = bad ? 'A step in this group failed - open it to see' : 'Fold / unfold';
-    name.addEventListener('click', fold);
-    const eye = iconButton(allOff ? 'eyeOff' : 'eye', allOff ? 'Enable all its steps' : 'Suppress all its steps', () => historyHandlers.suppress(members.map(member => member.id), !allOff));
-    const ren = iconButton('rename', 'Rename group', () =>
-      void historyHandlers.askName('Rename group', historyGroup.name).then(name => name && historyHandlers.setGroups(historyHandlers.groups.map(group => (group.id === historyGroup.id ? { ...group, name: name } : group))))
-    );
-    const un = iconButton('ungroup', 'Ungroup (the steps stay, in their place in the timeline)', () => historyHandlers.setGroups(historyHandlers.groups.filter(group => group.id !== historyGroup.id)));
-    li.append(caret, name, eye, ren, un);
-
-    return li;
-  }
 }
 
 /** The tools kept on screen at the left edge, top to bottom. */
@@ -2229,19 +1898,6 @@ document.addEventListener(
   },
   true
 );
-
-function iconButton(icon: IconName, title: string, run: () => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.className = 'icon-btn';
-  b.title = title;
-  b.innerHTML = icons[icon];
-  b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    run();
-  });
-
-  return b;
-}
 
 export function textButton(label: string, kbd: string, run: () => void, primary = false): HTMLButtonElement {
   const b = document.createElement('button');
