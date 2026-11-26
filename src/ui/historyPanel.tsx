@@ -280,6 +280,55 @@ interface StepRowProps {
   warning: string | undefined;
 }
 
+interface StepMenuOptions {
+  feature: Feature;
+  handlers: HistoryHandlers;
+  canHide: boolean;
+  isHidden: boolean;
+  hasBreakpoint: boolean;
+}
+
+/** A step's menu, on a right click. */
+function stepMenu({ feature, handlers, canHide, isHidden, hasBreakpoint }: StepMenuOptions): (MenuRow | '-')[] {
+  const rows: (MenuRow | '-')[] = [{ label: 'Edit', run: () => handlers.edit(feature.id) }];
+  if (canHide) {
+    rows.push({ label: isHidden ? 'Show' : 'Hide', run: () => handlers.toggleHidden!(feature.id) });
+  }
+  rows.push({ label: feature.suppressed ? 'Enable' : 'Suppress', run: () => handlers.toggle(feature.id) });
+  if (handlers.breakAfter) {
+    rows.push({ label: 'Insert Breakpoint After', run: () => handlers.breakAfter!(feature.id) });
+  }
+  if (handlers.breakAfter && hasBreakpoint) {
+    rows.push({ label: 'Remove Breakpoint', run: () => handlers.breakAfter!(null) });
+  }
+  if (handlers.merge) {
+    rows.push('-', { label: 'Merge History…', run: () => handlers.merge!() });
+  }
+  rows.push('-', { label: 'Delete', shortcut: 'Del', run: () => handlers.remove(feature.id) });
+
+  return rows;
+}
+
+interface StepLook {
+  isInGroup: boolean;
+  isChecked: boolean;
+  hasError: boolean;
+  isActive: boolean;
+  isHidden: boolean;
+}
+
+function stepClasses(feature: Feature, look: StepLook): string {
+  return ['history-item', look.isInGroup && 'in-group', look.isChecked && 'checked', look.hasError && 'error', feature.suppressed && 'suppressed', feature.rolledBack && 'rolled-back', look.isActive && 'active', look.isHidden && 'hidden-step'].filter(Boolean).join(' ');
+}
+
+function stepsTitle(isOpen: boolean, count: number): string {
+  if (isOpen) {
+    return 'Hide the steps in this sketch';
+  }
+
+  return `Show the ${count} step${count > 1 ? 's' : ''} in this sketch`;
+}
+
 function StepRow({ panel, feature, group, snapshot, hasBreakpoint, warning }: StepRowProps) {
   const { errors, activeId, handlers } = snapshot;
   const error = errors.find(candidate => candidate.featureId === feature.id);
@@ -290,7 +339,7 @@ function StepRow({ panel, feature, group, snapshot, hasBreakpoint, warning }: St
   const isHidden = canHide && !!handlers.isHidden?.(feature.id);
   const steps = feature.type === 'sketch' ? (feature.log ?? []) : [];
   const hasWarning = !!warning && !error;
-  const classes = ['history-item', group && 'in-group', isChecked && 'checked', error && 'error', feature.suppressed && 'suppressed', feature.rolledBack && 'rolled-back', feature.id === activeId && 'active', isHidden && 'hidden-step'].filter(Boolean).join(' ');
+  const classes = stepClasses(feature, { isInGroup: !!group, isChecked, hasError: !!error, isActive: feature.id === activeId, isHidden });
 
   return (
     <li
@@ -299,16 +348,7 @@ function StepRow({ panel, feature, group, snapshot, hasBreakpoint, warning }: St
       onPointerLeave={() => handlers.hover?.(null)}
       onContextMenu={(event) => {
         event.preventDefault();
-        panel.menu(event.clientX, event.clientY, [
-          { label: 'Edit', run: () => handlers.edit(feature.id) },
-          ...(canHide ? [{ label: isHidden ? 'Show' : 'Hide', run: () => handlers.toggleHidden!(feature.id) }] : []),
-          { label: feature.suppressed ? 'Enable' : 'Suppress', run: () => handlers.toggle(feature.id) },
-          ...(handlers.breakAfter ? [{ label: 'Insert Breakpoint After', run: () => handlers.breakAfter!(feature.id) }] : []),
-          ...(handlers.breakAfter && hasBreakpoint ? [{ label: 'Remove Breakpoint', run: () => handlers.breakAfter!(null) }] : []),
-          ...(handlers.merge ? ['-' as const, { label: 'Merge History…', run: () => handlers.merge!() }] : []),
-          '-',
-          { label: 'Delete', shortcut: 'Del', run: () => handlers.remove(feature.id) }
-        ]);
+        panel.menu(event.clientX, event.clientY, stepMenu({ feature, handlers, canHide, isHidden, hasBreakpoint }));
       }}
     >
       {hasWarning && (
@@ -329,7 +369,7 @@ function StepRow({ panel, feature, group, snapshot, hasBreakpoint, warning }: St
         <button
           type="button"
           class="history-caret"
-          title={panel.hasStepsOpen(feature.id) ? 'Hide the steps in this sketch' : `Show the ${steps.length} step${steps.length > 1 ? 's' : ''} in this sketch`}
+          title={stepsTitle(panel.hasStepsOpen(feature.id), steps.length)}
           onClick={(event) => {
             event.stopPropagation();
             panel.toggleSteps(feature.id);
@@ -341,7 +381,7 @@ function StepRow({ panel, feature, group, snapshot, hasBreakpoint, warning }: St
       <button
         type="button"
         class="history-name"
-        title={error ? error.message : hasWarning ? warning : 'Edit'}
+        title={error ? error.message : warning || 'Edit'}
         // Ctrl/Cmd/Shift+click (or Select on): tick it for a group; a plain click edits it.
         onClick={event => (event.ctrlKey || event.metaKey || event.shiftKey || panel.isPicking ? panel.check(feature.id) : handlers.edit(feature.id))}
       >
