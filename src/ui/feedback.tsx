@@ -24,17 +24,46 @@ const KINDS: { id: Kind; label: string; tag: string; title: string; text: string
 /** A browser address has a length limit: the text stops well short of it. */
 const MAX_TEXT = 4000;
 
+const BROWSER_NAMES: Record<string, string> = { Edg: 'Edge', OPR: 'Opera', CriOS: 'Chrome', FxiOS: 'Firefox', SamsungBrowser: 'Samsung Internet' };
+const SYSTEMS: [RegExp, string][] = [[/Windows/, 'Windows'], [/Mac OS X/, 'macOS'], [/CrOS/, 'ChromeOS'], [/Linux/, 'Linux']];
+
+function browserName(userAgent: string): string {
+  const match = userAgent.match(/(Edg|OPR|SamsungBrowser|Firefox|FxiOS|CriOS|Chrome)\/(\d+)/);
+  if (match) {
+    return `${BROWSER_NAMES[match[1]] ?? match[1]} ${match[2]}`;
+  }
+  if (/Safari\//.test(userAgent)) {
+    return `Safari ${userAgent.match(/Version\/(\d+)/)?.[1] ?? ''}`.trim();
+  }
+
+  return 'Browser';
+}
+
+function systemName(userAgent: string): string {
+  if (/Android/.test(userAgent)) {
+    return 'Android';
+  }
+  const isIpadAsMac = /Macintosh/.test(userAgent) && navigator.maxTouchPoints > 1;
+  if (/iPhone|iPad|iPod/.test(userAgent) || isIpadAsMac) {
+    return 'iOS';
+  }
+
+  return SYSTEMS.find(([pattern]) => pattern.test(userAgent))?.[1] ?? '';
+}
+
+function deviceKind(): string {
+  if (!matchMedia('(pointer: coarse)').matches) {
+    return '';
+  }
+
+  return Math.min(screen.width, screen.height) < 600 ? 'phone' : 'tablet';
+}
+
 /** "Chrome 131, Android, phone": short, nothing that tells who it is. */
 export function deviceLine(): string {
-  const ua = navigator.userAgent;
-  const browser
-    = ua.match(/(Edg|OPR|SamsungBrowser|Firefox|FxiOS|CriOS|Chrome)\/(\d+)/)?.slice(1).join(' ').replace(/^Edg\b/, 'Edge').replace(/^OPR\b/, 'Opera').replace(/^CriOS\b/, 'Chrome').replace(/^FxiOS\b/, 'Firefox').replace(/^SamsungBrowser\b/, 'Samsung Internet')
-    ?? (/Safari\//.test(ua) ? `Safari ${ua.match(/Version\/(\d+)/)?.[1] ?? ''}`.trim() : 'Browser');
-  const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
-  const touch = matchMedia('(pointer: coarse)').matches;
-  const kind = touch ? (Math.min(screen.width, screen.height) < 600 ? 'phone' : 'tablet') : '';
+  const userAgent = navigator.userAgent;
 
-  return [browser, os, kind].filter(Boolean).join(', ');
+  return [browserName(userAgent), systemName(userAgent), deviceKind()].filter(Boolean).join(', ');
 }
 
 export function infoLine(): string {
