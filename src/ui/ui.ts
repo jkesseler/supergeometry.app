@@ -937,8 +937,8 @@ export class UI {
     if (field) {
       field.value = value;
     }
-    const it = spec.items?.find(panelItem => (panelItem.type === 'number' || panelItem.type === 'slider') && panelItem.label === item.label);
-    if (it && (it.type === 'number' || it.type === 'slider')) {
+    const it = spec.items?.find((panelItem): panelItem is PanelItemOf<'number' | 'slider'> => (panelItem.type === 'number' || panelItem.type === 'slider') && panelItem.label === item.label);
+    if (it) {
       it.value = value;
     }
     for (const box of Array.from(this.panel.querySelectorAll<HTMLElement>('.field'))) {
@@ -949,14 +949,10 @@ export class UI {
       if (!input) {
         continue;
       }
-      if (input.type === 'range') {
-        input.value = String(value);
-      } else {
-        input.value = shown(value, (input.dataset.kind as FieldKind) || 'length');
-      }
+      input.value = input.type === 'range' ? String(value) : shown(value, (input.dataset.kind as FieldKind) || 'length');
       const out = box.querySelector('.slider-value');
       if (out && item.type === 'slider') {
-        out.textContent = item.show ? item.show(value) : String(value);
+        out.textContent = sliderText(item, value);
       }
     }
   }
@@ -999,9 +995,7 @@ export class UI {
     this.followPanel();
     const row = el('div', 'panel-fields');
     const items: PanelItem[] = [
-      ...(spec.fields ?? []).map(
-        (valueField): PanelItem => ({ type: 'number', label: valueField.label, value: valueField.value, kind: valueField.kind ?? (valueField.integer ? 'int' : valueField.unit ? 'length' : 'number'), min: valueField.min, onInput: valueField.onInput })
-      ),
+      ...(spec.fields ?? []).map((valueField): PanelItem => ({ type: 'number', label: valueField.label, value: valueField.value, kind: valueField.kind ?? kindOfField(valueField), min: valueField.min, onInput: valueField.onInput })),
       ...(spec.items ?? [])
     ];
     // Phones: a card that is just one button (the Values chip while drawing)
@@ -1009,7 +1003,38 @@ export class UI {
     // chip that unfolds it (its title isn't shown on a phone: it was an empty bar).
     const phone = document.documentElement.dataset.screen === 'phone';
     const chipOnly = items.length === 1 && items[0].type === 'button' && !spec.fields?.length && !spec.actions?.length;
-    if (!(phone && chipOnly)) {
+    this.appendPanelHead(spec, !(phone && chipOnly));
+    let numberIndex = 0;
+    for (const it of items) {
+      if (it.type !== 'number') {
+        row.append(panelItem(it));
+        continue;
+      }
+      const element = this.numberField(it, numberIndex++, spec);
+      if (it.inBox) {
+        element.dataset.inbox = '1';
+      }
+      row.append(element);
+    }
+    this.panel.append(row);
+    // The card's own actions (Select all, Add detail…) in a row of their own,
+    // inside the card (sharing the Cancel / Done row they were pushed out of it).
+    if (spec.actions?.length) {
+      this.panel.append(panelActions(spec.actions));
+    }
+    this.panel.append(panelButtons(spec));
+    // Phones: a window with nothing to set (only Done, Cancel being the ✕ by
+    // undo) isn't shown - a tap on empty space finishes, as Done would; Enter
+    // and Esc still work.
+    if (document.documentElement.dataset.screen === 'phone' && !items.length && !spec.actions?.length) {
+      this.panel.hidden = true;
+      document.body.classList.remove('panel-open');
+    }
+  }
+
+  /** Grip, title, warning line and Values chip. */
+  private appendPanelHead(spec: ValuePanel, hasGrip: boolean): void {
+    if (hasGrip) {
       this.panel.append(this.panelGrip());
     }
     const title = el('div', 'panel-title', spec.title);
@@ -1030,138 +1055,6 @@ export class UI {
       this.putPanel(this.panel.offsetLeft, this.panel.offsetTop);
     });
     this.panel.append(unfold);
-    let numberIndex = 0;
-    for (const it of items) {
-      if (it.type === 'number') {
-        const element = this.numberField(it, numberIndex++, spec);
-        if (it.inBox) {
-          element.dataset.inbox = '1';
-        }
-        row.append(element);
-      } else if (it.type === 'slot') {
-        const b = el('button', `slot${it.active ? ' active' : ''}${it.filled ? ' filled' : ''}`);
-        b.append(el('span', 'slot-label', it.label), el('span', 'slot-value', it.value));
-        b.addEventListener('click', it.onClick);
-        row.append(b);
-      } else if (it.type === 'choice' && (it.options.length > 4 || it.list)) {
-        // Many options (e.g. fonts, more with every imported one): a drop-down that stays in the panel.
-        const label = el('label', 'field choice-list');
-        if (it.label) {
-          label.append(el('span', 'field-label', it.label));
-        }
-        const sel = document.createElement('select');
-        for (const option of it.options) {
-          const opt = document.createElement('option');
-          opt.value = option.id;
-          opt.textContent = option.label;
-          sel.append(opt);
-        }
-        sel.value = it.value;
-        sel.addEventListener('change', () => it.onChange(sel.value));
-        sel.addEventListener('pointerdown', e => e.stopPropagation());
-        label.append(sel);
-        row.append(label);
-      } else if (it.type === 'choice') {
-        const element = el('div', 'choice');
-        if (it.label) {
-          element.append(el('span', 'field-label', it.label));
-        }
-        for (const option of it.options) {
-          const b = el('button', option.id === it.value ? 'active' : '', option.label);
-          b.addEventListener('click', () => it.onChange(option.id));
-          element.append(b);
-        }
-        row.append(element);
-      } else if (it.type === 'slider') {
-        const label = el('label', 'field slider-field');
-        label.append(el('span', 'field-label', it.label));
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.min = String(it.min);
-        input.max = String(it.max);
-        input.step = String(it.step ?? (it.max - it.min) / 100);
-        input.value = String(it.value);
-        const out = el('span', 'slider-value', it.show ? it.show(it.value) : String(it.value));
-        input.addEventListener('input', () => {
-          const value = Number(input.value);
-          out.textContent = it.show ? it.show(value) : String(value);
-          it.onInput(value);
-        });
-        // The card's grip and the view must not take the drag.
-        input.addEventListener('pointerdown', e => e.stopPropagation());
-        label.append(input, out);
-        row.append(label);
-      } else if (it.type === 'chips') {
-        const element = el('div', 'chips');
-        if (it.label) {
-          element.append(el('span', 'field-label', it.label));
-        }
-        const list = el('div', 'chip-list');
-        for (const chip of it.chips) {
-          const b = el('button', `chip${chip.on ? ' on' : ''}`);
-          if (chip.glyph) {
-            b.append(el('span', 'chip-glyph', chip.glyph));
-          }
-          b.append(chip.label);
-          if (chip.title) {
-            b.title = chip.title;
-          }
-          b.addEventListener('click', chip.onClick);
-          list.append(b);
-        }
-        if (!it.chips.length && it.empty) {
-          list.append(el('span', 'chip-empty', it.empty));
-        }
-        element.append(list);
-        row.append(element);
-      } else if (it.type === 'toggle') {
-        const b = el('button', `toggle${it.value ? ' on' : ''}`, it.label);
-        b.addEventListener('click', () => it.onChange(!it.value));
-        row.append(b);
-      } else {
-        const b = el('button', it.primary ? 'text-btn primary' : 'text-btn');
-        if (it.icon) {
-          b.innerHTML = icons[it.icon];
-        }
-        b.append(it.label);
-        b.addEventListener('click', it.onClick);
-        row.append(b);
-      }
-    }
-    this.panel.append(row);
-    // The card's own actions (Select all, Add detail…) in a row of their own,
-    // inside the card (sharing the Cancel / Done row they were pushed out of it).
-    if (spec.actions?.length) {
-      const acts = el('div', 'panel-actions');
-      for (const a of spec.actions) {
-        const b = el('button', 'text-btn');
-        b.innerHTML = icons[a.icon] ?? '';
-        b.append(a.label);
-        if (a.disabled) {
-          b.disabled = true;
-        }
-        b.addEventListener('click', () => a.run?.());
-        acts.append(b);
-      }
-      this.panel.append(acts);
-    }
-    const buttons = el('div', 'panel-buttons');
-    if (spec.onCancel) {
-      const button = textButton('Cancel', 'Esc', spec.onCancel);
-      button.classList.add('panel-cancel');
-      buttons.append(button);
-    }
-    if (spec.onDone) {
-      buttons.append(textButton('Done', 'Enter', spec.onDone, true));
-    }
-    this.panel.append(buttons);
-    // Phones: a window with nothing to set (only Done, Cancel being the ✕ by
-    // undo) isn't shown - a tap on empty space finishes, as Done would; Enter
-    // and Esc still work.
-    if (document.documentElement.dataset.screen === 'phone' && !items.length && !spec.actions?.length) {
-      this.panel.hidden = true;
-      document.body.classList.remove('panel-open');
-    }
   }
 
   private numberField(field: Extract<PanelItem, { type: 'number' }>, index: number, spec: ValuePanel): HTMLElement {
@@ -1216,10 +1109,7 @@ export class UI {
         spec.onCancel?.();
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
-        const value = evaluate(input.value, kind === 'length' ? 'length' : 'number') ?? 0;
-        const step = kind === 'length' ? (e.shiftKey ? 10 : 1) : e.shiftKey ? 10 : 1;
-        const next = value + (e.key === 'ArrowUp' ? step : -step) * (kind === 'length' ? unitScale() : 1);
-        input.value = shown(next, kind);
+        input.value = nudged(input.value, kind, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1));
         apply();
       }
       e.stopPropagation();
@@ -1478,30 +1368,7 @@ export class UI {
     if (this.panelDragging) {
       return;
     }
-    const rectText = (e: Element | null) => {
-      if (!e || (e as HTMLElement).hidden) {
-        return '-';
-      }
-      const b = e.getBoundingClientRect();
-
-      return `${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.width)},${Math.round(b.height)}`;
-    };
-    const q = (value: number) => Math.round(value / 16);
-    const phone = screenClass() === 'phone';
-    const key = [
-      window.innerWidth,
-      window.innerHeight,
-      this.panelVersion,
-      panel.offsetWidth,
-      panel.offsetHeight,
-      rectText(box ?? null),
-      box?.dataset.seg ?? '',
-      phone ? ['#items', '#history', '#toolbar', '#undo-dock', '#bottom-left', '#right-col', '#hint'].map(selector => rectText(document.querySelector(selector))).join('|') : '',
-      phone || !this.lastPointer ? '' : `${q(this.lastPointer.x)},${q(this.lastPointer.y)}`,
-      phone || !this.pointerAt ? '' : `${q(this.pointerAt.x)},${q(this.pointerAt.y)}`,
-      this.lastPress ? `${this.lastPress.x},${this.lastPress.y}` : '',
-      panel.contains(document.activeElement) ? 'f' : ''
-    ].join(';');
+    const key = this.panelPlaceKey(box);
     if (key === this.panelKey) {
       return;
     }
@@ -1527,51 +1394,59 @@ export class UI {
       return;
     }
     // Heading for the card (or typing in it): it holds still, so it can be clicked.
-    if (this.panelSide >= 0 && panel.style.left) {
-      const cr = panel.getBoundingClientRect();
-      const q = this.pointerAt;
-      const near = q && q.x > cr.left - 60 && q.x < cr.right + 60 && q.y > cr.top - 60 && q.y < cr.bottom + 60;
-      if (near || panel.contains(document.activeElement) || panel.matches(':hover')) {
-        return;
-      }
+    if (this.panelSide >= 0 && panel.style.left && this.isHeadingForPanel()) {
+      return;
     }
-    const offsetWidth = panel.offsetWidth;
-    const offsetHeight = panel.offsetHeight;
-    const margin = 8;
-    const innerWidth = window.innerWidth;
-    const innerHeight = window.innerHeight;
-    // Places to try, in order of preference.
-    let spots: [number, number][];
+    this.placePanelClear(box);
+  }
+
+  private panelPlaceKey(box: HTMLElement | undefined): string {
+    const panel = this.panel;
+    const rectText = (e: Element | null) => {
+      if (!e || (e as HTMLElement).hidden) {
+        return '-';
+      }
+      const b = e.getBoundingClientRect();
+
+      return `${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.width)},${Math.round(b.height)}`;
+    };
+    const q = (value: number) => Math.round(value / 16);
+    const phone = screenClass() === 'phone';
+
+    return [
+      window.innerWidth,
+      window.innerHeight,
+      this.panelVersion,
+      panel.offsetWidth,
+      panel.offsetHeight,
+      rectText(box ?? null),
+      box?.dataset.seg ?? '',
+      phone ? ['#items', '#history', '#toolbar', '#undo-dock', '#bottom-left', '#right-col', '#hint'].map(selector => rectText(document.querySelector(selector))).join('|') : '',
+      phone || !this.lastPointer ? '' : `${q(this.lastPointer.x)},${q(this.lastPointer.y)}`,
+      phone || !this.pointerAt ? '' : `${q(this.pointerAt.x)},${q(this.pointerAt.y)}`,
+      this.lastPress ? `${this.lastPress.x},${this.lastPress.y}` : '',
+      panel.contains(document.activeElement) ? 'f' : ''
+    ].join(';');
+  }
+
+  private isHeadingForPanel(): boolean {
+    const panel = this.panel;
+    const cardRect = panel.getBoundingClientRect();
+    const pointer = this.pointerAt;
+    const near = pointer && pointer.x > cardRect.left - 60 && pointer.x < cardRect.right + 60 && pointer.y > cardRect.top - 60 && pointer.y < cardRect.bottom + 60;
+
+    return !!near || panel.contains(document.activeElement) || panel.matches(':hover');
+  }
+
+  /** Where the card covers least of the line, the pointer and the app's columns. */
+  private placePanelClear(box: HTMLElement | undefined): void {
+    const panel = this.panel;
     // What the card must not cover: the dimension (the line being drawn, the
     // drag arrow) and the pointer.
     const avoid: [number, number][][] = [];
-    if (box) {
-      const rect = box.getBoundingClientRect();
-      spots = [
-        [rect.right + 4, rect.top],
-        [rect.left - 4 - offsetWidth, rect.top],
-        [rect.left, rect.top - 4 - offsetHeight],
-        [rect.left, rect.bottom + 4],
-        [rect.right + 4, rect.bottom - offsetHeight],
-        [rect.left - 4 - offsetWidth, rect.bottom - offsetHeight]
-      ];
-      const seg = box.dataset.seg?.split(',').map(Number);
-      if (seg && seg.length === 4 && seg.every(Number.isFinite)) {
-        avoid.push([[seg[0], seg[1]], [seg[2], seg[3]]]);
-      }
-    } else if (this.lastPress) {
-      const q = this.lastPress;
-      spots = [
-        [q.x + 28, q.y + 20],
-        [q.x - 28 - offsetWidth, q.y + 20],
-        [q.x + 28, q.y - 20 - offsetHeight],
-        [q.x - 28 - offsetWidth, q.y - 20 - offsetHeight],
-        // Straight under / over the tap: fits between columns too narrow for beside it.
-        [q.x - offsetWidth / 2, q.y + 36],
-        [q.x - offsetWidth / 2, q.y - 36 - offsetHeight]
-      ];
-    } else {
-      spots = [[(innerWidth - offsetWidth) / 2, innerHeight - offsetHeight - 70]];
+    const seg = box?.dataset.seg?.split(',').map(Number);
+    if (box && seg && seg.length === 4 && seg.every(Number.isFinite)) {
+      avoid.push([[seg[0], seg[1]], [seg[2], seg[3]]]);
     }
     if (this.lastPointer) {
       avoid.push([[this.lastPointer.x, this.lastPointer.y]]);
@@ -1582,61 +1457,48 @@ export class UI {
       .map(selector => document.querySelector<HTMLElement>(selector))
       .filter((e): e is HTMLElement => !!e && !e.hidden && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden')
       .map(e => e.getBoundingClientRect());
-    // …and somewhere clear of them all, should every spot by the tap be covered.
-    const free = { l: margin, r: innerWidth - margin };
-    for (const rect of chrome) {
-      if (rect.height > innerHeight * 0.2 && rect.width < innerWidth * 0.5) {
-        rect.left < innerWidth / 2 ? (free.l = Math.max(free.l, rect.right + margin)) : (free.r = Math.min(free.r, rect.left - margin));
-      }
-    }
-    spots.push([(free.l + free.r - offsetWidth) / 2, innerHeight - offsetHeight - 70], [(free.l + free.r - offsetWidth) / 2, 60]);
-    const clampX = (x: number) => Math.max(margin, Math.min(innerWidth - offsetWidth - margin, x));
-    const clampY = (y: number) => Math.max(52, Math.min(innerHeight - offsetHeight - margin, y));
-    // How badly a spot is in the way: off screen (moved back on), over the line, over the pointer.
-    const cost = ([x0, y0]: [number, number], withPointer: boolean): number => {
-      const x = clampX(x0);
-      const y = clampY(y0);
-      let penalty = Math.abs(x - x0) + Math.abs(y - y0) > 1 ? 1 : 0;
-      for (const rect of chrome) {
-        if (x < rect.right && x + offsetWidth > rect.left && y < rect.bottom && y + offsetHeight > rect.top) {
-          penalty += 3;
-        }
-      }
-      const pad = 14;
-      const inside = (px: number, py: number) => px > x - pad && px < x + offsetWidth + pad && py > y - pad && py < y + offsetHeight + pad;
-      for (const a of avoid) {
-        if (a.length === 1) {
-          if (withPointer && inside(a[0][0], a[0][1])) {
-            penalty += 2;
-          }
-          continue;
-        }
-        for (let step = 0; step <= 24; step++) {
-          const t = step / 24;
-          if (inside(a[0][0] + (a[1][0] - a[0][0]) * t, a[0][1] + (a[1][1] - a[0][1]) * t)) {
-            penalty += 4;
-            break;
-          }
-        }
-      }
-
-      return penalty;
-    };
+    const room: PanelRoom = { width: panel.offsetWidth, height: panel.offsetHeight, innerWidth: window.innerWidth, innerHeight: window.innerHeight, chrome, avoid };
+    // Places to try, in order of preference.
+    const spots = [...this.panelSpotsToTry(box, room), ...spotsClearOfChrome(room)];
     // Where it is stays as long as it's clear of the line (the pointer only steers where it goes next).
-    let pick = this.panelSide >= 0 && this.panelSide < spots.length && cost(spots[this.panelSide], false) === 0 ? this.panelSide : -1;
-    if (pick < 0) {
-      let best = Infinity;
-      spots.forEach((sp, i) => {
-        const spotCost = cost(sp, true);
-        if (spotCost < best) {
-          [best, pick] = [spotCost, i];
-        }
-      });
-    }
+    const lineOnly = { ...room, avoid: room.avoid.filter(shape => shape.length > 1) };
+    const isStillClear = this.panelSide >= 0 && this.panelSide < spots.length && spotCost(lineOnly, spots[this.panelSide]) === 0;
+    const pick = isStillClear ? this.panelSide : cheapestSpot(room, spots);
     this.panelSide = pick;
     const [x, y] = spots[pick];
-    panel.style.left = `${Math.round(clampX(x))}px`;
-    panel.style.top = `${Math.round(clampY(y))}px`;
+    panel.style.left = `${Math.round(clampPanelX(room, x))}px`;
+    panel.style.top = `${Math.round(clampPanelY(room, y))}px`;
+  }
+
+  private panelSpotsToTry(box: HTMLElement | undefined, room: PanelRoom): [number, number][] {
+    const { width, height } = room;
+    if (box) {
+      const rect = box.getBoundingClientRect();
+
+      return [
+        [rect.right + 4, rect.top],
+        [rect.left - 4 - width, rect.top],
+        [rect.left, rect.top - 4 - height],
+        [rect.left, rect.bottom + 4],
+        [rect.right + 4, rect.bottom - height],
+        [rect.left - 4 - width, rect.bottom - height]
+      ];
+    }
+    if (this.lastPress) {
+      const press = this.lastPress;
+
+      return [
+        [press.x + 28, press.y + 20],
+        [press.x - 28 - width, press.y + 20],
+        [press.x + 28, press.y - 20 - height],
+        [press.x - 28 - width, press.y - 20 - height],
+        // Straight under / over the tap: fits between columns too narrow for beside it.
+        [press.x - width / 2, press.y + 36],
+        [press.x - width / 2, press.y - 36 - height]
+      ];
+    }
+
+    return [[(room.innerWidth - width) / 2, room.innerHeight - height - 70]];
   }
 
   /** Creates a variable from a field's current text; returns its name (set by the app). */
@@ -1736,6 +1598,267 @@ export function usable(items: ToolItem[]): ToolItem[] {
 }
 
 /** The small BETA tag on a tool still being tried out. */
+type PanelItemOf<T extends PanelItem['type']> = Extract<PanelItem, { type: T }>;
+
+function kindOfField(valueField: ValueField): FieldKind {
+  if (valueField.integer) {
+    return 'int';
+  }
+
+  return valueField.unit ? 'length' : 'number';
+}
+
+function sliderText(item: PanelItemOf<'slider'>, value: number): string {
+  return item.show ? item.show(value) : String(value);
+}
+
+/** Steps are of the unit shown, for a length. */
+function nudged(text: string, kind: FieldKind, steps: number): string {
+  const value = evaluate(text, kind === 'length' ? 'length' : 'number') ?? 0;
+
+  return shown(value + steps * (kind === 'length' ? unitScale() : 1), kind);
+}
+
+function panelItem(item: Exclude<PanelItem, { type: 'number' }>): HTMLElement {
+  switch (item.type) {
+    case 'slot':
+      return slotButton(item);
+    case 'choice':
+      // Many options (e.g. fonts, more with every imported one): a drop-down that stays in the panel.
+      return item.options.length > 4 || item.list ? choiceList(item) : choiceButtons(item);
+    case 'slider':
+      return sliderField(item);
+    case 'chips':
+      return chipsField(item);
+    case 'toggle':
+      return toggleButton(item);
+    default:
+      return panelButton(item);
+  }
+}
+
+function slotButton(item: PanelItemOf<'slot'>): HTMLElement {
+  const button = el('button', `slot${item.active ? ' active' : ''}${item.filled ? ' filled' : ''}`);
+  button.append(el('span', 'slot-label', item.label), el('span', 'slot-value', item.value));
+  button.addEventListener('click', item.onClick);
+
+  return button;
+}
+
+function choiceList(item: PanelItemOf<'choice'>): HTMLElement {
+  const label = el('label', 'field choice-list');
+  if (item.label) {
+    label.append(el('span', 'field-label', item.label));
+  }
+  const select = document.createElement('select');
+  for (const option of item.options) {
+    const optionElement = document.createElement('option');
+    optionElement.value = option.id;
+    optionElement.textContent = option.label;
+    select.append(optionElement);
+  }
+  select.value = item.value;
+  select.addEventListener('change', () => item.onChange(select.value));
+  select.addEventListener('pointerdown', e => e.stopPropagation());
+  label.append(select);
+
+  return label;
+}
+
+function choiceButtons(item: PanelItemOf<'choice'>): HTMLElement {
+  const element = el('div', 'choice');
+  if (item.label) {
+    element.append(el('span', 'field-label', item.label));
+  }
+  for (const option of item.options) {
+    const button = el('button', option.id === item.value ? 'active' : '', option.label);
+    button.addEventListener('click', () => item.onChange(option.id));
+    element.append(button);
+  }
+
+  return element;
+}
+
+function sliderField(item: PanelItemOf<'slider'>): HTMLElement {
+  const label = el('label', 'field slider-field');
+  label.append(el('span', 'field-label', item.label));
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = String(item.min);
+  input.max = String(item.max);
+  input.step = String(item.step ?? (item.max - item.min) / 100);
+  input.value = String(item.value);
+  const out = el('span', 'slider-value', sliderText(item, item.value));
+  input.addEventListener('input', () => {
+    const value = Number(input.value);
+    out.textContent = sliderText(item, value);
+    item.onInput(value);
+  });
+  // The card's grip and the view must not take the drag.
+  input.addEventListener('pointerdown', e => e.stopPropagation());
+  label.append(input, out);
+
+  return label;
+}
+
+function chipsField(item: PanelItemOf<'chips'>): HTMLElement {
+  const element = el('div', 'chips');
+  if (item.label) {
+    element.append(el('span', 'field-label', item.label));
+  }
+  const list = el('div', 'chip-list');
+  for (const chip of item.chips) {
+    const button = el('button', `chip${chip.on ? ' on' : ''}`);
+    if (chip.glyph) {
+      button.append(el('span', 'chip-glyph', chip.glyph));
+    }
+    button.append(chip.label);
+    if (chip.title) {
+      button.title = chip.title;
+    }
+    button.addEventListener('click', chip.onClick);
+    list.append(button);
+  }
+  if (!item.chips.length && item.empty) {
+    list.append(el('span', 'chip-empty', item.empty));
+  }
+  element.append(list);
+
+  return element;
+}
+
+function toggleButton(item: PanelItemOf<'toggle'>): HTMLElement {
+  const button = el('button', `toggle${item.value ? ' on' : ''}`, item.label);
+  button.addEventListener('click', () => item.onChange(!item.value));
+
+  return button;
+}
+
+function panelButton(item: PanelItemOf<'button'>): HTMLElement {
+  const button = el('button', item.primary ? 'text-btn primary' : 'text-btn');
+  if (item.icon) {
+    button.innerHTML = icons[item.icon];
+  }
+  button.append(item.label);
+  button.addEventListener('click', item.onClick);
+
+  return button;
+}
+
+function panelActions(actions: ToolItem[]): HTMLElement {
+  const actionRow = el('div', 'panel-actions');
+  for (const action of actions) {
+    const button = el('button', 'text-btn');
+    button.innerHTML = icons[action.icon] ?? '';
+    button.append(action.label);
+    if (action.disabled) {
+      button.disabled = true;
+    }
+    button.addEventListener('click', () => action.run?.());
+    actionRow.append(button);
+  }
+
+  return actionRow;
+}
+
+function panelButtons(spec: ValuePanel): HTMLElement {
+  const buttons = el('div', 'panel-buttons');
+  if (spec.onCancel) {
+    const button = textButton('Cancel', 'Esc', spec.onCancel);
+    button.classList.add('panel-cancel');
+    buttons.append(button);
+  }
+  if (spec.onDone) {
+    buttons.append(textButton('Done', 'Enter', spec.onDone, true));
+  }
+
+  return buttons;
+}
+
+interface PanelRoom {
+  width: number;
+  height: number;
+  innerWidth: number;
+  innerHeight: number;
+  /** The app's own columns and bars. */
+  chrome: DOMRect[];
+  /** A line (its two ends) or the pointer (one point). */
+  avoid: [number, number][][];
+}
+
+const PANEL_MARGIN = 8;
+
+const clampPanelX = (room: PanelRoom, x: number) => Math.max(PANEL_MARGIN, Math.min(room.innerWidth - room.width - PANEL_MARGIN, x));
+const clampPanelY = (room: PanelRoom, y: number) => Math.max(52, Math.min(room.innerHeight - room.height - PANEL_MARGIN, y));
+
+/** Somewhere clear of the app's tall columns, should every spot by the tap be covered. */
+function spotsClearOfChrome(room: PanelRoom): [number, number][] {
+  const { width, height, innerWidth, innerHeight } = room;
+  const free = { l: PANEL_MARGIN, r: innerWidth - PANEL_MARGIN };
+  for (const rect of room.chrome) {
+    if (rect.height <= innerHeight * 0.2 || rect.width >= innerWidth * 0.5) {
+      continue;
+    }
+    if (rect.left < innerWidth / 2) {
+      free.l = Math.max(free.l, rect.right + PANEL_MARGIN);
+    } else {
+      free.r = Math.min(free.r, rect.left - PANEL_MARGIN);
+    }
+  }
+
+  return [[(free.l + free.r - width) / 2, innerHeight - height - 70], [(free.l + free.r - width) / 2, 60]];
+}
+
+/** How badly a spot is in the way: off screen (moved back on), over the line, over the pointer. */
+function spotCost(room: PanelRoom, [x0, y0]: [number, number]): number {
+  const x = clampPanelX(room, x0);
+  const y = clampPanelY(room, y0);
+  let penalty = Math.abs(x - x0) + Math.abs(y - y0) > 1 ? 1 : 0;
+  for (const rect of room.chrome) {
+    if (x < rect.right && x + room.width > rect.left && y < rect.bottom && y + room.height > rect.top) {
+      penalty += 3;
+    }
+  }
+  const pad = 14;
+  const isInside = (px: number, py: number) => px > x - pad && px < x + room.width + pad && py > y - pad && py < y + room.height + pad;
+  for (const shape of room.avoid) {
+    if (shape.length === 1 && isInside(shape[0][0], shape[0][1])) {
+      penalty += 2;
+    }
+    if (shape.length > 1 && crossesLine(shape, isInside)) {
+      penalty += 4;
+    }
+  }
+
+  return penalty;
+}
+
+function crossesLine([from, to]: [number, number][], isInside: (x: number, y: number) => boolean): boolean {
+  for (let step = 0; step <= 24; step++) {
+    const t = step / 24;
+    if (isInside(from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/** The first of the cheapest: spots come in order of preference. */
+function cheapestSpot(room: PanelRoom, spots: [number, number][]): number {
+  let pick = -1;
+  let best = Infinity;
+  spots.forEach((spot, i) => {
+    const cost = spotCost(room, spot);
+    if (cost < best) {
+      best = cost;
+      pick = i;
+    }
+  });
+
+  return pick;
+}
+
 function betaTag(): HTMLElement {
   const tag = el('span', 'beta-tag', 'BETA');
   tag.title = 'New and still being tried out: it may change, or not work on every shape';
