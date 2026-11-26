@@ -386,98 +386,119 @@ class Numpad {
     if (!t || !t.isConnected) {
       return this.close();
     }
-    let fieldText = t.value;
-    let start = Math.min(this.selStart, fieldText.length);
-    let e = Math.min(this.selEnd, fieldText.length);
-    // First key after opening: a digit or point types over the number (a
-    // minus in front stays); ⌫ clears it all, sign too - then type it positive.
-    // (A line's Up showing -2.7, only where the finger last was: 34 typed
-    // went down, -34 - the outline drawn upside down.)
-    if (this.fresh && (keyLabel === '.' || /^\d$/.test(keyLabel))) {
-      [start, e] = [fieldText.startsWith('-') && t.dataset.follows !== '1' ? 1 : 0, fieldText.length];
-    }
-    // A variable tapped first: the box becomes it.
-    if (this.fresh && varHooks?.names().includes(keyLabel)) {
-      [start, e] = [0, fieldText.length];
-    }
-    if (this.fresh && keyLabel === '⌫') {
-      [start, e] = [0, fieldText.length];
-    }
-    // − first, then digits: that number, negative. (−24 in a box showing
-    // -24.6224 flipped it, then put the 24 on the end: 24.622424. − then ↵
-    // still flips the sign.)
-    if (this.minusFirst && (keyLabel === '.' || /^\d$/.test(keyLabel))) {
-      [fieldText, start, e] = ['-', 1, 1];
-    }
+    const field = this.fieldFor(keyLabel, t);
     this.minusFirst = this.fresh && keyLabel === '−' && !this.fx;
     if (keyLabel !== '↵') {
       this.fresh = false;
     }
-    const put = (text: string) => {
-      fieldText = fieldText.slice(0, start) + text + fieldText.slice(e);
-      start = e = start + text.length;
-    };
-    if (keyLabel === '⌫') {
-      if (start !== e) {
-        put('');
-      } else if (start > 0) {
-        fieldText = fieldText.slice(0, start - 1) + fieldText.slice(start);
-        start = e = start - 1;
-      }
-    } else if (keyLabel === '−' && this.fx) {
-      put('-');
-    } else if (keyLabel === '−') {
-      // Flip the sign of the whole value.
-      fieldText = fieldText.startsWith('-') ? fieldText.slice(1) : `-${fieldText}`;
-      start = e = fieldText.length;
-    } else if (keyLabel === '↵') {
-      // Only now does the value count: the box hears it, then Enter.
-      t.dispatchEvent(new Event('input', { bubbles: true }));
-      t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      t.dispatchEvent(new Event('change', { bubbles: true }));
-
-      return this.close();
-    } else if (keyLabel === 'ƒx') {
-      // Operators and the variables' names on the numpad.
-      this.setFx(!this.fx);
+    if (COMMAND_KEYS.includes(keyLabel)) {
+      this.runCommand(keyLabel, t);
 
       return;
-    } else if (keyLabel === 'abc') {
-      // Anything else (a name not made yet): the system keyboard.
-      this.close();
-      t.inputMode = 'text';
-      t.focus({ preventScroll: true });
-
-      return;
-    } else if (keyLabel === '+ New') {
-      // A variable from this value: it's made, and the box uses it.
-      const value = t.value;
-      this.close();
-      void varHooks?.create(value).then((name) => {
-        if (!name || !t.isConnected) {
-          return;
-        }
-        t.value = name;
-        t.dispatchEvent(new Event('input', { bubbles: true }));
-        t.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
-      return;
-    } else if (keyLabel === '×') {
-      put('*');
-    } else if (keyLabel === '+' || keyLabel === '/') {
-      put(keyLabel);
-    } else {
-      put(keyLabel);
     }
-    t.value = fieldText;
-    this.selStart = start;
-    this.selEnd = e;
+    const typed = this.typeKey(field, keyLabel);
+    t.value = typed.text;
+    this.selStart = typed.start;
+    this.selEnd = typed.end;
     this.showSelection();
     // Every box hears each key: the model follows what's typed (↵ finishes).
     t.dispatchEvent(new Event('input', { bubbles: true }));
   }
+
+  /** The box's text, and the part of it the key types over. */
+  private fieldFor(keyLabel: string, t: HTMLInputElement): Field {
+    const text = t.value;
+    const isNumberKey = keyLabel === '.' || /^\d$/.test(keyLabel);
+    // − first, then digits: that number, negative. (−24 in a box showing
+    // -24.6224 flipped it, then put the 24 on the end: 24.622424. − then ↵
+    // still flips the sign.)
+    if (this.minusFirst && isNumberKey) {
+      return { text: '-', start: 1, end: 1 };
+    }
+    // First key after opening: a digit or point types over the number (a
+    // minus in front stays); ⌫ clears it all, sign too - then type it positive.
+    // (A line's Up showing -2.7, only where the finger last was: 34 typed
+    // went down, -34 - the outline drawn upside down.)
+    // A variable tapped first: the box becomes it.
+    const isVariable = this.fresh && varHooks?.names().includes(keyLabel);
+    if (isVariable || (this.fresh && keyLabel === '⌫')) {
+      return { text, start: 0, end: text.length };
+    }
+    if (this.fresh && isNumberKey) {
+      return { text, start: text.startsWith('-') && t.dataset.follows !== '1' ? 1 : 0, end: text.length };
+    }
+
+    return { text, start: Math.min(this.selStart, text.length), end: Math.min(this.selEnd, text.length) };
+  }
+
+  /** The keys that don't type: ↵, ƒx, abc and + New. */
+  private runCommand(keyLabel: string, t: HTMLInputElement): void {
+    switch (keyLabel) {
+      case '↵':
+        // Only now does the value count: the box hears it, then Enter.
+        t.dispatchEvent(new Event('input', { bubbles: true }));
+        t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        t.dispatchEvent(new Event('change', { bubbles: true }));
+        this.close();
+        break;
+      case 'ƒx':
+        // Operators and the variables' names on the numpad.
+        this.setFx(!this.fx);
+        break;
+      case 'abc':
+        // Anything else (a name not made yet): the system keyboard.
+        this.close();
+        t.inputMode = 'text';
+        t.focus({ preventScroll: true });
+        break;
+      case '+ New': {
+        // A variable from this value: it's made, and the box uses it.
+        const value = t.value;
+        this.close();
+        void varHooks?.create(value).then((name) => {
+          if (!name || !t.isConnected) {
+            return;
+          }
+          t.value = name;
+          t.dispatchEvent(new Event('input', { bubbles: true }));
+          t.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        break;
+      }
+    }
+  }
+
+  /** The box's text and caret after a key that types or deletes. */
+  private typeKey(field: Field, keyLabel: string): Field {
+    const { text, start, end } = field;
+    const replaced = (typed: string) => ({ text: text.slice(0, start) + typed + text.slice(end), start: start + typed.length, end: start + typed.length });
+    if (keyLabel === '⌫' && start !== end) {
+      return replaced('');
+    }
+    if (keyLabel === '⌫') {
+      return start > 0 ? { text: text.slice(0, start - 1) + text.slice(start), start: start - 1, end: start - 1 } : field;
+    }
+    if (keyLabel === '−' && !this.fx) {
+      // Flip the sign of the whole value.
+      const flipped = text.startsWith('-') ? text.slice(1) : `-${text}`;
+
+      return { text: flipped, start: flipped.length, end: flipped.length };
+    }
+    if (keyLabel === '−') {
+      return replaced('-');
+    }
+
+    return replaced(keyLabel === '×' ? '*' : keyLabel);
+  }
 }
+
+interface Field {
+  text: string;
+  start: number;
+  end: number;
+}
+
+const COMMAND_KEYS = ['↵', 'ƒx', 'abc', '+ New'];
 
 let pad: Numpad | null = null;
 
@@ -516,18 +537,24 @@ function kindOf(input: HTMLInputElement): 'length' | 'angle' | 'number' | 'int' 
 
 /** A step a few pixels of drag should move this value by. */
 function scrubStep(value: number, kind: string): number {
-  if (kind === 'int') {
+  if (kind === 'int' || kind === 'angle') {
     return 1;
   }
-  if (kind === 'angle') {
-    return 1;
+  const size = Math.abs(value);
+  if (size < 1) {
+    return 0.01;
   }
-  const a = Math.abs(value);
+  if (size < 10) {
+    return 0.1;
+  }
   if (kind === 'number') {
-    return a < 1 ? 0.01 : a < 10 ? 0.1 : 1;
+    return 1;
+  }
+  if (size < 100) {
+    return 0.5;
   }
 
-  return a < 1 ? 0.01 : a < 10 ? 0.1 : a < 100 ? 0.5 : a < 1000 ? 5 : 50;
+  return size < 1000 ? 5 : 50;
 }
 
 /** A plain number ("220", "12.5 mm"), not "width*2" or a variable: what a drag can turn up or down. */
