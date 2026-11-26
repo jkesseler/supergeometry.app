@@ -55,7 +55,6 @@ interface AboutDialogProps {
 function aboutHtml(): string {
   const html = readmeMarkdown.parse(aboutText(), { async: false });
 
-  // DOMPurify drops `target` unless told to keep it.
   return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
 }
 
