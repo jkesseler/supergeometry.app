@@ -35,38 +35,74 @@ const REFUSE = [
   'chatgpt.com', 'openai.com', 'apple.com', 'microsoft.com', 'whatsapp.com', 'spotify.com', 'ebay.com'
 ];
 
-/** What the window shows for what was typed: a page, or why it can't (and what to do instead). */
-export function pageFor(text: string): { src: string; shown: string; video?: 'youtube' | 'vimeo' } | { refuse: string; shown: string; open?: string } {
-  let t = text.trim();
-  if (!t) {
+interface Refusal {
+  refuse: string;
+  shown: string;
+  open?: string;
+}
+
+/** The web address `text` means, or why it means none. */
+function webAddress(text: string): URL | Refusal {
+  const trimmed = text.trim();
+  if (!trimmed) {
     return { refuse: "Type a page's address, or paste a video's link (YouTube, Vimeo).", shown: '' };
   }
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(t)) {
-    // Words, not an address: nothing here can search (search sites refuse to be shown inside a page).
-    if (/\s/.test(t) || !/\.[a-z]{2,}/i.test(t)) {
-      return { refuse: "Type a page's address (like wikipedia.org), or paste a video's link.", shown: t };
-    }
-    t = `https://${t}`;
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+  // Words, not an address: nothing here can search (search sites refuse to be shown inside a page).
+  const isWords = /\s/.test(trimmed) || !/\.[a-z]{2,}/i.test(trimmed);
+  if (!hasScheme && isWords) {
+    return { refuse: "Type a page's address (like wikipedia.org), or paste a video's link.", shown: trimmed };
   }
   let url: URL;
   try {
-    url = new URL(t);
+    url = new URL(hasScheme ? trimmed : `https://${trimmed}`);
   } catch {
     return { refuse: "That isn't an address this can open.", shown: text };
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     return { refuse: 'Only web pages (http, https) open here.', shown: text };
   }
-  const host = url.hostname.replace(/^(www|m|music)\./, '');
-  // A YouTube video (watch, youtu.be, shorts, live, embed): its own player, which may be shown in a page.
-  const yt
-    = host === 'youtu.be' ? url.pathname.slice(1).split('/')[0] : host.endsWith('youtube.com') ? (url.searchParams.get('v') ?? url.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{6,})/)?.[1] ?? null) : null;
-  if (yt && /^[\w-]{6,}$/.test(yt)) {
-    const start = parseInt(url.searchParams.get('t') ?? url.searchParams.get('start') ?? '', 10);
-    const list = url.searchParams.get('list');
-    const q = new URLSearchParams({ autoplay: '1', rel: '0', ...(start > 0 ? { start: String(start) } : {}), ...(list ? { list } : {}) });
 
-    return { src: `https://www.youtube.com/embed/${yt}?${q}`, shown: url.href, video: 'youtube' };
+  return url;
+}
+
+/** The video a YouTube address is of (watch, youtu.be, shorts, live, embed), if any. */
+function youtubeVideo(url: URL, host: string): string | null {
+  if (host === 'youtu.be') {
+    return url.pathname.slice(1).split('/')[0];
+  }
+  if (!host.endsWith('youtube.com')) {
+    return null;
+  }
+
+  return url.searchParams.get('v') ?? url.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{6,})/)?.[1] ?? null;
+}
+
+/** YouTube's own player for the video, which may be shown in a page: from the same moment, in the same playlist. */
+function youtubePlayer(url: URL, video: string): string {
+  const query = new URLSearchParams({ autoplay: '1', rel: '0' });
+  const start = parseInt(url.searchParams.get('t') ?? url.searchParams.get('start') ?? '', 10);
+  if (start > 0) {
+    query.set('start', String(start));
+  }
+  const list = url.searchParams.get('list');
+  if (list) {
+    query.set('list', list);
+  }
+
+  return `https://www.youtube.com/embed/${video}?${query}`;
+}
+
+/** What the window shows for what was typed: a page, or why it can't (and what to do instead). */
+export function pageFor(text: string): { src: string; shown: string; video?: 'youtube' | 'vimeo' } | Refusal {
+  const url = webAddress(text);
+  if (!(url instanceof URL)) {
+    return url;
+  }
+  const host = url.hostname.replace(/^(www|m|music)\./, '');
+  const video = youtubeVideo(url, host);
+  if (video && /^[\w-]{6,}$/.test(video)) {
+    return { src: youtubePlayer(url, video), shown: url.href, video: 'youtube' };
   }
   if (host.endsWith('youtube.com')) {
     return {
