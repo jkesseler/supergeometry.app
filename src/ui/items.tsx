@@ -159,17 +159,15 @@ function FolderRow({ folder, items, hidden, depth, state, actions }: FolderRowPr
   );
 }
 
-function ItemsList({ doc, result, isolated, state, handlers, actions }: ItemsListProps) {
-  const hidden = new Set(doc.hidden);
-  const folders = doc.folders ?? [];
-  const inFolder = new Set(folders.flatMap(folder => folder.items));
+/** Everything there is, by kind. Sketches and the rest are greyed while something else is isolated. */
+function rowsByKind({ doc, result, isolated, handlers }: ItemsListProps): Record<string, Row[]> {
   const bodies = result?.bodies ?? [];
   const names = doc.names ?? {};
   const features = doc.features;
   const of = <T extends Feature['type']>(type: T) => features.filter(feature => feature.type === type);
   const dimmed = (id: string) => (isolated && !isolated.includes(id) ? ' isolated-out' : '');
-  // Everything there is, by kind. Sketches and the rest are greyed while something else is isolated.
-  const rows: Record<string, Row[]> = {
+
+  return {
     Bodies: bodies.map(body => ({ id: body.id, name: names[body.id] ?? body.name, icon: 'body' as IconName, open: () => handlers.selectBody(body.id), remove: () => handlers.deleteBody(body.id), extra: dimmed(body.id), isBody: true })),
     Sketches: of('sketch').map(feature => ({ id: feature.id, name: feature.name, icon: 'sketch' as IconName, open: () => handlers.editSketch(feature.id), remove: () => handlers.deleteFeature(feature.id), extra: dimmed(feature.id) })),
     'Planes & axes': [...of('plane'), ...of('axis')].map(feature => ({
@@ -182,6 +180,52 @@ function ItemsList({ doc, result, isolated, state, handlers, actions }: ItemsLis
     })),
     Images: of('image').map(image => ({ id: image.id, name: image.name, icon: 'image' as IconName, open: () => handlers.selectImage(image.id), remove: () => handlers.deleteFeature(image.id) }))
   };
+}
+
+interface GroupBarOptions {
+  state: ItemsState;
+  folders: ItemFolder[];
+  inFolder: Set<string>;
+  actions: ItemsActions;
+}
+
+/** Shown while items are ticked: a new folder of them, or out of their folders, or moved into another. */
+function groupBar({ state, folders, inFolder, actions }: GroupBarOptions) {
+  // All ticked items in the same folder: the new folder goes inside it.
+  const homes = new Set([...state.checked].map(id => folders.find(folder => folder.items.includes(id))?.id ?? ''));
+  const parent = homes.size === 1 ? [...homes][0] || undefined : undefined;
+  const filed = [...state.checked].filter(id => inFolder.has(id));
+
+  return (
+    <li key="groupbar" class="items-groupbar">
+      {/* (No Clear: Select at the top again clears the ticks.) */}
+      <button class="text-btn primary" onClick={() => actions.makeFolder(parent)}>
+        {`${parent ? 'New subfolder' : 'New folder'} (${state.checked.size})`}
+      </button>
+      {/* Ticked items that are in a folder: Remove takes them out - one level up (into the folder around a subfolder), or back among the loose ones. */}
+      {filed.length > 0 && (
+        <button class="text-btn" title="Take the ticked items out of their folders" onClick={() => actions.removeFromFolders(filed)}>
+          {`Remove (${filed.length})`}
+        </button>
+      )}
+      {/* Move: then tick the folder (or subfolder) they go into. */}
+      {folders.length > 0 && (
+        <button class={state.isMoving ? 'text-btn primary' : 'text-btn'} title="Move the ticked items into another folder" onClick={actions.toggleMoving}>
+          {state.isMoving ? 'Cancel move' : `Move (${state.checked.size})`}
+        </button>
+      )}
+      {folders.length > 0 && state.isMoving && <span class="items-groupbar-hint">Tick the folder to move them into.</span>}
+    </li>
+  );
+}
+
+function ItemsList(props: ItemsListProps) {
+  const { doc, result, state, actions } = props;
+  const hidden = new Set(doc.hidden);
+  const folders = doc.folders ?? [];
+  const inFolder = new Set(folders.flatMap(folder => folder.items));
+  const bodies = result?.bodies ?? [];
+  const rows = rowsByKind(props);
   const byId = new Map(Object.values(rows).flat().map(row => [row.id, row]));
   const nodes: preact.ComponentChildren[] = [];
 
@@ -248,33 +292,8 @@ function ItemsList({ doc, result, isolated, state, handlers, actions }: ItemsLis
   const drawn = new Set<string>();
   top.forEach(itemFolder => drawFolder(itemFolder, 0, drawn));
 
-  // Grouping bar.
   if (state.checked.size) {
-    // All ticked items in the same folder: the new folder goes inside it.
-    const homes = new Set([...state.checked].map(id => folders.find(folder => folder.items.includes(id))?.id ?? ''));
-    const parent = homes.size === 1 ? [...homes][0] || undefined : undefined;
-    const filed = [...state.checked].filter(id => inFolder.has(id));
-    nodes.push(
-      <li key="groupbar" class="items-groupbar">
-        {/* (No Clear: Select at the top again clears the ticks.) */}
-        <button class="text-btn primary" onClick={() => actions.makeFolder(parent)}>
-          {`${parent ? 'New subfolder' : 'New folder'} (${state.checked.size})`}
-        </button>
-        {/* Ticked items that are in a folder: Remove takes them out - one level up (into the folder around a subfolder), or back among the loose ones. */}
-        {filed.length > 0 && (
-          <button class="text-btn" title="Take the ticked items out of their folders" onClick={() => actions.removeFromFolders(filed)}>
-            {`Remove (${filed.length})`}
-          </button>
-        )}
-        {/* Move: then tick the folder (or subfolder) they go into. */}
-        {folders.length > 0 && (
-          <button class={state.isMoving ? 'text-btn primary' : 'text-btn'} title="Move the ticked items into another folder" onClick={actions.toggleMoving}>
-            {state.isMoving ? 'Cancel move' : `Move (${state.checked.size})`}
-          </button>
-        )}
-        {folders.length > 0 && state.isMoving && <span class="items-groupbar-hint">Tick the folder to move them into.</span>}
-      </li>
-    );
+    nodes.push(groupBar({ state, folders, inFolder, actions }));
   } else if (state.isPicking) {
     nodes.push(<li key="pick-hint" class="items-empty">Tick items, then make a folder of them.</li>);
   }
