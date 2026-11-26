@@ -1,6 +1,8 @@
 // More → About: the README (the one on GitHub), shown in the app. Built into
 // the app (it's the same file), less the lines that only make sense on GitHub.
 
+import DOMPurify from 'dompurify';
+import { Marked, Renderer } from 'marked';
 import { useRef } from 'preact/hooks';
 import readme from '../../README.md?raw';
 import { Modal, openOverlay } from './components';
@@ -26,104 +28,36 @@ const slug = (text: string) =>
     .trim()
     .replace(/\s/g, '-');
 
-/** **bold**, *italic*, `code`, [links](...) - in already escaped text. */
-function inline(markdown: string): string {
-  const codes: string[] = [];
-  let t = esc(markdown).replace(/`([^`]+)`/g, (_, code) => `\u0000${codes.push(code) - 1}\u0000`);
-  t = t
-    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-    .replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>')
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, text, url) => {
-      if (url.startsWith('#')) {
-        return `<a href="${url}" data-anchor="${url.slice(1)}">${text}</a>`;
+const readmeMarkdown = new Marked({
+  renderer: {
+    heading({ tokens, depth, text }) {
+      return `<h${depth} id="${slug(text)}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
+    },
+    link({ href, tokens }) {
+      const text = this.parser.parseInline(tokens);
+      if (href.startsWith('#')) {
+        return `<a href="${esc(href)}" data-anchor="${esc(href.slice(1))}">${text}</a>`;
       }
-      const href = /^https?:/.test(url) ? url : `${REPO}/blob/main/${url}`;
+      const url = /^https?:/.test(href) ? href : `${REPO}/blob/main/${href}`;
 
-      return `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
-    });
-
-  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
-}
-
-/** The README's own kind of Markdown: headings, paragraphs, lists, tables, code blocks, rules. */
-function render(md: string): string {
-  const lines = md.split('\n');
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (/^```/.test(line)) {
-      const code: string[] = [];
-      for (i++; i < lines.length && !/^```/.test(lines[i]); i++) {
-        code.push(lines[i]);
-      }
-      i++;
-      out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
-      continue;
+      return `<a href="${esc(url)}" target="_blank" rel="noopener">${text}</a>`;
+    },
+    table(token) {
+      return `<div class="about-table">${Renderer.prototype.table.call(this, token)}</div>`;
     }
-    const match = line.match(/^(#{1,4})\s+(.*)$/);
-    if (match) {
-      const count = match[1].length;
-      out.push(`<h${count} id="${slug(match[2])}">${inline(match[2])}</h${count}>`);
-      i++;
-      continue;
-    }
-    if (/^---+\s*$/.test(line)) {
-      out.push('<hr>');
-      i++;
-      continue;
-    }
-    if (/^\|/.test(line)) {
-      const rows: string[][] = [];
-      for (; i < lines.length && /^\|/.test(lines[i]); i++) {
-        const cells = lines[i].replace(/^\||\|\s*$/g, '').split('|').map(cell => cell.trim());
-        if (cells.every(cell => /^:?-+:?$/.test(cell))) {
-          continue;
-        }
-        rows.push(cells);
-      }
-      const [head, ...body] = rows;
-      out.push(
-        `<div class="about-table"><table><thead><tr>${head.map(cell => `<th>${inline(cell)}</th>`).join('')}</tr></thead><tbody>${body
-          .map(row => `<tr>${row.map(cell => `<td>${inline(cell)}</td>`).join('')}</tr>`)
-          .join('')}</tbody></table></div>`
-      );
-      continue;
-    }
-    const item = /^(\s*)([-*]|\d+\.)\s+/;
-    if (item.test(line)) {
-      const ordered = /^\s*\d+\./.test(line);
-      const items: string[] = [];
-      while (i < lines.length && item.test(lines[i])) {
-        let text = lines[i].replace(item, '');
-        // Its wrapped lines (indented, not a new item).
-        for (i++; i < lines.length && /^\s+\S/.test(lines[i]) && !item.test(lines[i]); i++) {
-          text += ' ' + lines[i].trim();
-        }
-        items.push(`<li>${inline(text)}</li>`);
-      }
-      out.push(ordered ? `<ol>${items.join('')}</ol>` : `<ul>${items.join('')}</ul>`);
-      continue;
-    }
-    if (!line.trim()) {
-      i++;
-      continue;
-    }
-    const para: string[] = [];
-    for (; i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\||---+\s*$)/.test(lines[i]) && !item.test(lines[i]); i++) {
-      para.push(lines[i].trim());
-    }
-    out.push(`<p>${inline(para.join(' '))}</p>`);
   }
-
-  return out.join('\n');
-}
+});
 
 interface AboutDialogProps {
   onClose: () => void;
 }
 
-const aboutHtml = () => render(aboutText()).replace(/<h1>([\s\S]*?)<\/h1>/, `<h1><a href="${REPO}" target="_blank" rel="noopener" title="Open the project on GitHub">$1</a></h1>`);
+function aboutHtml(): string {
+  const html = readmeMarkdown.parse(aboutText(), { async: false });
+
+  // DOMPurify drops `target` unless told to keep it.
+  return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+}
 
 function AboutDialog({ onClose }: AboutDialogProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
